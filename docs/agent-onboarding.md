@@ -619,10 +619,13 @@ When using `BaseOutputPath` for test/build isolation, write under `.tmp` and rem
 ## Documentation Map
 
 - [Documentation index](README.md)
+- [English user guide](guide/en/README.md)
+- [Russian user guide](guide/ru/README.md)
 - [Architecture](architecture.md)
 - [Configuration](configuration.md)
 - [Development](development.md)
 - [Release verification](release-verification.md)
 - [Architecture decisions](adr/)
 - [Current manual protocols](manual-tests/)
-- [English settings help](help/en/)
+- [English settings help](help/en/README.md)
+- [Russian settings help](help/ru/README.md)

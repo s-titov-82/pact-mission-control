@@ -1,9 +1,20 @@
-# Prompt/Shell templates
+# Шаблоны промптов и shell-команд
 
-Templates are grouped as Prompts and Shell commands. Prompt templates target agent sessions: Codex, Claude, and Hermes. Shell commands target Pwsh and Custom sessions.
+Шаблоны разделены на группы Prompts и Shell commands. Шаблоны промптов
+предназначены для сессий агентов Codex, Claude и Hermes. Shell-команды — для
+сессий Pwsh и Custom.
 
-The exact {selectedText} token makes a template selection-aware regardless of its Type. Static templates appear in Quick actions. Selection-aware templates appear in Send selection to. Selected text is substituted verbatim; shell commands are not automatically quoted.
+Точное вхождение токена `{selectedText}` делает шаблон применимым к выделению
+независимо от его Type. Статические шаблоны находятся в Quick actions, а
+шаблоны для выделений — в Send selection to. Выделенный текст подставляется
+буквально; shell-команды автоматически не экранируются.
 
-Auto-submit decides whether Enter is sent after inserting either type. Raw selection never submits. New Prompts default off; new Shell commands default on, and changing Type preserves the current checkbox. Its persisted JSON name is sendByDefault.
+Auto-submit определяет, отправляется ли Enter после вставки шаблона любого
+типа. Простая вставка выделения никогда не нажимает Enter. Для новых Prompts
+этот параметр по умолчанию выключен, для новых Shell commands — включён;
+изменение Type сохраняет текущее значение флажка. Имя параметра в JSON —
+`sendByDefault`.
 
-Available placeholders: {project}, {task}, {selectedText}, and {otherSessionSummary}. Unknown JSON fields are preserved; legacy selectionTemplate entries remain readable as Prompt templates.
+Доступные плейсхолдеры: `{project}`, `{task}`, `{selectedText}` и
+`{otherSessionSummary}`. Неизвестные поля JSON сохраняются; старые записи
+`selectionTemplate` продолжают читаться как шаблоны Prompt.

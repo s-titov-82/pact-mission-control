@@ -88,5 +88,8 @@ The tool leases both roots, stages the copy atomically, and copies durable
 `--replace` only when you intentionally want to replace an existing
 destination.
 
-The per-section help available from the Settings `?` button is mirrored under
-[English settings help](help/en/).
+The per-section help available from the Settings `?` button is mirrored in the
+[English settings index](help/en/README.md) and
+[Russian settings index](help/ru/README.md). For task-oriented instructions,
+start with the [English user guide](guide/en/README.md) or
+[Russian user guide](guide/ru/README.md).

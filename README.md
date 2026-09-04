@@ -1,5 +1,7 @@
 # PACT:> Mission Control
 
+[English](README.md) | [Русский](README.ru.md)
+
 PACT:> Mission Control is a Windows desktop cockpit that keeps coding-agent
 terminals, project context, documentation, and operational links visible in
 one place.
@@ -111,6 +113,8 @@ native Windows gates, packaging validation, and maintainer release procedure.
 
 ## Documentation and contributing
 
+- [User guide](docs/guide/en/README.md)
+- [Settings reference](docs/help/en/README.md)
 - [Documentation index](docs/README.md)
 - [Architecture](docs/architecture.md)
 - [Contributor workflow](docs/development.md)

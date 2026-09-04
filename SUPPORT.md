@@ -1,6 +1,8 @@
 # Support
 
-Choose the route that matches the request:
+Start with the [English user guide](docs/guide/en/README.md) or the
+[Russian user guide](docs/guide/ru/README.md), then choose the route that
+matches the request:
 
 - Reproducible defects: open a
   [bug report](https://github.com/s-titov-82/pact-mission-control/issues/new?template=bug_report.yml).

@@ -1,5 +1,7 @@
 # Release verification
 
+[English](release-verification.md) | [Русский](release-verification.ru.md)
+
 Each Windows x64 release contains three files:
 
 - `pact-mission-control-<version>-win-x64.zip`;

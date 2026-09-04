@@ -1,10 +1,14 @@
 # Documentation
 
+[English](README.md) | [Русский](README.ru.md)
+
 ## Users
 
+- [User guide](guide/en/README.md)
 - [Configuration](configuration.md)
-- [In-app settings help](help/en/settings-root-tabs.md)
-- [Troubleshooting and release verification](release-verification.md)
+- [Settings reference](help/en/README.md)
+- [Troubleshooting](guide/en/troubleshooting.md)
+- [Release verification](release-verification.md)
 
 ## Contributors
 
