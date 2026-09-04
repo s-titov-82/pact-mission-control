@@ -1,0 +1,878 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:s="using:Pact.Presentation.Settings.ViewModels"
+                    xmlns:local="using:Pact.App.Avalonia.Views.Settings"
+                    x:CompileBindings="False">
+  <local:NullToBooleanConverter x:Key="HasValue" />
+  <local:NullToBooleanConverter x:Key="IsNull" Invert="True" />
+  <local:BooleanNegationConverter x:Key="Not" />
+
+  <DataTemplate x:Key="AppearanceSectionTemplate" DataType="s:AppearanceSectionViewModel">
+    <StackPanel Margin="0,10,20,0" Spacing="8">
+      <TextBlock Classes="SettingsFieldLabel" Text="Theme" />
+      <ComboBox Width="220" HorizontalAlignment="Left"
+                ItemsSource="{Binding Modes}" SelectedItem="{Binding SelectedMode}" />
+      <TextBlock Foreground="{DynamicResource AppTextMutedBrush}" TextWrapping="Wrap"
+                 Text="System follows the Windows theme. Light and Dark override it." />
+      <CheckBox Margin="0,8,0,0" Content="Show selected tab details"
+                IsChecked="{Binding ShowSelectedTabDetails}" />
+      <CheckBox Content="Show external process metrics"
+                IsChecked="{Binding ShowExternalProcessMetrics}" />
+      <TextBlock Foreground="{DynamicResource AppTextMutedBrush}" TextWrapping="Wrap"
+                 Text="Opt-in CPU and memory totals for the selected live terminal or loaded web tab." />
+    </StackPanel>
+  </DataTemplate>
+
+  <DataTemplate x:Key="OrchestratorSectionTemplate" DataType="s:OrchestratorSectionViewModel">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+      <StackPanel Margin="0,10,20,0" Spacing="8">
+        <CheckBox Content="Enable orchestrator slot" IsChecked="{Binding Enabled}" />
+        <CheckBox Content="Send workstation lock and unlock prompts"
+                  IsChecked="{Binding LockDetectionEnabled}" />
+        <TextBlock Classes="SettingsFieldLabel" Text="Workstation lock prompt" />
+        <TextBox AcceptsReturn="True" MinHeight="90" TextWrapping="Wrap"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 Text="{Binding LockPrompt}" />
+        <TextBlock Classes="SettingsFieldLabel" Text="Workstation unlock prompt" />
+        <TextBox AcceptsReturn="True" MinHeight="70" TextWrapping="Wrap"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 Text="{Binding UnlockPrompt}" />
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button Content="Initialize" Command="{Binding InitializeCommand}" />
+          <Button Content="Reissue credential"
+                  Command="{Binding ReissueCredentialCommand}" />
+        </StackPanel>
+        <TextBlock Classes="SettingsFieldLabel" Text="Provisioning log" />
+        <ListBox MinHeight="120" IsEnabled="False" ItemsSource="{Binding ProvisionLog}">
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <TextBlock Text="{Binding}" TextWrapping="Wrap" />
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </StackPanel>
+    </ScrollViewer>
+  </DataTemplate>
+
+  <ControlTheme x:Key="SettingsTabItemTheme" TargetType="ListBoxItem">
+    <Setter Property="Padding" Value="10,6" />
+    <Setter Property="FontFamily" Value="Segoe UI" />
+    <Setter Property="FontSize" Value="14" />
+    <Setter Property="FontWeight" Value="Normal" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0,0,0,2" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Padding="{TemplateBinding Padding}"
+                Background="{TemplateBinding Background}"
+                BorderBrush="{TemplateBinding BorderBrush}"
+                BorderThickness="{TemplateBinding BorderThickness}">
+          <ContentPresenter Content="{TemplateBinding Content}"
+                            ContentTemplate="{TemplateBinding ContentTemplate}"
+                            HorizontalContentAlignment="Center"
+                            VerticalContentAlignment="Center" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:selected">
+      <Setter Property="BorderBrush" Value="{DynamicResource AppAccentBrush}" />
+    </Style>
+    <Style Selector="^:pointerover">
+      <Setter Property="Background" Value="{DynamicResource AppAccentSoftBrush}" />
+    </Style>
+  </ControlTheme>
+
+  <ControlTheme x:Key="SettingsPrimaryTabItemTheme" TargetType="TabItem">
+    <Setter Property="Padding" Value="10,6" />
+    <Setter Property="FontFamily" Value="Segoe UI" />
+    <Setter Property="FontSize" Value="15" />
+    <Setter Property="FontWeight" Value="Normal" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0,0,0,2" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Padding="{TemplateBinding Padding}"
+                Background="{TemplateBinding Background}"
+                BorderBrush="{TemplateBinding BorderBrush}"
+                BorderThickness="{TemplateBinding BorderThickness}">
+          <ContentPresenter Content="{TemplateBinding Header}"
+                            ContentTemplate="{TemplateBinding HeaderTemplate}"
+                            HorizontalContentAlignment="Center"
+                            VerticalContentAlignment="Center" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:selected">
+      <Setter Property="BorderBrush" Value="{DynamicResource AppAccentBrush}" />
+    </Style>
+    <Style Selector="^:pointerover">
+      <Setter Property="Background" Value="{DynamicResource AppAccentSoftBrush}" />
+    </Style>
+  </ControlTheme>
+
+  <ControlTheme x:Key="SettingsSecondaryTabItemTheme"
+                TargetType="TabItem"
+                BasedOn="{StaticResource SettingsPrimaryTabItemTheme}">
+    <Setter Property="FontSize" Value="14" />
+  </ControlTheme>
+
+  <DataTemplate x:Key="UnrecognizedItemTemplate" DataType="s:UnrecognizedItemViewModel">
+    <TextBlock Margin="0,20,0,0" IsEnabled="False"
+               Foreground="{DynamicResource AppTextMutedBrush}" TextWrapping="Wrap"
+               Text="Unrecognized entry — edit via Open raw JSON." />
+  </DataTemplate>
+
+  <DataTemplate x:Key="ProjectItemTemplate" DataType="s:ProjectItemViewModel">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+      <StackPanel Margin="0,10,20,0" Spacing="6">
+        <TextBlock Classes="SettingsInfoLine" Text="{Binding InfoLine}" />
+        <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto,Auto">
+          <TextBlock Grid.Row="0" Grid.Column="0" Classes="SettingsFieldLabel" Text="Name" />
+          <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Name}" />
+          <TextBlock Grid.Row="1" Grid.Column="0" Classes="SettingsFieldLabel" Text="Root path" />
+          <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding RootPath}"
+                   ToolTip.Tip="Applies to future launches and the git panel; running terminals keep their directory." />
+          <TextBlock Grid.Row="2" Grid.Column="0" Classes="SettingsFieldLabel" Text="GitLab repo id" />
+          <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding GitLabRepoId}" />
+          <TextBlock Grid.Row="3" Grid.Column="0" Classes="SettingsFieldLabel" Text="TeamCity project id" />
+          <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding TeamCityProjectId}" />
+        </Grid>
+        <TextBlock Classes="SettingsFieldLabel" Text="Notes" />
+        <TextBox AcceptsReturn="True" MinHeight="80" TextWrapping="Wrap"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 Text="{Binding Notes}" />
+        <StackPanel IsVisible="{Binding HasSessions}">
+          <TextBlock Margin="0,14,0,6" FontWeight="SemiBold" Text="Sessions" />
+          <Grid ColumnDefinitions="180,*" VerticalAlignment="Top">
+            <ListBox Grid.Column="0" Height="160" VerticalAlignment="Top"
+                     ItemsSource="{Binding Sessions}" SelectedItem="{Binding SelectedSession}">
+              <ListBox.ItemTemplate>
+                <DataTemplate><TextBlock Text="{Binding Title}" /></DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+            <StackPanel Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Top"
+                        IsVisible="{Binding SelectedSession, Converter={StaticResource HasValue}}">
+              <TextBlock Classes="SettingsInfoLine" Text="{Binding SelectedSession.InfoLine}" />
+              <TextBlock Foreground="{DynamicResource AppDangerStrongBrush}"
+                         FontStyle="Italic" IsVisible="{Binding SelectedSession.IsLocked}"
+                         Text="Locked by a running scenario." />
+              <TextBlock Classes="SettingsFieldLabel" Text="Title" />
+              <TextBox x:Name="SessionTitleTextBox"
+                       IsReadOnly="{Binding SelectedSession.IsLocked}"
+                       Text="{Binding SelectedSession.Title}" />
+              <StackPanel IsVisible="{Binding SelectedSession.ShowWorkingDirectorySetting}">
+                <TextBlock Classes="SettingsFieldLabel" Text="Working directory" />
+                <TextBox IsReadOnly="{Binding SelectedSession.IsLocked}"
+                         Text="{Binding SelectedSession.WorkingDirectory}" />
+              </StackPanel>
+              <TextBlock Classes="SettingsFieldLabel" Text="Launch command" />
+              <TextBox IsReadOnly="{Binding SelectedSession.IsLocked}"
+                       Text="{Binding SelectedSession.LaunchCommand}" />
+              <TextBlock Classes="SettingsFieldLabel" Text="Resume command" />
+              <TextBox IsReadOnly="{Binding SelectedSession.IsLocked}"
+                       Text="{Binding SelectedSession.ResumeCommand}" />
+            </StackPanel>
+          </Grid>
+        </StackPanel>
+      </StackPanel>
+    </ScrollViewer>
+  </DataTemplate>
+
+  <DataTemplate x:Key="ShellProfileItemTemplate" DataType="s:ShellProfileItemViewModel">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+      <StackPanel Margin="0,10,20,0" Spacing="6">
+        <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto">
+          <TextBlock Grid.Row="0" Grid.Column="0" Classes="SettingsFieldLabel" Text="Id" />
+          <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Id}" />
+          <TextBlock Grid.Row="1" Grid.Column="0" Classes="SettingsFieldLabel" Text="Agent kind" />
+          <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding KindOptions}"
+                    SelectedValue="{Binding Kind}" SelectedValueBinding="{Binding}" />
+          <TextBlock Grid.Row="2" Grid.Column="0" Classes="SettingsFieldLabel" Text="Display name" />
+          <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding DisplayName}" />
+          <TextBlock Grid.Row="3" Grid.Column="0" Classes="SettingsFieldLabel" Text="Command" />
+          <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding CommandTemplate}" />
+          <TextBlock Grid.Row="4" Grid.Column="0" Classes="SettingsFieldLabel" Text="Resume command" />
+          <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding ResumeCommandTemplate}" />
+          <TextBlock Grid.Row="5" Grid.Column="0" Classes="SettingsFieldLabel" Text="Shell" />
+          <TextBox Grid.Row="5" Grid.Column="1" Text="{Binding DefaultShell}" />
+          <TextBlock Grid.Row="6" Grid.Column="0" Classes="SettingsFieldLabel"
+                     Text="Agent control arguments" />
+          <TextBox Grid.Row="6" Grid.Column="1" Text="{Binding AgentControlArgumentTemplate}" />
+        </Grid>
+        <Button HorizontalAlignment="Right" Foreground="{DynamicResource AppDangerStrongBrush}"
+                Tag="Delete" Content="Delete profile" />
+      </StackPanel>
+    </ScrollViewer>
+  </DataTemplate>
+
+  <DataTemplate x:Key="ReviewProfileItemTemplate" DataType="s:ReviewProfileItemViewModel">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+      <StackPanel Margin="0,10,20,0" Spacing="6">
+        <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+          <TextBlock Grid.Row="0" Grid.Column="0" Classes="SettingsFieldLabel" Text="Id" />
+          <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Id}" />
+          <TextBlock Grid.Row="1" Grid.Column="0" Classes="SettingsFieldLabel" Text="Agent kind" />
+          <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding KindOptions}"
+                    SelectedValue="{Binding Kind}" SelectedValueBinding="{Binding}" />
+          <TextBlock Grid.Row="2" Grid.Column="0" Classes="SettingsFieldLabel" Text="Display name" />
+          <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding DisplayName}" />
+          <TextBlock Grid.Row="3" Grid.Column="0" Classes="SettingsFieldLabel" Text="Command" />
+          <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding CommandTemplate}" />
+          <TextBlock Grid.Row="4" Grid.Column="0" Classes="SettingsFieldLabel"
+                     Text="Agent control arguments" />
+          <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding AgentControlArgumentTemplate}" />
+        </Grid>
+        <Button HorizontalAlignment="Right" Foreground="{DynamicResource AppDangerStrongBrush}"
+                Tag="Delete" Content="Delete profile" />
+      </StackPanel>
+    </ScrollViewer>
+  </DataTemplate>
+
+  <DataTemplate x:Key="WebLinkItemTemplate" DataType="s:WebLinkTemplateItemViewModel">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+      <StackPanel Margin="0,10,20,0" Spacing="6">
+        <Grid ColumnDefinitions="140,*" RowDefinitions="Auto,Auto,Auto">
+          <TextBlock Grid.Row="0" Grid.Column="0" Classes="SettingsFieldLabel" Text="Id" />
+          <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Id}" />
+          <TextBlock Grid.Row="1" Grid.Column="0" Classes="SettingsFieldLabel" Text="Title" />
+          <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Title}" />
+          <TextBlock Grid.Row="2" Grid.Column="0" Classes="SettingsFieldLabel" Text="Start URL" />
+          <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding StartUrl}" />
+        </Grid>
+        <Button HorizontalAlignment="Right" Foreground="{DynamicResource AppDangerStrongBrush}"
+                Tag="Delete" Content="Delete link" />
+      </StackPanel>
+    </ScrollViewer>
+  </DataTemplate>
+
+  <DataTemplate x:Key="WebMonitorRuleItemTemplate" DataType="s:WebMonitorRuleItemViewModel">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+      <StackPanel Margin="0,10,20,0" Spacing="8">
+        <Grid ColumnDefinitions="160,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+          <TextBlock Grid.Row="0" Grid.Column="0" Classes="SettingsFieldLabel" Text="Enabled" />
+          <CheckBox x:Name="WebMonitorEnabledCheckBox"
+                    Grid.Row="0" Grid.Column="1"
+                    IsChecked="{Binding Enabled, Mode=TwoWay}"
+                    ToolTip.Tip="Include this rule in live web-tab monitoring" />
+          <TextBlock Grid.Row="1" Grid.Column="0" Classes="SettingsFieldLabel" Text="ID" />
+          <TextBox x:Name="WebMonitorIdTextBox"
+                   Grid.Row="1" Grid.Column="1"
+                   Text="{Binding Id, Mode=TwoWay}"
+                   ToolTip.Tip="Stable unique rule identifier" />
+          <TextBlock Grid.Row="2" Grid.Column="0" Classes="SettingsFieldLabel" Text="Title" />
+          <TextBox x:Name="WebMonitorTitleTextBox"
+                   Grid.Row="2" Grid.Column="1"
+                   Text="{Binding Title, Mode=TwoWay}"
+                   ToolTip.Tip="Name shown on this rule tab" />
+          <TextBlock Grid.Row="3" Grid.Column="0" Classes="SettingsFieldLabel" Text="URL pattern" />
+          <TextBox x:Name="WebMonitorUrlPatternTextBox"
+                   Grid.Row="3" Grid.Column="1"
+                   Text="{Binding UrlPattern, Mode=TwoWay}"
+                   ToolTip.Tip="Regular expression matched against the fragment-free absolute page URL" />
+          <TextBlock Grid.Row="4" Grid.Column="0" Classes="SettingsFieldLabel"
+                     Text="Poll interval (seconds)" />
+          <TextBox x:Name="WebMonitorIntervalTextBox"
+                   Grid.Row="4" Grid.Column="1"
+                   Text="{Binding PollIntervalSecondsText, Mode=TwoWay}"
+                   ToolTip.Tip="Polling cadence in whole seconds; minimum 5" />
+        </Grid>
+
+        <TextBlock x:Name="WebMonitorMarkerWarningText"
+                   IsVisible="{Binding HasChangeMeMarker}"
+                   Foreground="{DynamicResource AppDangerStrongBrush}"
+                   FontStyle="Italic"
+                   Text="{Binding MarkerWarning}"
+                   TextWrapping="Wrap" />
+
+        <Border Padding="10"
+                BorderBrush="{DynamicResource AppBorderBrush}"
+                BorderThickness="1">
+          <StackPanel Spacing="6">
+            <CheckBox x:Name="WebMonitorActivityEnabledCheckBox"
+                      FontWeight="SemiBold"
+                      Content="Activity extractor"
+                      IsChecked="{Binding HasActivityExtractor, Mode=TwoWay}"
+                      ToolTip.Tip="Enable or disable activity extraction without clearing its form values" />
+            <Grid ColumnDefinitions="150,*"
+                  RowDefinitions="Auto,Auto,Auto,Auto"
+                  IsVisible="{Binding HasActivityExtractor}">
+              <TextBlock Grid.Row="0" Grid.Column="0" Classes="SettingsFieldLabel"
+                         Text="CSS selector" />
+              <TextBox x:Name="WebMonitorActivitySelectorTextBox"
+                       Grid.Row="0" Grid.Column="1"
+                       Text="{Binding ActivityExtractor.Selector, Mode=TwoWay}"
+                       ToolTip.Tip="CSS selector used to locate activity elements" />
+              <TextBlock Grid.Row="1" Grid.Column="0" Classes="SettingsFieldLabel"
+                         Text="Source" />
+              <StackPanel Grid.Row="1" Grid.Column="1" Spacing="4">
+                <ComboBox x:Name="WebMonitorActivitySourceComboBox"
+                          ItemsSource="{Binding ActivitySourceOptions}"
+                          SelectedItem="{Binding ActivityExtractor.Source, Mode=TwoWay}"
+                          ToolTip.Tip="Read element existence, count, text, or an attribute" />
+                <TextBlock x:Name="WebMonitorActivitySourceWarningText"
+                           IsVisible="{Binding ActivityExtractor.HasUnresolvedSource}"
+                           Foreground="{DynamicResource AppDangerStrongBrush}"
+                           FontStyle="Italic"
+                           Text="{Binding ActivityExtractor.SourceWarning}"
+                           TextWrapping="Wrap" />
+              </StackPanel>
+              <TextBlock Grid.Row="2" Grid.Column="0" Classes="SettingsFieldLabel"
+                         IsVisible="{Binding ActivityExtractor.ShowAttributeName}"
+                         Text="Attribute name" />
+              <TextBox x:Name="WebMonitorActivityAttributeNameTextBox"
+                       Grid.Row="2" Grid.Column="1"
+                       IsVisible="{Binding ActivityExtractor.ShowAttributeName}"
+                       Text="{Binding ActivityExtractor.AttributeName, Mode=TwoWay}"
+                       ToolTip.Tip="Attribute read from the first matched element" />
+              <TextBlock Grid.Row="3" Grid.Column="0" Classes="SettingsFieldLabel"
+                         IsVisible="{Binding ActivityExtractor.ShowMatchPattern}"
+                         Text="Match pattern" />
+              <TextBox x:Name="WebMonitorActivityMatchPatternTextBox"
+                       Grid.Row="3" Grid.Column="1"
+                       IsVisible="{Binding ActivityExtractor.ShowMatchPattern}"
+                       Text="{Binding ActivityExtractor.MatchPattern, Mode=TwoWay}"
+                       ToolTip.Tip="Regular expression whose match means activity is running" />
+            </Grid>
+          </StackPanel>
+        </Border>
+
+        <Border Padding="10"
+                BorderBrush="{DynamicResource AppBorderBrush}"
+                BorderThickness="1">
+          <StackPanel Spacing="6">
+            <CheckBox x:Name="WebMonitorRevisionEnabledCheckBox"
+                      FontWeight="SemiBold"
+                      Content="Revision extractor"
+                      IsChecked="{Binding HasRevisionExtractor, Mode=TwoWay}"
+                      ToolTip.Tip="Enable or disable revision extraction without clearing its form values" />
+            <Grid ColumnDefinitions="150,*"
+                  RowDefinitions="Auto,Auto,Auto,Auto,Auto"
+                  IsVisible="{Binding HasRevisionExtractor}">
+              <TextBlock Grid.Row="0" Grid.Column="0" Classes="SettingsFieldLabel"
+                         Text="CSS selector" />
+              <TextBox x:Name="WebMonitorRevisionSelectorTextBox"
+                       Grid.Row="0" Grid.Column="1"
+                       Text="{Binding RevisionExtractor.Selector, Mode=TwoWay}"
+                       ToolTip.Tip="CSS selector used to locate the revision element" />
+              <TextBlock Grid.Row="1" Grid.Column="0" Classes="SettingsFieldLabel"
+                         Text="Source" />
+              <StackPanel Grid.Row="1" Grid.Column="1" Spacing="4">
+                <ComboBox x:Name="WebMonitorRevisionSourceComboBox"
+                          ItemsSource="{Binding RevisionSourceOptions}"
+                          SelectedItem="{Binding RevisionExtractor.Source, Mode=TwoWay}"
+                          ToolTip.Tip="Read text or an attribute from the first matched element" />
+                <TextBlock x:Name="WebMonitorRevisionSourceWarningText"
+                           IsVisible="{Binding HasUnsupportedRevisionSource}"
+                           Foreground="{DynamicResource AppDangerStrongBrush}"
+                           FontStyle="Italic"
+                           Text="{Binding RevisionSourceWarning}"
+                           TextWrapping="Wrap" />
+              </StackPanel>
+              <TextBlock Grid.Row="2" Grid.Column="0" Classes="SettingsFieldLabel"
+                         IsVisible="{Binding RevisionExtractor.ShowAttributeName}"
+                         Text="Attribute name" />
+              <TextBox x:Name="WebMonitorRevisionAttributeNameTextBox"
+                       Grid.Row="2" Grid.Column="1"
+                       IsVisible="{Binding RevisionExtractor.ShowAttributeName}"
+                       Text="{Binding RevisionExtractor.AttributeName, Mode=TwoWay}"
+                       ToolTip.Tip="Attribute read from the first matched element" />
+              <TextBlock Grid.Row="3" Grid.Column="0" Classes="SettingsFieldLabel"
+                         IsVisible="{Binding RevisionExtractor.ShowMatchPattern}"
+                         Text="Match pattern" />
+              <TextBox x:Name="WebMonitorRevisionMatchPatternTextBox"
+                       Grid.Row="3" Grid.Column="1"
+                       IsVisible="{Binding RevisionExtractor.ShowMatchPattern}"
+                       Text="{Binding RevisionExtractor.MatchPattern, Mode=TwoWay}"
+                       ToolTip.Tip="Optional regular expression used to normalize the revision" />
+              <TextBlock Grid.Row="4" Grid.Column="0" Classes="SettingsFieldLabel"
+                         IsVisible="{Binding RevisionExtractor.ShowCaptureGroup}"
+                         Text="Capture group" />
+              <TextBox x:Name="WebMonitorRevisionCaptureGroupTextBox"
+                       Grid.Row="4" Grid.Column="1"
+                       IsVisible="{Binding RevisionExtractor.ShowCaptureGroup}"
+                       Text="{Binding RevisionExtractor.CaptureGroupText, Mode=TwoWay}"
+                       ToolTip.Tip="Optional numeric regular-expression capture group" />
+            </Grid>
+          </StackPanel>
+        </Border>
+
+        <Button HorizontalAlignment="Right"
+                Foreground="{DynamicResource AppDangerStrongBrush}"
+                Tag="Delete"
+                Content="Delete rule" />
+      </StackPanel>
+    </ScrollViewer>
+  </DataTemplate>
+
+  <DataTemplate x:Key="PromptTemplateItemTemplate" DataType="s:PromptTemplateItemViewModel">
+    <Grid Margin="0,10,20,0" ColumnDefinitions="140,*"
+          RowDefinitions="Auto,Auto,Auto,Auto,*,Auto">
+      <TextBlock Grid.Row="0" Grid.Column="0" Classes="SettingsFieldLabel" Text="Id" />
+      <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Id}" />
+      <TextBlock Grid.Row="1" Grid.Column="0" Classes="SettingsFieldLabel" Text="Name" />
+      <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Name}" />
+      <TextBlock Grid.Row="2" Grid.Column="0" Classes="SettingsFieldLabel" Text="Type" />
+      <ComboBox Grid.Row="2" Grid.Column="1" ItemsSource="{Binding TypeOptions}"
+                SelectedValue="{Binding Type}" SelectedValueBinding="{Binding Value}">
+        <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Label}" /></DataTemplate></ComboBox.ItemTemplate>
+      </ComboBox>
+      <TextBlock Grid.Row="3" Grid.Column="0" Classes="SettingsFieldLabel" Text="Auto-submit"
+                 ToolTip.Tip="Press Enter automatically after inserting this template." />
+      <CheckBox Grid.Row="3" Grid.Column="1" IsChecked="{Binding SendByDefault}"
+                ToolTip.Tip="Press Enter automatically after inserting this template." />
+      <TextBlock Grid.Row="4" Grid.Column="0" Classes="SettingsFieldLabel" Text="Body" />
+      <TextBox Grid.Row="4" Grid.Column="1" MinHeight="100" AcceptsReturn="True"
+               TextWrapping="Wrap" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+               ScrollViewer.VerticalScrollBarVisibility="Auto" Text="{Binding Body}" />
+      <Button Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="2" HorizontalAlignment="Right"
+              Foreground="{DynamicResource AppDangerStrongBrush}" Tag="Delete" Content="Delete template" />
+    </Grid>
+  </DataTemplate>
+
+  <DataTemplate x:Key="ScenarioItemTemplate" DataType="s:ScenarioItemViewModel">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+      <StackPanel Margin="0,10,20,0" Spacing="6">
+        <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto">
+          <TextBlock Grid.Row="0" Grid.Column="0" Classes="SettingsFieldLabel" Text="Id" />
+          <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Id}" />
+          <TextBlock Grid.Row="1" Grid.Column="0" Classes="SettingsFieldLabel" Text="Name" />
+          <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Name}" />
+          <TextBlock Grid.Row="2" Grid.Column="0" Classes="SettingsFieldLabel" Text="Kind" />
+          <TextBox Grid.Row="2" Grid.Column="1" IsReadOnly="True" IsEnabled="False" Text="{Binding KindDisplay}" />
+          <TextBlock Grid.Row="3" Grid.Column="0" Classes="SettingsFieldLabel" Text="Max iterations" />
+          <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding MaxIterationsText}" />
+          <TextBlock Grid.Row="4" Grid.Column="0" Classes="SettingsFieldLabel" Text="Stop marker" />
+          <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding StopMarker}" />
+          <TextBlock Grid.Row="5" Grid.Column="0" Classes="SettingsFieldLabel" Text="Default target" />
+          <TextBox Grid.Row="5" Grid.Column="1" Text="{Binding DefaultTarget}" />
+          <TextBlock Grid.Row="6" Grid.Column="0" Classes="SettingsFieldLabel" Text="Start prompt template" />
+          <TextBox Grid.Row="6" Grid.Column="1" Classes="SettingsMultiline" Text="{Binding StartPromptTemplate}" />
+          <TextBlock Grid.Row="7" Grid.Column="0" Classes="SettingsFieldLabel" Text="First feedback template" />
+          <TextBox Grid.Row="7" Grid.Column="1" Classes="SettingsMultiline" Text="{Binding FirstFeedbackTemplate}" />
+          <TextBlock Grid.Row="8" Grid.Column="0" Classes="SettingsFieldLabel" Text="Author return template" />
+          <TextBox Grid.Row="8" Grid.Column="1" Classes="SettingsMultiline" Text="{Binding AuthorReturnTemplate}" />
+          <TextBlock Grid.Row="9" Grid.Column="0" Classes="SettingsFieldLabel" Text="Feedback template" />
+          <TextBox Grid.Row="9" Grid.Column="1" Classes="SettingsMultiline" Text="{Binding FeedbackTemplate}" />
+        </Grid>
+        <TextBlock Margin="0,14,0,6" FontWeight="SemiBold" Text="Reviewer instructions" />
+        <Grid ColumnDefinitions="180,*">
+          <StackPanel Grid.Column="0">
+            <ListBox Height="140" ItemsSource="{Binding ReviewerInstructions}"
+                     SelectedItem="{Binding SelectedInstruction}">
+              <ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Name}" /></DataTemplate></ListBox.ItemTemplate>
+            </ListBox>
+            <StackPanel Margin="0,6,0,0" Orientation="Horizontal" Spacing="6">
+              <Button Classes="compact-icon" Tag="AddReviewer"><PathIcon Width="14" Height="14" Data="{StaticResource AppAddIcon}" /></Button>
+              <Button Classes="compact-icon" Tag="RemoveReviewer" Content="−" />
+            </StackPanel>
+          </StackPanel>
+          <StackPanel Grid.Column="1" Margin="16,0,0,0"
+                      IsVisible="{Binding SelectedInstruction, Converter={StaticResource HasValue}}">
+            <TextBlock Classes="SettingsFieldLabel" Text="Id" />
+            <TextBox Text="{Binding SelectedInstruction.Id}" />
+            <TextBlock Classes="SettingsFieldLabel" Text="Name" />
+            <TextBox Text="{Binding SelectedInstruction.Name}" />
+            <TextBlock Classes="SettingsFieldLabel" Text="Text" />
+            <TextBox Classes="SettingsMultiline" Text="{Binding SelectedInstruction.Text}" />
+          </StackPanel>
+        </Grid>
+        <TextBlock Classes="SettingsFieldLabel" Text="Default reviewer instruction" />
+        <ComboBox ItemsSource="{Binding ReviewerInstructions}"
+                  SelectedItem="{Binding DefaultReviewerInstruction}">
+          <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
+        </ComboBox>
+        <Button HorizontalAlignment="Right" Foreground="{DynamicResource AppDangerStrongBrush}"
+                Tag="Delete" Content="Delete scenario" />
+      </StackPanel>
+    </ScrollViewer>
+  </DataTemplate>
+
+  <DataTemplate x:Key="GitHelperItemTemplate" DataType="s:GitHelperItemViewModel">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+      <StackPanel Margin="0,10,20,0" Spacing="6">
+        <Grid ColumnDefinitions="140,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+          <TextBlock Grid.Row="0" Grid.Column="0" Classes="SettingsFieldLabel" Text="Id" />
+          <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Id}" />
+          <TextBlock Grid.Row="1" Grid.Column="0" Classes="SettingsFieldLabel" Text="Name" />
+          <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Name}" />
+          <TextBlock Grid.Row="2" Grid.Column="0" Classes="SettingsFieldLabel" Text="Executable" />
+          <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding Executable}" />
+          <TextBlock Grid.Row="3" Grid.Column="0" Classes="SettingsFieldLabel" Text="Registry key" />
+          <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding RegistryKey}" />
+          <TextBlock Grid.Row="4" Grid.Column="0" Classes="SettingsFieldLabel" Text="Registry value" />
+          <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding RegistryValue}" />
+        </Grid>
+        <TextBlock Margin="0,14,0,6" FontWeight="SemiBold" Text="Popup actions" />
+        <Grid ColumnDefinitions="180,*">
+          <StackPanel Grid.Column="0">
+            <ListBox Height="140" ItemsSource="{Binding Actions}" SelectedItem="{Binding SelectedAction}">
+              <ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Label}" /></DataTemplate></ListBox.ItemTemplate>
+            </ListBox>
+            <StackPanel Margin="0,6,0,0" Orientation="Horizontal" Spacing="6">
+              <Button Classes="compact-icon" Tag="AddGitHelperAction"><PathIcon Width="14" Height="14" Data="{StaticResource AppAddIcon}" /></Button>
+              <Button Classes="compact-icon" Tag="RemoveGitHelperAction" Content="−" />
+            </StackPanel>
+          </StackPanel>
+          <StackPanel Grid.Column="1" Margin="16,0,0,0"
+                      IsVisible="{Binding SelectedAction, Converter={StaticResource HasValue}}">
+            <TextBlock Classes="SettingsFieldLabel" Text="Slot" />
+            <TextBox Text="{Binding SelectedAction.Slot}" />
+            <TextBlock Classes="SettingsFieldLabel" Text="Label" />
+            <TextBox Text="{Binding SelectedAction.Label}" />
+            <TextBlock Classes="SettingsFieldLabel" Text="Arguments (one per line)" />
+            <TextBox Classes="SettingsMultiline" Text="{Binding SelectedAction.ArgumentsText}" />
+          </StackPanel>
+        </Grid>
+        <Button HorizontalAlignment="Right" Foreground="{DynamicResource AppDangerStrongBrush}"
+                Tag="Delete" Content="Delete helper" />
+      </StackPanel>
+    </ScrollViewer>
+  </DataTemplate>
+
+  <DataTemplate x:Key="GitCommandItemTemplate" DataType="s:GitCommandItemViewModel">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+      <StackPanel Margin="0,10,20,0" Spacing="6">
+        <Grid ColumnDefinitions="140,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+          <TextBlock Grid.Row="0" Grid.Column="0" Classes="SettingsFieldLabel" Text="Id" />
+          <TextBox Grid.Row="0" Grid.Column="1" IsReadOnly="{Binding IsBuiltIn}" IsEnabled="{Binding IsCustom}" Text="{Binding Id}" />
+          <TextBlock Grid.Row="1" Grid.Column="0" Classes="SettingsFieldLabel" Text="Label" />
+          <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Label}" />
+          <TextBlock Grid.Row="2" Grid.Column="0" Classes="SettingsFieldLabel" IsVisible="{Binding IsBuiltIn}" Text="Enabled" />
+          <CheckBox Grid.Row="2" Grid.Column="1" IsVisible="{Binding IsBuiltIn}" IsChecked="{Binding Enabled}" />
+          <TextBlock Grid.Row="3" Grid.Column="0" Classes="SettingsFieldLabel" IsVisible="{Binding ShowCommand}" Text="Command" />
+          <TextBox Grid.Row="3" Grid.Column="1" IsVisible="{Binding ShowCommand}" Text="{Binding Command}" />
+          <TextBlock Grid.Row="4" Grid.Column="0" Classes="SettingsFieldLabel" IsVisible="{Binding IsDialog}" Text="Extra flags" />
+          <TextBox Grid.Row="4" Grid.Column="1" IsVisible="{Binding IsDialog}" Text="{Binding ExtraArgs}" />
+        </Grid>
+        <TextBlock Classes="SettingsInfoLine" IsVisible="{Binding IsDialog}" Text="{Binding DialogPreview}" />
+        <TextBlock Classes="SettingsFieldLabel" Text="Description" />
+        <TextBlock TextWrapping="Wrap" IsVisible="{Binding IsBuiltIn}" Text="{Binding DescriptionDisplay}" />
+        <TextBox Classes="SettingsMultiline" IsVisible="{Binding IsCustom}" Text="{Binding Description}" />
+        <TextBlock Classes="SettingsFieldLabel" IsVisible="{Binding IsCustom}" Text="Documentation" />
+        <TextBox IsVisible="{Binding IsCustom}" Text="{Binding DocUrl}" />
+        <Button HorizontalAlignment="Left" Tag="OpenGitDoc" Content="Open documentation ↗" />
+        <Button HorizontalAlignment="Right" IsVisible="{Binding IsCustom}"
+                Foreground="{DynamicResource AppDangerStrongBrush}" Tag="Delete" Content="Delete command" />
+      </StackPanel>
+    </ScrollViewer>
+  </DataTemplate>
+
+  <DataTemplate x:Key="RootTabsSectionTemplate" DataType="s:RootTabsSectionViewModel">
+    <Grid RowDefinitions="Auto,Auto,*">
+      <TextBlock Text="{Binding Description}" TextWrapping="Wrap"
+                 Foreground="{DynamicResource AppTextMutedBrush}" />
+      <ListBox Grid.Row="1" Margin="0,10,0,10" Background="Transparent" BorderThickness="0"
+               ScrollViewer.HorizontalScrollBarVisibility="Auto"
+               ScrollViewer.VerticalScrollBarVisibility="Disabled"
+               ItemContainerTheme="{StaticResource SettingsTabItemTheme}"
+               ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedItem}">
+        <ListBox.ItemsPanel>
+          <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+        </ListBox.ItemsPanel>
+        <ListBox.ItemTemplate>
+          <DataTemplate><TextBlock Text="{Binding Title}" TextWrapping="NoWrap" /></DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+      <TextBlock Grid.Row="2" IsVisible="{Binding IsEmpty}"
+                 Foreground="{DynamicResource AppTextMutedBrush}"
+                 Text="No ROOT tabs. Add one from the ROOT header in the main window." />
+      <ContentControl Grid.Row="2" Content="{Binding SelectedItem}">
+        <ContentControl.DataTemplates>
+          <DataTemplate DataType="s:SessionSettingsItemViewModel">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+              <StackPanel Margin="0,10,20,0" Spacing="6">
+                <TextBlock Classes="SettingsInfoLine" Text="{Binding InfoLine}" />
+                <TextBlock Classes="SettingsFieldLabel" Text="Title" />
+                <TextBox x:Name="SessionTitleTextBox" Text="{Binding Title}" />
+                <TextBlock Classes="SettingsFieldLabel" Text="Working directory" />
+                <TextBox Text="{Binding WorkingDirectory}" />
+                <TextBlock Classes="SettingsFieldLabel" Text="Launch command" />
+                <TextBox Text="{Binding LaunchCommand}" />
+                <TextBlock Classes="SettingsFieldLabel" Text="Resume command" />
+                <TextBox Text="{Binding ResumeCommand}" />
+              </StackPanel>
+            </ScrollViewer>
+          </DataTemplate>
+          <DataTemplate DataType="s:RootWebPageSettingsItemViewModel">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+              <StackPanel Margin="0,10,20,0" Spacing="6">
+                <TextBlock Classes="SettingsInfoLine" Text="{Binding InfoLine}" />
+                <TextBlock Classes="SettingsFieldLabel" Text="Title" />
+                <TextBox Text="{Binding Title}" />
+                <TextBlock Classes="SettingsFieldLabel" Text="URL" />
+                <TextBox Text="{Binding Url}" />
+              </StackPanel>
+            </ScrollViewer>
+          </DataTemplate>
+        </ContentControl.DataTemplates>
+      </ContentControl>
+    </Grid>
+  </DataTemplate>
+
+  <DataTemplate x:Key="ProjectsSectionTemplate" DataType="s:ProjectsSectionViewModel">
+    <Grid RowDefinitions="Auto,Auto,*">
+      <TextBlock Text="{Binding Description}" TextWrapping="Wrap" Foreground="{DynamicResource AppTextMutedBrush}" />
+      <DockPanel Grid.Row="1" Margin="0,10,0,10">
+        <Button DockPanel.Dock="Right" Classes="compact-icon" IsVisible="{Binding ShowAddButton}" Tag="AddItem"><PathIcon Width="14" Height="14" Data="{StaticResource AppAddIcon}" /></Button>
+        <ListBox Background="Transparent" BorderThickness="0"
+                 ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                 ItemContainerTheme="{StaticResource SettingsTabItemTheme}"
+                 ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedItem}">
+          <ListBox.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ListBox.ItemsPanel>
+          <ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding TabHeader}" TextWrapping="NoWrap" /></DataTemplate></ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+      <TextBlock Grid.Row="2" IsVisible="{Binding SelectedItem, Converter={StaticResource IsNull}}"
+                 Foreground="{DynamicResource AppTextMutedBrush}" Text="{Binding EmptyStateText}" />
+      <ContentControl Grid.Row="2" IsVisible="{Binding SelectedItem, Converter={StaticResource HasValue}}"
+                      Content="{Binding SelectedItem}" ContentTemplate="{StaticResource ProjectItemTemplate}" />
+    </Grid>
+  </DataTemplate>
+  <DataTemplate x:Key="PausedProjectsSectionTemplate" DataType="s:ProjectsSectionViewModel">
+    <Grid RowDefinitions="Auto,Auto,*">
+      <TextBlock Text="{Binding Description}" TextWrapping="Wrap" Foreground="{DynamicResource AppTextMutedBrush}" />
+      <ListBox Grid.Row="1" Margin="0,10,0,10" Background="Transparent" BorderThickness="0"
+               ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Disabled"
+               ItemContainerTheme="{StaticResource SettingsTabItemTheme}"
+               ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedItem}">
+        <ListBox.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ListBox.ItemsPanel>
+        <ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding TabHeader}" TextWrapping="NoWrap" /></DataTemplate></ListBox.ItemTemplate>
+      </ListBox>
+      <TextBlock Grid.Row="2" IsVisible="{Binding SelectedItem, Converter={StaticResource IsNull}}"
+                 Foreground="{DynamicResource AppTextMutedBrush}" Text="{Binding EmptyStateText}" />
+      <ContentControl Grid.Row="2" IsVisible="{Binding SelectedItem, Converter={StaticResource HasValue}}"
+                      Content="{Binding SelectedItem}" ContentTemplate="{StaticResource ProjectItemTemplate}" />
+    </Grid>
+  </DataTemplate>
+  <DataTemplate x:Key="LaunchProfilesSectionTemplate" DataType="s:LaunchProfilesSectionViewModel">
+    <Grid RowDefinitions="Auto,Auto,*">
+      <TextBlock Text="{Binding Description}" TextWrapping="Wrap" />
+      <DockPanel Grid.Row="1" Margin="0,10,0,10">
+        <Button DockPanel.Dock="Right" Classes="compact-icon" Tag="AddItem"><PathIcon Width="14" Height="14" Data="{StaticResource AppAddIcon}" /></Button>
+        <ListBox Background="Transparent" BorderThickness="0"
+                 ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                 ItemContainerTheme="{StaticResource SettingsTabItemTheme}"
+                 ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedItem}">
+          <ListBox.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ListBox.ItemsPanel>
+          <ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding TabHeader}" TextWrapping="NoWrap" /></DataTemplate></ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+      <ContentControl Grid.Row="2" IsVisible="{Binding SelectedItem.IsRecognized}" Content="{Binding SelectedItem}" ContentTemplate="{StaticResource ShellProfileItemTemplate}" />
+      <ContentControl Grid.Row="2" IsVisible="{Binding SelectedItem.IsRecognized, Converter={StaticResource Not}}" Content="{Binding SelectedItem}" ContentTemplate="{StaticResource UnrecognizedItemTemplate}" />
+    </Grid>
+  </DataTemplate>
+  <DataTemplate x:Key="ReviewProfilesSectionTemplate" DataType="s:ReviewProfilesSectionViewModel">
+    <Grid RowDefinitions="Auto,Auto,*">
+      <TextBlock Text="{Binding Description}" TextWrapping="Wrap" />
+      <DockPanel Grid.Row="1" Margin="0,10,0,10">
+        <Button DockPanel.Dock="Right" Classes="compact-icon" Tag="AddItem">
+          <PathIcon Width="14" Height="14" Data="{StaticResource AppAddIcon}" />
+        </Button>
+        <ListBox Background="Transparent" BorderThickness="0"
+                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                 ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                 ItemContainerTheme="{StaticResource SettingsTabItemTheme}"
+                 ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedItem}">
+          <ListBox.ItemsPanel>
+            <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+          </ListBox.ItemsPanel>
+          <ListBox.ItemTemplate>
+            <DataTemplate><TextBlock Text="{Binding TabHeader}" TextWrapping="NoWrap" /></DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+      <ContentControl Grid.Row="2" IsVisible="{Binding SelectedItem.IsRecognized}"
+                      Content="{Binding SelectedItem}"
+                      ContentTemplate="{StaticResource ReviewProfileItemTemplate}" />
+      <ContentControl Grid.Row="2"
+                      IsVisible="{Binding SelectedItem.IsRecognized, Converter={StaticResource Not}}"
+                      Content="{Binding SelectedItem}"
+                      ContentTemplate="{StaticResource UnrecognizedItemTemplate}" />
+    </Grid>
+  </DataTemplate>
+  <DataTemplate x:Key="WebLinkTemplatesSectionTemplate" DataType="s:WebLinkTemplatesSectionViewModel">
+    <Grid RowDefinitions="Auto,Auto,*">
+      <TextBlock Text="{Binding Description}" TextWrapping="Wrap" />
+      <DockPanel Grid.Row="1" Margin="0,10,0,10">
+        <Button DockPanel.Dock="Right" Classes="compact-icon" Tag="AddItem"><PathIcon Width="14" Height="14" Data="{StaticResource AppAddIcon}" /></Button>
+        <ListBox Background="Transparent" BorderThickness="0"
+                 ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                 ItemContainerTheme="{StaticResource SettingsTabItemTheme}"
+                 ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedItem}">
+          <ListBox.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ListBox.ItemsPanel>
+          <ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding TabHeader}" TextWrapping="NoWrap" /></DataTemplate></ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+      <ContentControl Grid.Row="2" IsVisible="{Binding SelectedItem.IsRecognized}" Content="{Binding SelectedItem}" ContentTemplate="{StaticResource WebLinkItemTemplate}" />
+      <ContentControl Grid.Row="2" IsVisible="{Binding SelectedItem.IsRecognized, Converter={StaticResource Not}}" Content="{Binding SelectedItem}" ContentTemplate="{StaticResource UnrecognizedItemTemplate}" />
+    </Grid>
+  </DataTemplate>
+  <DataTemplate x:Key="WebMonitoringRulesSectionTemplate"
+                DataType="s:WebMonitoringRulesSectionViewModel">
+    <Grid RowDefinitions="Auto,Auto,*,Auto">
+      <TextBlock Text="{Binding Description}" TextWrapping="Wrap" />
+      <DockPanel Grid.Row="1" Margin="0,10,0,10">
+        <Button DockPanel.Dock="Right"
+                Classes="compact-icon"
+                Tag="AddItem"
+                ToolTip.Tip="Add web monitoring rule">
+          <PathIcon Width="14" Height="14" Data="{StaticResource AppAddIcon}" />
+        </Button>
+        <ListBox Background="Transparent"
+                 BorderThickness="0"
+                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                 ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                 ItemContainerTheme="{StaticResource SettingsTabItemTheme}"
+                 ItemsSource="{Binding Items}"
+                 SelectedItem="{Binding SelectedItem}">
+          <ListBox.ItemsPanel>
+            <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+          </ListBox.ItemsPanel>
+          <ListBox.ItemTemplate>
+            <DataTemplate><TextBlock Text="{Binding TabHeader}" TextWrapping="NoWrap" /></DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+      <ContentControl Grid.Row="2"
+                      IsVisible="{Binding SelectedItem.IsRecognized}"
+                      Content="{Binding SelectedItem}"
+                      ContentTemplate="{StaticResource WebMonitorRuleItemTemplate}" />
+      <ContentControl Grid.Row="2"
+                      IsVisible="{Binding SelectedItem.IsRecognized, Converter={StaticResource Not}}"
+                      Content="{Binding SelectedItem}"
+                      ContentTemplate="{StaticResource UnrecognizedItemTemplate}" />
+      <StackPanel Grid.Row="3" Margin="0,10,20,0" Spacing="6">
+        <Button x:Name="WebMonitorTestButton"
+                HorizontalAlignment="Left"
+                Tag="TestWebMonitorRule"
+                IsEnabled="{Binding CanTestSelectedItem}"
+                Content="Test on current tab"
+                ToolTip.Tip="Evaluate this rule once against the selected loaded web tab" />
+        <TextBlock x:Name="WebMonitorTestResultText"
+                   IsVisible="{Binding TestResultMessage, Converter={StaticResource HasValue}}"
+                   Foreground="{DynamicResource AppTextMutedBrush}"
+                   Text="{Binding TestResultMessage}"
+                   TextWrapping="Wrap" />
+      </StackPanel>
+    </Grid>
+  </DataTemplate>
+  <DataTemplate x:Key="PromptTemplatesSectionTemplate" DataType="s:PromptTemplatesSectionViewModel">
+    <Grid RowDefinitions="Auto,*">
+      <TextBlock Text="{Binding Description}" TextWrapping="Wrap" />
+      <TabControl Grid.Row="1" Margin="0,10,0,0"
+                  ItemContainerTheme="{StaticResource SettingsPrimaryTabItemTheme}"
+                  ItemsSource="{Binding Groups}" SelectedItem="{Binding SelectedGroup}">
+        <TabControl.ItemTemplate>
+          <DataTemplate><TextBlock Text="{Binding Label}" TextWrapping="NoWrap" /></DataTemplate>
+        </TabControl.ItemTemplate>
+        <TabControl.ContentTemplate>
+          <DataTemplate>
+            <Grid Margin="0,8,0,0" ColumnDefinitions="*,Auto">
+              <TabControl Grid.Column="0"
+                          ItemContainerTheme="{StaticResource SettingsSecondaryTabItemTheme}"
+                          ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedItem}">
+                <TabControl.ItemTemplate>
+                  <DataTemplate><TextBlock Text="{Binding TabHeader}" TextWrapping="NoWrap" /></DataTemplate>
+                </TabControl.ItemTemplate>
+                <TabControl.ContentTemplate>
+                  <DataTemplate>
+                    <Grid>
+                      <ContentControl IsVisible="{Binding IsRecognized}" Content="{Binding}" ContentTemplate="{StaticResource PromptTemplateItemTemplate}" />
+                      <ContentControl IsVisible="{Binding IsRecognized, Converter={StaticResource Not}}" Content="{Binding}" ContentTemplate="{StaticResource UnrecognizedItemTemplate}" />
+                    </Grid>
+                  </DataTemplate>
+                </TabControl.ContentTemplate>
+              </TabControl>
+              <Button Grid.Column="1" Classes="compact-icon" Margin="4,0,0,0"
+                      VerticalAlignment="Top" Tag="AddPrompt"
+                      ToolTip.Tip="Add template to this group"><PathIcon Width="14" Height="14" Data="{StaticResource AppAddIcon}" /></Button>
+            </Grid>
+          </DataTemplate>
+        </TabControl.ContentTemplate>
+      </TabControl>
+    </Grid>
+  </DataTemplate>
+  <DataTemplate x:Key="GitHelpersSectionTemplate" DataType="s:GitHelpersSectionViewModel">
+    <Grid RowDefinitions="Auto,*">
+      <TextBlock Text="{Binding Description}" TextWrapping="Wrap" />
+      <TabControl Grid.Row="1" Margin="0,10,0,0" SelectedIndex="{Binding ActiveTabIndex}">
+        <TabItem Theme="{StaticResource SettingsPrimaryTabItemTheme}"><TabItem.Header><TextBlock Text="Buttons" TextWrapping="NoWrap" /></TabItem.Header>
+          <Grid Margin="0,8,0,0" ColumnDefinitions="*,Auto">
+            <TabControl Grid.Column="0"
+                        ItemContainerTheme="{StaticResource SettingsSecondaryTabItemTheme}"
+                        ItemsSource="{Binding CommandItems}" SelectedItem="{Binding SelectedCommandItem}">
+              <TabControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding TabHeader}" TextWrapping="NoWrap" /></DataTemplate></TabControl.ItemTemplate>
+              <TabControl.ContentTemplate>
+                <DataTemplate>
+                  <Grid>
+                    <ContentControl IsVisible="{Binding IsRecognized}" Content="{Binding}" ContentTemplate="{StaticResource GitCommandItemTemplate}" />
+                    <ContentControl IsVisible="{Binding IsRecognized, Converter={StaticResource Not}}" Content="{Binding}" ContentTemplate="{StaticResource UnrecognizedItemTemplate}" />
+                  </Grid>
+                </DataTemplate>
+              </TabControl.ContentTemplate>
+            </TabControl>
+            <StackPanel Grid.Column="1" Margin="4,0,0,0" VerticalAlignment="Top" Orientation="Horizontal" Spacing="4">
+              <Button Width="30" Height="28" IsEnabled="{Binding CanMoveSelectedCommandLeft}"
+                      Tag="MoveGitCommandLeft" Content="◀" ToolTip.Tip="Move selected command left" />
+              <Button Width="30" Height="28" IsEnabled="{Binding CanMoveSelectedCommandRight}"
+                      Tag="MoveGitCommandRight" Content="▶" ToolTip.Tip="Move selected command right" />
+              <Button Classes="compact-icon" Tag="AddGitCommand" ToolTip.Tip="Add a custom git command button"><PathIcon Width="14" Height="14" Data="{StaticResource AppAddIcon}" /></Button>
+            </StackPanel>
+          </Grid>
+        </TabItem>
+        <TabItem Theme="{StaticResource SettingsPrimaryTabItemTheme}"><TabItem.Header><TextBlock Text="External helpers" TextWrapping="NoWrap" /></TabItem.Header>
+          <Grid Margin="0,8,0,0" ColumnDefinitions="*,Auto">
+            <TabControl Grid.Column="0"
+                        ItemContainerTheme="{StaticResource SettingsSecondaryTabItemTheme}"
+                        ItemsSource="{Binding HelperItems}" SelectedItem="{Binding SelectedHelperItem}">
+              <TabControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding TabHeader}" TextWrapping="NoWrap" /></DataTemplate></TabControl.ItemTemplate>
+              <TabControl.ContentTemplate>
+                <DataTemplate>
+                  <Grid>
+                    <ContentControl IsVisible="{Binding IsRecognized}" Content="{Binding}" ContentTemplate="{StaticResource GitHelperItemTemplate}" />
+                    <ContentControl IsVisible="{Binding IsRecognized, Converter={StaticResource Not}}" Content="{Binding}" ContentTemplate="{StaticResource UnrecognizedItemTemplate}" />
+                  </Grid>
+                </DataTemplate>
+              </TabControl.ContentTemplate>
+            </TabControl>
+            <Button Grid.Column="1" Classes="compact-icon" Margin="4,0,0,0"
+                    VerticalAlignment="Top" Tag="AddItem" ToolTip.Tip="Add an external git GUI helper"><PathIcon Width="14" Height="14" Data="{StaticResource AppAddIcon}" /></Button>
+          </Grid>
+        </TabItem>
+      </TabControl>
+    </Grid>
+  </DataTemplate>
+  <DataTemplate x:Key="ScenariosSectionTemplate" DataType="s:ScenariosSectionViewModel">
+    <Grid RowDefinitions="Auto,Auto,*">
+      <TextBlock Text="{Binding Description}" TextWrapping="Wrap" />
+      <DockPanel Grid.Row="1" Margin="0,10,0,10">
+        <Button DockPanel.Dock="Right" Classes="compact-icon" Tag="AddItem"><PathIcon Width="14" Height="14" Data="{StaticResource AppAddIcon}" /></Button>
+        <ListBox Background="Transparent" BorderThickness="0"
+                 ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                 ItemContainerTheme="{StaticResource SettingsTabItemTheme}"
+                 ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedItem}">
+          <ListBox.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ListBox.ItemsPanel>
+          <ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding TabHeader}" TextWrapping="NoWrap" /></DataTemplate></ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+      <ContentControl Grid.Row="2" IsVisible="{Binding SelectedItem.IsRecognized}" Content="{Binding SelectedItem}" ContentTemplate="{StaticResource ScenarioItemTemplate}" />
+      <ContentControl Grid.Row="2" IsVisible="{Binding SelectedItem.IsRecognized, Converter={StaticResource Not}}" Content="{Binding SelectedItem}" ContentTemplate="{StaticResource UnrecognizedItemTemplate}" />
+    </Grid>
+  </DataTemplate>
+  <DataTemplate x:Key="RecentDirectoriesSectionTemplate" DataType="s:RecentFoldersSectionViewModel">
+    <Grid RowDefinitions="Auto,Auto,*">
+      <TextBlock Text="{Binding Description}" TextWrapping="Wrap" />
+      <Button Grid.Row="1" HorizontalAlignment="Left" Margin="0,10,0,0" Tag="AddDirectory" Content="Add directory" />
+      <TextBox Grid.Row="2" Margin="0,10,0,0" AcceptsReturn="True"
+               TextWrapping="Wrap"
+               ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+               ScrollViewer.VerticalScrollBarVisibility="Auto"
+               Text="{Binding FoldersText}" />
+    </Grid>
+  </DataTemplate>
+</ResourceDictionary>

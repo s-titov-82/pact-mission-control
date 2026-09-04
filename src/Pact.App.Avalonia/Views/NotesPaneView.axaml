@@ -1,0 +1,72 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:md="https://github.com/whistyun/Markdown.Avalonia"
+             x:Class="Pact.App.Avalonia.Views.NotesPaneView">
+  <Grid RowDefinitions="Auto,Auto,Auto,*">
+    <Border Padding="10,8" BorderBrush="{StaticResource AppPanelBorderBrush}" BorderThickness="0,0,0,1">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <ToggleButton x:Name="NotesTab" Height="32" Content="Notes" Click="OnNotesTabClicked" />
+          <ToggleButton x:Name="CommonTab" Height="32" Content="Common MD's" Click="OnCommonTabClicked" />
+          <ToggleButton x:Name="DocsTab" Height="32" Content="Docs" Click="OnDocsTabClicked" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="0">
+          <ToggleButton x:Name="PreviewModeButton" Height="32" Padding="9,4"
+                        ToolTip.Tip="Show rendered Markdown"
+                        Click="OnPreviewModeClicked">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <PathIcon Width="14" Height="14" Data="{StaticResource AppPreviewIcon}" />
+              <TextBlock VerticalAlignment="Center" Text="Preview" />
+            </StackPanel>
+          </ToggleButton>
+          <ToggleButton x:Name="EditorModeButton" Height="32" Padding="9,4"
+                        ToolTip.Tip="Edit Markdown source"
+                        Click="OnEditorModeClicked">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <PathIcon Width="14" Height="14" Data="{StaticResource AppEditIcon}" />
+              <TextBlock VerticalAlignment="Center" Text="Editor" />
+            </StackPanel>
+          </ToggleButton>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <Border x:Name="ConflictBanner" Grid.Row="1" Margin="10,7,10,0" Padding="8"
+            Background="{DynamicResource AppWarningBackgroundBrush}"
+            BorderBrush="{DynamicResource AppWarningBorderBrush}" BorderThickness="1"
+            CornerRadius="4" IsVisible="False">
+      <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+        <TextBlock VerticalAlignment="Center"
+                   Text="This file changed on disk. Choose which version to keep." />
+        <Button x:Name="ReloadFromDiskButton" Grid.Column="1"
+                Content="Reload from disk" Click="OnReloadFromDiskClicked" />
+        <Button x:Name="SaveMineButton" Grid.Column="2"
+                Content="Save mine" Click="OnSaveMineClicked" />
+      </Grid>
+    </Border>
+
+    <Border x:Name="SaveFailureBanner" Grid.Row="2" Margin="10,7,10,0" Padding="8"
+            Background="{DynamicResource AppWarningBackgroundBrush}"
+            BorderBrush="{DynamicResource AppWarningBorderBrush}" BorderThickness="1"
+            CornerRadius="4" IsVisible="False">
+      <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+        <TextBlock x:Name="SaveFailureMessage" VerticalAlignment="Center"
+                   TextTrimming="CharacterEllipsis" />
+        <Button x:Name="RetrySaveButton" Grid.Column="1"
+                Content="Retry" Click="OnRetrySaveClicked" />
+        <Button x:Name="DiscardChangesButton" Grid.Column="2"
+                Content="Discard" Click="OnReloadFromDiskClicked" />
+      </Grid>
+    </Border>
+
+    <Grid Grid.Row="3">
+      <TextBox x:Name="Editor" Margin="10" AcceptsReturn="True"
+               TextWrapping="Wrap" ScrollViewer.VerticalScrollBarVisibility="Auto" />
+      <md:MarkdownScrollViewer x:Name="Preview" Margin="10" IsVisible="False"
+                               SelectionEnabled="True" />
+      <TextBlock x:Name="EmptyGroupMessage" Margin="10" HorizontalAlignment="Center"
+                 VerticalAlignment="Center" Opacity="0.7"
+                 Text="Select a document in the Documents tree." IsVisible="False" />
+    </Grid>
+  </Grid>
+</UserControl>

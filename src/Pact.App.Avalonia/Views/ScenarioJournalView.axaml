@@ -1,0 +1,97 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:md="https://github.com/whistyun/Markdown.Avalonia"
+             x:Class="Pact.App.Avalonia.Views.ScenarioJournalView"
+             x:CompileBindings="False">
+  <UserControl.Styles>
+    <Style Selector="Border.step">
+      <Setter Property="Background" Value="{DynamicResource AppStepBackgroundBrush}" />
+    </Style>
+    <Style Selector="Border.step.current">
+      <Setter Property="Background" Value="{DynamicResource AppAccentSoftBrush}" />
+    </Style>
+  </UserControl.Styles>
+  <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="18">
+    <DockPanel Grid.Row="0">
+      <Button x:Name="CloseRunButton" DockPanel.Dock="Right" Classes="scenario-command compact-icon"
+              HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+              ToolTip.Tip="Close run" Click="OnCloseRunClicked">
+        <PathIcon Width="16" Height="16" Data="{StaticResource AppCloseIcon}" />
+      </Button>
+      <ToggleButton x:Name="JournalToggleButton" DockPanel.Dock="Right" MinWidth="92"
+                    Margin="0,0,8,0" Classes="scenario-command"
+                    HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                    ToolTip.Tip="Toggle between the final result and the full run journal"
+                    IsVisible="{Binding HasFinalResult}" IsChecked="{Binding IsJournalViewSelected}">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <PathIcon Width="14" Height="14" Data="{StaticResource AppNotesIcon}" />
+          <TextBlock VerticalAlignment="Center" Text="Journal" />
+        </StackPanel>
+      </ToggleButton>
+      <StackPanel>
+        <TextBlock FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource AppTextPrimaryBrush}"
+                   Text="{Binding Title}" />
+        <TextBlock FontSize="12" Foreground="{DynamicResource AppTextMutedBrush}" Text="{Binding State}" />
+      </StackPanel>
+    </DockPanel>
+
+    <ItemsControl Grid.Row="1" Margin="0,14,0,12" ItemsSource="{Binding Steps}">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate>
+          <Border Margin="0,0,0,4" Padding="8" CornerRadius="4"
+                  Classes="step" Classes.current="{Binding IsCurrent}">
+            <TextBlock FontSize="12" Text="{Binding Text}" TextWrapping="Wrap" />
+          </Border>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+
+    <Grid Grid.Row="2">
+      <Border Padding="8" Background="{DynamicResource AppSurfaceBrush}"
+              BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1"
+              IsVisible="{Binding ShowJournalView}">
+        <md:MarkdownScrollViewer x:Name="ScenarioJournalMarkdownView" />
+      </Border>
+      <Border Padding="8" Background="{DynamicResource AppSurfaceBrush}"
+              BorderBrush="{DynamicResource AppSuccessBrush}" BorderThickness="1"
+              IsVisible="{Binding ShowResultView}">
+        <md:MarkdownScrollViewer x:Name="ScenarioFinalResultMarkdownView" />
+      </Border>
+    </Grid>
+
+    <StackPanel Grid.Row="3" Margin="0,12,0,0" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <Button x:Name="SoftStopButton" MinWidth="142" Classes="scenario-command"
+              HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+              IsEnabled="{Binding CanSoftStop}" Click="OnSoftStopClicked">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <PathIcon Width="14" Height="14" Data="{StaticResource AppPauseIcon}" />
+          <TextBlock VerticalAlignment="Center" Text="Stop after step" />
+        </StackPanel>
+      </Button>
+      <Button x:Name="PauseButton" MinWidth="86" Classes="scenario-command"
+              HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+              IsEnabled="{Binding CanPause}" Click="OnPauseClicked">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <PathIcon Width="14" Height="14" Data="{StaticResource AppPauseIcon}" />
+          <TextBlock VerticalAlignment="Center" Text="Pause" />
+        </StackPanel>
+      </Button>
+      <Button x:Name="AbortButton" MinWidth="86" Classes="scenario-command"
+              HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+              IsEnabled="{Binding CanAbort}" Click="OnAbortClicked">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <PathIcon Width="14" Height="14" Data="{StaticResource AppCloseIcon}" />
+          <TextBlock VerticalAlignment="Center" Text="Abort" />
+        </StackPanel>
+      </Button>
+      <Button x:Name="ResumeButton" MinWidth="96" Classes="scenario-command"
+              HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+              IsEnabled="{Binding CanResume}" Click="OnResumeClicked">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <PathIcon Width="14" Height="14" Data="{StaticResource AppPlayIcon}" />
+          <TextBlock VerticalAlignment="Center" Text="Resume" />
+        </StackPanel>
+      </Button>
+    </StackPanel>
+  </Grid>
+</UserControl>

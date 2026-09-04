@@ -1,0 +1,93 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="clr-namespace:Pact.App.Avalonia.Views"
+        x:Class="Pact.App.Avalonia.Views.MainWindow"
+        Icon="/Assets/AppIcon.ico"
+        x:CompileBindings="False"
+        Width="1200" Height="760" MinWidth="760" MinHeight="480">
+  <Grid x:Name="RootGrid" Background="{DynamicResource AppPaneBackgroundBrush}"
+        ColumnDefinitions="300,5,*,5,280">
+    <Border Padding="8" BorderBrush="{StaticResource AppPanelBorderBrush}" BorderThickness="0,0,1,0">
+      <views:ProjectTreeView x:Name="ProjectTree" />
+    </Border>
+    <GridSplitter Grid.Column="1" ResizeDirection="Columns" />
+    <Grid x:Name="CenterPane" Grid.Column="2">
+      <views:TerminalPaneView x:Name="TerminalPane" />
+      <views:NotesPaneView x:Name="NotesPane" IsVisible="False" />
+      <views:ScenarioJournalView x:Name="ScenarioJournal" IsVisible="False" />
+      <views:BrowserPaneView x:Name="BrowserPane" IsVisible="False" />
+      <Border x:Name="TerminalLoadingSurface" ZIndex="20"
+              Background="{StaticResource AppPaneBackgroundBrush}" IsVisible="False">
+        <views:MissionControlLoader x:Name="TerminalLoadingIndicator"
+                                    HorizontalAlignment="Center" VerticalAlignment="Center" />
+      </Border>
+      <Border x:Name="PausedPane" Background="{StaticResource AppPaneBackgroundBrush}" IsVisible="False">
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10">
+          <PathIcon Width="28" Height="28" Foreground="{StaticResource AppTextMutedBrush}"
+                    Data="{StaticResource AppPauseIcon}" />
+          <TextBlock HorizontalAlignment="Center" FontSize="18" FontWeight="SemiBold"
+                     Text="Paused" />
+          <TextBlock MaxWidth="360" HorizontalAlignment="Center" TextAlignment="Center"
+                     Foreground="{StaticResource AppTextMutedBrush}"
+                     Text="Use the Resume button in the ROOT row to start this item again." />
+        </StackPanel>
+      </Border>
+      <Border x:Name="EmptyPane" Background="{StaticResource AppPaneBackgroundBrush}" IsVisible="False">
+        <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.7"
+                   Text="Secondary surface selected" />
+      </Border>
+      <views:SelectionActionsPopover x:Name="SelectionActions" ZIndex="40" />
+    </Grid>
+    <GridSplitter x:Name="RightColumnSplitter" Grid.Column="3" ResizeDirection="Columns" />
+    <Border Grid.Column="4" BorderBrush="{StaticResource AppPanelBorderBrush}" BorderThickness="1,0,0,0">
+      <Grid RowDefinitions="*,Auto">
+        <views:RightActionsPanel x:Name="RightActions" />
+        <Border Grid.Row="1" Padding="8" BorderBrush="{StaticResource AppPanelBorderBrush}" BorderThickness="0,1,0,0">
+          <StackPanel Spacing="6">
+            <TextBlock FontWeight="SemiBold" Text="Usage limits" />
+            <Grid ColumnDefinitions="*,32,70,86">
+              <TextBlock FontSize="11" Opacity="0.65" Text="Profile" />
+              <TextBlock Grid.Column="2" FontSize="11" Opacity="0.65" Text="5h limit" />
+              <TextBlock Grid.Column="3" FontSize="11" Opacity="0.65" Text="Weekly limit" />
+            </Grid>
+            <ItemsControl ItemsSource="{Binding SubscriptionUsages}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Grid ColumnDefinitions="*,32,70,86" Margin="0,0,0,6" ToolTip.Tip="{Binding StatusText}">
+                    <TextBlock FontSize="12" VerticalAlignment="Center" Text="{Binding ProfileName}" TextTrimming="CharacterEllipsis" />
+                    <Grid Grid.Column="1" ColumnDefinitions="16,16" VerticalAlignment="Center">
+                      <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" Text="?" IsVisible="{Binding HasRawResponse}"
+                                 ToolTip.Tip="{Binding RawResponseText}" />
+                      <TextBlock Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource AppDangerStrongBrush}" FontWeight="SemiBold"
+                                 Text="!" IsVisible="{Binding HasErrorDetails}" ToolTip.Tip="{Binding ErrorDetailsText}" />
+                    </Grid>
+                    <TextBlock Grid.Column="2" VerticalAlignment="Center" FontFamily="Cascadia Mono, Consolas" FontSize="12"
+                               Text="{Binding FiveHourText}" />
+                    <TextBlock Grid.Column="3" VerticalAlignment="Center" FontFamily="Cascadia Mono, Consolas" FontSize="12"
+                               Text="{Binding WeeklyText}" />
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+      </Grid>
+    </Border>
+    <Border x:Name="BusyOverlay" Grid.ColumnSpan="5" ZIndex="100"
+            Background="{StaticResource AppDimOverlayBrush}" Focusable="True" IsVisible="False">
+      <Border Width="280" MinHeight="260" Padding="18" HorizontalAlignment="Center" VerticalAlignment="Center"
+              Background="{DynamicResource AppPaneBackgroundBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
+              BorderThickness="1" CornerRadius="6">
+        <StackPanel>
+          <views:MissionControlLoader x:Name="BusyOverlayLoader" HorizontalAlignment="Center" />
+          <TextBlock x:Name="BusyOverlayText" Margin="0,12,0,0" FontWeight="SemiBold"
+                     Foreground="{DynamicResource AppTextPrimaryBrush}" Text="Working..." />
+          <Button x:Name="BusyOverlayActionButton" Margin="0,12,0,0" Padding="12,6"
+                  HorizontalAlignment="Stretch" Content="Force close"
+                  HorizontalContentAlignment="Center" VerticalContentAlignment="Center" IsVisible="False"
+                  Click="OnBusyOverlayActionClicked" />
+        </StackPanel>
+      </Border>
+    </Border>
+  </Grid>
+</Window>

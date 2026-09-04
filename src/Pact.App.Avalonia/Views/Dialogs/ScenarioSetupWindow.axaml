@@ -1,0 +1,106 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Pact.App.Avalonia.Views.Dialogs.ScenarioSetupWindow"
+        Icon="/Assets/AppIcon.ico"
+        x:CompileBindings="False"
+        Title="Scenario setup"
+        Width="560"
+        SizeToContent="Height"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource AppPaneBackgroundBrush}"
+        KeyDown="OnWindowKeyDown">
+  <ScrollViewer MaxHeight="760" VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="18">
+      <TextBlock FontSize="18" FontWeight="SemiBold" Text="{Binding ScenarioName}" />
+
+      <TextBlock Margin="0,16,0,6" FontWeight="SemiBold" Text="Steps" />
+      <Border Padding="10" Background="{DynamicResource AppSurfaceBrush}"
+              BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6">
+        <StackPanel>
+          <ItemsControl x:Name="StepsList" ItemsSource="{Binding StepRows}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <TextBlock Margin="0,0,0,6" Text="{Binding Text}" TextWrapping="Wrap" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <TextBlock Margin="0,4,0,0" Foreground="{DynamicResource AppTextMutedBrush}"
+                     TextWrapping="Wrap">
+            <Run Text="⟳ up to " /><Run Text="{Binding MaxIterations}" />
+            <Run Text=" cycles, stop marker: " /><Run Text="{Binding StopMarker}" />
+          </TextBlock>
+        </StackPanel>
+      </Border>
+
+      <TextBlock Margin="0,16,0,6" FontWeight="SemiBold" Text="Roles" />
+      <ItemsControl x:Name="RoleBindingsList" ItemsSource="{Binding RoleBindings}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Grid Margin="0,0,0,8" ColumnDefinitions="120,*">
+              <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="{Binding Role}" />
+              <ComboBox Grid.Column="1" Height="30" ItemsSource="{Binding Candidates}"
+                        SelectedItem="{Binding SelectedSession}">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate><TextBlock Text="{Binding TargetDisplayName}" /></DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+            </Grid>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <TextBlock Margin="0,8,0,6" FontWeight="SemiBold" Text="Target" />
+      <TextBox x:Name="TargetTextBox" Height="96" AcceptsReturn="True" TextWrapping="Wrap"
+               ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+               ScrollViewer.VerticalScrollBarVisibility="Auto" Text="{Binding Target}" />
+      <CheckBox x:Name="SaveTargetCheckBox" Margin="0,10,0,0"
+                Content="Save as default target" IsChecked="{Binding SaveTargetAsDefault}" />
+
+      <Grid Margin="0,14,0,0" ColumnDefinitions="140,90,*">
+        <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="Max iterations" />
+        <TextBox x:Name="MaxIterationsTextBox" Grid.Column="1" Height="30" Text="{Binding MaxIterations}" />
+      </Grid>
+
+      <Grid Margin="0,10,0,0" ColumnDefinitions="140,*">
+        <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="Reviewer instruction" />
+        <ComboBox x:Name="ReviewerInstructionCombo" Grid.Column="1" Height="30"
+                  ItemsSource="{Binding ReviewerInstructionOptions}"
+                  SelectedItem="{Binding SelectedReviewerInstruction}">
+          <ComboBox.ItemTemplate>
+            <DataTemplate><TextBlock Text="{Binding Name}" /></DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+      </Grid>
+      <TextBox x:Name="ReviewerInstructionTextBox" Margin="0,8,0,0" Height="86"
+               AcceptsReturn="True" TextWrapping="Wrap"
+               ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+               ScrollViewer.VerticalScrollBarVisibility="Auto"
+               Text="{Binding ReviewerInstructionText}" />
+
+      <TextBlock x:Name="ValidationText" Margin="0,12,0,0"
+                 Foreground="{DynamicResource AppDangerStrongBrush}"
+                 Text="{Binding ValidationMessage}" TextWrapping="Wrap" />
+      <StackPanel Margin="0,18,0,0" HorizontalAlignment="Right"
+                  Orientation="Horizontal" Spacing="8">
+        <Button x:Name="RunButton" Width="96" Classes="scenario-command"
+                HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                IsDefault="True" IsEnabled="{Binding CanRun}" Click="OnRunClicked">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <PathIcon Width="14" Height="14" Data="{StaticResource AppPlayIcon}" />
+            <TextBlock VerticalAlignment="Center" Text="Run" />
+          </StackPanel>
+        </Button>
+        <Button x:Name="CancelButton" Width="96" Classes="scenario-command"
+                HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                IsCancel="True" Click="OnCancelClicked">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <PathIcon Width="14" Height="14" Data="{StaticResource AppCloseIcon}" />
+            <TextBlock VerticalAlignment="Center" Text="Cancel" />
+          </StackPanel>
+        </Button>
+      </StackPanel>
+    </StackPanel>
+  </ScrollViewer>
+</Window>

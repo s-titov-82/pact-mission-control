@@ -1,0 +1,43 @@
+<Project>
+
+  <!-- Inherit the repo-root common props. -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <!-- Test projects are not products, but their code follows the same analyzer policy.
+       Generate the documentation artifact so build-time IDE0005 analysis can run;
+       public XML comments remain a production-API concern. -->
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <RunAnalyzers>true</RunAnalyzers>
+    <AnalysisMode>All</AnalysisMode>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1574;CS1591</NoWarn>
+  </PropertyGroup>
+
+  <!-- Test packages shared by every test project.
+       coverlet.collector is deliberately NOT here: Pact.App.Avalonia.Tests never
+       referenced it, and adding its data collector to that headless Avalonia suite
+       perturbs timing-sensitive tests. It stays opt-in per project. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="NUnit" />
+    <PackageReference Include="NUnit3TestAdapter" />
+    <PackageReference Include="Shouldly" />
+  </ItemGroup>
+
+  <!-- Global usings shared by every test project. -->
+  <ItemGroup>
+    <Using Include="NUnit.Framework" />
+    <Using Include="Shouldly" />
+  </ItemGroup>
+
+  <!-- Shared test infrastructure is linked into each test assembly without creating
+       another production or helper project. -->
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)TestSupport\**\*.cs"
+             Link="TestSupport\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+</Project>

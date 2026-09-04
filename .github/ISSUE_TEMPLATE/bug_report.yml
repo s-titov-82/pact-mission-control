@@ -1,0 +1,82 @@
+name: Bug report
+description: Report a reproducible defect in PACT:> Mission Control.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not report vulnerabilities here. Follow SECURITY.md and use private vulnerability reporting.
+  - type: input
+    id: app-version
+    attributes:
+      label: Application version
+      description: Release version or source commit.
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: windows-version
+    attributes:
+      label: Windows version and build
+      placeholder: Windows 11 24H2, build 26100.x
+    validations:
+      required: true
+  - type: dropdown
+    id: terminal-profile
+    attributes:
+      label: Terminal profile
+      options:
+        - PowerShell
+        - Codex
+        - Claude
+        - Hermes
+        - Custom
+        - Not terminal-related
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Give the smallest deterministic sequence you can.
+      placeholder: |
+        1. Start PACT:> with...
+        2. Open...
+        3. Observe...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: dropdown
+    id: fresh-data-root
+    attributes:
+      label: Fresh isolated data root
+      description: Does the issue reproduce with a new absolute --data-root?
+      options:
+        - "Yes"
+        - "No"
+        - Not tested
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs or screenshots
+      description: Paste only the smallest relevant evidence. Drag files here if needed.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy confirmation
+      options:
+        - label: I removed credentials, private URLs, personal paths, user data, and account details.
+          required: true

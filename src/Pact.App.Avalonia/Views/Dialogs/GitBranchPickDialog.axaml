@@ -1,0 +1,22 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Pact.App.Avalonia.Views.Dialogs.GitBranchPickDialog"
+        Icon="/Assets/AppIcon.ico"
+        x:CompileBindings="False"
+        Width="540" Height="430" MinWidth="420" MinHeight="320"
+        WindowStartupLocation="CenterOwner">
+  <Grid Margin="16" RowDefinitions="Auto,*,Auto,Auto" RowSpacing="10">
+    <TextBlock x:Name="HelpTextBlock" TextWrapping="Wrap" />
+    <ListBox x:Name="BranchList" Grid.Row="1" ItemsSource="{Binding Branches}"
+             SelectedItem="{Binding SelectedBranch}" />
+    <StackPanel Grid.Row="2" IsVisible="{Binding AllowCreate}" Spacing="5">
+      <TextBlock Text="New local branch" />
+      <TextBox Text="{Binding NewBranchName}" />
+    </StackPanel>
+    <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <Button x:Name="BranchCancelButton" Content="Cancel" IsCancel="True" Click="OnCancelClicked" />
+      <Button x:Name="AcceptButton" IsDefault="True"
+              IsEnabled="{Binding CanAccept}" Click="OnAcceptClicked" />
+    </StackPanel>
+  </Grid>
+</Window>

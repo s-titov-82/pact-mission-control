@@ -1,0 +1,452 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Pact.Presentation.ViewModels;assembly=Pact.Presentation"
+             xmlns:local="clr-namespace:Pact.App.Avalonia.Views"
+             x:Class="Pact.App.Avalonia.Views.ProjectTreeView"
+             x:CompileBindings="False">
+  <UserControl.Resources>
+    <local:TerminalTabIndicatorGlyphConverter x:Key="TerminalTabIndicatorGlyphConverter" />
+    <local:TerminalTabIndicatorVisibleConverter x:Key="TerminalTabIndicatorVisibleConverter" />
+    <local:TerminalTabIndicatorEqualsConverter x:Key="TerminalTabIndicatorEqualsConverter" />
+  </UserControl.Resources>
+  <UserControl.Styles>
+    <Style Selector="Border.orchestrator-tier">
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="Border.orchestrator-tier.current">
+      <Setter Property="Background" Value="{DynamicResource AppAccentSoftBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppAccentBrush}" />
+      <Setter Property="BorderThickness" Value="3,0,0,0" />
+    </Style>
+  </UserControl.Styles>
+  <DockPanel>
+    <Border x:Name="OrchestratorTier" Classes="orchestrator-tier" DockPanel.Dock="Top"
+            Classes.current="{Binding IsCurrent}"
+            Margin="0,0,0,6" Padding="8,6"
+            DataContext="{Binding OrchestratorSlot}"
+            PointerPressed="OnOrchestratorPointerPressed"
+            CornerRadius="4">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel>
+          <TextBlock FontWeight="SemiBold" Text="{Binding Title}" />
+          <TextBlock FontSize="12" Foreground="{DynamicResource AppTextMutedBrush}"
+                     Text="{Binding StateText}" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+          <Button Classes="compact-icon" ToolTip.Tip="Start orchestrator"
+                  IsVisible="{Binding CanStart}" Click="OnStartOrchestratorClicked">
+            <PathIcon Width="12" Height="12" Data="{StaticResource AppPlayIcon}" />
+          </Button>
+          <Button Classes="compact-icon" ToolTip.Tip="Stop orchestrator"
+                  IsVisible="{Binding CanStop}" Click="OnStopOrchestratorClicked">
+            <PathIcon Width="12" Height="12" Data="{StaticResource AppPauseIcon}" />
+          </Button>
+        </StackPanel>
+      </Grid>
+    </Border>
+    <TreeView x:Name="RootTree" DockPanel.Dock="Top" MaxHeight="300"
+              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+        <TreeView.Styles>
+          <Style Selector="TreeViewItem">
+            <Setter Property="IsExpanded" Value="True" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+          </Style>
+          <Style Selector="TreeViewItem /template/ ContentPresenter#PART_HeaderPresenter">
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+          </Style>
+          <Style Selector="Border.current">
+            <Setter Property="Background" Value="{DynamicResource AppAccentSoftBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AppAccentBrush}" />
+            <Setter Property="BorderThickness" Value="3,0,0,0" />
+          </Style>
+          <Style Selector="Border.locked">
+            <Setter Property="Opacity" Value="0.55" />
+          </Style>
+          <Style Selector="Border.leaf-row">
+            <Setter Property="Margin" Value="-20,2,2,2" />
+          </Style>
+          <Style Selector="TextBlock.terminal-status.busy, TextBlock.terminal-status.inputrequested, TextBlock.terminal-status.unread">
+            <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" />
+          </Style>
+          <Style Selector="TreeViewItem /template/ ItemsPresenter#PART_ItemsPresenter">
+            <Setter Property="Margin" Value="4,0,0,0" />
+          </Style>
+          <Style Selector="TextBlock.terminal-status.paused">
+            <Setter Property="Foreground" Value="{DynamicResource AppTextMutedBrush}" />
+          </Style>
+          <Style Selector="TextBlock.terminal-status.failed">
+            <Setter Property="Foreground" Value="{DynamicResource AppDangerBrush}" />
+          </Style>
+        </TreeView.Styles>
+        <TreeView.DataTemplates>
+          <DataTemplate DataType="vm:SessionViewModel">
+            <Border Classes="leaf-row" Padding="4" CornerRadius="4"
+                    DragDrop.AllowDrop="True" DragDrop.DragOver="OnTreeItemDragOver" DragDrop.Drop="OnTreeItemDrop"
+                    PointerPressed="OnTreeItemDragPointerPressed" PointerMoved="OnTreeItemDragPointerMoved"
+                    PointerReleased="OnTreeItemDragPointerReleased"
+                    Classes.current="{Binding IsCurrentTerminal}"
+                    Classes.locked="{Binding IsLockedByScenario}">
+              <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+                <Grid x:Name="SessionStatusIndicator" Width="16" Margin="0,1,4,0"
+                      IsVisible="{Binding ShowStatusIndicator}">
+                  <TextBlock x:Name="SessionPrimaryIndicator" Classes="terminal-status"
+                             FontFamily="Cascadia Mono, Consolas, monospace"
+                             Classes.busy="{Binding Indicator, Converter={StaticResource TerminalTabIndicatorEqualsConverter}, ConverterParameter=Busy}"
+                             Classes.inputrequested="{Binding Indicator, Converter={StaticResource TerminalTabIndicatorEqualsConverter}, ConverterParameter=InputRequested}"
+                             Classes.unread="{Binding Indicator, Converter={StaticResource TerminalTabIndicatorEqualsConverter}, ConverterParameter=Unread}"
+                             Classes.paused="{Binding Indicator, Converter={StaticResource TerminalTabIndicatorEqualsConverter}, ConverterParameter=Paused}"
+                             Classes.failed="{Binding Indicator, Converter={StaticResource TerminalTabIndicatorEqualsConverter}, ConverterParameter=Failed}"
+                             Text="{Binding Indicator, Converter={StaticResource TerminalTabIndicatorGlyphConverter}}"
+                             IsVisible="{Binding Indicator, Converter={StaticResource TerminalTabIndicatorVisibleConverter}}" />
+                  <PathIcon x:Name="SessionPausedIndicator"
+                            Width="12" Height="12" Margin="0,1,4,0"
+                            Foreground="{StaticResource AppTextMutedBrush}"
+                            Data="{StaticResource AppPauseIcon}"
+                            IsVisible="{Binding ShowPausedIndicator}" />
+                </Grid>
+                <TextBlock Grid.Column="1" Width="16" Margin="0,1,4,0"
+                           Foreground="{StaticResource AppScenarioLockBrush}"
+                           Text="⚙" IsVisible="{Binding IsLockedByScenario}" />
+                <StackPanel Grid.Column="2">
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                    <TextBlock FontWeight="SemiBold" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Grid.Column="1" FontSize="11" Foreground="{StaticResource AppAccentBrush}"
+                               Text="{Binding TerminalKind}" />
+                  </Grid>
+                  <TextBlock FontSize="12" Foreground="{StaticResource AppTextMutedBrush}"
+                             Text="{Binding StatusDescription}" TextTrimming="CharacterEllipsis" />
+                  <TextBlock FontSize="12" Foreground="{StaticResource AppTextMutedBrush}"
+                             Text="{Binding WorkingDirectoryText}" TextTrimming="CharacterEllipsis"
+                             IsVisible="{Binding ShowWorkingDirectory}" />
+                </StackPanel>
+                <StackPanel Grid.Column="3" Margin="8,0,12,0" Orientation="Horizontal" Spacing="4">
+                  <Button Classes="compact-icon" ToolTip.Tip="Edit session settings"
+                          Click="OnEditSessionClicked">
+                    <PathIcon Width="12" Height="12" Data="{StaticResource AppEditIcon}" />
+                  </Button>
+                  <Button Classes="compact-icon" ToolTip.Tip="Restart session"
+                          IsVisible="{Binding CanResetAgentSession}" Click="OnRestartSessionMenuClicked">
+                    <PathIcon Width="12" Height="12" Data="{StaticResource AppRefreshIcon}" />
+                    <Button.Flyout>
+                      <MenuFlyout>
+                        <MenuItem Header="Start new" Click="OnStartNewSessionClicked" />
+                        <MenuItem Header="Restart current" Click="OnRestartCurrentSessionClicked" />
+                      </MenuFlyout>
+                    </Button.Flyout>
+                  </Button>
+                  <Button Classes="compact-icon" ToolTip.Tip="Pause session"
+                          IsVisible="{Binding CanPause}" Click="OnPauseRootSessionClicked">
+                    <PathIcon Width="12" Height="12" Data="{StaticResource AppPauseIcon}" />
+                  </Button>
+                  <Button Classes="compact-icon" ToolTip.Tip="Resume session"
+                          IsVisible="{Binding CanResume}" Click="OnResumeRootSessionClicked">
+                    <PathIcon Width="12" Height="12" Data="{StaticResource AppPlayIcon}" />
+                  </Button>
+                  <Button Classes="compact-icon" ToolTip.Tip="Close session"
+                          Click="OnCloseSessionRowClicked">
+                    <PathIcon Width="12" Height="12" Data="{StaticResource AppCloseIcon}" />
+                  </Button>
+                </StackPanel>
+              </Grid>
+            </Border>
+          </DataTemplate>
+          <DataTemplate DataType="vm:WebPageViewModel">
+            <Border Classes="leaf-row" Padding="4" CornerRadius="4"
+                    DragDrop.AllowDrop="True" DragDrop.DragOver="OnTreeItemDragOver" DragDrop.Drop="OnTreeItemDrop"
+                    Classes.current="{Binding IsCurrentBrowser}"
+                    PointerPressed="OnTreeItemDragPointerPressed" PointerMoved="OnTreeItemDragPointerMoved"
+                    PointerReleased="OnTreeItemDragPointerReleased"
+                    ToolTip.Tip="{Binding AddressToolTip}" ToolTip.ShowDelay="500">
+              <Grid Background="Transparent" ColumnDefinitions="Auto,*,Auto">
+                <Grid x:Name="WebPageStatusIndicator" ToolTip.Tip="{Binding MonitorToolTip}">
+                  <TextBlock x:Name="WebPageLoadingIndicator" Margin="0,1,4,0"
+                             Foreground="{StaticResource AppAccentBrush}" Text="{Binding LoadingGlyph}"
+                             ToolTip.Tip="Loading web page" IsVisible="{Binding IsLoading}" />
+                  <TextBlock x:Name="WebPageActivityIndicator" Classes="terminal-status busy"
+                             Margin="0,1,4,0"
+                             FontFamily="Cascadia Mono, Consolas, monospace"
+                             Text="{Binding LoadingGlyph}" ToolTip.Tip="{Binding MonitorToolTip}"
+                             IsVisible="{Binding ShowMonitorActivity}" />
+                  <TextBlock x:Name="WebPageUnreadIndicator" Classes="terminal-status unread"
+                             Margin="0,1,4,0" Text="●" ToolTip.Tip="{Binding MonitorToolTip}"
+                             IsVisible="{Binding ShowMonitorUnread}" />
+                  <PathIcon x:Name="WebPagePausedIndicator" Width="12" Height="12"
+                            Margin="0,1,4,0" Foreground="{StaticResource AppTextMutedBrush}"
+                            Data="{StaticResource AppPauseIcon}" ToolTip.Tip="{Binding MonitorToolTip}"
+                            IsVisible="{Binding ShowMonitorPaused}" />
+                </Grid>
+                <StackPanel Grid.Column="1">
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                    <TextBlock FontWeight="SemiBold" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Grid.Column="1" FontSize="11" Foreground="{StaticResource AppAccentBrush}"
+                               Text="{Binding PageKind}" />
+                  </Grid>
+                  <TextBlock FontSize="12" Foreground="{StaticResource AppTextMutedBrush}"
+                             Text="{Binding DisplayAddress}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <StackPanel Grid.Column="2" Margin="8,0,12,0" Orientation="Horizontal" Spacing="4">
+                  <Button Classes="compact-icon" ToolTip.Tip="Edit web page settings"
+                          Click="OnEditWebPageClicked">
+                    <PathIcon Width="12" Height="12" Data="{StaticResource AppEditIcon}" />
+                  </Button>
+                  <Button Classes="compact-icon" ToolTip.Tip="Reload web page"
+                          IsVisible="{Binding CanPause}" Click="OnReloadWebPageClicked">
+                    <PathIcon Width="12" Height="12" Data="{StaticResource AppRefreshIcon}" />
+                  </Button>
+                  <Button Classes="compact-icon" ToolTip.Tip="Pause web page"
+                          IsVisible="{Binding CanPause}" Click="OnPauseRootWebPageClicked">
+                    <PathIcon Width="12" Height="12" Data="{StaticResource AppPauseIcon}" />
+                  </Button>
+                  <Button Classes="compact-icon" ToolTip.Tip="Resume web page"
+                          IsVisible="{Binding CanResume}" Click="OnResumeRootWebPageClicked">
+                    <PathIcon Width="12" Height="12" Data="{StaticResource AppPlayIcon}" />
+                  </Button>
+                  <Button Classes="compact-icon" ToolTip.Tip="Close web page"
+                          Click="OnCloseWebPageClicked">
+                    <PathIcon Width="12" Height="12" Data="{StaticResource AppCloseIcon}" />
+                  </Button>
+                </StackPanel>
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </TreeView.DataTemplates>
+      <TreeView.Items>
+        <TreeViewItem x:Name="RootSectionItem" Margin="-16,0,0,0"
+                      DataContext="{Binding RootTabs}"
+                      ItemsSource="{Binding TreeItems}" IsExpanded="True">
+          <TreeViewItem.Header>
+            <Grid Margin="2" ColumnDefinitions="*,Auto" HorizontalAlignment="Stretch">
+              <TextBlock x:Name="RootHeaderText" FontWeight="SemiBold"
+                         VerticalAlignment="Center" Text="ROOT" />
+              <StackPanel x:Name="RootSectionActions" Grid.Column="1"
+                          Margin="8,0,0,0" HorizontalAlignment="Right"
+                          VerticalAlignment="Center"
+                          Orientation="Horizontal" Spacing="4">
+                <Button x:Name="AddRootSessionButton" Classes="compact-icon"
+                        IsEnabled="False" ToolTip.Tip="Add ROOT terminal"
+                        Click="OnAddRootSessionClicked">
+                  <PathIcon Width="12" Height="12" Data="{StaticResource AppAddIcon}" />
+                </Button>
+                <Button x:Name="AddRootWebPageButton" Classes="compact-icon"
+                        IsEnabled="False" ToolTip.Tip="Add ROOT web page"
+                        Click="OnAddRootWebPageClicked">
+                  <PathIcon Width="12" Height="12" Data="{StaticResource AppAtSignIcon}" />
+                </Button>
+              </StackPanel>
+            </Grid>
+          </TreeViewItem.Header>
+        </TreeViewItem>
+      </TreeView.Items>
+    </TreeView>
+    <DockPanel DockPanel.Dock="Top">
+      <Button x:Name="AddProjectButton" Classes="compact-icon" DockPanel.Dock="Right"
+              IsEnabled="False" ToolTip.Tip="Add project" Click="OnAddProjectClicked"><PathIcon Width="12" Height="12" Data="{StaticResource AppAddIcon}" /></Button>
+      <Button x:Name="PausedProjectsButton" Classes="compact-icon" DockPanel.Dock="Right"
+              Margin="0,0,8,0" IsEnabled="False" ToolTip.Tip="Paused projects"><PathIcon Width="12" Height="12" Data="{StaticResource AppPauseIcon}" />
+        <Button.Flyout>
+          <Flyout Placement="Bottom">
+            <ItemsControl x:Name="PausedWorkspacesList" ItemsSource="{Binding PausedWorkspaces}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                          Background="Transparent" Click="OnPausedProjectClicked">
+                    <StackPanel MinWidth="180">
+                      <TextBlock FontWeight="SemiBold" Text="{Binding Name}" />
+                      <TextBlock FontSize="11" Foreground="{StaticResource AppTextMutedBrush}" Text="{Binding RootPath}" />
+                    </StackPanel>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </Flyout>
+        </Button.Flyout>
+      </Button>
+      <TextBlock x:Name="ProjectsHeaderText" FontWeight="SemiBold" VerticalAlignment="Center" Text="PROJECTS" />
+    </DockPanel>
+    <TreeView x:Name="ProjectTree" Margin="0,12,0,0" ItemsSource="{Binding Workspaces}"
+              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+    <TreeView.Styles>
+      <Style Selector="TreeViewItem">
+        <Setter Property="IsExpanded" Value="True" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+      </Style>
+      <Style Selector="TreeViewItem /template/ ContentPresenter#PART_HeaderPresenter">
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+      </Style>
+      <Style Selector="Button.notes-open">
+        <Setter Property="Background" Value="{DynamicResource AppAccentSoftBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource AppAccentBrush}" />
+      </Style>
+      <Style Selector="Border.current">
+        <Setter Property="Background" Value="{DynamicResource AppAccentSoftBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource AppAccentBrush}" />
+        <Setter Property="BorderThickness" Value="3,0,0,0" />
+      </Style>
+      <Style Selector="Border.locked">
+        <Setter Property="Opacity" Value="0.55" />
+      </Style>
+      <Style Selector="Border.leaf-row">
+        <Setter Property="Margin" Value="-20,2,2,2" />
+      </Style>
+      <Style Selector="TextBlock.terminal-status.busy, TextBlock.terminal-status.inputrequested, TextBlock.terminal-status.unread">
+        <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" />
+      </Style>
+      <Style Selector="TreeViewItem /template/ ItemsPresenter#PART_ItemsPresenter">
+        <Setter Property="Margin" Value="4,0,0,0" />
+      </Style>
+      <Style Selector="TextBlock.terminal-status.paused">
+        <Setter Property="Foreground" Value="{DynamicResource AppTextMutedBrush}" />
+      </Style>
+      <Style Selector="TextBlock.terminal-status.failed">
+        <Setter Property="Foreground" Value="{DynamicResource AppDangerBrush}" />
+      </Style>
+    </TreeView.Styles>
+    <TreeView.DataTemplates>
+      <TreeDataTemplate DataType="vm:WorkspaceViewModel" ItemsSource="{Binding TreeItems}">
+        <Grid Margin="2" RowDefinitions="Auto,Auto" HorizontalAlignment="Stretch">
+          <StackPanel Grid.Row="0">
+            <TextBlock FontWeight="SemiBold" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+            <TextBlock FontSize="11" Opacity="0.65" Text="{Binding RootPath}"
+                       TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+          <StackPanel x:Name="ProjectCardActions" Grid.Row="1"
+                      Margin="0,4,16,0" HorizontalAlignment="Right"
+                      Orientation="Horizontal" Spacing="4">
+            <Button Classes="compact-icon" ToolTip.Tip="Edit project settings" Click="OnEditProjectClicked"><PathIcon Width="12" Height="12" Data="{StaticResource AppEditIcon}" /></Button>
+            <Button Classes="compact-icon" ToolTip.Tip="Git" IsVisible="{Binding IsGitRepository}" Click="OnProjectGitClicked"><PathIcon Width="12" Height="12" Data="{StaticResource AppGitIcon}" /></Button>
+            <Button Classes="compact-icon" ToolTip.Tip="Add terminal" Click="OnAddSessionClicked"><PathIcon Width="12" Height="12" Data="{StaticResource AppAddIcon}" /></Button>
+            <Button Classes="compact-icon" ToolTip.Tip="Add web page" Click="OnAddWebPageClicked"><PathIcon Width="12" Height="12" Data="{StaticResource AppAtSignIcon}" /></Button>
+            <Button Classes="compact-icon" ToolTip.Tip="Show/hide project docs and notes"
+                    Classes.notes-open="{Binding IsNotesTabOpen}" Click="OnNotesToggleClicked"><PathIcon Width="12" Height="12" Data="{StaticResource AppNotesIcon}" /></Button>
+            <Button Classes="compact-icon" ToolTip.Tip="Pause project" Click="OnPauseProjectClicked"><PathIcon Width="12" Height="12" Data="{StaticResource AppPauseIcon}" /></Button>
+            <Button Classes="compact-icon" ToolTip.Tip="Close project" Click="OnCloseProjectClicked"><PathIcon Width="12" Height="12" Data="{StaticResource AppCloseIcon}" /></Button>
+          </StackPanel>
+        </Grid>
+      </TreeDataTemplate>
+      <DataTemplate DataType="vm:SessionViewModel">
+        <Border Classes="leaf-row" Padding="4" CornerRadius="4"
+                DragDrop.AllowDrop="True" DragDrop.DragOver="OnTreeItemDragOver" DragDrop.Drop="OnTreeItemDrop"
+                PointerPressed="OnTreeItemDragPointerPressed" PointerMoved="OnTreeItemDragPointerMoved"
+                PointerReleased="OnTreeItemDragPointerReleased"
+                Classes.current="{Binding IsCurrentTerminal}"
+                Classes.locked="{Binding IsLockedByScenario}">
+          <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+            <Grid x:Name="SessionStatusIndicator" Width="16" Margin="0,1,4,0"
+                  IsVisible="{Binding ShowStatusIndicator}">
+              <TextBlock x:Name="SessionPrimaryIndicator" Classes="terminal-status"
+                         FontFamily="Cascadia Mono, Consolas, monospace"
+                         Classes.busy="{Binding Indicator, Converter={StaticResource TerminalTabIndicatorEqualsConverter}, ConverterParameter=Busy}"
+                         Classes.inputrequested="{Binding Indicator, Converter={StaticResource TerminalTabIndicatorEqualsConverter}, ConverterParameter=InputRequested}"
+                         Classes.unread="{Binding Indicator, Converter={StaticResource TerminalTabIndicatorEqualsConverter}, ConverterParameter=Unread}"
+                         Classes.paused="{Binding Indicator, Converter={StaticResource TerminalTabIndicatorEqualsConverter}, ConverterParameter=Paused}"
+                         Classes.failed="{Binding Indicator, Converter={StaticResource TerminalTabIndicatorEqualsConverter}, ConverterParameter=Failed}"
+                         Text="{Binding Indicator, Converter={StaticResource TerminalTabIndicatorGlyphConverter}}"
+                         IsVisible="{Binding Indicator, Converter={StaticResource TerminalTabIndicatorVisibleConverter}}" />
+              <PathIcon x:Name="SessionPausedIndicator"
+                        Width="12" Height="12" Margin="0,1,4,0"
+                        Foreground="{StaticResource AppTextMutedBrush}"
+                        Data="{StaticResource AppPauseIcon}"
+                        IsVisible="{Binding ShowPausedIndicator}" />
+            </Grid>
+            <TextBlock Grid.Column="1" Width="16" Margin="0,1,4,0"
+                       Foreground="{StaticResource AppScenarioLockBrush}"
+                       Text="⚙" IsVisible="{Binding IsLockedByScenario}" />
+            <StackPanel Grid.Column="2">
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                <TextBlock FontWeight="SemiBold" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                <TextBlock Grid.Column="1" FontSize="11" Foreground="{StaticResource AppAccentBrush}"
+                           Text="{Binding TerminalKind}" />
+              </Grid>
+              <TextBlock x:Name="SessionStatusDescription"
+                         FontSize="12" Foreground="{StaticResource AppTextMutedBrush}"
+                         Text="{Binding StatusDescription}" TextTrimming="CharacterEllipsis" />
+              <TextBlock FontSize="12" Foreground="{StaticResource AppTextMutedBrush}"
+                         Text="{Binding WorkingDirectoryText}" TextTrimming="CharacterEllipsis"
+                         IsVisible="{Binding ShowWorkingDirectory}" />
+            </StackPanel>
+            <StackPanel Grid.Column="3" Margin="8,0,12,0" Orientation="Horizontal" Spacing="4">
+              <Button Classes="compact-icon" ToolTip.Tip="Edit session settings" Click="OnEditSessionClicked"><PathIcon Width="12" Height="12" Data="{StaticResource AppEditIcon}" /></Button>
+              <Button Classes="compact-icon" ToolTip.Tip="Restart session"
+                      IsVisible="{Binding CanResetAgentSession}" Click="OnRestartSessionMenuClicked">
+                <PathIcon Width="12" Height="12" Data="{StaticResource AppRefreshIcon}" />
+                <Button.Flyout>
+                  <MenuFlyout>
+                    <MenuItem Header="Start new" Click="OnStartNewSessionClicked" />
+                    <MenuItem Header="Restart current" Click="OnRestartCurrentSessionClicked" />
+                  </MenuFlyout>
+                </Button.Flyout>
+              </Button>
+              <Button Classes="compact-icon" ToolTip.Tip="Close session" Click="OnCloseSessionRowClicked"><PathIcon Width="12" Height="12" Data="{StaticResource AppCloseIcon}" /></Button>
+            </StackPanel>
+          </Grid>
+        </Border>
+      </DataTemplate>
+      <DataTemplate DataType="vm:WebPageViewModel">
+        <Border Classes="leaf-row" Padding="4" CornerRadius="4" Classes.current="{Binding IsCurrentBrowser}"
+                DragDrop.AllowDrop="True" DragDrop.DragOver="OnTreeItemDragOver" DragDrop.Drop="OnTreeItemDrop"
+                PointerPressed="OnTreeItemDragPointerPressed" PointerMoved="OnTreeItemDragPointerMoved"
+                PointerReleased="OnTreeItemDragPointerReleased"
+                ToolTip.Tip="{Binding AddressToolTip}" ToolTip.ShowDelay="500">
+          <Grid Background="Transparent" ColumnDefinitions="Auto,*,Auto">
+            <Grid x:Name="WebPageStatusIndicator" ToolTip.Tip="{Binding MonitorToolTip}">
+              <TextBlock x:Name="WebPageLoadingIndicator" Margin="0,1,4,0"
+                         Foreground="{StaticResource AppAccentBrush}" Text="{Binding LoadingGlyph}"
+                         ToolTip.Tip="Loading web page" IsVisible="{Binding IsLoading}" />
+              <TextBlock x:Name="WebPageActivityIndicator" Classes="terminal-status busy"
+                         Margin="0,1,4,0" FontFamily="Cascadia Mono, Consolas, monospace"
+                         Text="{Binding LoadingGlyph}" ToolTip.Tip="{Binding MonitorToolTip}"
+                         IsVisible="{Binding ShowMonitorActivity}" />
+              <TextBlock x:Name="WebPageUnreadIndicator" Classes="terminal-status unread"
+                         Margin="0,1,4,0" Text="●" ToolTip.Tip="{Binding MonitorToolTip}"
+                         IsVisible="{Binding ShowMonitorUnread}" />
+              <PathIcon x:Name="WebPagePausedIndicator" Width="12" Height="12" Margin="0,1,4,0"
+                        Foreground="{StaticResource AppTextMutedBrush}" Data="{StaticResource AppPauseIcon}"
+                        ToolTip.Tip="{Binding MonitorToolTip}"
+                        IsVisible="{Binding ShowMonitorPaused}" />
+            </Grid>
+            <StackPanel Grid.Column="1">
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                <TextBlock FontWeight="SemiBold" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                <TextBlock Grid.Column="1" FontSize="11" Foreground="{StaticResource AppAccentBrush}"
+                           Text="{Binding PageKind}" />
+              </Grid>
+              <TextBlock FontSize="12" Foreground="{StaticResource AppTextMutedBrush}"
+                         Text="{Binding DisplayAddress}" TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+            <StackPanel Grid.Column="2" Margin="8,0,12,0" Orientation="Horizontal" Spacing="4">
+              <Button Classes="compact-icon" ToolTip.Tip="Reload web page" Click="OnReloadWebPageClicked"><PathIcon Width="12" Height="12" Data="{StaticResource AppRefreshIcon}" /></Button>
+              <Button Classes="compact-icon" ToolTip.Tip="Close web page" Click="OnCloseWebPageClicked"><PathIcon Width="12" Height="12" Data="{StaticResource AppCloseIcon}" /></Button>
+            </StackPanel>
+          </Grid>
+        </Border>
+      </DataTemplate>
+      <DataTemplate DataType="vm:ScenarioRunViewModel">
+        <Border Classes="leaf-row" Padding="4" CornerRadius="4"
+                Classes.current="{Binding IsCurrentScenario}">
+          <StackPanel Orientation="Horizontal" Spacing="4">
+            <TextBlock Width="16" Foreground="{StaticResource AppScenarioLockBrush}" Text="⚙" />
+            <PathIcon Width="12" Height="12" Margin="0,1,0,0"
+                      Foreground="{StaticResource AppTextMutedBrush}"
+                      Data="{StaticResource AppPauseIcon}"
+                      IsVisible="{Binding ShowPauseIcon}" />
+            <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+        </Border>
+      </DataTemplate>
+      <DataTemplate DataType="vm:ProjectNoteViewModel">
+        <Border Classes="leaf-row" Padding="4" CornerRadius="4" Classes.current="{Binding IsCurrentNote}">
+          <Grid ColumnDefinitions="*,Auto,Auto">
+            <TextBlock FontWeight="SemiBold" Text="{Binding Title}" />
+            <TextBlock Grid.Column="1" Margin="8,1,0,0" FontSize="11"
+                       Foreground="{StaticResource AppAccentBrush}" Text="{Binding PageKind}" />
+            <Button Grid.Column="2" Classes="compact-icon" Margin="8,0,12,0"
+                    ToolTip.Tip="Hide notes" Click="OnCloseNoteClicked"><PathIcon Width="12" Height="12" Data="{StaticResource AppCloseIcon}" /></Button>
+          </Grid>
+        </Border>
+      </DataTemplate>
+    </TreeView.DataTemplates>
+  </TreeView>
+  </DockPanel>
+</UserControl>

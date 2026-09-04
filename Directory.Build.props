@@ -1,0 +1,39 @@
+<Project>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <VersionPrefix>0.1.0</VersionPrefix>
+    <Authors>Sergei Titov</Authors>
+    <Company>Sergei Titov</Company>
+    <Product>PACT:&gt; Mission Control</Product>
+    <Description>Windows mission control for persistent terminal-based AI agent sessions.</Description>
+    <Copyright>Copyright (c) 2026 Sergei Titov</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/s-titov-82/pact-mission-control</RepositoryUrl>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditMode>all</NuGetAuditMode>
+  </PropertyGroup>
+
+  <!-- Analyzer, style, and documentation enforcement. Test projects opt out in
+       tests/Directory.Build.props, which is scoped by folder rather than by a
+       name regex. CS1591 is deliberately absent from NoWarn: XML documentation
+       is required on every public member in src. -->
+  <PropertyGroup>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <AnalysisLevel>latest-all</AnalysisLevel>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <CodeAnalysisTreatWarningsAsErrors>true</CodeAnalysisTreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!-- Suppressions live in one reviewable file rather than inline #pragma. -->
+  <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)GlobalSuppressions.cs')">
+    <Compile Include="$(MSBuildThisFileDirectory)GlobalSuppressions.cs" Link="GlobalSuppressions.cs" />
+  </ItemGroup>
+
+</Project>

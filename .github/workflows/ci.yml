@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-2025
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
+
+      - name: Restore local tools
+        shell: pwsh
+        run: dotnet tool restore --disable-parallel
+
+      - name: Restore locked dependencies
+        shell: pwsh
+        run: dotnet restore Pact.slnx --disable-parallel --locked-mode
+
+      - name: Build
+        shell: pwsh
+        run: dotnet build Pact.slnx --no-restore -m:2 -nr:false -v q -p:BuildInParallel=false
+
+      - name: Run test projects sequentially
+        shell: pwsh
+        run: |
+          dotnet test tests/Pact.Core.Tests/Pact.Core.Tests.csproj --no-build --no-restore -m:1 -nr:false -- NUnit.NumberOfTestWorkers=2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet test tests/Pact.Infrastructure.Tests/Pact.Infrastructure.Tests.csproj --no-build --no-restore -m:1 -nr:false --filter "TestCategory!=NativeIntegration" -- NUnit.NumberOfTestWorkers=2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet test tests/Pact.Presentation.Tests/Pact.Presentation.Tests.csproj --no-build --no-restore -m:1 -nr:false -- NUnit.NumberOfTestWorkers=2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet test tests/Pact.App.Avalonia.Tests/Pact.App.Avalonia.Tests.csproj --no-build --no-restore -m:1 -nr:false -- NUnit.NumberOfTestWorkers=2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run bundled ConPTY integration tests
+        shell: pwsh
+        run: |
+          dotnet test tests/Pact.Infrastructure.Tests/Pact.Infrastructure.Tests.csproj --no-build --no-restore -m:1 -nr:false --filter "TestCategory=NativeIntegration" -- NUnit.NumberOfTestWorkers=2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Validate native WebView evidence contract
+        shell: pwsh
+        run: |
+          ./tools/Invoke-NativeWebViewGate.ps1 -SelfTest
+          Write-Output "Native WebView gate: NOT RUN (interactive gate)"
+
+      - name: Verify vendored xterm assets
+        shell: pwsh
+        run: ./tools/Sync-XtermAssets.ps1 -Verify
+
+      - name: Validate public documentation boundary
+        shell: pwsh
+        run: |
+          ./tools/Test-MarkdownLinks.ps1 -SelfTest
+          ./tools/Test-MarkdownLinks.ps1
+          ./tests/powershell/Test-PublicTree.Tests.ps1
+          ./tools/Test-PublicTree.ps1
+          ./tests/powershell/PactSbom.Tests.ps1 -ModulePath ./tools/PactSbom.psm1 -TemporaryRoot ./artifacts/sbom-selftest
+
+      - name: Validate workflow contracts
+        shell: pwsh
+        run: |
+          ./tools/Test-WorkflowContracts.ps1 -SelfTest
+          ./tools/Test-WorkflowContracts.ps1 -CiWorkflow .github/workflows/ci.yml
+
+      - name: Package unsigned release
+        shell: pwsh
+        run: ./tools/Publish-Pact.ps1 -Version 0.1.0 -RepositoryUrl "${{ github.server_url }}/${{ github.repository }}" -AuthenticodeStatus Unsigned
+
+      - name: Validate release artifacts
+        shell: pwsh
+        run: ./tools/Test-PublicationArtifacts.ps1 -Version 0.1.0 -ReleaseDirectory artifacts/release/0.1.0 -ExpectedAuthenticodeStatus Unsigned
+
+      - name: Upload validated release
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: pact-mission-control-0.1.0-win-x64
+          path: artifacts/release/0.1.0/
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,17 @@
+* text=auto eol=lf
+
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+*.png binary
+*.gif binary
+*.ico binary
+*.dll binary
+*.exe binary
+
+/docs/superpowers/** export-ignore
+/docs/backlog/** export-ignore
+/.git-blame-ignore-revs export-ignore
+/tools/New-PublicRepository.ps1 export-ignore
+/tools/Test-PublicRepository.ps1 export-ignore
+/tests/powershell/Test-PublicRepository.Tests.ps1 export-ignore

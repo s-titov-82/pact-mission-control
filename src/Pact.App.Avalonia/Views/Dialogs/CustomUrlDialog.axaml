@@ -1,0 +1,38 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Pact.App.Avalonia.Views.Dialogs.CustomUrlDialog"
+        Icon="/Assets/AppIcon.ico"
+        Title="Open Custom URL"
+        Width="520"
+        SizeToContent="Height"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource AppPaneBackgroundBrush}">
+  <Grid Margin="20" RowDefinitions="Auto,Auto,Auto">
+    <TextBlock FontWeight="SemiBold"
+               Foreground="{DynamicResource AppTextPrimaryBrush}"
+               Text="HTTP(S) address" />
+    <TextBox x:Name="UrlTextBox"
+             Grid.Row="1"
+             Margin="0,10,0,0"
+             PlaceholderText="https://example.com/path" />
+    <Grid Grid.Row="2" Margin="0,12,0,0" ColumnDefinitions="*,Auto,Auto">
+      <TextBlock x:Name="ValidationText"
+                 VerticalAlignment="Center"
+                 Foreground="{DynamicResource AppDangerStrongBrush}"
+                 TextWrapping="Wrap" />
+      <Button Grid.Column="1"
+              MinWidth="80"
+              IsCancel="True"
+              Content="Cancel"
+              Click="OnCancelClicked" />
+      <Button Grid.Column="2"
+              MinWidth="80"
+              Margin="8,0,0,0"
+              IsDefault="True"
+              Content="Open"
+              Click="OnOpenClicked" />
+    </Grid>
+  </Grid>
+</Window>

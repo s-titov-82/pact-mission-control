@@ -1,0 +1,89 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Pact.Presentation.ViewModels;assembly=Pact.Presentation"
+             x:Class="Pact.App.Avalonia.Views.RightActionsPanel"
+             x:CompileBindings="False">
+  <Grid Margin="20,18" RowDefinitions="Auto,*">
+    <DockPanel>
+      <Button x:Name="SettingsButton" DockPanel.Dock="Right" Width="34" Height="30" Padding="0"
+              HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+              ToolTip.Tip="Settings" Click="OnSettingsClicked"><PathIcon Width="16" Height="16" Data="{StaticResource AppSettingsIcon}" /></Button>
+      <TextBlock FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource AppTextPrimaryBrush}"
+                 VerticalAlignment="Center" Text="Actions" />
+    </DockPanel>
+    <Grid x:Name="DefaultActionsPanel" Grid.Row="1" RowDefinitions="Auto,0,Auto,*,Auto">
+      <StackPanel>
+        <TextBlock Margin="0,20,0,0" FontWeight="SemiBold" Text="Scenarios" />
+        <ScrollViewer MaxHeight="200" VerticalScrollBarVisibility="Auto">
+          <ItemsControl x:Name="ScenarioActionsList" Margin="0,8,0,0" ItemsSource="{Binding ScenarioDefinitions}">
+            <ItemsControl.ItemTemplate><DataTemplate>
+              <Button Height="32" Margin="0,0,0,6" Padding="10,0"
+                      HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Content="{Binding Name}"
+                      Click="OnScenarioClicked" />
+            </DataTemplate></ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </StackPanel>
+      <Grid x:Name="DocumentsSection" Grid.Row="1" Margin="0,20,0,0"
+            RowDefinitions="Auto,*" IsVisible="False">
+        <TextBlock FontWeight="SemiBold" Text="Documents" />
+        <TreeView x:Name="DocumentTree" Grid.Row="1" Margin="0,8,0,0"
+                  SelectionChanged="OnDocumentTreeSelectionChanged">
+          <TreeView.Styles>
+            <Style Selector="TreeViewItem">
+              <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+            </Style>
+          </TreeView.Styles>
+          <TreeView.ItemTemplate>
+            <TreeDataTemplate x:DataType="vm:MarkdownTreeNodeViewModel" ItemsSource="{Binding Children}">
+              <StackPanel Orientation="Horizontal" Spacing="6" Background="Transparent"
+                          Tapped="OnDocumentRowTapped">
+                <PathIcon Width="12" Height="12" VerticalAlignment="Center"
+                          Data="{StaticResource AppFolderIcon}"
+                          IsVisible="{Binding IsFolder}" />
+                <TextBlock Text="{Binding Title}" ToolTip.Tip="{Binding RelativePath}"
+                           TextTrimming="CharacterEllipsis" />
+              </StackPanel>
+            </TreeDataTemplate>
+          </TreeView.ItemTemplate>
+        </TreeView>
+      </Grid>
+      <StackPanel Grid.Row="2">
+        <TextBlock Margin="0,20,0,0" FontWeight="SemiBold" Text="Quick actions" />
+        <ScrollViewer MaxHeight="200" VerticalScrollBarVisibility="Auto">
+          <ItemsControl x:Name="QuickActionsList" Margin="0,8,0,0" ItemsSource="{Binding VisibleQuickActions}">
+            <ItemsControl.ItemTemplate><DataTemplate>
+              <Button Height="32" Margin="0,0,0,6" Padding="10,0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                      Content="{Binding Name}" Click="OnQuickActionClicked" />
+            </DataTemplate></ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </StackPanel>
+      <Grid x:Name="SelectedTabDetailsSection" Grid.Row="3" Margin="0,24,0,0"
+            RowDefinitions="Auto,Auto,*" IsVisible="False">
+        <SelectableTextBlock FontWeight="SemiBold" Text="{Binding Heading}" />
+        <SelectableTextBlock Grid.Row="1" Margin="0,4,0,0"
+                             Foreground="{DynamicResource AppTextMutedBrush}" Text="{Binding Title}"
+                             TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Title}" />
+        <ScrollViewer x:Name="SelectedTabDetailsScroller" Grid.Row="2" Margin="0,8,0,0"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+          <ItemsControl x:Name="SelectedTabDetailsRows" ItemsSource="{Binding Rows}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Grid ColumnDefinitions="92,*" Margin="0,0,0,5">
+                  <SelectableTextBlock FontSize="11" Foreground="{DynamicResource AppTextFaintBrush}"
+                                       Text="{Binding Label}" />
+                  <SelectableTextBlock Grid.Column="1" FontSize="11" TextWrapping="Wrap"
+                                       Text="{Binding Value}" ToolTip.Tip="{Binding ToolTip}" />
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </Grid>
+      <TextBlock x:Name="StatusText" Grid.Row="4" Margin="0,16,0,0" IsVisible="False"
+                 Foreground="{DynamicResource AppTextFaintBrush}" TextWrapping="Wrap" />
+    </Grid>
+  </Grid>
+</UserControl>

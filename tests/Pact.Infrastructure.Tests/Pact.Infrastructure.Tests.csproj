@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Pact.Core\Pact.Core.csproj" />
+    <ProjectReference Include="..\..\src\Pact.Infrastructure\Pact.Infrastructure.csproj" />
+    <ProjectReference Include="..\Pact.ConPty.TestProbe\Pact.ConPty.TestProbe.csproj"
+                      ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\tools\Pact.ProfileTool\Pact.ProfileTool.csproj" />
+  </ItemGroup>
+
+</Project>

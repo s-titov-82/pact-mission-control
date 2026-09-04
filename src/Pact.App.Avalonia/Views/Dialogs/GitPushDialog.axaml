@@ -1,0 +1,24 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Pact.App.Avalonia.Views.Dialogs.GitPushDialog"
+        Icon="/Assets/AppIcon.ico"
+        x:CompileBindings="False"
+        Title="Push" Width="440" SizeToContent="Height" WindowStartupLocation="CenterOwner">
+  <StackPanel Margin="16" Spacing="10">
+    <Grid ColumnDefinitions="120,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="8">
+      <TextBlock Grid.Row="0" Grid.Column="0" Text="Branch" />
+      <TextBlock Grid.Row="0" Grid.Column="1" FontWeight="SemiBold" Text="{Binding Branch}" />
+      <TextBlock Grid.Row="1" Grid.Column="0" Text="Remote" />
+      <TextBlock Grid.Row="1" Grid.Column="1" Text="origin" />
+      <TextBlock Grid.Row="2" Grid.Column="0" Text="Mode" />
+      <ComboBox x:Name="PushModeBox" Grid.Row="2" Grid.Column="1"
+                ItemsSource="{Binding Modes}" SelectedItem="{Binding Mode}" />
+    </Grid>
+    <CheckBox Content="Set upstream (-u)" IsEnabled="{Binding CanChangeSetUpstream}"
+              IsChecked="{Binding SetUpstream}" />
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <Button x:Name="PushCancelButton" Content="Cancel" IsCancel="True" Click="OnCancelClicked" />
+      <Button Content="Push" IsDefault="True" Click="OnPushClicked" />
+    </StackPanel>
+  </StackPanel>
+</Window>

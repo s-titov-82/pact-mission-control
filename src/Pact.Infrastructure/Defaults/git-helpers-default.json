@@ -1,0 +1,25 @@
+{
+  "helpers": [
+    {
+      "id": "tortoisegit",
+      "name": "TortoiseGit",
+      "executable": "TortoiseGitProc.exe",
+      "windowsRegistryProbe": {
+        "key": "SOFTWARE\\TortoiseGit",
+        "value": "ProcPath"
+      },
+      "actions": [
+        {
+          "slot": "history",
+          "label": "History",
+          "arguments": ["/command:log", "/path:{root}"]
+        },
+        {
+          "slot": "resolve",
+          "label": "Resolve",
+          "arguments": ["/command:resolve", "/path:{root}"]
+        }
+      ]
+    }
+  ]
+}

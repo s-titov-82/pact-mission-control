@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "referencePackages": [
+    {
+      "assetName": "Microsoft.Web.WebView2.Core",
+      "packageName": "Microsoft.Web.WebView2"
+    }
+  ],
+  "licenseReferences": {
+    "MIT": "https://licenses.nuget.org/MIT"
+  },
+  "packageOverrides": [
+    {
+      "packageName": "Avalonia.Angle.Windows.Natives",
+      "version": "2.1.27548.20260419",
+      "license": "BSD-3-Clause",
+      "licenseFiles": [
+        "licenses/nuget/Avalonia.Angle.Windows.Natives-LICENSE.txt"
+      ]
+    },
+    {
+      "packageName": "HtmlAgilityPack",
+      "version": "1.11.42",
+      "license": "MIT",
+      "licenseFiles": [
+        "licenses/nuget/HtmlAgilityPack-LICENSE.txt"
+      ]
+    },
+    {
+      "packageName": "Microsoft.Web.WebView2",
+      "version": "1.0.4078.44",
+      "license": "BSD-3-Clause",
+      "licenseFiles": [
+        "licenses/nuget/Microsoft.Web.WebView2-LICENSE.txt",
+        "licenses/nuget/Microsoft.Web.WebView2-NOTICE.txt"
+      ]
+    },
+    {
+      "packageName": "Svg.Custom",
+      "version": "4.5.0",
+      "license": "MS-PL",
+      "licenseFiles": [
+        "licenses/nuget/MS-PL.txt"
+      ]
+    }
+  ],
+  "vendoredPackages": [
+    {
+      "name": "@xterm/xterm",
+      "version": "5.5.0",
+      "license": "MIT",
+      "supplier": "Organization: The xterm.js authors",
+      "downloadLocation": "https://registry.npmjs.org/@xterm/xterm/-/xterm-5.5.0.tgz",
+      "purl": "pkg:npm/%40xterm/xterm@5.5.0",
+      "licenseFiles": [
+        "licenses/xterm-LICENSE.txt"
+      ]
+    },
+    {
+      "name": "@xterm/addon-fit",
+      "version": "0.10.0",
+      "license": "MIT",
+      "supplier": "Organization: The xterm.js authors",
+      "downloadLocation": "https://registry.npmjs.org/@xterm/addon-fit/-/addon-fit-0.10.0.tgz",
+      "purl": "pkg:npm/%40xterm/addon-fit@0.10.0",
+      "licenseFiles": [
+        "licenses/xterm-addon-fit-LICENSE.txt"
+      ]
+    },
+    {
+      "name": "Microsoft Windows Terminal ConPTY",
+      "version": "1.25.260303002/win10-x64",
+      "license": "MIT",
+      "supplier": "Organization: Microsoft Corporation",
+      "downloadLocation": "https://github.com/microsoft/node-pty/tree/1.25.260303002/third_party/conpty",
+      "licenseFiles": [
+        "licenses/conpty-LICENSE.txt"
+      ]
+    }
+  ]
+}

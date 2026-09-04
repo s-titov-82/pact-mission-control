@@ -1,0 +1,255 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag in vMAJOR.MINOR.PATCH form
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-2025
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          persist-credentials: false
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
+
+      - name: Validate release tag and version
+        id: version
+        shell: pwsh
+        env:
+          REQUESTED_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          $tag = $env:REQUESTED_TAG
+          if ($tag -notmatch '^v(?<version>[0-9]+\.[0-9]+\.[0-9]+)$') {
+              throw "Release tag must have the form vMAJOR.MINOR.PATCH: $tag"
+          }
+          $version = $Matches.version
+          [xml]$properties = Get-Content -LiteralPath Directory.Build.props -Raw
+          $declared = @(
+              $properties.SelectNodes('/Project/PropertyGroup/VersionPrefix') |
+                  ForEach-Object { [string]$_.InnerText } |
+                  Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+          )
+          if ($declared.Count -ne 1 -or $declared[0] -ne $version) {
+              throw "Tag version $version does not match the single VersionPrefix."
+          }
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Restore local tools
+        shell: pwsh
+        run: dotnet tool restore --disable-parallel
+
+      - name: Restore locked dependencies
+        shell: pwsh
+        run: dotnet restore Pact.slnx --disable-parallel --locked-mode
+
+      - name: Build
+        shell: pwsh
+        run: dotnet build Pact.slnx --no-restore -m:2 -nr:false -v q -p:BuildInParallel=false
+
+      - name: Run test projects sequentially
+        shell: pwsh
+        run: |
+          dotnet test tests/Pact.Core.Tests/Pact.Core.Tests.csproj --no-build --no-restore -m:1 -nr:false -- NUnit.NumberOfTestWorkers=2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet test tests/Pact.Infrastructure.Tests/Pact.Infrastructure.Tests.csproj --no-build --no-restore -m:1 -nr:false --filter "TestCategory!=NativeIntegration" -- NUnit.NumberOfTestWorkers=2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet test tests/Pact.Presentation.Tests/Pact.Presentation.Tests.csproj --no-build --no-restore -m:1 -nr:false -- NUnit.NumberOfTestWorkers=2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet test tests/Pact.App.Avalonia.Tests/Pact.App.Avalonia.Tests.csproj --no-build --no-restore -m:1 -nr:false -- NUnit.NumberOfTestWorkers=2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run bundled ConPTY integration tests
+        shell: pwsh
+        run: |
+          dotnet test tests/Pact.Infrastructure.Tests/Pact.Infrastructure.Tests.csproj --no-build --no-restore -m:1 -nr:false --filter "TestCategory=NativeIntegration" -- NUnit.NumberOfTestWorkers=2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Validate hosted-compatible gates
+        shell: pwsh
+        run: |
+          ./tools/Invoke-NativeWebViewGate.ps1 -SelfTest
+          Write-Output "Native WebView gate: NOT RUN (interactive gate)"
+          ./tools/Sync-XtermAssets.ps1 -Verify
+          ./tools/Test-MarkdownLinks.ps1 -SelfTest
+          ./tools/Test-MarkdownLinks.ps1
+          ./tests/powershell/Test-PublicTree.Tests.ps1
+          ./tools/Test-PublicTree.ps1
+          ./tests/powershell/PactSbom.Tests.ps1 -ModulePath ./tools/PactSbom.psm1 -TemporaryRoot ./artifacts/sbom-selftest
+          ./tools/Test-WorkflowContracts.ps1 -SelfTest
+          ./tools/Test-WorkflowContracts.ps1 -CiWorkflow .github/workflows/ci.yml -ReleaseWorkflow .github/workflows/release.yml
+
+      - name: Prepare release tree
+        shell: pwsh
+        run: ./tools/Publish-Pact.ps1 -Version "${{ steps.version.outputs.version }}" -RepositoryUrl "${{ github.server_url }}/${{ github.repository }}" -AuthenticodeStatus Unsigned -Phase Prepare
+
+      - name: Sign Pact binaries when trusted certificate secrets are configured
+        id: signing
+        shell: pwsh
+        env:
+          PACT_SIGNING_PFX_BASE64: ${{ secrets.PACT_SIGNING_PFX_BASE64 }}
+          PACT_SIGNING_PFX_PASSWORD: ${{ secrets.PACT_SIGNING_PFX_PASSWORD }}
+        run: |
+          $hasPfx = -not [string]::IsNullOrWhiteSpace($env:PACT_SIGNING_PFX_BASE64)
+          $hasPassword = -not [string]::IsNullOrWhiteSpace($env:PACT_SIGNING_PFX_PASSWORD)
+          if ($hasPfx -ne $hasPassword) {
+              throw 'Both Authenticode secrets must be configured together.'
+          }
+          if (-not $hasPfx) {
+              'status=Unsigned' >> $env:GITHUB_OUTPUT
+              Write-Output 'Authenticode status: Unsigned'
+              exit 0
+          }
+
+          $runnerTemp = [System.IO.Path]::GetFullPath($env:RUNNER_TEMP)
+          $pfxPath = [System.IO.Path]::GetFullPath(
+              (Join-Path $runnerTemp ('pact-signing-' + [Guid]::NewGuid().ToString('N') + '.pfx')))
+          $runnerPrefix = $runnerTemp.TrimEnd(
+              [System.IO.Path]::DirectorySeparatorChar) +
+              [System.IO.Path]::DirectorySeparatorChar
+          if (-not $pfxPath.StartsWith(
+                  $runnerPrefix,
+                  [System.StringComparison]::OrdinalIgnoreCase)) {
+              throw "PFX path escapes RUNNER_TEMP: $pfxPath"
+          }
+
+          $pfxBytes = $null
+          try {
+              $pfxBytes = [Convert]::FromBase64String($env:PACT_SIGNING_PFX_BASE64)
+              [System.IO.File]::WriteAllBytes($pfxPath, $pfxBytes)
+              $securePassword = ConvertTo-SecureString `
+                  $env:PACT_SIGNING_PFX_PASSWORD `
+                  -AsPlainText `
+                  -Force
+              $certificate = Get-PfxCertificate `
+                  -FilePath $pfxPath `
+                  -Password $securePassword
+              $now = Get-Date
+              if (-not $certificate.HasPrivateKey -or
+                  $certificate.NotBefore -gt $now -or
+                  $certificate.NotAfter -le $now) {
+                  throw 'The signing certificate must have a private key and be currently valid.'
+              }
+
+              $signTool = Get-ChildItem `
+                      -LiteralPath "${env:ProgramFiles(x86)}\Windows Kits\10\bin" `
+                      -Filter signtool.exe `
+                      -File `
+                      -Recurse |
+                  Where-Object { $_.Directory.Name -eq 'x64' } |
+                  Sort-Object {
+                      [version]$_.Directory.Parent.Name
+                  } -Descending |
+                  Select-Object -First 1
+              if ($null -eq $signTool) {
+                  throw 'Windows SDK signtool.exe was not found.'
+              }
+
+              $ownedBinaries = @(
+                  Get-ChildItem -LiteralPath artifacts/publish/win-x64 -Recurse -File |
+                      Where-Object {
+                          $_.Name.StartsWith(
+                              'Pact.',
+                              [System.StringComparison]::Ordinal) -and
+                          $_.Extension -in @('.dll', '.exe')
+                      })
+              if ($ownedBinaries.Count -eq 0) {
+                  throw 'No Pact-owned binaries were found for signing.'
+              }
+
+              foreach ($binary in $ownedBinaries) {
+                  & $signTool.FullName sign `
+                      /fd SHA256 `
+                      /td SHA256 `
+                      /tr https://timestamp.digicert.com `
+                      /f $pfxPath `
+                      /p $env:PACT_SIGNING_PFX_PASSWORD `
+                      $binary.FullName
+                  if ($LASTEXITCODE -ne 0) {
+                      throw "signtool failed to sign $($binary.Name)."
+                  }
+                  & $signTool.FullName verify /pa /all $binary.FullName
+                  if ($LASTEXITCODE -ne 0) {
+                      throw "signtool failed to verify $($binary.Name)."
+                  }
+                  $signature = Get-AuthenticodeSignature -LiteralPath $binary.FullName
+                  if ([string]$signature.Status -ne 'Valid') {
+                      throw "Windows trust validation failed for $($binary.Name)."
+                  }
+              }
+
+              'status=Signed' >> $env:GITHUB_OUTPUT
+              Write-Output "Authenticode status: Signed ($($ownedBinaries.Count) Pact binaries)"
+          }
+          finally {
+              if ($null -ne $pfxBytes) {
+                  [Array]::Clear($pfxBytes, 0, $pfxBytes.Length)
+              }
+              if (Test-Path -LiteralPath $pfxPath) {
+                  Remove-Item -LiteralPath $pfxPath -Force
+              }
+          }
+
+      - name: Finalize and validate release
+        shell: pwsh
+        run: |
+          $status = '${{ steps.signing.outputs.status }}'
+          $version = '${{ steps.version.outputs.version }}'
+          ./tools/Publish-Pact.ps1 -Version $version -RepositoryUrl "${{ github.server_url }}/${{ github.repository }}" -AuthenticodeStatus $status -Phase Finalize
+          ./tools/Test-PublicationArtifacts.ps1 -Version $version -ReleaseDirectory "artifacts/release/$version" -ExpectedAuthenticodeStatus $status
+
+      - name: Attest release checksums
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
+        with:
+          subject-checksums: artifacts/release/${{ steps.version.outputs.version }}/SHA256SUMS.txt
+
+      - name: Attest ZIP with SPDX SBOM
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
+        with:
+          subject-path: artifacts/release/${{ steps.version.outputs.version }}/pact-mission-control-${{ steps.version.outputs.version }}-win-x64.zip
+          sbom-path: artifacts/release/${{ steps.version.outputs.version }}/manifest.spdx.json
+
+      - name: Create GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          $files = @(
+              Get-ChildItem -LiteralPath "artifacts/release/$version" -File |
+                  ForEach-Object FullName
+          )
+          & gh release create $env:RELEASE_TAG @files `
+              --verify-tag `
+              --generate-notes `
+              --title "PACT:> Mission Control $version"
+          if ($LASTEXITCODE -ne 0) {
+              throw "gh release create failed with exit code $LASTEXITCODE."
+          }

@@ -1,0 +1,41 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Pact.App.Avalonia.Views.Dialogs.GitCommitDialog"
+        Icon="/Assets/AppIcon.ico"
+        x:CompileBindings="False"
+        Title="Commit changes" Width="620" Height="520" MinWidth="480" MinHeight="380"
+        WindowStartupLocation="CenterOwner">
+  <Grid Margin="16" RowDefinitions="Auto,*,5,Auto,Auto" RowSpacing="10">
+    <DockPanel>
+      <CheckBox DockPanel.Dock="Right" Content="Select all"
+                IsChecked="{Binding AreAllFilesSelected}" Click="OnSelectAllClicked" />
+      <TextBlock FontWeight="SemiBold" Text="Files" />
+    </DockPanel>
+    <Border Grid.Row="1" BorderBrush="{DynamicResource AppPanelBorderBrush}" BorderThickness="1">
+      <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+        <ItemsControl x:Name="FilesList" ItemsSource="{Binding Files}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <CheckBox Margin="8,5" IsChecked="{Binding IsSelected}">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <TextBlock Width="18" FontFamily="Cascadia Mono, Consolas, monospace" Text="{Binding Marker}" />
+                  <TextBlock FontFamily="Cascadia Mono, Consolas, monospace" Text="{Binding DisplayPath}" />
+                </StackPanel>
+              </CheckBox>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+    </Border>
+    <GridSplitter x:Name="FilesSplitter" Grid.Row="2" Height="5" ResizeDirection="Rows" />
+    <StackPanel Grid.Row="3" Spacing="5">
+      <TextBlock FontWeight="SemiBold" Text="Message" />
+      <TextBox x:Name="MessageBox" MinHeight="72" AcceptsReturn="True" Text="{Binding Message}" />
+    </StackPanel>
+    <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <Button Content="Cancel" IsCancel="True" Click="OnCancelClicked" />
+      <Button x:Name="CommitButton" Content="Commit" IsDefault="True"
+              IsEnabled="{Binding CanAccept}" Click="OnCommitClicked" />
+    </StackPanel>
+  </Grid>
+</Window>

@@ -1,0 +1,30 @@
+# Build and test output
+bin/
+obj/
+TestResults/
+artifacts/
+*.pdb
+
+# Local Pact runtime and scenario data
+.pact-data/
+.pact-profile/
+.pact-reviews/
+.tmp/
+
+# JavaScript dependencies and caches
+node_modules/
+.npm/
+
+# IDE and local tooling state
+.vs/
+.idea/
+.vscode/
+.superpowers/
+.worktrees/
+*.user
+*.suo
+
+# Operating-system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini

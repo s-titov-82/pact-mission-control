@@ -1,0 +1,8 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:gif="using:Avalonia.Labs.Gif"
+             x:Class="Pact.App.Avalonia.Views.MissionControlLoader"
+             Width="120" Height="120">
+  <gif:GifImage x:Name="Animation" Width="120" Height="120"
+                Stretch="Uniform" StretchDirection="Both" />
+</UserControl>

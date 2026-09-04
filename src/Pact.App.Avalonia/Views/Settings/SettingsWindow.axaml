@@ -1,0 +1,59 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Pact.App.Avalonia.Views.Settings.SettingsWindow"
+        Icon="/Assets/AppIcon.ico"
+        x:CompileBindings="False"
+        Title="Settings"
+        Height="640"
+        Width="980"
+        MinHeight="480"
+        MinWidth="800"
+        Background="{DynamicResource AppPaneBackgroundBrush}"
+        WindowStartupLocation="CenterOwner"
+        KeyDown="OnWindowKeyDown">
+  <Window.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceInclude Source="/Views/Settings/SettingsTemplates.axaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </Window.Resources>
+  <Grid Margin="16" ColumnDefinitions="240,*">
+    <Border Grid.Column="0"
+            Padding="12"
+            Background="{DynamicResource AppSurfaceBrush}"
+            BorderBrush="{DynamicResource AppBorderBrush}"
+            BorderThickness="1">
+      <Grid RowDefinitions="Auto,*,Auto,Auto">
+        <TextBlock FontWeight="SemiBold" Text="Sections" />
+        <ListBox x:Name="SectionList" Grid.Row="1" Margin="0,10,0,0"
+                 SelectionChanged="OnSectionSelectionChanged">
+          <ListBox.ItemTemplate>
+            <DataTemplate><TextBlock Text="{Binding Label}" /></DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+        <Button x:Name="OpenRawJsonButton" Grid.Row="2" Height="30"
+                HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Content="Open raw JSON" Click="OnOpenRawJsonClicked" />
+        <Button x:Name="RevertButton" Grid.Row="3" Height="30" Margin="0,8,0,0"
+                HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Content="Revert"
+                Click="OnRevertClicked"
+                ToolTip.Tip="Discard edits and re-read saved values (from disk; Projects — from the running app)" />
+      </Grid>
+    </Border>
+    <Grid Grid.Column="1" Margin="16,0,0,0" RowDefinitions="Auto,*,Auto">
+      <DockPanel Margin="0,0,0,10" LastChildFill="False">
+        <Button x:Name="SectionHelpButton" DockPanel.Dock="Right" Classes="compact-icon"
+                FontWeight="SemiBold" ToolTip.Tip="Help" Click="OnSectionHelpClicked"><PathIcon Width="14" Height="14" Data="{StaticResource AppHelpIcon}" /></Button>
+        <TextBlock x:Name="SectionTitle" DockPanel.Dock="Left" FontSize="16"
+                   FontWeight="SemiBold" Foreground="{DynamicResource AppTextPrimaryBrush}" />
+      </DockPanel>
+      <ContentControl x:Name="SectionContent" Grid.Row="1" MinHeight="0" Margin="0,0,8,0" />
+      <DockPanel Grid.Row="2" Margin="0,12,0,0">
+        <Button x:Name="SaveButton" DockPanel.Dock="Right" Width="120" Height="34"
+                HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Content="Save section" Click="OnSaveClicked" />
+        <TextBlock x:Name="StatusText" VerticalAlignment="Center"
+                   Foreground="{DynamicResource AppTextMutedBrush}" />
+      </DockPanel>
+    </Grid>
+  </Grid>
+</Window>

@@ -1,0 +1,66 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Pact.App.Avalonia.Views.GitPanelView"
+             x:CompileBindings="False"
+             Width="390" Height="560" MinHeight="340">
+  <Grid RowDefinitions="Auto,Auto,Auto,Auto,*">
+    <StackPanel>
+      <TextBlock FontSize="11" Foreground="{DynamicResource AppTextMutedBrush}"
+                 Text="{Binding RemoteText}" TextTrimming="CharacterEllipsis" />
+      <DockPanel Margin="0,6,0,0">
+        <TextBlock DockPanel.Dock="Right" Margin="8,0,0,0"
+                   Foreground="{DynamicResource AppTextMutedBrush}" Text="{Binding AheadBehindText}" />
+        <TextBlock x:Name="GitActivityIndicator" DockPanel.Dock="Left"
+                   Width="14" Margin="0,0,4,0"
+                   FontFamily="Cascadia Mono, Consolas, monospace"
+                   Foreground="{DynamicResource AppAccentBrush}"
+                   Text="⠋" ToolTip.Tip="Waiting for git"
+                   IsVisible="{Binding IsGitRunning}" />
+        <TextBlock FontWeight="SemiBold" Text="{Binding BranchText}" TextTrimming="CharacterEllipsis" />
+      </DockPanel>
+      <TextBlock Margin="0,3,0,10" FontFamily="Cascadia Mono, Consolas, monospace"
+                 Foreground="{DynamicResource AppPanelBorderBrush}" Text="{Binding SummaryText}" />
+    </StackPanel>
+
+    <ItemsControl Grid.Row="1" x:Name="PopupButtonsList" ItemsSource="{Binding PopupButtons}">
+      <ItemsControl.ItemsPanel>
+        <ItemsPanelTemplate><UniformGrid Columns="3" /></ItemsPanelTemplate>
+      </ItemsControl.ItemsPanel>
+      <ItemsControl.ItemTemplate>
+        <DataTemplate>
+          <Button Margin="0,0,4,6" Padding="6,4" Content="{Binding Label}"
+                  IsEnabled="{Binding IsEnabled}"
+                  Click="OnPopupButtonClicked" />
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+
+    <Button Grid.Row="2" Margin="0,0,0,6" HorizontalAlignment="Left"
+            Content="Resolve" IsEnabled="{Binding IsNotBusy}" IsVisible="{Binding HasConflicts}"
+            Click="OnResolveClicked" />
+
+    <WrapPanel Grid.Row="3" Margin="0,0,0,8">
+      <Button Margin="0,0,6,6" Content="Rebase onto base" IsEnabled="{Binding IsNotBusy}"
+              Click="OnRebaseOntoBaseClicked" />
+      <Button Margin="0,0,6,6" Content="Abort rebase" IsEnabled="{Binding IsNotBusy}"
+              IsVisible="{Binding IsRebaseInProgress}" Click="OnAbortRebaseClicked" />
+      <ItemsControl ItemsSource="{Binding HelperActions}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Button Margin="0,0,6,6" Content="{Binding Label}" Click="OnHelperClicked" />
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </WrapPanel>
+
+    <TextBox x:Name="GitLogBox" Grid.Row="4" MinHeight="80"
+             FontFamily="Cascadia Mono, Consolas, monospace" FontSize="11"
+             IsReadOnly="True" Text="{Binding LogText, Mode=OneWay}"
+             TextChanged="OnGitLogTextChanged" TextWrapping="NoWrap"
+             ScrollViewer.VerticalScrollBarVisibility="Auto"
+             ScrollViewer.HorizontalScrollBarVisibility="Auto" />
+  </Grid>
+</UserControl>

@@ -1,0 +1,6 @@
+<Project>
+
+  <!-- This executable is a test asset, not an NUnit test assembly. -->
+  <Import Project="..\..\Directory.Build.props" />
+
+</Project>

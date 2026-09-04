@@ -1,0 +1,76 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Pact.Presentation.ViewModels"
+        x:Class="Pact.App.Avalonia.Views.Dialogs.DirectorySelectionWindow"
+        Icon="/Assets/AppIcon.ico"
+        x:DataType="vm:DirectorySelectionViewModel"
+        Title="Select Working Directory"
+        Height="420"
+        Width="560"
+        MinHeight="360"
+        MinWidth="480"
+        WindowStartupLocation="CenterOwner"
+        CanResize="True">
+  <Grid Margin="16" RowDefinitions="Auto,Auto,*,Auto">
+    <TextBlock Grid.Row="0"
+               FontSize="16"
+               FontWeight="SemiBold"
+               Foreground="{DynamicResource AppTextPrimaryBrush}"
+               Text="Working directory" />
+
+    <Grid Grid.Row="1" Margin="0,12,0,0" ColumnDefinitions="*,Auto">
+      <TextBox x:Name="DirectoryTextBox"
+               Grid.Column="0"
+               Height="30"
+               VerticalContentAlignment="Center"
+               Text="{Binding DirectoryText, Mode=TwoWay}" />
+      <Button x:Name="BrowseButton"
+              Grid.Column="1"
+              Width="92"
+              Margin="8,0,0,0"
+              Content="Browse..."
+              Click="OnBrowseClicked" />
+    </Grid>
+
+    <Border Grid.Row="2"
+            Margin="0,14,0,0"
+            Padding="10"
+            BorderBrush="{DynamicResource AppBorderBrush}"
+            BorderThickness="1"
+            CornerRadius="4">
+      <Grid RowDefinitions="Auto,*">
+        <TextBlock Grid.Row="0"
+                   Margin="0,0,0,8"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource AppTextPrimaryBrush}"
+                   Text="Recent directories" />
+        <ListBox x:Name="RecentDirectoryList"
+                 Grid.Row="1"
+                 ItemsSource="{Binding RecentDirectories}"
+                 SelectedItem="{Binding SelectedRecentDirectory, Mode=TwoWay}"
+                 DoubleTapped="OnRecentDirectoryDoubleTapped" />
+      </Grid>
+    </Border>
+
+    <Grid Grid.Row="3" Margin="0,14,0,0" ColumnDefinitions="*,Auto,Auto">
+      <TextBlock x:Name="ValidationText"
+                 Grid.Column="0"
+                 VerticalAlignment="Center"
+                 Foreground="{DynamicResource AppDangerStrongBrush}"
+                 Text="{Binding ValidationMessage}" />
+      <Button x:Name="CancelButton"
+              Grid.Column="1"
+              Width="88"
+              Content="Cancel"
+              Click="OnCancelClicked" />
+      <Button x:Name="StartButton"
+              Grid.Column="2"
+              Width="88"
+              Margin="8,0,0,0"
+              IsDefault="True"
+              IsEnabled="{Binding CanAccept}"
+              Content="Start"
+              Click="OnStartClicked" />
+    </Grid>
+  </Grid>
+</Window>
