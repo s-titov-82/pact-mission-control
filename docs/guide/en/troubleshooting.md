@@ -38,11 +38,13 @@ that reload boundary or an application restart.
 
 ## A browser page is not monitored
 
-- Load or resume the page; an unloaded WebView is never polled.
+- Select an unloaded project page to load it. For a manually paused ROOT page,
+  use its explicit `Resume` action. An unloaded WebView is never polled.
 - Confirm that the first matching rule is enabled and all starter placeholders
   have been replaced.
 - Run `Test on current tab` against the loaded page.
-- Remember that Pause unloads the page and stops polling until Resume.
+- Remember that the per-row ROOT Pause action unloads the page and stops
+  polling until Resume.
 
 See [Web monitoring rules](../../help/en/settings-web-monitoring-rules.md).
 

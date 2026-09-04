@@ -35,15 +35,18 @@ Use the session edit action to change its title and launch or resume commands.
 Agent kinds run in the owning project's directory. PowerShell and Custom
 sessions can use an explicit working directory.
 
-Pausing or stopping a session affects only that session. Selecting a paused
-item does not resume it; use its explicit `Resume` action.
+Project sessions have no per-row Pause/Resume action. If a saved project
+session has no live process, selecting it starts the session and prefers its
+resume command. Pause the project when you want to set aside all of its
+sessions.
 
 ## ROOT
 
 `ROOT` is for persistent terminals and browser pages that do not belong to a
 repository. Use its `+` action for a terminal and its `@` action for a web page.
 Each ROOT item has its own Pause/Resume action; there is no group-level pause or
-close.
+close. Selecting a manually paused ROOT item does not resume it; use its
+explicit `Resume` action.
 
 ROOT terminals can receive manual prompt, paste, and selection actions. They
 cannot participate in project review scenarios and do not own project Notes,

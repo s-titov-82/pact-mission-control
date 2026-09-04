@@ -13,15 +13,16 @@ web-link template. `Custom URL...` accepts an exact absolute HTTP(S) address.
 Pages preserve their current URL and browser profile state across application
 restarts. Cookies and site storage are retained in the selected Pact data root.
 
-A page can be paused to unload its WebView without deleting the saved tab.
-Selecting a paused page does not load it; use `Resume`. Closing a page removes
-the saved tab.
+A project page that has no loaded WebView loads when selected. ROOT pages also
+have per-row Pause/Resume actions: Pause unloads the WebView without deleting
+the saved tab, while selecting a manually paused ROOT page does not load it.
+Use `Resume` for that page. Closing a page removes the saved tab.
 
 Web monitoring applies only to pages whose WebView has been loaded. The first
 enabled rule whose URL pattern matches owns the page. Configure rules in
 Settings, replace every starter placeholder, and use `Test on current tab`
-before enabling a rule. A hidden loaded page can continue polling; a paused or
-never-loaded page cannot.
+before enabling a rule. A hidden loaded page can continue polling; an unloaded
+page, including a manually paused ROOT page, cannot.
 
 When a monitored page changes in the background, its tree indicator becomes
 unread. Viewing it in the active visible Pact window acknowledges the change.
