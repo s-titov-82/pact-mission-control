@@ -967,9 +967,11 @@ public sealed class WebMonitorCoordinatorTests
 	public async Task Actively_viewed_page_keeps_polling_faster_than_its_rule_interval()
 	{
 		await using CoordinatorContext context = new();
+		TaskCompletionSource<WebMonitorEvaluation> presentedEvaluation =
+			new(TaskCreationOptions.RunContinuationsAsynchronously);
 		FakeWebPageHost host = new("web-1", MatchingUrl);
 		host.Enqueue(MatchingUrl, activity: true, revision: "1");
-		host.Enqueue(MatchingUrl, activity: true, revision: "1");
+		host.Enqueue(presentedEvaluation.Task);
 		host.Enqueue(MatchingUrl, activity: false, revision: "1");
 		await context.Coordinator.SetRulesAsync([CreateRule()], CancellationToken.None);
 		var initialEvaluation =
@@ -981,6 +983,20 @@ public sealed class WebMonitorCoordinatorTests
 			windowVisible: true,
 			windowActive: true);
 		await host.WaitForEvaluationCountAsync(2);
+		var expectedNextAttemptAt = context.Time.GetUtcNow().AddSeconds(2);
+		var presentedEvaluationProcessed =
+			WaitForNextLiveDiagnosticsAsync(
+				context.Coordinator,
+				diagnostics =>
+					diagnostics.WebPageId == "web-1"
+					&& diagnostics.Attempt >= 2
+					&& diagnostics.NextAttemptAt == expectedNextAttemptAt);
+		presentedEvaluation.SetResult(
+			new WebMonitorEvaluation(
+				MatchingUrl,
+				new WebMonitorObservation(Activity: true, Revision: "1")));
+		var presentedDiagnostics = await presentedEvaluationProcessed;
+		presentedDiagnostics.NextAttemptAt.ShouldBe(expectedNextAttemptAt);
 
 		var idleObserved =
 			WaitForNextStatusAsync(context.Coordinator, WebMonitorStatus.None);
@@ -1383,6 +1399,33 @@ public sealed class WebMonitorCoordinatorTests
 		finally
 		{
 			coordinator.StatusChanged -= OnStatusChanged;
+		}
+	}
+
+	private static async Task<WebMonitorDiagnostics> WaitForNextLiveDiagnosticsAsync(
+		WebMonitorCoordinator coordinator,
+		Func<WebMonitorDiagnostics, bool> condition)
+	{
+		TaskCompletionSource<WebMonitorDiagnostics> observed =
+			new(TaskCreationOptions.RunContinuationsAsynchronously);
+		void OnLiveDiagnosticsChanged(
+			object? sender,
+			WebMonitorDiagnosticsChangedEventArgs args)
+		{
+			if (condition(args.Diagnostics))
+			{
+				observed.TrySetResult(args.Diagnostics);
+			}
+		}
+
+		coordinator.LiveDiagnosticsChanged += OnLiveDiagnosticsChanged;
+		try
+		{
+			return await observed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+		}
+		finally
+		{
+			coordinator.LiveDiagnosticsChanged -= OnLiveDiagnosticsChanged;
 		}
 	}
 
