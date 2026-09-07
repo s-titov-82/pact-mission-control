@@ -44,17 +44,42 @@ try
 		throw 'Inno Setup installer does not have the expected valid publisher signature.'
 	}
 
-	& $installerPath /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /CURRENTUSER "/DIR=$destination"
-	if ($LASTEXITCODE -ne 0)
+	$installProcess = Start-Process `
+		-FilePath $installerPath `
+		-ArgumentList @(
+			'/VERYSILENT',
+			'/SUPPRESSMSGBOXES',
+			'/NORESTART',
+			'/SP-',
+			'/CURRENTUSER',
+			"/DIR=`"$destination`"") `
+		-Wait `
+		-PassThru
+	if ($installProcess.ExitCode -ne 0)
 	{
-		throw "Inno Setup installation failed with exit code $LASTEXITCODE."
+		throw "Inno Setup installation failed with exit code $($installProcess.ExitCode)."
 	}
 }
 finally
 {
 	if ([IO.File]::Exists($installerPath))
 	{
-		Remove-Item -LiteralPath $installerPath -Force
+		for ($attempt = 1; $attempt -le 20; $attempt++)
+		{
+			try
+			{
+				Remove-Item -LiteralPath $installerPath -Force
+				break
+			}
+			catch [UnauthorizedAccessException]
+			{
+				if ($attempt -eq 20)
+				{
+					throw
+				}
+				Start-Sleep -Milliseconds 250
+			}
+		}
 	}
 }
 
