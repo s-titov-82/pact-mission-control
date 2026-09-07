@@ -53,6 +53,18 @@ function Invoke-CheckedExecutable
 		-PassThru
 	if ($process.ExitCode -ne 0)
 	{
+		$logArgument = $Arguments |
+			Where-Object { $_.StartsWith('/LOG=', [StringComparison]::OrdinalIgnoreCase) } |
+			Select-Object -First 1
+		if ($null -ne $logArgument)
+		{
+			$logPath = $logArgument.Substring('/LOG='.Length).Trim('"')
+			if ([IO.File]::Exists($logPath))
+			{
+				$logTail = Get-Content -LiteralPath $logPath -Tail 200 | Out-String
+				Write-Output "$Description log tail:`n$logTail"
+			}
+		}
 		throw "$Description failed with exit code $($process.ExitCode)."
 	}
 }
