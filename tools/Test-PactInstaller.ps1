@@ -46,10 +46,14 @@ function Invoke-CheckedExecutable
 		[Parameter(Mandatory)][string]$Description
 	)
 
-	& $Path @Arguments
-	if ($LASTEXITCODE -ne 0)
+	$process = Start-Process `
+		-FilePath $Path `
+		-ArgumentList $Arguments `
+		-Wait `
+		-PassThru
+	if ($process.ExitCode -ne 0)
 	{
-		throw "$Description failed with exit code $LASTEXITCODE."
+		throw "$Description failed with exit code $($process.ExitCode)."
 	}
 }
 
@@ -179,7 +183,11 @@ finally
 {
 	if ($null -ne $uninstallerPath -and [IO.File]::Exists($uninstallerPath))
 	{
-		& $uninstallerPath /VERYSILENT /SUPPRESSMSGBOXES /NORESTART | Out-Null
+		Start-Process `
+			-FilePath $uninstallerPath `
+			-ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART') `
+			-Wait |
+			Out-Null
 	}
 	if ([IO.File]::Exists($profileSentinelPath))
 	{
