@@ -29,6 +29,24 @@ jobs:
           cache: true
           cache-dependency-path: "**/packages.lock.json"
 
+      - name: Read package version
+        id: version
+        shell: pwsh
+        run: |
+          [xml]$properties = Get-Content -LiteralPath Directory.Build.props -Raw
+          $declared = @(
+              $properties.SelectNodes('/Project/PropertyGroup/VersionPrefix') |
+                  ForEach-Object { [string]$_.InnerText } |
+                  Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+          )
+          if ($declared.Count -ne 1) {
+              throw 'Directory.Build.props must contain exactly one VersionPrefix.'
+          }
+          if ($declared[0] -notmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') {
+              throw "VersionPrefix must use MAJOR.MINOR.PATCH form: $($declared[0])"
+          }
+          "version=$($declared[0])" >> $env:GITHUB_OUTPUT
+
       - name: Restore local tools
         shell: pwsh
         run: dotnet tool restore --disable-parallel
@@ -77,6 +95,8 @@ jobs:
           ./tests/powershell/Test-PublicTree.Tests.ps1
           ./tools/Test-PublicTree.ps1
           ./tests/powershell/PactSbom.Tests.ps1 -ModulePath ./tools/PactSbom.psm1 -TemporaryRoot ./artifacts/sbom-selftest
+          ./tests/powershell/PactReleaseComposition.Tests.ps1 -ScriptPath ./tools/Complete-PactRelease.ps1 -TemporaryRoot ./artifacts/release-composition-selftest
+          ./tests/powershell/PactInstalledSmoke.Tests.ps1 -ScriptPath ./tools/Test-PactInstaller.ps1
 
       - name: Validate workflow contracts
         shell: pwsh
@@ -84,18 +104,41 @@ jobs:
           ./tools/Test-WorkflowContracts.ps1 -SelfTest
           ./tools/Test-WorkflowContracts.ps1 -CiWorkflow .github/workflows/ci.yml
 
+      - name: Install pinned Inno Setup toolchain
+        id: inno
+        shell: pwsh
+        run: |
+          $compiler = ./tools/Install-InnoSetup.ps1 -DestinationDirectory "$env:RUNNER_TEMP/pact-inno-7.1.0" | Select-Object -Last 1
+          "compiler=$compiler" >> $env:GITHUB_OUTPUT
+
+      - name: Validate installer builder
+        shell: pwsh
+        run: ./tests/powershell/PactInstaller.Tests.ps1 -BuildScriptPath ./tools/Build-PactInstaller.ps1 -CompilerPath '${{ steps.inno.outputs.compiler }}' -DependencyCacheDirectory ./artifacts/installer-dependencies -TemporaryRoot ./artifacts/installer-selftest
+
       - name: Package unsigned release
         shell: pwsh
-        run: ./tools/Publish-Pact.ps1 -Version 0.1.0 -RepositoryUrl "${{ github.server_url }}/${{ github.repository }}" -AuthenticodeStatus Unsigned
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          ./tools/Publish-Pact.ps1 -Version $version -RepositoryUrl "${{ github.server_url }}/${{ github.repository }}" -AuthenticodeStatus Unsigned -CompilerPath '${{ steps.inno.outputs.compiler }}' -DependencyCacheDirectory ./artifacts/installer-dependencies
 
       - name: Validate release artifacts
         shell: pwsh
-        run: ./tools/Test-PublicationArtifacts.ps1 -Version 0.1.0 -ReleaseDirectory artifacts/release/0.1.0 -ExpectedAuthenticodeStatus Unsigned
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          ./tools/Test-PublicationArtifacts.ps1 -Version $version -ReleaseDirectory "artifacts/release/$version" -ExpectedAuthenticodeStatus Unsigned
+
+      - name: Run disposable installer smoke
+        shell: pwsh
+        env:
+          CI: true
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          ./tools/Test-PactInstaller.ps1 -Version $version -SetupPath "artifacts/release/$version/pact-mission-control-$version-win-x64-setup.exe" -ZipPath "artifacts/release/$version/pact-mission-control-$version-win-x64.zip" -WorkingDirectory "$env:RUNNER_TEMP/pact-installer-smoke" -ExpectedAuthenticodeStatus Unsigned
 
       - name: Upload validated release
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: pact-mission-control-0.1.0-win-x64
-          path: artifacts/release/0.1.0/
+          name: pact-mission-control-${{ steps.version.outputs.version }}-win-x64
+          path: artifacts/release/${{ steps.version.outputs.version }}/
           if-no-files-found: error
           retention-days: 14

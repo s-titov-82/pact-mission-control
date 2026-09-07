@@ -6,7 +6,10 @@ param(
     [ValidateSet('Signed', 'Unsigned')]
     [string]$AuthenticodeStatus,
     [ValidateSet('Prepare', 'Finalize', 'All')]
-    [string]$Phase = 'All'
+    [string]$Phase = 'All',
+    [string]$CompilerPath,
+    [string]$DependencyCacheDirectory,
+    [string]$SignToolCommand
 )
 
 Set-StrictMode -Version Latest
@@ -124,6 +127,11 @@ function Assert-PactReleaseInputs {
             -Path $releasePath `
             -Root $pactReleaseDirectory `
             -Description 'Release output'
+    }
+
+    if ($Phase -in @('Finalize', 'All') -and
+        [string]::IsNullOrWhiteSpace($CompilerPath)) {
+        throw 'CompilerPath is required when Finalize creates the complete release.'
     }
 }
 
@@ -444,17 +452,8 @@ function Invoke-PactFinalize {
         $true)
     New-PactCanonicalZip -Timestamp (Get-PactSourceTimestamp)
 
-    $checksumLines = @(
-        "$(Get-PactFileSha256 -Path $pactArchivePath) *$pactArchiveName"
-        "$(Get-PactFileSha256 -Path $pactStandaloneSbomPath) *manifest.spdx.json"
-    )
-    [System.IO.File]::WriteAllText(
-        $pactReleaseChecksumsPath,
-        ($checksumLines -join "`n") + "`n",
-        [System.Text.UTF8Encoding]::new($false))
-
     $sizeMiB = [Math]::Round($summary.Bytes / 1MB, 2)
-    Write-Output "PASS: finalized $pactArchiveName with SPDX 2.2 and SHA-256 checksums ($sizeMiB MiB unpacked)."
+    Write-Output "PASS: created $pactArchiveName and SPDX 2.2 payload inventory ($sizeMiB MiB unpacked)."
 }
 
 Assert-PactReleaseInputs
@@ -463,4 +462,21 @@ if ($Phase -in @('Prepare', 'All')) {
 }
 if ($Phase -in @('Finalize', 'All')) {
     Invoke-PactFinalize
+    $installerArguments = @{
+        Version = $Version
+        PublishDirectory = $pactPublishRoot
+        OutputDirectory = $pactReleaseDirectory
+        CompilerPath = $CompilerPath
+        AuthenticodeStatus = $AuthenticodeStatus
+    }
+    if (-not [string]::IsNullOrWhiteSpace($DependencyCacheDirectory)) {
+        $installerArguments.DependencyCacheDirectory = $DependencyCacheDirectory
+    }
+    if (-not [string]::IsNullOrWhiteSpace($SignToolCommand)) {
+        $installerArguments.SignToolCommand = $SignToolCommand
+    }
+    & (Join-Path $pactScriptDirectory 'Build-PactInstaller.ps1') @installerArguments
+    & (Join-Path $pactScriptDirectory 'Complete-PactRelease.ps1') `
+        -Version $Version `
+        -ReleaseDirectory $pactReleaseDirectory
 }
