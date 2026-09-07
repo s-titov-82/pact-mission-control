@@ -16,6 +16,16 @@ $resolvedTemporaryRoot = [IO.Path]::GetFullPath($TemporaryRoot)
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $artifactsRoot = [IO.Path]::GetFullPath((Join-Path $repositoryRoot 'artifacts'))
 $validAppHostPath = [IO.Path]::GetFullPath((Join-Path $repositoryRoot 'src/Pact.App.Avalonia/bin/Debug/net10.0-windows/win-x64/Pact.App.Avalonia.exe'))
+[xml]$buildProperties = Get-Content -LiteralPath (Join-Path $repositoryRoot 'Directory.Build.props') -Raw
+$declaredVersions = @(
+	$buildProperties.SelectNodes('/Project/PropertyGroup/VersionPrefix') |
+		ForEach-Object { [string]$_.InnerText } |
+		Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+if ($declaredVersions.Count -ne 1)
+{
+	throw 'Directory.Build.props must declare exactly one VersionPrefix.'
+}
+$declaredVersion = $declaredVersions[0]
 $artifactsPrefix = $artifactsRoot.TrimEnd(
 	[IO.Path]::DirectorySeparatorChar,
 	[IO.Path]::AltDirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
@@ -53,7 +63,7 @@ function New-PublishFixture
 	param(
 		[Parameter(Mandatory)][string]$Path,
 		[string]$FrameworkName = 'Microsoft.NETCore.App',
-		[string]$ProductVersion = '0.1.0'
+		[string]$ProductVersion = $script:declaredVersion
 	)
 
 	$null = [IO.Directory]::CreateDirectory($Path)
@@ -94,7 +104,7 @@ function Invoke-Build
 	)
 
 	$output = & pwsh -NoProfile -File $resolvedBuildScriptPath `
-		-Version '0.1.0' `
+		-Version $declaredVersion `
 		-PublishDirectory $PublishDirectory `
 		-OutputDirectory $OutputDirectory `
 		-CompilerPath $RequestedCompilerPath `
@@ -219,7 +229,7 @@ try
 	{
 		throw "Valid installer fixture failed.`n$($valid.Output)"
 	}
-	$setupPath = Join-Path $outputRoot 'pact-mission-control-0.1.0-win-x64-setup.exe'
+	$setupPath = Join-Path $outputRoot "pact-mission-control-$declaredVersion-win-x64-setup.exe"
 	if (-not [IO.File]::Exists($setupPath))
 	{
 		throw "Valid installer fixture did not produce $setupPath."
@@ -229,9 +239,9 @@ try
 		throw 'Unsigned fixture unexpectedly produced a signed Setup executable.'
 	}
 	$versionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($setupPath)
-	if ($versionInfo.ProductVersion.Trim() -ne '0.1.0')
+	if ($versionInfo.ProductVersion.Trim() -ne $declaredVersion)
 	{
-		throw "Setup ProductVersion is '$($versionInfo.ProductVersion)', expected 0.1.0."
+		throw "Setup ProductVersion is '$($versionInfo.ProductVersion)', expected $declaredVersion."
 	}
 
 	Write-Output 'PASS: Pact installer rejects invalid inputs and compiles an unsigned fixture with the pinned toolchain.'

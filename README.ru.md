@@ -63,7 +63,7 @@ CLI-инструменты агентов в поставку не входят.
 Перед запуском сравните SHA-256 установщика:
 
 ```powershell
-Get-FileHash .\pact-mission-control-0.1.0-win-x64-setup.exe -Algorithm SHA256
+Get-FileHash .\pact-mission-control-0.1.1-win-x64-setup.exe -Algorithm SHA256
 ```
 
 Запустите установщик и следуйте его подсказкам. PACT устанавливается для

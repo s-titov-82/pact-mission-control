@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-09-07
+
+### Added
+
+- Current-user Windows Setup with prerequisite detection, in-place upgrades,
+  Start menu integration, and uninstall support.
+- Checksummed Setup alongside the portable ZIP and SPDX 2.2 SBOM.
+
+### Changed
+
+- Public installation and release-verification guidance is available in
+  English and Russian and now treats Setup as the primary distribution.
+- The supported desktop baseline is Windows 11 x64, with .NET 10 Runtime and
+  WebView2 Runtime 150 or newer checked by Setup.
+
 ## [0.1.0] - 2026-09-04
 
 ### Added
@@ -23,13 +38,11 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   composer and confirmed by the activity that follows, a detected question
   blocks a programmatic send from a scenario step or the orchestrator, and the
   folder-trust dialog is answered once before a review starts.
-- Current-user Windows Setup with prerequisite detection, in-place upgrades,
-  Start menu integration, and uninstall support.
-- Checksummed Setup and portable ZIP, SPDX 2.2 SBOM, and GitHub build
-  attestations.
+- Checksummed portable ZIP, SPDX 2.2 SBOM, and GitHub build attestations.
 
 ### Security
 
 - Single-owner data-root lease and bounded cleanup of disposable runtime data.
 
+[0.1.1]: https://github.com/s-titov-82/pact-mission-control/releases/tag/v0.1.1
 [0.1.0]: https://github.com/s-titov-82/pact-mission-control/releases/tag/v0.1.0

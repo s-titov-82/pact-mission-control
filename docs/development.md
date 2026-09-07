@@ -106,8 +106,8 @@ compose the final checksums, and independently validate an unsigned local releas
 ```powershell
 pwsh -NoProfile -File tools/Install-InnoSetup.ps1 -DestinationDirectory artifacts/toolchain/inno
 pwsh -NoProfile -File tests/powershell/PactInstaller.Tests.ps1 -BuildScriptPath tools/Build-PactInstaller.ps1 -CompilerPath artifacts/toolchain/inno/ISCC.exe -DependencyCacheDirectory artifacts/installer-dependencies -TemporaryRoot artifacts/installer-selftest
-pwsh -NoProfile -File tools/Publish-Pact.ps1 -Version 0.1.0 -RepositoryUrl https://github.com/s-titov-82/pact-mission-control -AuthenticodeStatus Unsigned -CompilerPath artifacts/toolchain/inno/ISCC.exe -DependencyCacheDirectory artifacts/installer-dependencies
-pwsh -NoProfile -File tools/Test-PublicationArtifacts.ps1 -Version 0.1.0 -ReleaseDirectory artifacts/release/0.1.0 -ExpectedAuthenticodeStatus Unsigned
+pwsh -NoProfile -File tools/Publish-Pact.ps1 -Version 0.1.1 -RepositoryUrl https://github.com/s-titov-82/pact-mission-control -AuthenticodeStatus Unsigned -CompilerPath artifacts/toolchain/inno/ISCC.exe -DependencyCacheDirectory artifacts/installer-dependencies
+pwsh -NoProfile -File tools/Test-PublicationArtifacts.ps1 -Version 0.1.1 -ReleaseDirectory artifacts/release/0.1.1 -ExpectedAuthenticodeStatus Unsigned
 ```
 
 `tools/Test-PactInstaller.ps1` installs and uninstalls the candidate and is
