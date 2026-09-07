@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "dotnet": {
+    "framework": "Microsoft.NETCore.App",
+    "minimumVersion": "10.0.0",
+    "installerVersion": "10.0.11",
+    "installerFileName": "dotnet-runtime-10.0.11-win-x64.exe",
+    "installerUrl": "https://builds.dotnet.microsoft.com/dotnet/Runtime/10.0.11/dotnet-runtime-10.0.11-win-x64.exe",
+    "installerSha256": "33de99eeda0f06f4b4ad43a1fd23977343e1358f5dbb4b0d5e1b84850dc18afc",
+    "installerSha512": "694e0e0af26b2b8949b8eda8a3831ab31aeac79797d43d6ff8c8798eae642c0904852e641c47329d7d893408f25feab1530ca2b7a0c6ed0d991e0113466a4bf9",
+    "publisher": "Microsoft Corporation"
+  },
+  "webView2": {
+    "minimumVersion": "150.0.4078.44",
+    "detectionRule": "pv >= minimumVersion in HKCU or HKLM x86 registry view",
+    "bootstrapperFileName": "MicrosoftEdgeWebview2Setup.exe",
+    "bootstrapperUrl": "https://go.microsoft.com/fwlink/p/?LinkId=2124703",
+    "bootstrapperSha256": "17debf797a6c737959bc588236e897936ffac1af5f7e515e674ab32f9edfe719",
+    "bootstrapperBytes": 1783000,
+    "publisher": "Microsoft Corporation"
+  },
+  "innoSetup": {
+    "version": "7.1.0",
+    "installerUrl": "https://github.com/jrsoftware/issrc/releases/download/is-7_1_0/innosetup-7.1.0-x64.exe",
+    "installerSha256": "0362a383ed217d4c4239b5933866dd96d3eb2102737da92f80f6057a4b40df2f",
+    "compilerSha256": "d06ebd38f38e3cee60a3c50cc45bd449d77e0bc6a5cabc607ea9886808e4de1a",
+    "publisher": "Pyrsys B.V."
+  }
+}

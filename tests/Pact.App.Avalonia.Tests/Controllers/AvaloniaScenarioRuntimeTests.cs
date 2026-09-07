@@ -166,6 +166,7 @@ public sealed class AvaloniaScenarioRuntimeTests
 			.Select(binding => binding.SelectedSession!)
 			.ShouldAllBe(session => !session.IsLockedByScenario);
 
+		ReportIdleScreen(fixture, reviewer.Record.Id);
 		fixture.Controller.ResumeScenario(run);
 		await WaitUntilAsync(() => run.State == ScenarioRunState.Running);
 

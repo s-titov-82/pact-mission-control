@@ -176,7 +176,12 @@ if (-not (Test-Path -LiteralPath $releaseRoot -PathType Container)) {
 }
 
 $archiveName = "pact-mission-control-$Version-win-x64.zip"
-$expectedReleaseFiles = @($archiveName, 'manifest.spdx.json', 'SHA256SUMS.txt')
+$setupName = "pact-mission-control-$Version-win-x64-setup.exe"
+$expectedReleaseFiles = @(
+    $archiveName,
+    $setupName,
+    'manifest.spdx.json',
+    'SHA256SUMS.txt')
 $actualReleaseFiles = @(
     Get-ChildItem -LiteralPath $releaseRoot -File |
         ForEach-Object Name |
@@ -192,8 +197,26 @@ $standaloneSpdxPath = Join-Path $releaseRoot 'manifest.spdx.json'
 Assert-PactChecksums `
     -Path (Join-Path $releaseRoot 'SHA256SUMS.txt') `
     -Directory $releaseRoot `
-    -ExpectedNames @($archiveName, 'manifest.spdx.json')
+    -ExpectedNames @($archiveName, $setupName, 'manifest.spdx.json')
 Assert-PactSpdx -Path $standaloneSpdxPath
+
+$setupSignatureStatus = [string](Get-AuthenticodeSignature -LiteralPath (
+        Join-Path $releaseRoot $setupName)).Status
+$setupVersionInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo(
+    (Join-Path $releaseRoot $setupName))
+if (([string]$setupVersionInfo.ProductVersion).Trim() -ne $Version -or
+    ([string]$setupVersionInfo.ProductName).Trim() -ne $pactProductName) {
+    throw "Setup version metadata does not match $pactProductName $Version."
+}
+$expectedSetupSignatureStatus = if ($ExpectedAuthenticodeStatus -eq 'Signed') {
+    'Valid'
+}
+else {
+    'NotSigned'
+}
+if ($setupSignatureStatus -ne $expectedSetupSignatureStatus) {
+    throw "Setup Authenticode status is $setupSignatureStatus, expected $expectedSetupSignatureStatus."
+}
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $archive = [System.IO.Compression.ZipFile]::OpenRead($archivePath)
@@ -324,7 +347,7 @@ try {
     }
 
     $sizeMiB = [Math]::Round($totalBytes / 1MB, 2)
-    Write-Output "PASS: publication $archiveName is complete, safe, checksum-valid, SPDX 2.2, and $sizeMiB MiB unpacked."
+    Write-Output "PASS: publication contains validated ZIP and Setup artifacts, safe checksums, SPDX 2.2, and $sizeMiB MiB unpacked."
 }
 finally {
     if (Test-Path -LiteralPath $resolvedTemporaryRoot) {

@@ -91,6 +91,8 @@ function Test-PactCiWorkflow {
             @('(?ms)^permissions:\s*\r?\n\s+contents:\s*read\s*$', 'read-only contents permission'),
             @('persist-credentials:\s*false', 'disabled persisted checkout credentials'),
             @('cache-dependency-path:\s*["'']?\*\*/packages\.lock\.json', 'lockfile cache key'),
+            @('VersionPrefix', 'package version source'),
+            @('version=\$\(\$declared\[0\]\)', 'package version workflow output'),
             @('dotnet tool restore --disable-parallel', 'bounded local-tool restore'),
             @('dotnet restore Pact\.slnx --disable-parallel --locked-mode', 'locked solution restore'),
             @('dotnet build Pact\.slnx --no-restore -m:2 -nr:false -v q -p:BuildInParallel=false', 'bounded build'),
@@ -100,7 +102,14 @@ function Test-PactCiWorkflow {
             @('Sync-XtermAssets\.ps1 -Verify', 'vendored xterm verification'),
             @('Test-MarkdownLinks\.ps1', 'public Markdown link validation'),
             @('Test-PublicTree\.ps1', 'public-tree privacy validation'),
+            @('PactReleaseComposition\.Tests\.ps1', 'release composition self-test'),
+            @('PactInstalledSmoke\.Tests\.ps1', 'installer smoke safety self-test'),
             @('Publish-Pact\.ps1 .* -AuthenticodeStatus Unsigned', 'unsigned CI packaging'),
+            @('-CompilerPath ''\$\{\{ steps\.inno\.outputs\.compiler \}\}''', 'pinned compiler forwarded to CI release composition'),
+            @('-DependencyCacheDirectory ./artifacts/installer-dependencies', 'installer dependency cache forwarded to CI release composition'),
+            @('Install-InnoSetup\.ps1', 'pinned Inno Setup provisioning'),
+            @('PactInstaller\.Tests\.ps1', 'installer builder self-test'),
+            @('Test-PactInstaller\.ps1', 'disposable install/uninstall smoke'),
             @('Test-PublicationArtifacts\.ps1 .* -ExpectedAuthenticodeStatus Unsigned', 'artifact validation'),
             @('actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f\s+#\s+v6', 'immutable upload action'))) {
         Assert-PactContains -Text $Text -Pattern $contract[0] -Description $contract[1]
@@ -131,6 +140,10 @@ function Test-PactCiWorkflow {
     Assert-PactDotnetTestsFailFast -Text $Text
 
     Assert-PactHostedNativeGateContract -Text $Text
+
+    if ($Text -match '0\.1\.0') {
+        throw 'CI must derive the package version from Directory.Build.props instead of hard-coding 0.1.0.'
+    }
 }
 
 function Test-PactReleaseWorkflow {
@@ -156,14 +169,27 @@ function Test-PactReleaseWorkflow {
             @('NOT RUN \(interactive gate\)', 'honest native-gate status'),
             @('Test-MarkdownLinks\.ps1', 'public Markdown link validation'),
             @('Test-PublicTree\.ps1', 'public-tree privacy validation'),
+            @('PactReleaseComposition\.Tests\.ps1', 'release composition self-test'),
+            @('PactInstalledSmoke\.Tests\.ps1', 'installer smoke safety self-test'),
             @('Publish-Pact\.ps1 .* -Phase Prepare', 'prepare-only packaging phase'),
+            @('Install-InnoSetup\.ps1', 'pinned Inno Setup provisioning'),
+            @('PactInstaller\.Tests\.ps1', 'installer builder self-test'),
             @('PACT_SIGNING_PFX_BASE64:\s*\$\{\{\s*secrets\.PACT_SIGNING_PFX_BASE64\s*\}\}', 'optional PFX secret mapping'),
             @('PACT_SIGNING_PFX_PASSWORD:\s*\$\{\{\s*secrets\.PACT_SIGNING_PFX_PASSWORD\s*\}\}', 'optional PFX password mapping'),
             @('signtool\.exe', 'Windows SDK signing tool discovery'),
             @('/fd SHA256', 'SHA-256 Authenticode file digest'),
             @('/td SHA256', 'SHA-256 RFC 3161 digest'),
             @('/tr https://', 'RFC 3161 timestamp service'),
-            @('Publish-Pact\.ps1 .* -Phase Finalize', 'finalize-only packaging phase'),
+            @('/sha1', 'CurrentUser certificate thumbprint selection'),
+            @('/s My', 'CurrentUser personal certificate store'),
+            @("Phase = 'Finalize'", 'finalize-only packaging phase'),
+            @('CompilerPath = ''\$\{\{ steps\.inno\.outputs\.compiler \}\}''', 'pinned compiler forwarded to release composition'),
+            @("DependencyCacheDirectory = './artifacts/installer-dependencies'", 'installer dependency cache forwarded to release composition'),
+            @('Publish-Pact\.ps1 @publishArguments', 'unified release composition'),
+            @('\$env:PACT_SIGNING_PFX_BASE64 = \$null', 'PFX secret cleared before compiler invocation'),
+            @('\$env:PACT_SIGNING_PFX_PASSWORD = \$null', 'PFX password cleared before compiler invocation'),
+            @('Remove-Item -LiteralPath \$pfxPath -Force', 'temporary PFX removed before compiler invocation'),
+            @('Test-PactInstaller\.ps1', 'disposable install/uninstall smoke'),
             @('Test-PublicationArtifacts\.ps1', 'signed-or-unsigned artifact validation'),
             @('subject-checksums:\s*artifacts/release/.*/SHA256SUMS\.txt', 'checksum provenance attestation'),
             @('subject-path:\s*artifacts/release/.+\.zip', 'ZIP SBOM attestation subject'),
@@ -183,6 +209,9 @@ function Test-PactReleaseWorkflow {
 
     Assert-PactDotnetTestsFailFast -Text $Text
     Assert-PactHostedNativeGateContract -Text $Text
+    if ($Text -match '(?m)/p\s+\$env:PACT_SIGNING_PFX_PASSWORD') {
+        throw 'The PFX password must not be forwarded to Inno Setup or signtool arguments.'
+    }
 }
 
 function Assert-PactFixtureFails {

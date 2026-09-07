@@ -328,10 +328,12 @@ messages through the normal prompt lock.
 ## Packaging
 
 The only supported package is framework-dependent `win-x64`
-(`SelfContained=false`). Run `tools/Publish-Pact.ps1`; it cleans only
-`artifacts/publish/win-x64` and fails if the result contains PDBs, Linux/macOS,
-win-x86 or win-arm64 runtime folders, or exceeds 50 MiB. Do not add another RID
-until the bundled ConPTY payload exists for that architecture.
+(`SelfContained=false`). A complete `tools/Publish-Pact.ps1` run requires the
+pinned Inno Setup compiler path and emits ZIP, Setup, standalone SPDX, and one
+checksum manifest. It cleans only `artifacts/publish/win-x64` and the selected
+version below `artifacts/release`, and fails if the payload contains PDBs,
+Linux/macOS, win-x86 or win-arm64 runtime folders, or exceeds 50 MiB. Do not add
+another RID until the bundled ConPTY payload exists for that architecture.
 
 ## Right Panel Prompt Actions
 

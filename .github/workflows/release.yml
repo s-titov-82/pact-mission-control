@@ -102,6 +102,8 @@ jobs:
           ./tests/powershell/Test-PublicTree.Tests.ps1
           ./tools/Test-PublicTree.ps1
           ./tests/powershell/PactSbom.Tests.ps1 -ModulePath ./tools/PactSbom.psm1 -TemporaryRoot ./artifacts/sbom-selftest
+          ./tests/powershell/PactReleaseComposition.Tests.ps1 -ScriptPath ./tools/Complete-PactRelease.ps1 -TemporaryRoot ./artifacts/release-composition-selftest
+          ./tests/powershell/PactInstalledSmoke.Tests.ps1 -ScriptPath ./tools/Test-PactInstaller.ps1
           ./tools/Test-WorkflowContracts.ps1 -SelfTest
           ./tools/Test-WorkflowContracts.ps1 -CiWorkflow .github/workflows/ci.yml -ReleaseWorkflow .github/workflows/release.yml
 
@@ -109,10 +111,22 @@ jobs:
         shell: pwsh
         run: ./tools/Publish-Pact.ps1 -Version "${{ steps.version.outputs.version }}" -RepositoryUrl "${{ github.server_url }}/${{ github.repository }}" -AuthenticodeStatus Unsigned -Phase Prepare
 
-      - name: Sign Pact binaries when trusted certificate secrets are configured
+      - name: Install pinned Inno Setup toolchain
+        id: inno
+        shell: pwsh
+        run: |
+          $compiler = ./tools/Install-InnoSetup.ps1 -DestinationDirectory "$env:RUNNER_TEMP/pact-inno-7.1.0" | Select-Object -Last 1
+          "compiler=$compiler" >> $env:GITHUB_OUTPUT
+
+      - name: Validate installer builder
+        shell: pwsh
+        run: ./tests/powershell/PactInstaller.Tests.ps1 -BuildScriptPath ./tools/Build-PactInstaller.ps1 -CompilerPath '${{ steps.inno.outputs.compiler }}' -DependencyCacheDirectory ./artifacts/installer-dependencies -TemporaryRoot ./artifacts/installer-selftest
+
+      - name: Sign, package, and validate release
         id: signing
         shell: pwsh
         env:
+          CI: true
           PACT_SIGNING_PFX_BASE64: ${{ secrets.PACT_SIGNING_PFX_BASE64 }}
           PACT_SIGNING_PFX_PASSWORD: ${{ secrets.PACT_SIGNING_PFX_PASSWORD }}
         run: |
@@ -120,11 +134,6 @@ jobs:
           $hasPassword = -not [string]::IsNullOrWhiteSpace($env:PACT_SIGNING_PFX_PASSWORD)
           if ($hasPfx -ne $hasPassword) {
               throw 'Both Authenticode secrets must be configured together.'
-          }
-          if (-not $hasPfx) {
-              'status=Unsigned' >> $env:GITHUB_OUTPUT
-              Write-Output 'Authenticode status: Unsigned'
-              exit 0
           }
 
           $runnerTemp = [System.IO.Path]::GetFullPath($env:RUNNER_TEMP)
@@ -140,89 +149,134 @@ jobs:
           }
 
           $pfxBytes = $null
+          $importedCertificatePath = $null
           try {
-              $pfxBytes = [Convert]::FromBase64String($env:PACT_SIGNING_PFX_BASE64)
-              [System.IO.File]::WriteAllBytes($pfxPath, $pfxBytes)
-              $securePassword = ConvertTo-SecureString `
-                  $env:PACT_SIGNING_PFX_PASSWORD `
-                  -AsPlainText `
-                  -Force
-              $certificate = Get-PfxCertificate `
-                  -FilePath $pfxPath `
-                  -Password $securePassword
-              $now = Get-Date
-              if (-not $certificate.HasPrivateKey -or
-                  $certificate.NotBefore -gt $now -or
-                  $certificate.NotAfter -le $now) {
-                  throw 'The signing certificate must have a private key and be currently valid.'
-              }
-
-              $signTool = Get-ChildItem `
-                      -LiteralPath "${env:ProgramFiles(x86)}\Windows Kits\10\bin" `
-                      -Filter signtool.exe `
-                      -File `
-                      -Recurse |
-                  Where-Object { $_.Directory.Name -eq 'x64' } |
-                  Sort-Object {
-                      [version]$_.Directory.Parent.Name
-                  } -Descending |
-                  Select-Object -First 1
-              if ($null -eq $signTool) {
-                  throw 'Windows SDK signtool.exe was not found.'
-              }
-
-              $ownedBinaries = @(
-                  Get-ChildItem -LiteralPath artifacts/publish/win-x64 -Recurse -File |
-                      Where-Object {
-                          $_.Name.StartsWith(
-                              'Pact.',
-                              [System.StringComparison]::Ordinal) -and
-                          $_.Extension -in @('.dll', '.exe')
-                      })
-              if ($ownedBinaries.Count -eq 0) {
-                  throw 'No Pact-owned binaries were found for signing.'
-              }
-
-              foreach ($binary in $ownedBinaries) {
-                  & $signTool.FullName sign `
-                      /fd SHA256 `
-                      /td SHA256 `
-                      /tr https://timestamp.digicert.com `
-                      /f $pfxPath `
-                      /p $env:PACT_SIGNING_PFX_PASSWORD `
-                      $binary.FullName
-                  if ($LASTEXITCODE -ne 0) {
-                      throw "signtool failed to sign $($binary.Name)."
+              $status = 'Unsigned'
+              $signToolCommand = $null
+              if ($hasPfx) {
+                  $pfxBytes = [Convert]::FromBase64String($env:PACT_SIGNING_PFX_BASE64)
+                  [System.IO.File]::WriteAllBytes($pfxPath, $pfxBytes)
+                  $securePassword = ConvertTo-SecureString `
+                      $env:PACT_SIGNING_PFX_PASSWORD `
+                      -AsPlainText `
+                      -Force
+                  $certificate = Get-PfxCertificate `
+                      -FilePath $pfxPath `
+                      -Password $securePassword
+                  $now = Get-Date
+                  if (-not $certificate.HasPrivateKey -or
+                      $certificate.NotBefore -gt $now -or
+                      $certificate.NotAfter -le $now) {
+                      throw 'The signing certificate must have a private key and be currently valid.'
                   }
-                  & $signTool.FullName verify /pa /all $binary.FullName
-                  if ($LASTEXITCODE -ne 0) {
-                      throw "signtool failed to verify $($binary.Name)."
+                  $candidateCertificatePath = "Cert:\CurrentUser\My\$($certificate.Thumbprint)"
+                  if (Test-Path -LiteralPath $candidateCertificatePath) {
+                      throw 'The signing certificate already exists in CurrentUser/My; refusing ambiguous cleanup.'
                   }
-                  $signature = Get-AuthenticodeSignature -LiteralPath $binary.FullName
-                  if ([string]$signature.Status -ne 'Valid') {
-                      throw "Windows trust validation failed for $($binary.Name)."
+                  $importResult = @(Import-PfxCertificate `
+                      -FilePath $pfxPath `
+                      -CertStoreLocation Cert:\CurrentUser\My `
+                      -Password $securePassword)
+                  if (Test-Path -LiteralPath $candidateCertificatePath) {
+                      $importedCertificatePath = $candidateCertificatePath
                   }
+                  $importedCertificate = $importResult |
+                      Where-Object Thumbprint -eq $certificate.Thumbprint |
+                      Select-Object -First 1
+                  if ($null -eq $importedCertificate -or
+                      -not $importedCertificate.HasPrivateKey) {
+                      throw 'The signing certificate could not be imported with its private key.'
+                  }
+                  Remove-Item -LiteralPath $pfxPath -Force
+                  [Array]::Clear($pfxBytes, 0, $pfxBytes.Length)
+                  $pfxBytes = $null
+                  $env:PACT_SIGNING_PFX_BASE64 = $null
+                  $env:PACT_SIGNING_PFX_PASSWORD = $null
+
+                  $signTool = Get-ChildItem `
+                          -LiteralPath "${env:ProgramFiles(x86)}\Windows Kits\10\bin" `
+                          -Filter signtool.exe `
+                          -File `
+                          -Recurse |
+                      Where-Object { $_.Directory.Name -eq 'x64' } |
+                      Sort-Object {
+                          [version]$_.Directory.Parent.Name
+                      } -Descending |
+                      Select-Object -First 1
+                  if ($null -eq $signTool) {
+                      throw 'Windows SDK signtool.exe was not found.'
+                  }
+
+                  $ownedBinaries = @(
+                      Get-ChildItem -LiteralPath artifacts/publish/win-x64 -Recurse -File |
+                          Where-Object {
+                              $_.Name.StartsWith(
+                                  'Pact.',
+                                  [System.StringComparison]::Ordinal) -and
+                              $_.Extension -in @('.dll', '.exe')
+                          })
+                  if ($ownedBinaries.Count -eq 0) {
+                      throw 'No Pact-owned binaries were found for signing.'
+                  }
+
+                  foreach ($binary in $ownedBinaries) {
+                      & $signTool.FullName sign `
+                          /fd SHA256 `
+                          /td SHA256 `
+                          /tr https://timestamp.digicert.com `
+                          /sha1 $certificate.Thumbprint `
+                          /s My `
+                          $binary.FullName
+                      if ($LASTEXITCODE -ne 0) {
+                          throw "signtool failed to sign $($binary.Name)."
+                      }
+                      & $signTool.FullName verify /pa /all $binary.FullName
+                      if ($LASTEXITCODE -ne 0) {
+                          throw "signtool failed to verify $($binary.Name)."
+                      }
+                      if ([string](Get-AuthenticodeSignature -LiteralPath $binary.FullName).Status -ne 'Valid') {
+                          throw "Windows trust validation failed for $($binary.Name)."
+                      }
+                  }
+
+                  $env:PACT_SIGNTOOL_PATH = $signTool.FullName
+                  $env:PACT_SIGNING_CERTIFICATE_THUMBPRINT = $certificate.Thumbprint
+                  $signScript = (Resolve-Path -LiteralPath tools/Sign-PactInstaller.ps1).Path
+                  $pwsh = (Get-Command pwsh -CommandType Application).Source
+                  $signToolCommand = ('"{0}" -NoProfile -File "{1}" $f' -f $pwsh, $signScript)
+                  $status = 'Signed'
               }
 
-              'status=Signed' >> $env:GITHUB_OUTPUT
-              Write-Output "Authenticode status: Signed ($($ownedBinaries.Count) Pact binaries)"
+              $version = '${{ steps.version.outputs.version }}'
+              $publishArguments = @{
+                  Version = $version
+                  RepositoryUrl = "${{ github.server_url }}/${{ github.repository }}"
+                  AuthenticodeStatus = $status
+                  Phase = 'Finalize'
+                  CompilerPath = '${{ steps.inno.outputs.compiler }}'
+                  DependencyCacheDirectory = './artifacts/installer-dependencies'
+              }
+              if ($status -eq 'Signed') {
+                  $publishArguments.SignToolCommand = $signToolCommand
+              }
+              ./tools/Publish-Pact.ps1 @publishArguments
+              ./tools/Test-PublicationArtifacts.ps1 -Version $version -ReleaseDirectory "artifacts/release/$version" -ExpectedAuthenticodeStatus $status
+              ./tools/Test-PactInstaller.ps1 -Version $version -SetupPath "artifacts/release/$version/pact-mission-control-$version-win-x64-setup.exe" -ZipPath "artifacts/release/$version/pact-mission-control-$version-win-x64.zip" -WorkingDirectory "$env:RUNNER_TEMP/pact-installer-smoke" -ExpectedAuthenticodeStatus $status
+              "status=$status" >> $env:GITHUB_OUTPUT
+              Write-Output "Authenticode status: $status"
           }
           finally {
               if ($null -ne $pfxBytes) {
                   [Array]::Clear($pfxBytes, 0, $pfxBytes.Length)
               }
+              if ($null -ne $importedCertificatePath -and
+                  (Test-Path -LiteralPath $importedCertificatePath)) {
+                  Remove-Item -LiteralPath $importedCertificatePath -Force
+              }
               if (Test-Path -LiteralPath $pfxPath) {
                   Remove-Item -LiteralPath $pfxPath -Force
               }
           }
-
-      - name: Finalize and validate release
-        shell: pwsh
-        run: |
-          $status = '${{ steps.signing.outputs.status }}'
-          $version = '${{ steps.version.outputs.version }}'
-          ./tools/Publish-Pact.ps1 -Version $version -RepositoryUrl "${{ github.server_url }}/${{ github.repository }}" -AuthenticodeStatus $status -Phase Finalize
-          ./tools/Test-PublicationArtifacts.ps1 -Version $version -ReleaseDirectory "artifacts/release/$version" -ExpectedAuthenticodeStatus $status
 
       - name: Attest release checksums
         uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
