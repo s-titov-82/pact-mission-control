@@ -2,33 +2,49 @@
 
 [English](../en/getting-started.md) | [Русский](getting-started.md)
 
-PACT:> Mission Control работает в Windows 10 или Windows 11 x64. Перед
-запуском релиза установите
-[.NET 10 Desktop Runtime x64](https://dotnet.microsoft.com/download/dotnet/10.0)
-и [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/).
+PACT:> Mission Control работает в Windows 11 x64. Установщик
+проверяет наличие [.NET 10 Runtime x64](https://dotnet.microsoft.com/download/dotnet/10.0)
+и [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)
+и предлагает доставить недостающую среду перед установкой PACT.
 Нужные CLI агентов устанавливаются отдельно, а их команды должны быть доступны
 через `PATH`. Стартовые профили ожидают `codex`, `claude`, `hermes` и `pwsh`,
 поэтому для сессий PowerShell также нужен PowerShell 7.
 
 ## Установка
 
-1. Скачайте ZIP и `SHA256SUMS.txt` из
+1. Скачайте установщик и `SHA256SUMS.txt` из
    [последнего релиза](https://github.com/s-titov-82/pact-mission-control/releases/latest).
-2. Сравните контрольную сумму архива с соответствующей строкой в
+2. Сравните контрольную сумму установщика с соответствующей строкой в
    `SHA256SUMS.txt`:
 
    ```powershell
-   Get-FileHash .\pact-mission-control-0.1.0-win-x64.zip -Algorithm SHA256
+   Get-FileHash .\pact-mission-control-0.1.0-win-x64-setup.exe -Algorithm SHA256
    ```
 
-3. Распакуйте ZIP в каталог, доступный текущему пользователю для записи.
-4. Запустите `Pact.App.Avalonia.exe`.
+3. Запустите установщик и следуйте его подсказкам. Сам PACT устанавливается
+   без повышения прав; Windows может запросить его только для установки .NET,
+   если эта среда отсутствует. Если установщик сообщает о недостающем
+   компоненте, потребуется интернет: после вашего согласия будет загружена
+   среда .NET или актуальная Evergreen-версия WebView2 Runtime.
+4. Запустите PACT из меню «Пуск».
+
+ZIP остаётся переносимым вариантом для ручной установки. Сначала установите
+.NET 10 Runtime x64 и WebView2, распакуйте ZIP в доступный для записи каталог
+и запустите `Pact.App.Avalonia.exe`.
 
 Первые релизы могут не иметь подписи Authenticode, поэтому Windows SmartScreen
 способен показать предупреждение. Проверка контрольной суммы, аттестации
 GitHub и SPDX SBOM описана в разделе
 [Проверка релиза](../../release-verification.ru.md). Не запускайте архив,
 контрольная сумма которого отличается.
+
+## Обновление и удаление
+
+Штатно закройте PACT, чтобы живые агентские сессии успели завершиться, затем
+запустите установщик новой версии. Он обновит текущую пользовательскую
+установку и не позволит установить более старую версию. Удалить PACT можно
+через раздел установленных приложений Windows. Обновление и удаление не
+затрагивают `%APPDATA%\Pact` и отдельно установленные среды .NET и WebView2.
 
 ## Первый проект
 

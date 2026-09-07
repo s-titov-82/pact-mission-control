@@ -23,7 +23,10 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   composer and confirmed by the activity that follows, a detected question
   blocks a programmatic send from a scenario step or the orchestrator, and the
   folder-trust dialog is answered once before a review starts.
-- Checksummed release ZIP, SPDX 2.2 SBOM, and GitHub build attestations.
+- Current-user Windows Setup with prerequisite detection, in-place upgrades,
+  Start menu integration, and uninstall support.
+- Checksummed Setup and portable ZIP, SPDX 2.2 SBOM, and GitHub build
+  attestations.
 
 ### Security
 

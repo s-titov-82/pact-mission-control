@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Windows 10 or 11 x64.
+- Windows 11 x64.
 - .NET 10 SDK; `global.json` requests 10.0.302 and permits roll-forward to a
   newer .NET 10 feature band.
 - Node.js 22 or newer on `PATH` for terminal-host behavior tests.
@@ -95,16 +95,25 @@ pwsh -NoProfile -File tools/Test-PublicTree.ps1
 pwsh -NoProfile -File tools/Test-WorkflowContracts.ps1 -SelfTest
 pwsh -NoProfile -File tools/Test-WorkflowContracts.ps1 -CiWorkflow .github/workflows/ci.yml -ReleaseWorkflow .github/workflows/release.yml
 pwsh -NoProfile -File tests/powershell/PactSbom.Tests.ps1 -ModulePath tools/PactSbom.psm1 -TemporaryRoot artifacts/sbom-selftest
+pwsh -NoProfile -File tests/powershell/PactReleaseComposition.Tests.ps1 -ScriptPath tools/Complete-PactRelease.ps1 -TemporaryRoot artifacts/release-composition-selftest
 ```
 
 ## Packaging
 
-Create and independently validate an unsigned local release:
+Create the publish tree and ZIP, build Setup with the pinned Inno toolchain,
+compose the final checksums, and independently validate an unsigned local release:
 
 ```powershell
-pwsh -NoProfile -File tools/Publish-Pact.ps1 -Version 0.1.0 -RepositoryUrl https://github.com/s-titov-82/pact-mission-control -AuthenticodeStatus Unsigned
+pwsh -NoProfile -File tools/Install-InnoSetup.ps1 -DestinationDirectory artifacts/toolchain/inno
+pwsh -NoProfile -File tests/powershell/PactInstaller.Tests.ps1 -BuildScriptPath tools/Build-PactInstaller.ps1 -CompilerPath artifacts/toolchain/inno/ISCC.exe -DependencyCacheDirectory artifacts/installer-dependencies -TemporaryRoot artifacts/installer-selftest
+pwsh -NoProfile -File tools/Publish-Pact.ps1 -Version 0.1.0 -RepositoryUrl https://github.com/s-titov-82/pact-mission-control -AuthenticodeStatus Unsigned -CompilerPath artifacts/toolchain/inno/ISCC.exe -DependencyCacheDirectory artifacts/installer-dependencies
 pwsh -NoProfile -File tools/Test-PublicationArtifacts.ps1 -Version 0.1.0 -ReleaseDirectory artifacts/release/0.1.0 -ExpectedAuthenticodeStatus Unsigned
 ```
+
+`tools/Test-PactInstaller.ps1` installs and uninstalls the candidate and is
+therefore guarded for disposable GitHub Actions runners (`CI=true` and a work
+directory below `RUNNER_TEMP`). Do not bypass that guard on a developer
+workstation; the CI workflow runs this smoke against the completed artifacts.
 
 The supported target is framework-dependent `win-x64`.
 Packaging derives the exact NuGet runtime set from the published `.deps.json`
@@ -130,9 +139,13 @@ Maintainers publish from an existing `vMAJOR.MINOR.PATCH` tag:
    `PACT_SIGNING_PFX_PASSWORD` repository secrets to Authenticode-sign the Pact
    binaries. With neither secret the release is explicitly unsigned; providing
    only one is an error.
-4. Verify that the workflow publishes the ZIP, standalone SPDX manifest, and
-   `SHA256SUMS.txt`, creates provenance/SBOM attestations, and creates the GitHub
-   release for the existing tag.
+4. Verify that the workflow publishes Setup, the portable ZIP, standalone SPDX
+   manifest, and `SHA256SUMS.txt`, creates provenance/SBOM attestations, and
+   creates the GitHub release for the existing tag.
+
+The exact manual installer matrix is in
+[`docs/manual-tests/installer-smoke.md`](manual-tests/installer-smoke.md). Its
+results remain `NOT RUN` until exercised on disposable Windows environments.
 
 Hosted CI runs only the native WebView evidence-contract self-test. A real
 interactive native WebView candidate run remains a separate release decision

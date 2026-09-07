@@ -4,7 +4,10 @@
 
 Verify the exact public ZIP, native WebView engine, scenario transport, and
 process lease. Start from a clean candidate ZIP on Windows x64. Record its
-SHA-256, source commit, and extracted `Pact.exe` SHA-256 below.
+SHA-256, source commit, and extracted `Pact.App.Avalonia.exe` SHA-256 below.
+
+Setup-specific prerequisite, upgrade, and uninstall behavior is covered by
+the separate [Windows installer smoke protocol](installer-smoke.md).
 
 Use a fresh `C:\pact-test\release` data root. Do not launch the candidate
 without `--data-root`.

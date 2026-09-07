@@ -35,11 +35,15 @@ PACT:> is Windows-only. The supported package is framework-dependent
 
 ## Requirements
 
-To run a release:
+To run a release manually from the portable ZIP:
 
-- Windows 10 or Windows 11 x64;
-- [.NET 10 Desktop Runtime x64](https://dotnet.microsoft.com/download/dotnet/10.0);
+- Windows 11 x64;
+- [.NET 10 Runtime x64](https://dotnet.microsoft.com/download/dotnet/10.0);
 - [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/).
+
+The Setup package checks these two runtimes and offers to install a missing
+one before PACT. You do not need to install them in advance when using Setup;
+an Internet connection is required only when a prerequisite must be downloaded.
 
 Coding-agent CLIs are not bundled. Install each CLI you intend to use and make
 its command available on `PATH`; the starter profiles call `codex`, `claude`,
@@ -50,13 +54,25 @@ Contributors also need the .NET 10 SDK, Node.js 22 or newer, and PowerShell 7.
 
 ## Install a release
 
-Download the ZIP and `SHA256SUMS.txt` from the
+Download the Setup executable and `SHA256SUMS.txt` from the
 [latest release](https://github.com/s-titov-82/pact-mission-control/releases/latest).
-Compare the ZIP's SHA-256 digest before extracting it:
+Compare Setup's SHA-256 digest before running it:
 
 ```powershell
-Get-FileHash .\pact-mission-control-0.1.0-win-x64.zip -Algorithm SHA256
+Get-FileHash .\pact-mission-control-0.1.0-win-x64-setup.exe -Algorithm SHA256
 ```
+
+Run Setup and follow its prompts. It installs PACT for the current user under
+`%LOCALAPPDATA%\Programs\Pact Mission Control`, creates a Start menu shortcut,
+and can optionally create a desktop shortcut. Installing or uninstalling PACT
+does not remove the data under `%APPDATA%\Pact`.
+Run a newer Setup to upgrade in place; Setup blocks installing an older version
+over a newer one. Close PACT normally before upgrading so live agents are not
+terminated while files are replaced.
+
+The ZIP remains available as a portable/manual alternative. It requires the
+two runtimes listed above to be installed first; extract it to a user-writable
+directory and start `Pact.App.Avalonia.exe`.
 
 The first public releases may be unsigned by Authenticode, so Windows
 SmartScreen can warn. See [Release verification](docs/release-verification.md)
@@ -64,10 +80,9 @@ for checksum, SPDX SBOM, and GitHub attestation checks.
 
 ## First run
 
-1. Extract the ZIP to a user-writable directory.
-2. Start `Pact.App.Avalonia.exe`.
-3. Click `+` beside `PROJECTS` and select the repository directory.
-4. Add a terminal session from the project card, choose a launch profile, and
+1. Start PACT from the Start menu (or run `Pact.App.Avalonia.exe` from the ZIP).
+2. Click `+` beside `PROJECTS` and select the repository directory.
+3. Add a terminal session from the project card, choose a launch profile, and
    start it.
 
 For a general Hermes session, dashboard, or shell that is not tied to a
