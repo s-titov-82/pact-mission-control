@@ -83,9 +83,11 @@ public sealed class SettingsWindowHeadlessTests
 		var root = resource.ShouldBeAssignableTo<IDataTemplate>()!
 			.Build(null).ShouldBeAssignableTo<Control>()!;
 
-		root.GetSelfAndVisualDescendants().OfType<Button>()
-			.Select(button => button.Content)
+		var buttons = root.GetSelfAndVisualDescendants().OfType<Button>().ToArray();
+		buttons.Take(3).Select(button => button.Content)
 			.ShouldBe(["Check now", "Open release notes", "Open containing folder"]);
+		buttons.Single(button => Equals(button.Tag, "RestartAndUpdate"))
+			.ShouldNotBeNull();
 	}
 
 	[AvaloniaTest]

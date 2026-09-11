@@ -85,6 +85,64 @@ public sealed class UpdateCoordinator : IAsyncDisposable
 	public event EventHandler<UpdateStatusChangedEventArgs>? StatusChanged;
 
 	/// <summary>
+	/// Reconciles a verified package with the latest terminal/review restart-safety snapshot.
+	/// </summary>
+	/// <param name="canRestart">Whether no current work blocks a graceful restart.</param>
+	public void UpdateRestartSafety(bool canRestart)
+	{
+		UpdateStatus next;
+		EventHandler<UpdateStatusChangedEventArgs>? handler;
+		lock (_stateSync)
+		{
+			if (_status.PreparedPackage is null
+				|| _status.State is not (UpdateState.ReadyWaitingForSafeState
+					or UpdateState.ReadyToRestart))
+			{
+				return;
+			}
+
+			var target = canRestart
+				? UpdateState.ReadyToRestart
+				: UpdateState.ReadyWaitingForSafeState;
+			if (_status.State == target)
+			{
+				return;
+			}
+
+			next = _status with { State = target };
+			_status = next;
+			handler = StatusChanged;
+		}
+
+		handler?.Invoke(this, new UpdateStatusChangedEventArgs(next));
+	}
+
+	/// <summary>Marks the exact prepared package as handed to the external updater.</summary>
+	/// <param name="package">The package whose helper handoff successfully started.</param>
+	public void MarkApplying(PreparedUpdatePackage package)
+	{
+		ArgumentNullException.ThrowIfNull(package);
+		UpdateStatus next;
+		EventHandler<UpdateStatusChangedEventArgs>? handler;
+		lock (_stateSync)
+		{
+			if (_status.State is not (UpdateState.ReadyWaitingForSafeState
+					or UpdateState.ReadyToRestart)
+				|| !Equals(_status.PreparedPackage, package))
+			{
+				throw new InvalidOperationException(
+					"Only the currently prepared package can enter Applying.");
+			}
+
+			next = _status with { State = UpdateState.Applying };
+			_status = next;
+			handler = StatusChanged;
+		}
+
+		handler?.Invoke(this, new UpdateStatusChangedEventArgs(next));
+	}
+
+	/// <summary>
 	/// Starts the single background schedule. Repeated calls do not create another loop.
 	/// </summary>
 	/// <param name="lifetimeToken">Cancels checks when the application lifetime ends.</param>

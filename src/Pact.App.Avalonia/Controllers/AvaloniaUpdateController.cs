@@ -19,6 +19,11 @@ internal sealed class AvaloniaUpdateController
 	private readonly Func<string, Exception?, Task> _logAsync;
 	private Func<UpdateRelease, Task<UpdateAvailableDialogResult>>? _showDialogAsync;
 	private Func<string, Task>? _showInformationAsync;
+	private Func<SoftRestartSafetyResult>? _getRestartSafety;
+	private Func<PreparedUpdatePackage, CancellationToken, Task<SoftRestartRequestResult>>?
+		_requestApplyUpdateAsync;
+	private readonly Lock _restartSync = new();
+	private StableReleaseVersion? _automaticallyOfferedRestartVersion;
 	private int _dialogOpen;
 	private int _manualChecks;
 	private int _preparing;
@@ -43,12 +48,63 @@ internal sealed class AvaloniaUpdateController
 
 	public UpdateCoordinator Coordinator { get; }
 
+	public bool IsRestartActionVisible =>
+		Coordinator.Status is { State: UpdateState.ReadyToRestart, PreparedPackage: not null };
+
+	public string RestartActionText => Coordinator.Status.PreparedPackage is { } package
+		? $"Version {package.Release.Version} ready - restart"
+		: string.Empty;
+
+	public event EventHandler? RestartAndUpdateRequested;
+
 	public void ConfigureHost(
 		Func<UpdateRelease, Task<UpdateAvailableDialogResult>> showDialogAsync,
 		Func<string, Task> showInformationAsync)
 	{
 		_showDialogAsync = showDialogAsync ?? throw new ArgumentNullException(nameof(showDialogAsync));
 		_showInformationAsync = showInformationAsync ?? throw new ArgumentNullException(nameof(showInformationAsync));
+	}
+
+	public void ConfigureRestart(Func<SoftRestartSafetyResult> getRestartSafety)
+	{
+		_getRestartSafety = getRestartSafety
+			?? throw new ArgumentNullException(nameof(getRestartSafety));
+	}
+
+	public void ConfigureRestart(
+		Func<SoftRestartSafetyResult> getRestartSafety,
+		Func<PreparedUpdatePackage, CancellationToken, Task<SoftRestartRequestResult>>
+			requestApplyUpdateAsync)
+	{
+		ConfigureRestart(getRestartSafety);
+		_requestApplyUpdateAsync = requestApplyUpdateAsync
+			?? throw new ArgumentNullException(nameof(requestApplyUpdateAsync));
+	}
+
+	public async Task<SoftRestartRequestResult> RequestRestartAndUpdateAsync(
+		CancellationToken cancellationToken)
+	{
+		if (Coordinator.Status is not
+			{ State: UpdateState.ReadyToRestart, PreparedPackage: { } package })
+		{
+			RefreshRestartSafety();
+			return new SoftRestartRequestResult(false, [], "update-not-ready");
+		}
+		if (_requestApplyUpdateAsync is not { } requestApplyUpdateAsync)
+		{
+			return new SoftRestartRequestResult(false, [], "update-restart-unavailable");
+		}
+
+		var result = await requestApplyUpdateAsync(package, cancellationToken);
+		if (result.Started)
+		{
+			Coordinator.MarkApplying(package);
+		}
+		else
+		{
+			RefreshRestartSafety();
+		}
+		return result;
 	}
 
 	public Task StartAsync(CancellationToken lifetimeToken)
@@ -157,6 +213,23 @@ internal sealed class AvaloniaUpdateController
 
 	private void OnStatusChanged(object? sender, UpdateStatusChangedEventArgs args)
 	{
+		if (args.Status.State == UpdateState.ReadyWaitingForSafeState
+			&& Volatile.Read(ref _preparing) == 0)
+		{
+			ScheduleRestartSafetyRefresh();
+		}
+		else if (args.Status is { State: UpdateState.ReadyToRestart, PreparedPackage: { } package }
+			&& TryReserveAutomaticRestartOffer(package.Release.Version))
+		{
+			_eventTasks.TryRun(
+				"offer-restart-and-update",
+				() => _uiTaskDispatcher.InvokeAsync(() =>
+				{
+					RestartAndUpdateRequested?.Invoke(this, EventArgs.Empty);
+					return Task.CompletedTask;
+				}));
+		}
+
 		if (args.Status.State == UpdateState.Failed
 			&& Volatile.Read(ref _manualChecks) == 0
 			&& Volatile.Read(ref _preparing) == 0)
@@ -176,6 +249,36 @@ internal sealed class AvaloniaUpdateController
 				() => _uiTaskDispatcher.InvokeAsync(() => ShowAvailableAsync(release)));
 		}
 	}
+
+	public void RefreshRestartSafety()
+	{
+		if (_getRestartSafety is { } getSafety)
+		{
+			Coordinator.UpdateRestartSafety(getSafety().CanRestart);
+		}
+	}
+
+	private bool TryReserveAutomaticRestartOffer(StableReleaseVersion version)
+	{
+		lock (_restartSync)
+		{
+			if (_automaticallyOfferedRestartVersion == version)
+			{
+				return false;
+			}
+			_automaticallyOfferedRestartVersion = version;
+			return true;
+		}
+	}
+
+	private void ScheduleRestartSafetyRefresh() =>
+		_eventTasks.TryRun(
+			"update-restart-safety",
+			() => _uiTaskDispatcher.InvokeAsync(() =>
+			{
+				RefreshRestartSafety();
+				return Task.CompletedTask;
+			}));
 
 	private async Task ShowAvailableAsync(UpdateRelease release)
 	{
@@ -221,7 +324,7 @@ internal sealed class AvaloniaUpdateController
 				progress: null,
 				_lifetimeToken);
 			await ShowInformationAsync(
-				$"Pact {package.Release.Version} was downloaded and verified. Open its containing folder from Settings to install it manually.");
+				$"Pact {package.Release.Version} was downloaded and verified. Pact will offer a restart as soon as active work is safe.");
 		}
 		catch (OperationCanceledException) when (_lifetimeToken.IsCancellationRequested)
 		{
@@ -234,7 +337,11 @@ internal sealed class AvaloniaUpdateController
 		}
 		finally
 		{
-			Interlocked.Decrement(ref _preparing);
+			if (Interlocked.Decrement(ref _preparing) == 0
+				&& Coordinator.Status.State == UpdateState.ReadyWaitingForSafeState)
+			{
+				ScheduleRestartSafetyRefresh();
+			}
 		}
 	}
 

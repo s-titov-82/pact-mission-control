@@ -772,6 +772,26 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 	}
 
 	[AvaloniaTest]
+	public void Update_restart_action_is_persistent_beside_settings_and_routes_clicks()
+	{
+		RightActionsPanel actions = new();
+		var raised = false;
+		actions.RestartAndUpdateRequested += (_, _) => raised = true;
+		var restart = actions.FindControl<Button>("RestartAndUpdateButton")
+			.ShouldBeOfType<Button>();
+		restart.IsVisible.ShouldBeFalse();
+
+		actions.SetUpdateRestartAction(
+			visible: true,
+			"Version 1.3.0 ready - restart");
+		restart.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+		restart.IsVisible.ShouldBeTrue();
+		restart.Content.ShouldBe("Version 1.3.0 ready - restart");
+		raised.ShouldBeTrue();
+	}
+
+	[AvaloniaTest]
 	public void ScenarioButtonIsEnabledAndRaisesSelectedDefinition()
 	{
 		RightActionsPanel actions = new();

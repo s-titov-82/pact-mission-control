@@ -8,6 +8,10 @@
       <Button x:Name="SettingsButton" DockPanel.Dock="Right" Width="34" Height="30" Padding="0"
               HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
               ToolTip.Tip="Settings" Click="OnSettingsClicked"><PathIcon Width="16" Height="16" Data="{StaticResource AppSettingsIcon}" /></Button>
+      <Button x:Name="RestartAndUpdateButton" DockPanel.Dock="Right" Height="30"
+              Margin="0,0,8,0" Padding="8,0" IsVisible="False"
+              HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+              Click="OnRestartAndUpdateClicked" />
       <TextBlock FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource AppTextPrimaryBrush}"
                  VerticalAlignment="Center" Text="Actions" />
     </DockPanel>

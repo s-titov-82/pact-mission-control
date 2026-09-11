@@ -50,6 +50,12 @@ public sealed class UpdatesSectionViewModel : SettingsSectionViewModelBase, IDis
 	/// <summary>Gets whether a verified staged package directory can be opened.</summary>
 	public bool CanOpenContainingFolder { get; private set => SetField(ref field, value); }
 
+	/// <summary>Gets whether the prepared package is currently safe to apply by restart.</summary>
+	public bool IsRestartActionVisible { get; private set => SetField(ref field, value); }
+
+	/// <summary>Gets the stable label for the Settings restart action.</summary>
+	public string RestartActionText { get; } = "Restart and update";
+
 	/// <summary>Occurs when the user explicitly requests a release check.</summary>
 	public event EventHandler? CheckRequested;
 
@@ -61,6 +67,9 @@ public sealed class UpdatesSectionViewModel : SettingsSectionViewModelBase, IDis
 
 	/// <summary>Occurs when the user requests the diagnostic soft-restart path.</summary>
 	public event EventHandler? SoftRestartRequested;
+
+	/// <summary>Occurs when the user requests applying the prepared update.</summary>
+	public event EventHandler? RestartAndUpdateRequested;
 
 	/// <summary>Raises the manual-check action when the coordinator is not busy.</summary>
 	public void RequestCheck()
@@ -91,6 +100,15 @@ public sealed class UpdatesSectionViewModel : SettingsSectionViewModelBase, IDis
 
 	/// <summary>Raises the diagnostic soft-restart action.</summary>
 	public void RequestSoftRestart() => SoftRestartRequested?.Invoke(this, EventArgs.Empty);
+
+	/// <summary>Raises update restart only while the verified package is safe.</summary>
+	public void RequestRestartAndUpdate()
+	{
+		if (IsRestartActionVisible)
+		{
+			RestartAndUpdateRequested?.Invoke(this, EventArgs.Empty);
+		}
+	}
 
 	/// <inheritdoc />
 	public override Task LoadAsync(CancellationToken cancellationToken)
@@ -142,5 +160,6 @@ public sealed class UpdatesSectionViewModel : SettingsSectionViewModelBase, IDis
 		CanOpenReleaseNotes = _availableRelease?.ReleaseNotesUri is { IsAbsoluteUri: true } uri
 			&& uri.Scheme == Uri.UriSchemeHttps;
 		CanOpenContainingFolder = status.PreparedPackage is not null;
+		IsRestartActionVisible = status is { State: UpdateState.ReadyToRestart, PreparedPackage: not null };
 	}
 }

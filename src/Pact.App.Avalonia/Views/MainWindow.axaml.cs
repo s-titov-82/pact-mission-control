@@ -16,6 +16,7 @@ using Pact.Core.Prompting;
 using Pact.Core.Updates;
 using Pact.Presentation.Settings;
 using Pact.Presentation.Settings.ViewModels;
+using Pact.Presentation.Updates;
 using Pact.Presentation.ViewModels;
 
 namespace Pact.App.Avalonia.Views;
@@ -62,6 +63,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 	internal Func<string, Task>? ShowUpdateInformationAsyncOverride { get; set; }
 	internal Action? StartGracefulShutdownOverride { get; set; }
 	internal Func<CancellationToken, Task<SoftRestartRequestResult>>? RequestSoftRestartAsyncOverride { get; set; }
+	internal Func<CancellationToken, Task<SoftRestartRequestResult>>? RequestUpdateRestartAsyncOverride { get; set; }
 	public MainWindow()
 	{
 		InitializeComponent();
@@ -599,6 +601,11 @@ internal sealed partial class MainWindow : Window, IDisposable
 			handler => RightActions.SettingsRequested -= handler,
 			"open-settings",
 			() => OpenSettingsAsync(SettingsSection.Projects, null, null));
+		ObserveEvent(
+			handler => RightActions.RestartAndUpdateRequested += handler,
+			handler => RightActions.RestartAndUpdateRequested -= handler,
+			"restart-and-update",
+			() => RequestRestartAndUpdateAsync(CancellationToken.None));
 		ObserveEvent<Core.Scenarios.ScenarioDefinition>(
 			handler => RightActions.ScenarioRequested += handler,
 			handler => RightActions.ScenarioRequested -= handler,
@@ -755,7 +762,8 @@ internal sealed partial class MainWindow : Window, IDisposable
 			openUpdateContainingFolderAsync: _updateController is null
 				? null
 				: _updateController.OpenContainingFolderAsync,
-			softRestartAsync: RequestDiagnosticSoftRestartAsync)
+			softRestartAsync: RequestDiagnosticSoftRestartAsync,
+			restartAndUpdateAsync: RequestRestartAndUpdateAsync)
 		{
 			InitialSection = section,
 			InitialItemId = itemId,
@@ -814,6 +822,53 @@ internal sealed partial class MainWindow : Window, IDisposable
 			: "Pact could not start the soft restart helper.";
 		var information = new MessageDialogRequest(
 			"Soft restart unavailable",
+			message,
+			MessageDialogButtons.Ok,
+			MessageDialogResult.Ok);
+		if (ShowMessageDialogAsyncOverride is { } showInformation)
+		{
+			await showInformation(information);
+		}
+		else
+		{
+			await MessageDialogWindow.ShowOwnedAsync(this, information);
+		}
+	}
+
+	internal async Task RequestRestartAndUpdateAsync(CancellationToken cancellationToken)
+	{
+		if (_updateController is null && RequestUpdateRestartAsyncOverride is null)
+		{
+			return;
+		}
+
+		var request = new MessageDialogRequest(
+			"Restart and update Pact",
+			"Restart Pact now, install the verified update, and restore the tabs that are currently live?",
+			MessageDialogButtons.YesNo,
+			MessageDialogResult.No);
+		var confirmation = ShowMessageDialogAsyncOverride is { } showOverride
+			? await showOverride(request)
+			: await MessageDialogWindow.ShowOwnedAsync(this, request);
+		if (confirmation != MessageDialogResult.Yes)
+		{
+			return;
+		}
+
+		var result = RequestUpdateRestartAsyncOverride is { } requestOverride
+			? await requestOverride(cancellationToken)
+			: await _updateController!.RequestRestartAndUpdateAsync(cancellationToken);
+		if (result.Started)
+		{
+			StartConfirmedSoftRestart();
+			return;
+		}
+
+		var message = result.Blockers.Count > 0
+			? string.Join(Environment.NewLine, result.Blockers.Select(blocker => blocker.Description))
+			: "Pact could not start the update helper.";
+		var information = new MessageDialogRequest(
+			"Restart and update unavailable",
 			message,
 			MessageDialogButtons.Ok,
 			MessageDialogResult.Ok);
@@ -1337,12 +1392,38 @@ internal sealed partial class MainWindow : Window, IDisposable
 
 	private void ConfigureUpdateController()
 	{
-		_updateController?.ConfigureHost(
+		if (_updateController is null)
+		{
+			return;
+		}
+
+		_updateController.ConfigureHost(
 			release => ShowUpdateAvailableDialogAsyncOverride?.Invoke(release)
 				?? UpdateAvailableDialogWindow.ShowOwnedAsync(this, release),
 			message => ShowUpdateInformationAsyncOverride?.Invoke(message)
 				?? ShowUpdateInformationAsync(message));
+		_updateController.Coordinator.StatusChanged += OnUpdateStatusChanged;
+		_updateController.RestartAndUpdateRequested += OnAutomaticRestartAndUpdateRequested;
+		_eventDetachments.Add(() =>
+			_updateController.Coordinator.StatusChanged -= OnUpdateStatusChanged);
+		_eventDetachments.Add(() =>
+			_updateController.RestartAndUpdateRequested -= OnAutomaticRestartAndUpdateRequested);
+		RefreshUpdateRestartAction();
 	}
+
+	private void OnUpdateStatusChanged(object? sender, UpdateStatusChangedEventArgs e) =>
+		_uiTaskDispatcher.Post(RefreshUpdateRestartAction);
+
+	private void OnAutomaticRestartAndUpdateRequested(object? sender, EventArgs e) =>
+		_eventTasks.TryRun(
+			"offer-restart-and-update",
+			() => RequestRestartAndUpdateAsync(CancellationToken.None),
+			exception => EngineProbeController.ReportUiFailureAsync("Update restart", exception));
+
+	private void RefreshUpdateRestartAction() =>
+		RightActions.SetUpdateRestartAction(
+			_updateController?.IsRestartActionVisible == true,
+			_updateController?.RestartActionText ?? string.Empty);
 
 	private async Task ShowUpdateInformationAsync(string message)
 	{

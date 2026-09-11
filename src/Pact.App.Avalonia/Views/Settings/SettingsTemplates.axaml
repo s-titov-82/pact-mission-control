@@ -37,6 +37,10 @@
 				<Button Content="Open containing folder" Tag="OpenUpdateContainingFolder"
 						IsEnabled="{Binding CanOpenContainingFolder}" />
 			</StackPanel>
+			<Button HorizontalAlignment="Left"
+					Content="{Binding RestartActionText}"
+					IsVisible="{Binding IsRestartActionVisible}"
+					Tag="RestartAndUpdate" />
 			<TextBlock Foreground="{DynamicResource AppTextMutedBrush}" TextWrapping="Wrap"
 						 Text="Only stable GitHub releases are considered. Automatic checks run once per hour." />
 			<Expander Margin="0,12,0,0" Header="Diagnostics">

@@ -25,6 +25,7 @@ internal sealed partial class RightActionsPanel : UserControl
 
 	public event EventHandler<PromptTemplateRecord>? QuickActionRequested;
 	public event EventHandler? SettingsRequested;
+	public event EventHandler? RestartAndUpdateRequested;
 	public event EventHandler<ScenarioDefinition>? ScenarioRequested;
 
 	/// <summary>Documentation workspace whose tree this panel renders, if any.</summary>
@@ -57,6 +58,12 @@ internal sealed partial class RightActionsPanel : UserControl
 	{
 		StatusText.Text = text;
 		StatusText.IsVisible = !string.IsNullOrWhiteSpace(text);
+	}
+
+	public void SetUpdateRestartAction(bool visible, string text)
+	{
+		RestartAndUpdateButton.Content = text;
+		RestartAndUpdateButton.IsVisible = visible;
 	}
 
 	private void OnWorkspacePropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -124,6 +131,9 @@ internal sealed partial class RightActionsPanel : UserControl
 
 	private void OnSettingsClicked(object? sender, RoutedEventArgs e) =>
 		SettingsRequested?.Invoke(this, EventArgs.Empty);
+
+	private void OnRestartAndUpdateClicked(object? sender, RoutedEventArgs e) =>
+		RestartAndUpdateRequested?.Invoke(this, EventArgs.Empty);
 
 	private void OnScenarioClicked(object? sender, RoutedEventArgs e)
 	{

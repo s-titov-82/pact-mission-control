@@ -168,6 +168,192 @@ public sealed class AvaloniaUpdateControllerTests
 		controller.Stop();
 	}
 
+	[Test]
+	public async Task Ready_package_exposes_persistent_action_and_raises_only_one_automatic_offer()
+	{
+		var release = CreateRelease();
+		var setupPath = Path.Combine(
+			new AppPaths(TestRoot).UpdatePackagesDirectory,
+			release.Version.ToString(),
+			release.Setup.Name);
+		PreparedUpdatePackage package = new(
+			release,
+			setupPath,
+			new string('a', 64),
+			"NotSigned");
+		await using UpdateCoordinator coordinator = CreateCoordinator(
+			new GitHubReleaseResponse.Available(release),
+			new RecordingPackageStore(package));
+		ObservedTaskGroup tasks = new(static (_, _) => Task.CompletedTask);
+		AvaloniaUpdateController controller = CreateController(
+			coordinator,
+			new RecordingLauncher(),
+			tasks);
+		controller.ConfigureHost(
+			static _ => Task.FromResult(UpdateAvailableDialogResult.Download),
+			static _ => Task.CompletedTask);
+		controller.ConfigureRestart(
+			static () => new SoftRestartSafetyResult(true, []));
+		var offers = 0;
+		controller.RestartAndUpdateRequested += (_, _) => offers++;
+		await controller.StartAsync(CancellationToken.None);
+
+		await controller.CheckNowAsync(CancellationToken.None);
+		await tasks.WaitForIdleAsync();
+
+		controller.IsRestartActionVisible.ShouldBeTrue();
+		controller.RestartActionText.ShouldBe("Version 1.3.0 ready - restart");
+		offers.ShouldBe(1);
+
+		coordinator.UpdateRestartSafety(canRestart: false);
+		coordinator.UpdateRestartSafety(canRestart: true);
+		await tasks.WaitForIdleAsync();
+
+		offers.ShouldBe(1);
+		controller.Stop();
+	}
+
+	[Test]
+	public async Task Automatic_restart_offer_waits_until_the_download_message_closes()
+	{
+		var release = CreateRelease();
+		PreparedUpdatePackage package = new(
+			release,
+			Path.Combine(
+				new AppPaths(TestRoot).UpdatePackagesDirectory,
+				release.Version.ToString(),
+				release.Setup.Name),
+			new string('a', 64),
+			"NotSigned");
+		await using UpdateCoordinator coordinator = CreateCoordinator(
+			new GitHubReleaseResponse.Available(release),
+			new RecordingPackageStore(package));
+		ObservedTaskGroup tasks = new(static (_, _) => Task.CompletedTask);
+		AvaloniaUpdateController controller = CreateController(
+			coordinator,
+			new RecordingLauncher(),
+			tasks);
+		TaskCompletionSource messageShown = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		TaskCompletionSource closeMessage = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		controller.ConfigureHost(
+			static _ => Task.FromResult(UpdateAvailableDialogResult.Download),
+			_ =>
+			{
+				messageShown.TrySetResult();
+				return closeMessage.Task;
+			});
+		controller.ConfigureRestart(
+			static () => new SoftRestartSafetyResult(true, []));
+		var offers = 0;
+		controller.RestartAndUpdateRequested += (_, _) => offers++;
+		await controller.StartAsync(CancellationToken.None);
+
+		await controller.CheckNowAsync(CancellationToken.None);
+		await messageShown.Task.WaitAsync(TimeSpan.FromSeconds(5));
+		for (var iteration = 0; iteration < 20; iteration++)
+		{
+			await Task.Yield();
+		}
+
+		offers.ShouldBe(0);
+		closeMessage.SetResult();
+		await tasks.WaitForIdleAsync();
+		offers.ShouldBe(1);
+		controller.Stop();
+	}
+
+	[Test]
+	public async Task Confirmation_race_returns_to_waiting_without_entering_applying()
+	{
+		var release = CreateRelease();
+		PreparedUpdatePackage package = new(
+			release,
+			Path.Combine(
+				new AppPaths(TestRoot).UpdatePackagesDirectory,
+				release.Version.ToString(),
+				release.Setup.Name),
+			new string('a', 64),
+			"NotSigned");
+		await using UpdateCoordinator coordinator = CreateCoordinator(
+			new GitHubReleaseResponse.Available(release),
+			new RecordingPackageStore(package));
+		ObservedTaskGroup tasks = new(static (_, _) => Task.CompletedTask);
+		AvaloniaUpdateController controller = CreateController(
+			coordinator,
+			new RecordingLauncher(),
+			tasks);
+		controller.ConfigureHost(
+			static _ => Task.FromResult(UpdateAvailableDialogResult.Download),
+			static _ => Task.CompletedTask);
+		var safe = true;
+		controller.ConfigureRestart(
+			() => new SoftRestartSafetyResult(safe, safe
+				? []
+				: [new SoftRestartBlocker("terminal:busy", "Terminal is busy.")]),
+			(_, _) =>
+			{
+				safe = false;
+				return Task.FromResult(new SoftRestartRequestResult(
+					false,
+					[new SoftRestartBlocker("terminal:busy", "Terminal is busy.")],
+					null));
+			});
+		await controller.StartAsync(CancellationToken.None);
+		await controller.CheckNowAsync(CancellationToken.None);
+		await tasks.WaitForIdleAsync();
+		coordinator.Status.State.ShouldBe(UpdateState.ReadyToRestart);
+
+		var result = await controller.RequestRestartAndUpdateAsync(CancellationToken.None);
+
+		result.Started.ShouldBeFalse();
+		coordinator.Status.State.ShouldBe(UpdateState.ReadyWaitingForSafeState);
+		controller.IsRestartActionVisible.ShouldBeFalse();
+		controller.Stop();
+	}
+
+	[Test]
+	public async Task Successful_handoff_enters_applying_only_after_the_final_safety_check()
+	{
+		var release = CreateRelease();
+		PreparedUpdatePackage package = new(
+			release,
+			Path.Combine(
+				new AppPaths(TestRoot).UpdatePackagesDirectory,
+				release.Version.ToString(),
+				release.Setup.Name),
+			new string('a', 64),
+			"NotSigned");
+		await using UpdateCoordinator coordinator = CreateCoordinator(
+			new GitHubReleaseResponse.Available(release),
+			new RecordingPackageStore(package));
+		ObservedTaskGroup tasks = new(static (_, _) => Task.CompletedTask);
+		AvaloniaUpdateController controller = CreateController(
+			coordinator,
+			new RecordingLauncher(),
+			tasks);
+		controller.ConfigureHost(
+			static _ => Task.FromResult(UpdateAvailableDialogResult.Download),
+			static _ => Task.CompletedTask);
+		controller.ConfigureRestart(
+			static () => new SoftRestartSafetyResult(true, []),
+			(received, _) =>
+			{
+				received.ShouldBeSameAs(package);
+				return Task.FromResult(new SoftRestartRequestResult(true, [], null));
+			});
+		await controller.StartAsync(CancellationToken.None);
+		await controller.CheckNowAsync(CancellationToken.None);
+		await tasks.WaitForIdleAsync();
+		coordinator.Status.State.ShouldBe(UpdateState.ReadyToRestart);
+
+		var result = await controller.RequestRestartAndUpdateAsync(CancellationToken.None);
+
+		result.Started.ShouldBeTrue();
+		coordinator.Status.State.ShouldBe(UpdateState.Applying);
+		coordinator.Status.PreparedPackage.ShouldBeSameAs(package);
+		controller.Stop();
+	}
+
 	private static async Task AssertManualMessageAsync(
 		GitHubReleaseResponse response,
 		string expected)

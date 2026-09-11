@@ -182,6 +182,58 @@ public sealed class MainWindowPaneVisibilityHeadlessTests
 	}
 
 	[AvaloniaTest]
+	public async Task Update_restart_defaults_to_no_and_only_successful_final_handoff_shuts_down()
+	{
+		await using WindowFixture fixture = new();
+		await fixture.Controller.InitializeAsync(
+			new Uri("file:///terminal.html"),
+			TestContext.CurrentContext.CancellationToken);
+		using MainWindow window = new(fixture.Controller);
+		var requests = 0;
+		var shutdowns = 0;
+		MessageDialogRequest? confirmation = null;
+		window.RequestUpdateRestartAsyncOverride = _ =>
+		{
+			requests++;
+			return Task.FromResult(new SoftRestartRequestResult(true, [], null));
+		};
+		window.StartGracefulShutdownOverride = () => shutdowns++;
+		window.ShowMessageDialogAsyncOverride = request =>
+		{
+			confirmation = request;
+			return Task.FromResult(request.DefaultResult);
+		};
+
+		await window.RequestRestartAndUpdateAsync(CancellationToken.None);
+
+		confirmation.ShouldNotBeNull().DefaultResult.ShouldBe(MessageDialogResult.No);
+		requests.ShouldBe(0);
+		shutdowns.ShouldBe(0);
+
+		window.ShowMessageDialogAsyncOverride = _ => Task.FromResult(MessageDialogResult.Yes);
+		window.RequestUpdateRestartAsyncOverride = _ =>
+		{
+			requests++;
+			return Task.FromResult(new SoftRestartRequestResult(
+				false,
+				[new SoftRestartBlocker("terminal:busy", "Terminal is busy.")],
+				null));
+		};
+		await window.RequestRestartAndUpdateAsync(CancellationToken.None);
+		shutdowns.ShouldBe(0);
+
+		window.RequestUpdateRestartAsyncOverride = _ =>
+		{
+			requests++;
+			return Task.FromResult(new SoftRestartRequestResult(true, [], null));
+		};
+		await window.RequestRestartAndUpdateAsync(CancellationToken.None);
+
+		requests.ShouldBe(2);
+		shutdowns.ShouldBe(1);
+	}
+
+	[AvaloniaTest]
 	public async Task Close_session_handler_honors_confirmation_before_stopping_runtime()
 	{
 		await using WindowFixture fixture = new(includeSession: true);

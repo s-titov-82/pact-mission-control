@@ -1,8 +1,11 @@
 using Pact.App.Avalonia.Controllers;
 using Pact.Core.Projects;
+using Pact.Core.Updates;
 using Pact.Infrastructure.Storage;
 using Pact.Infrastructure.Updates;
 using Pact.Presentation.ViewModels;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Pact.App.Avalonia.Tests.Controllers;
 
@@ -83,6 +86,57 @@ public sealed class SoftRestartCoordinatorTests : IDisposable
 			.ShouldBeEmpty();
 	}
 
+	[Test]
+	public async Task ApplyUpdate_writes_the_exact_verified_package_into_the_handoff()
+	{
+		var fixture = CreateFixture(static () => false);
+		var version = new StableReleaseVersion(0, 1, 2);
+		var setupDirectory = Path.Combine(
+			fixture.Paths.UpdatePackagesDirectory,
+			version.ToString());
+		var setupPath = Path.Combine(
+			setupDirectory,
+			$"pact-mission-control-{version}-win-x64-setup.exe");
+		PreparedUpdatePackage package = new(
+			new UpdateRelease(
+				version,
+				"v0.1.2",
+				new Uri("https://github.com/s-titov-82/pact-mission-control/releases/tag/v0.1.2"),
+				new UpdateAsset(Path.GetFileName(setupPath), new Uri("https://github.com/setup.exe"), 42),
+				new UpdateAsset("SHA256SUMS.txt", new Uri("https://github.com/SHA256SUMS.txt"), 65)),
+			setupPath,
+			new string('a', 64),
+			"NotSigned");
+		string? startedTicket = null;
+		SoftRestartCoordinator coordinator = new(
+			fixture.Options,
+			fixture.Store,
+			fixture.Safety,
+			fixture.Snapshot,
+			() => fixture.Executable,
+			() => 42,
+			(_, destination, _) =>
+			{
+				File.WriteAllText(destination, "helper");
+				return Task.CompletedTask;
+			},
+			(_, ticket) => startedTicket = ticket);
+
+		var result = await coordinator.RequestApplyUpdateAsync(
+			package,
+			CancellationToken.None);
+
+		result.Started.ShouldBeTrue();
+		var ticket = JsonSerializer.Deserialize<SoftRestartTicket>(
+			await File.ReadAllTextAsync(startedTicket!),
+			JsonOptions).ShouldNotBeNull();
+		ticket.Mode.ShouldBe(SoftRestartMode.ApplyUpdate);
+		ticket.ExpectedTargetVersion.ShouldBe(version);
+		ticket.SetupPath.ShouldBe(setupPath);
+		ticket.SetupSha256.ShouldBe(new string('a', 64));
+		ticket.SoftRestartProbeOutputPath.ShouldBeNull();
+	}
+
 	private Fixture CreateFixture(Func<bool> hasActiveScenario)
 	{
 		var dataRoot = Path.Combine(_temporaryDirectory.Path, "data");
@@ -146,5 +200,17 @@ public sealed class SoftRestartCoordinatorTests : IDisposable
 			Task.CompletedTask;
 		public Task AppendAsync(string projectRootPath, string text, CancellationToken cancellationToken) =>
 			Task.CompletedTask;
+	}
+
+	private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
+
+	private static JsonSerializerOptions CreateJsonOptions()
+	{
+		JsonSerializerOptions options = new()
+		{
+			PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+		};
+		options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
+		return options;
 	}
 }

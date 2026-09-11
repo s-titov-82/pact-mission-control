@@ -50,6 +50,38 @@ public sealed class UpdatesSectionViewModelTests
 		(await section.SaveAsync(CancellationToken.None)).ShouldBeFalse();
 	}
 
+	[Test]
+	public async Task Section_exposes_restart_action_only_for_a_safe_prepared_package()
+	{
+		var release = CreateRelease();
+		PreparedUpdatePackage package = new(
+			release,
+			@"C:\updates\setup.exe",
+			new string('a', 64),
+			"NotSigned");
+		await using UpdateCoordinator coordinator = new(
+			new FixedReleaseClient(new GitHubReleaseResponse.Available(release)),
+			TimeProvider.System,
+			new StableReleaseVersion(1, 2, 3),
+			new FixedPackageStore(package));
+		using UpdatesSectionViewModel section = new(coordinator);
+		var requests = 0;
+		section.RestartAndUpdateRequested += (_, _) => requests++;
+		await coordinator.CheckNowAsync(UpdateCheckOrigin.Manual, CancellationToken.None);
+		await coordinator.PrepareUpdateAsync(release, null, CancellationToken.None);
+
+		section.IsRestartActionVisible.ShouldBeFalse();
+		section.RequestRestartAndUpdate();
+		requests.ShouldBe(0);
+
+		coordinator.UpdateRestartSafety(canRestart: true);
+
+		section.IsRestartActionVisible.ShouldBeTrue();
+		section.RestartActionText.ShouldBe("Restart and update");
+		section.RequestRestartAndUpdate();
+		requests.ShouldBe(1);
+	}
+
 	private static UpdateRelease CreateRelease()
 	{
 		StableReleaseVersion version = new(1, 3, 0);
@@ -66,5 +98,17 @@ public sealed class UpdatesSectionViewModelTests
 		public Task<GitHubReleaseResponse> GetLatestStableAsync(
 			StableReleaseVersion runningVersion,
 			CancellationToken cancellationToken) => Task.FromResult(response);
+	}
+
+	private sealed class FixedPackageStore(PreparedUpdatePackage package) : IUpdatePackageStore
+	{
+		public Task<PreparedUpdatePackage?> TryGetVerifiedAsync(
+			UpdateRelease release,
+			CancellationToken cancellationToken) => Task.FromResult<PreparedUpdatePackage?>(package);
+
+		public Task<PreparedUpdatePackage> DownloadAndVerifyAsync(
+			UpdateRelease release,
+			IProgress<long>? progress,
+			CancellationToken cancellationToken) => Task.FromResult(package);
 	}
 }

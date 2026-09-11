@@ -42,6 +42,19 @@ internal sealed class SoftRestartCoordinator
 	}
 
 	public async Task<SoftRestartRequestResult> RequestRestartOnlyAsync(
+		CancellationToken cancellationToken) =>
+		await RequestAsync(package: null, cancellationToken).ConfigureAwait(false);
+
+	public async Task<SoftRestartRequestResult> RequestApplyUpdateAsync(
+		PreparedUpdatePackage package,
+		CancellationToken cancellationToken)
+	{
+		ArgumentNullException.ThrowIfNull(package);
+		return await RequestAsync(package, cancellationToken).ConfigureAwait(false);
+	}
+
+	private async Task<SoftRestartRequestResult> RequestAsync(
+		PreparedUpdatePackage? package,
 		CancellationToken cancellationToken)
 	{
 		var firstSafety = _safetyPolicy.Evaluate();
@@ -58,17 +71,17 @@ internal sealed class SoftRestartCoordinator
 		SoftRestartTicket ticket = new(
 			TicketSchemaVersion,
 			restartId,
-			SoftRestartMode.RestartOnly,
-			ExpectedTargetVersion: null,
+			package is null ? SoftRestartMode.RestartOnly : SoftRestartMode.ApplyUpdate,
+			package?.Release.Version,
 			_getProcessId(),
 			executablePath,
 			installationDirectory,
 			_launchOptions.Profile.RootDirectory,
 			_launchOptions.PassDataRoot,
-			SetupPath: null,
-			SetupSha256: null,
+			package?.SetupPath,
+			package?.SetupSha256,
 			new SoftRestartOutcome(SoftRestartOutcomeKind.Pending, null),
-			_launchOptions.SoftRestartProbeOutputPath,
+			package is null ? _launchOptions.SoftRestartProbeOutputPath : null,
 			snapshot.LiveTerminalIds,
 			snapshot.LoadedWebPageIds,
 			snapshot.UnreadTerminalIds,

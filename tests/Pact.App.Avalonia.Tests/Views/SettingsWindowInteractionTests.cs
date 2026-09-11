@@ -83,6 +83,54 @@ public sealed class SettingsWindowInteractionTests : IDisposable
 	}
 
 	[AvaloniaTest]
+	public async Task Updates_section_routes_restart_only_when_the_package_is_safe()
+	{
+		StableReleaseVersion version = new(1, 3, 0);
+		UpdateRelease release = new(
+			version,
+			"v1.3.0",
+			new Uri("https://github.com/s-titov-82/pact-mission-control/releases/tag/v1.3.0"),
+			new UpdateAsset("setup.exe", new Uri("https://github.com/setup.exe"), 42),
+			new UpdateAsset("SHA256SUMS.txt", new Uri("https://github.com/SHA256SUMS.txt"), 65));
+		PreparedUpdatePackage package = new(
+			release,
+			Path.Combine(_root, "setup.exe"),
+			new string('a', 64),
+			"NotSigned");
+		await using UpdateCoordinator coordinator = new(
+			new FixedReleaseClient(new GitHubReleaseResponse.Available(release)),
+			TimeProvider.System,
+			new StableReleaseVersion(1, 2, 3),
+			new FixedPackageStore(package));
+		await coordinator.CheckNowAsync(UpdateCheckOrigin.Manual, CancellationToken.None);
+		await coordinator.PrepareUpdateAsync(release, null, CancellationToken.None);
+		coordinator.UpdateRestartSafety(canRestart: true);
+		using UpdatesSectionViewModel updates = new(coordinator);
+		(var vm, _) = await CreateViewModelAsync(updatesSection: updates);
+		var restarts = 0;
+		using SettingsWindow window = new(
+			vm,
+			new RecordingExternalLauncher(),
+			restartAndUpdateAsync: _ =>
+			{
+				restarts++;
+				return Task.CompletedTask;
+			});
+		window.InitialSection = SettingsSection.Updates;
+		await window.InitializeAsync();
+		window.Show();
+		await DrainUiTwiceAsync();
+
+		var restart = window.GetVisualDescendants().OfType<Button>()
+			.Single(button => Equals(button.Tag, "RestartAndUpdate"));
+		restart.IsVisible.ShouldBeTrue();
+		restart.Content.ShouldBe("Restart and update");
+		restart.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+		await WaitUntilAsync(() => restarts == 1);
+		window.Close();
+	}
+
+	[AvaloniaTest]
 	public async Task Initialize_materializes_all_sections_in_order_and_selects_session_deep_link()
 	{
 		(var vm, var workspace) = await CreateViewModelAsync(includeSession: true);
@@ -1282,5 +1330,24 @@ public sealed class SettingsWindowInteractionTests : IDisposable
 			StableReleaseVersion runningVersion,
 			CancellationToken cancellationToken) =>
 			Task.FromResult<GitHubReleaseResponse>(new GitHubReleaseResponse.NoUpdate());
+	}
+
+	private sealed class FixedReleaseClient(GitHubReleaseResponse response) : IGitHubReleaseClient
+	{
+		public Task<GitHubReleaseResponse> GetLatestStableAsync(
+			StableReleaseVersion runningVersion,
+			CancellationToken cancellationToken) => Task.FromResult(response);
+	}
+
+	private sealed class FixedPackageStore(PreparedUpdatePackage package) : IUpdatePackageStore
+	{
+		public Task<PreparedUpdatePackage?> TryGetVerifiedAsync(
+			UpdateRelease release,
+			CancellationToken cancellationToken) => Task.FromResult<PreparedUpdatePackage?>(package);
+
+		public Task<PreparedUpdatePackage> DownloadAndVerifyAsync(
+			UpdateRelease release,
+			IProgress<long>? progress,
+			CancellationToken cancellationToken) => Task.FromResult(package);
 	}
 }

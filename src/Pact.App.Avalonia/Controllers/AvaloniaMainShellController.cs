@@ -245,6 +245,9 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 				softRestartTicketStore,
 				safetyPolicy,
 				snapshotBuilder);
+			updateController?.ConfigureRestart(
+				safetyPolicy.Evaluate,
+				SoftRestartCoordinator.RequestApplyUpdateAsync);
 			_softRestartRestorer = new SoftRestartRestorer(
 				FindRestorableSession,
 				StartRestoredSessionAsync,
@@ -4004,6 +4007,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 
 	private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
 	{
+		UpdateController?.RefreshRestartSafety();
 		if (e.PropertyName == nameof(MainWindowViewModel.SelectedWebPage))
 		{
 			PublishWebMonitorPresentationFacts();
@@ -4041,6 +4045,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		object? sender,
 		TerminalClassifierDiagnosticsChangedEventArgs e)
 	{
+		UpdateController?.RefreshRestartSafety();
 		if (string.Equals(
 			ViewModel.SelectedSession?.Record.Id,
 			e.Diagnostics.SessionId,

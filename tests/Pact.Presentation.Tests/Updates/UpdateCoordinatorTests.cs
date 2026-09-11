@@ -271,6 +271,32 @@ public sealed class UpdateCoordinatorTests
 	}
 
 	[Test]
+	public async Task Prepared_update_tracks_safe_and_busy_restart_states_without_losing_package()
+	{
+		var release = Release(1, 3, 0);
+		PreparedUpdatePackage package = new(
+			release,
+			@"C:\updates\setup.exe",
+			new string('a', 64),
+			"NotSigned");
+		await using UpdateCoordinator coordinator = await CreateWithPackageStore(
+			release,
+			new FakePackageStore((_, _, _) => Task.FromResult(package)));
+		await coordinator.CheckNowAsync(UpdateCheckOrigin.Manual, CancellationToken.None);
+		await coordinator.PrepareUpdateAsync(release, null, CancellationToken.None);
+
+		coordinator.UpdateRestartSafety(canRestart: true);
+
+		coordinator.Status.State.ShouldBe(UpdateState.ReadyToRestart);
+		coordinator.Status.PreparedPackage.ShouldBeSameAs(package);
+
+		coordinator.UpdateRestartSafety(canRestart: false);
+
+		coordinator.Status.State.ShouldBe(UpdateState.ReadyWaitingForSafeState);
+		coordinator.Status.PreparedPackage.ShouldBeSameAs(package);
+	}
+
+	[Test]
 	public async Task Download_cancellation_returns_to_available_and_failure_is_visible()
 	{
 		var release = Release(1, 3, 0);
