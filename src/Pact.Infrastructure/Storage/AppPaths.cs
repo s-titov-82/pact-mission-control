@@ -18,6 +18,9 @@ public sealed class AppPaths
 		TempDirectory = Path.Combine(RootDirectory, "Temp");
 		SessionTempDirectory = Path.Combine(TempDirectory, "Session");
 		RetainedTempDirectory = Path.Combine(TempDirectory, "Retained");
+		UpdatesDirectory = Path.Combine(RetainedTempDirectory, "Updates");
+		UpdatePackagesDirectory = Path.Combine(UpdatesDirectory, "Packages");
+		UpdateHandoffsDirectory = Path.Combine(UpdatesDirectory, "Handoffs");
 		WebMonitorSnapshotsDirectory = Path.Combine(RetainedTempDirectory, "WebMonitoring");
 		AgentControlDirectory = Path.Combine(RetainedTempDirectory, "AgentControl");
 		PactSkillsDirectory = Path.Combine(RetainedTempDirectory, "PactSkills");
@@ -63,6 +66,15 @@ public sealed class AppPaths
 
 	/// <summary>Gets the Temp subtree that survives application restarts until its owning feature removes data.</summary>
 	public string RetainedTempDirectory { get; }
+
+	/// <summary>Gets the retained root owned by update staging and restart handoffs.</summary>
+	public string UpdatesDirectory { get; }
+
+	/// <summary>Gets the retained root containing version-specific verified packages.</summary>
+	public string UpdatePackagesDirectory { get; }
+
+	/// <summary>Gets the retained root containing deterministic one-time restart handoffs.</summary>
+	public string UpdateHandoffsDirectory { get; }
 
 	/// <summary>Gets the retained per-web-page monitoring snapshot directory.</summary>
 	public string WebMonitorSnapshotsDirectory { get; }

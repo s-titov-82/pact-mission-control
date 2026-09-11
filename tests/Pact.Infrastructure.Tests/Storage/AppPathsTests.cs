@@ -18,6 +18,11 @@ public sealed class AppPathsTests
 		paths.TempDirectory.ShouldBe(@"C:\profile\Temp");
 		paths.SessionTempDirectory.ShouldBe(@"C:\profile\Temp\Session");
 		paths.RetainedTempDirectory.ShouldBe(@"C:\profile\Temp\Retained");
+		paths.UpdatesDirectory.ShouldBe(@"C:\profile\Temp\Retained\Updates");
+		paths.UpdatePackagesDirectory.ShouldBe(
+			@"C:\profile\Temp\Retained\Updates\Packages");
+		paths.UpdateHandoffsDirectory.ShouldBe(
+			@"C:\profile\Temp\Retained\Updates\Handoffs");
 		paths.WebMonitorSnapshotsDirectory.ShouldBe(@"C:\profile\Temp\Retained\WebMonitoring");
 		paths.AgentControlDirectory.ShouldBe(@"C:\profile\Temp\Retained\AgentControl");
 		paths.PactSkillsDirectory.ShouldBe(@"C:\profile\Temp\Retained\PactSkills");
