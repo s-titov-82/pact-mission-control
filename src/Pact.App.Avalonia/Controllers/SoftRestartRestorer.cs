@@ -71,8 +71,7 @@ internal sealed class SoftRestartRestorer
 			}
 			try
 			{
-				var plan = await _startSessionAsync(session, cancellationToken)
-					.ConfigureAwait(false);
+				var plan = await _startSessionAsync(session, cancellationToken);
 				restoredTerminals.Add(sessionId);
 				if (plan.FellBackToColdStart)
 				{
@@ -114,7 +113,7 @@ internal sealed class SoftRestartRestorer
 			}
 			try
 			{
-				await _loadWebPageAsync(page, cancellationToken).ConfigureAwait(false);
+				await _loadWebPageAsync(page, cancellationToken);
 				restoredPages.Add(pageId);
 			}
 			catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -132,8 +131,7 @@ internal sealed class SoftRestartRestorer
 		{
 			try
 			{
-				orchestratorRestored = await _restoreOrchestratorAsync(cancellationToken)
-					.ConfigureAwait(false);
+				orchestratorRestored = await _restoreOrchestratorAsync(cancellationToken);
 				if (!orchestratorRestored)
 				{
 					failures.Add("orchestrator:not-enabled-or-provisioned");
@@ -161,8 +159,7 @@ internal sealed class SoftRestartRestorer
 		{
 			try
 			{
-				selectionRestored = await _restoreSelectionAsync(selection, cancellationToken)
-					.ConfigureAwait(false);
+				selectionRestored = await _restoreSelectionAsync(selection, cancellationToken);
 				if (!selectionRestored)
 				{
 					failures.Add("selection:not-found-or-paused");

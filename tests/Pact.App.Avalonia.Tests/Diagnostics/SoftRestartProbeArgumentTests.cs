@@ -45,9 +45,15 @@ public sealed class SoftRestartProbeArgumentTests
 			output,
 			new SoftRestartProbeEvidence(
 				RestartId,
+				42,
+				@"C:\Pact\Pact.App.Avalonia.exe",
+				[201, 202],
+				[101, 102],
 				longItems,
 				longItems,
 				longItems,
+				longItems,
+				"selected",
 				longItems,
 				true,
 				true,
@@ -60,6 +66,7 @@ public sealed class SoftRestartProbeArgumentTests
 					 "RestoredTerminalIds",
 					 "ColdStartFallbacks",
 					 "RestoredWebPageIds",
+					 "UnreadTerminalIds",
 					 "Failures"
 				 })
 		{

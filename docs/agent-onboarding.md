@@ -334,6 +334,26 @@ version below `artifacts/release`, and fails if the payload contains PDBs,
 Linux/macOS, win-x86 or win-arm64 runtime folders, or exceeds 50 MiB. Do not add
 another RID until the bundled ConPTY payload exists for that architecture.
 
+Before update installation is enabled, run the soft-restart native gate against
+an existing publish directory; the gate never builds or publishes the product:
+
+```powershell
+rtk proxy pwsh -NoProfile -File tools/Test-PactSoftRestart.ps1 `
+  -PublishDirectory ./artifacts/publish/win-x64 `
+  -DataRoot ./artifacts/soft-restart-data
+```
+
+`DataRoot` must resolve to an absolute path that does not exist. The gate copies
+the publish into a unique disposable installation, creates only an isolated
+probe profile, and exercises the same `RestartOnly` handoff as the collapsed
+`Updates -> Diagnostics -> Soft restart and restore active tabs` action. PASS
+requires exact restoration of one resumable agent terminal, one cold-started
+non-agent terminal, one background browser tab, selection, and unread state;
+one-time ticket consumption; natural exit of the exact Pact and terminal PIDs;
+and exclusive read/write access to both `Pact.App.Avalonia.exe` and the bundled
+`conpty/OpenConsole.exe`. Failure cleanup targets only PIDs created by or
+reported from that isolated gate and never kills processes by image name.
+
 ## Right Panel Prompt Actions
 
 - Selection actions use one contextual cursor popover over the center pane.

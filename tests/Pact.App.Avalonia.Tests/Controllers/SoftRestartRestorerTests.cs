@@ -1,4 +1,6 @@
 using Pact.App.Avalonia.Controllers;
+using Avalonia.Headless.NUnit;
+using Avalonia.Threading;
 using Pact.Core.Agents;
 using Pact.Core.Sessions;
 using Pact.Core.Updates;
@@ -10,6 +12,52 @@ namespace Pact.App.Avalonia.Tests.Controllers;
 
 public sealed class SoftRestartRestorerTests
 {
+	[AvaloniaTest]
+	public async Task Restoration_preserves_the_ui_dispatch_context_between_items()
+	{
+		var session = new SessionViewModel(Session("resumed", "codex resume abc12345"));
+		var page = new WebPageViewModel(Web("web"));
+		var webRanOnUiThread = false;
+		var selectionRanOnUiThread = false;
+		SoftRestartRestorer restorer = new(
+			id => id == "resumed" ? session : null,
+			async (_, cancellationToken) =>
+			{
+				await Task.Delay(10, cancellationToken);
+				return ShellProfileCommandPlanner.GetStartPlan(
+					session.Record,
+					preferResumeCommand: true);
+			},
+			id => id == "web" ? page : null,
+			(_, _) =>
+			{
+				webRanOnUiThread = Dispatcher.UIThread.CheckAccess();
+				return Task.CompletedTask;
+			},
+			static (_, _) => true,
+			static _ => Task.FromResult(true),
+			(_, _) =>
+			{
+				selectionRanOnUiThread = Dispatcher.UIThread.CheckAccess();
+				return Task.FromResult(true);
+			},
+			static _ => false,
+			TimeProvider.System);
+
+		var summary = await restorer.RestoreAsync(
+			Ticket() with
+			{
+				LiveTerminalIds = ["resumed"],
+				UnreadTerminalIds = [],
+				OrchestratorWasRunning = false
+			},
+			CancellationToken.None);
+
+		summary.Failures.ShouldBeEmpty();
+		webRanOnUiThread.ShouldBeTrue();
+		selectionRanOnUiThread.ShouldBeTrue();
+	}
+
 	[Test]
 	public async Task Restoration_is_best_effort_reports_cold_start_and_selects_last()
 	{
