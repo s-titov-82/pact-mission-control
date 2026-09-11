@@ -201,7 +201,8 @@ public sealed class TerminalTabStatusCoordinator
 				status.StatusLine,
 				status.PromptIsEmpty,
 				status.ActivityEpoch,
-				status.Indicator == TerminalTabIndicator.Busy);
+				status.Indicator == TerminalTabIndicator.Busy,
+				status.VerdictState);
 			return true;
 		}
 

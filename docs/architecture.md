@@ -203,7 +203,9 @@ composer-content reading, so only an explicit non-empty verdict from another
 profile refuses delivery. A freshly launched
 reviewer reaches readiness through one bounded budget covering its first output,
 a settle delay, and the folder-trust dialog, which Pact answers with Enter
-exactly once. Delivery is confirmed by a new activity cycle, and every submit
+exactly once. Readiness requires the stable classifier verdict `Done`; composer
+content does not determine activity. Delivery is confirmed by a new activity
+cycle, and every submit
 begins one. If the composer still holds the trigger, Pact repairs a dropped
 submit with Enter alone; it repeats the paste only after the composer remains
 empty while the agent is idle.

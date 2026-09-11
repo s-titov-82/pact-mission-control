@@ -148,6 +148,7 @@ public sealed class TerminalTabStatusCoordinatorTests
 		state.Screen.ShouldContain("done here");
 		state.LastMessage.ShouldBe("done here");
 		state.LastMessageIsCurrent.ShouldBeTrue();
+		state.VerdictState.ShouldBe(TerminalScreenVerdictState.Done);
 	}
 
 	[Test]
@@ -169,7 +170,7 @@ public sealed class TerminalTabStatusCoordinatorTests
 		coordinator.TryGetScreenState("session-a", out var state).ShouldBeTrue();
 		state.InputRequested.ShouldBeTrue();
 		state.StatusLine.ShouldBe("Enter to select");
-		state.PromptIsEmpty.ShouldBe(true);
+		state.PromptIsEmpty.ShouldBeNull();
 		state.ActivityEpoch.ShouldBeGreaterThan(0);
 		state.IsBusy.ShouldBeFalse();
 	}

@@ -328,7 +328,7 @@ public sealed class SessionRuntimeCoordinatorTests
 	}
 
 	[Test]
-	public async Task Readiness_waits_for_an_idle_session_with_an_empty_composer()
+	public async Task Readiness_waits_for_a_done_verdict()
 	{
 		var (coordinator, backend, controller) = await CreateAttachedSessionAsync();
 		await using var _ = controller;
@@ -338,6 +338,50 @@ public sealed class SessionRuntimeCoordinatorTests
 			"session-1",
 			isCodex: false,
 			() => ++polls < 3 ? Busy(epoch: 1) : Idle(),
+			TestContext.CurrentContext.CancellationToken);
+
+		result.IsReady.ShouldBeTrue();
+		backend.InputWrites.ShouldBeEmpty();
+	}
+
+	[Test]
+	public async Task Readiness_does_not_treat_an_empty_composer_as_a_done_verdict()
+	{
+		var (coordinator, backend, controller) = await CreateAttachedSessionAsync();
+		await using var _ = controller;
+
+		var result = await coordinator.WaitForSessionReadyAsync(
+			"session-1",
+			isCodex: false,
+			static () => new SessionScreenState(
+				"screen",
+				string.Empty,
+				false,
+				PromptIsEmpty: true,
+				IsBusy: false,
+				VerdictState: TerminalScreenVerdictState.Unknown),
+			TestContext.CurrentContext.CancellationToken);
+
+		result.IsReady.ShouldBeFalse();
+		backend.InputWrites.ShouldBeEmpty();
+	}
+
+	[Test]
+	public async Task Readiness_accepts_a_done_verdict_when_the_composer_is_unknown()
+	{
+		var (coordinator, backend, controller) = await CreateAttachedSessionAsync();
+		await using var _ = controller;
+
+		var result = await coordinator.WaitForSessionReadyAsync(
+			"session-1",
+			isCodex: false,
+			static () => new SessionScreenState(
+				"screen",
+				string.Empty,
+				false,
+				PromptIsEmpty: null,
+				IsBusy: false,
+				VerdictState: TerminalScreenVerdictState.Done),
 			TestContext.CurrentContext.CancellationToken);
 
 		result.IsReady.ShouldBeTrue();
@@ -671,16 +715,52 @@ public sealed class SessionRuntimeCoordinatorTests
 	}
 
 	private static SessionScreenState Idle(long epoch = 1) =>
-		new("screen", string.Empty, false, false, string.Empty, true, epoch, false);
+		new(
+			"screen",
+			string.Empty,
+			false,
+			false,
+			string.Empty,
+			true,
+			epoch,
+			false,
+			TerminalScreenVerdictState.Done);
 
 	private static SessionScreenState HoldingText(long epoch = 1) =>
-		new("screen", string.Empty, false, false, string.Empty, false, epoch, false);
+		new(
+			"screen",
+			string.Empty,
+			false,
+			false,
+			string.Empty,
+			false,
+			epoch,
+			false,
+			TerminalScreenVerdictState.Done);
 
 	private static SessionScreenState Busy(long epoch) =>
-		new("screen", string.Empty, false, false, string.Empty, null, epoch, true);
+		new(
+			"screen",
+			string.Empty,
+			false,
+			false,
+			string.Empty,
+			null,
+			epoch,
+			true,
+			TerminalScreenVerdictState.Busy);
 
 	private static SessionScreenState Question(string statusLine) =>
-		new("screen", string.Empty, false, true, statusLine, null, 1, false);
+		new(
+			"screen",
+			string.Empty,
+			false,
+			true,
+			statusLine,
+			null,
+			1,
+			false,
+			TerminalScreenVerdictState.InputRequested);
 
 	private static Task NoopSession(SessionViewModel _, CancellationToken __) => Task.CompletedTask;
 	private static Task<IDisposable?> NoScope(SessionViewModel _, CancellationToken __) => Task.FromResult<IDisposable?>(null);

@@ -68,7 +68,7 @@ public sealed partial class AgentScreenProfileContractTests
 	{
 		var profile = new ScriptedProfile();
 		profile.Classify($"WORKING\n{prompt}").PromptIsEmpty.ShouldBe(promptIsEmpty);
-		profile.Classify($"DONE\n{prompt}").PromptIsEmpty.ShouldBe(promptIsEmpty ?? true);
+		profile.Classify($"DONE\n{prompt}").PromptIsEmpty.ShouldBe(promptIsEmpty);
 		profile.Classify($"nothing familiar{prompt}").PromptIsEmpty.ShouldBe(promptIsEmpty);
 	}
 

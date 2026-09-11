@@ -540,15 +540,16 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 	}
 
 	/// <summary>
-	/// Waits until a launched session can receive a prompt: its retained state reports no
-	/// question, no activity, and an empty composer. The folder-trust dialog is answered with
+	/// Waits until a launched session can receive a prompt: its retained stable classifier
+	/// verdict is done, with no question or activity. The folder-trust dialog is answered with
 	/// Enter, which is its own default, once per launched session; every other question, and a
 	/// session that never becomes ready, end the wait as not ready.
 	/// </summary>
 	/// <remarks>
 	/// One budget covers first output, the settle delay, and trust handling, so a review request
-	/// cannot be blocked for a multiple of it. Readiness is a positive fact: "no question" is not
-	/// enough, because a starting TUI shows no question either and discards what it is given.
+	/// cannot be blocked for a multiple of it. Readiness is a positive classifier fact: "no
+	/// question" is not enough, because a starting TUI shows no question either and discards what
+	/// it is given.
 	/// </remarks>
 	public async Task<SessionReadiness> WaitForSessionReadyAsync(
 		string sessionId,
@@ -604,7 +605,9 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 					lastStatusLine = state.StatusLine;
 				}
 
-				if (state.PromptIsEmpty == true && !state.IsBusy && !state.InputRequested)
+				if (state.VerdictState == TerminalScreenVerdictState.Done
+					&& !state.IsBusy
+					&& !state.InputRequested)
 				{
 					return new SessionReadiness(IsReady: true, StatusLine: string.Empty);
 				}

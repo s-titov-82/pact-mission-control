@@ -147,7 +147,7 @@ namespace Pact.Core.ScreenVerdictProfiles
 					TerminalScreenVerdictState.Done,
 					doneDescr,
 					lastMessage,
-					promptIsEmpty ?? (promptEvidence is null ? true : null),
+					promptIsEmpty,
 					promptEvidence);
 		}
 

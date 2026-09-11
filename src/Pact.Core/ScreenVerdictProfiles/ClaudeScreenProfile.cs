@@ -1,5 +1,4 @@
 using System.Text.RegularExpressions;
-using Pact.Core.Sessions;
 
 namespace Pact.Core.ScreenVerdictProfiles;
 
@@ -62,16 +61,6 @@ public sealed partial class ClaudeScreenProfile : AgentScreenProfileBase
 		return -1;
 	}
 
-	/// <inheritdoc />
-	protected override TerminalPromptEvidence InspectPrompt(string window, int promptAt)
-	{
-		return new(
-			PromptFound: true,
-			BoundaryFound: true,
-			NonWhitespaceCharacterCount: 0,
-			SeparatorSharesLogicalLine: false);
-	}
-
 	// The interrupt-hint keybinding text is constant regardless of which
 	// whimsical verb ("Cogitating", "Working", "Baking"...) animates next
 	// to it, so matching it directly is far more robust than parsing the
@@ -84,7 +73,7 @@ public sealed partial class ClaudeScreenProfile : AgentScreenProfileBase
 	[GeneratedRegex(@"(?<descr>[A-Z][a-z\-é]{2,15}ed\sfor\s\d{1,2}[hms])", RegexOptions.RightToLeft)]
 	private static partial Regex WorkedForRx();
 
-	[GeneratedRegex(@"[⎿✻]\s*(?<descr>Interrupted|(529 Overloaded)|(API Error)|(Unable to connect to API))", RegexOptions.RightToLeft)]
+	[GeneratedRegex(@"(?:[⎿✻]\s*(?<descr>Interrupted|529 Overloaded|API Error|Unable to connect to API)|●\s*(?<descr>API Error:\s*529 Overloaded))", RegexOptions.RightToLeft)]
 	private static partial Regex InterruptedRx();
 
 	[GeneratedRegex(@"^●\s+(?<message>.+?)(?=^.*?(?:[A-Z][a-z\-é]{2,15}ed\s+for\s+\d{1,2}[hms]))", RegexOptions.Multiline | RegexOptions.Singleline | RegexOptions.RightToLeft)]

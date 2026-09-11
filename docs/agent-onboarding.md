@@ -65,8 +65,9 @@ selection, and window facts, then dispatches the single projected
 `TerminalTabIndicator` to `SessionViewModel`. Input containing Enter and resume
 start are activity evidence; every submit restarts the activity cycle, normal
 start is idle, lifecycle stop/exit pauses, and failure wins over every other
-state. A settled empty composer ends startup activity without becoming unread;
-a real completion marker still does become unread.
+state. Composer evidence is orthogonal metadata and never starts or ends
+activity; only a classifier completion verdict can make a completed activity
+unread.
 
 The browser-side terminal host waits for a one-shot 500 ms quiescence debounce
 after xterm writes, captures the live screen from `buffer.active.baseY` rather
@@ -86,11 +87,9 @@ reports `InputRequested` with the pending question as its status line; folder
 trust uses the shared `AgentScreenProfileBase.TrustPromptDescription` constant
 across agents. It also reports `PromptIsEmpty`: `true` means delivery may treat
 the composer as empty, `false` means it contains reliably detected unsent text,
-and `null` means the screen cannot answer. Claude intentionally treats every
-visible prompt as empty because its pale placeholder and staged hints are copied
-from the terminal as ordinary text and cannot be distinguished reliably from
-user input. Its structural evidence therefore reports prompt presence without
-inspecting composer content. Pwsh reports Done when the last non-empty line
+and `null` means the screen cannot answer. Claude and Codex return `null`
+because terminal text cannot distinguish their placeholder and staged hints
+reliably from user input. Pwsh reports Done when the last non-empty line
 matches `PS …>`; otherwise these profiles report Unknown. Hermes and Custom use the
 quiescence fallback: a stable snapshot reports Done during active work, while
 the engine ignores Done when idle. Raw PTY/display output is not status

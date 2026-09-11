@@ -158,7 +158,7 @@ public sealed class TerminalTabStatusEngineTests
 	}
 
 	[Test]
-	public void An_empty_composer_ends_a_startup_activity_without_marking_it_unread()
+	public void Composer_evidence_does_not_change_activity_state()
 	{
 		ScriptedProfile profile = new()
 		{
@@ -174,9 +174,21 @@ public sealed class TerminalTabStatusEngineTests
 			PromptIsEmpty: true);
 		engine.OnScreenSnapshot("idle composer", T0.AddSeconds(1));
 
-		engine.ActivityInProgress.ShouldBeFalse();
+		engine.ActivityInProgress.ShouldBeTrue();
 		engine.HasUnreadCompletion.ShouldBeFalse();
 		engine.CurrentStatus.PromptIsEmpty.ShouldBe(true);
+	}
+
+	[Test]
+	public void Claude_busy_verdict_with_a_visible_prompt_keeps_the_busy_indicator()
+	{
+		var engine = CreateEngine(profile: ClaudeScreenProfile.Instance);
+
+		engine.OnScreenSnapshot("✻ Cogitating… (12s)\n>", T0);
+
+		engine.CurrentDiagnostics.VerdictState.ShouldBe(TerminalScreenVerdictState.Busy);
+		engine.CurrentIndicator.ShouldBe(TerminalTabIndicator.Busy);
+		engine.ActivityInProgress.ShouldBeTrue();
 	}
 
 	[Test]

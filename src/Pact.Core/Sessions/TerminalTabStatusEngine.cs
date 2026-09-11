@@ -172,7 +172,8 @@ public sealed class TerminalTabStatusEngine
 					_inputRequested,
 					_inputRequestStatusLine,
 					_promptIsEmpty,
-					_activityEpoch);
+					_activityEpoch,
+					_lastStableVerdictState);
 			}
 		}
 	}
@@ -374,15 +375,6 @@ public sealed class TerminalTabStatusEngine
 					_currentDescription = verdict.Description;
 					break;
 			}
-
-			if (stable && verdict.PromptIsEmpty == true && _activityInProgress)
-			{
-				EndActivity();
-				if (verdict.State == TerminalScreenVerdictState.Done)
-				{
-					_hasUnreadCompletion = true;
-				}
-			}
 		});
 	}
 
@@ -536,9 +528,11 @@ public sealed class TerminalTabStatusEngine
 /// Whether the visible composer is blank; <see langword="null"/> when the screen cannot say.
 /// </param>
 /// <param name="ActivityEpoch">Monotonic activity cycle observed for the session.</param>
+/// <param name="VerdictState">Latest stable classifier verdict, or null before classification.</param>
 public sealed record SessionStatusSnapshot(
 	TerminalTabIndicator Indicator,
 	bool InputRequested,
 	string StatusLine,
 	bool? PromptIsEmpty,
-	long ActivityEpoch);
+	long ActivityEpoch,
+	TerminalScreenVerdictState? VerdictState);

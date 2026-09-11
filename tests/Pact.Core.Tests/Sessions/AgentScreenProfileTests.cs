@@ -40,6 +40,7 @@ public sealed class AgentScreenProfileTests
 
 	[TestCase("⎿ Interrupted", "Interrupted")]
 	[TestCase("✻ 529 Overloaded", "529 Overloaded")]
+	[TestCase("● API Error: 529 Overloaded. This is a server-side issue, usually temporary — try again in a moment. If it persists, check https://status.claude.com.", "API Error: 529 Overloaded")]
 	[TestCase("✻ Unable to connect to API (ConnectionRefused)", "Unable to connect to API")]
 	public void Claude_terminate_summary_above_prompt_is_done(string marker, string descr)
 	{
@@ -111,52 +112,52 @@ public sealed class AgentScreenProfileTests
 	[TestCase("")]
 	[TestCase(" [Pasted text #1 +16 lines]")]
 	[TestCase(" Some text")]
-	public void Claude_treats_any_visible_prompt_as_empty(string prompt)
+	public void Claude_does_not_claim_to_read_the_composer(string prompt)
 	{
 		var verdict = ClaudeScreenProfile.Instance.Classify($"● Some info \n ✻ Sautéed for 3s\n───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n>{prompt}\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n╰──╯");
-		verdict.PromptIsEmpty.ShouldBe(true);
+		verdict.PromptIsEmpty.ShouldBeNull();
+		verdict.PromptEvidence.ShouldBeNull();
 	}
 
 	[Test]
-	public void Clude_reaal_screen_with_empty_prompt_is_done()
+	public void Claude_real_screen_with_unknown_composer_is_done()
 	{
 		var screen = "  Called pravotech\n\nВижу подключение в логах: > Client (claude-code 2.1.243) вызвал server/discover и tools/list, обработчики отработали за 7 мс, отказов авторизации нет. До этого в 08:22:45 — проверка токена самим скриптом (tools/list без имени клиента, 212 мс — холодное соединение, ретрай не понадобился).\n\nЗаписи CookieTokenAuth ... Access token is missed — штатный шум: браузерная схема не находит куки и уступает MCP-фильтру, дальше решает Bearer.\n\nТак что первый прогон инструкции целиком прошёл: скрипт получил рабочий адрес, проверил токен, записал сервер, клиент подключился и увидел инструменты. Осталось из инструкции — второй профиль (если выбирал только один) и разделы для Codex/Cursor/Hermes, если захочешь проверить и их.\n\n✻ Baked for 27s\n\n───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n>\n───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n  Opus 5 medium · Context 29% left · 5h 49% (→12:40) · weekly 89% (→31.08 12:00)";
 		var verdict = ClaudeScreenProfile.Instance.Classify(screen);
 		verdict.State.ShouldBe(TerminalScreenVerdictState.Done);
 		verdict.Description.ShouldBe("Baked for 27s");
-		verdict.PromptIsEmpty.GetValueOrDefault().ShouldBeTrue();
+		verdict.PromptIsEmpty.ShouldBeNull();
 	}
 
 	[Test]
-	public void Claude_wrapped_separator_after_an_empty_prompt_is_empty()
+	public void Claude_wrapped_separator_does_not_make_the_composer_readable()
 	{
 		var screen = "✻ Baked for 3s\n>          ──────────────────────────────";
 
 		var verdict = ClaudeScreenProfile.Instance.Classify(screen);
 
-		verdict.PromptIsEmpty.ShouldBe(true);
-		verdict.PromptEvidence.ShouldNotBeNull().BoundaryFound.ShouldBeTrue();
-		verdict.PromptEvidence.NonWhitespaceCharacterCount.ShouldBe(0);
+		verdict.PromptIsEmpty.ShouldBeNull();
+		verdict.PromptEvidence.ShouldBeNull();
 	}
 
 	[Test]
-	public void Claude_prompt_without_a_separator_is_still_treated_as_empty()
+	public void Claude_prompt_without_a_separator_does_not_make_the_composer_readable()
 	{
 		var verdict = ClaudeScreenProfile.Instance.Classify("✻ Baked for 3s\n>");
 
-		verdict.PromptIsEmpty.ShouldBe(true);
-		verdict.PromptEvidence.ShouldNotBeNull().BoundaryFound.ShouldBeTrue();
+		verdict.PromptIsEmpty.ShouldBeNull();
+		verdict.PromptEvidence.ShouldBeNull();
 	}
 
 	[Test]
-	public void Claude_ignores_text_that_looks_like_pending_input()
+	public void Claude_prompt_text_does_not_make_the_composer_readable()
 	{
 		var screen = "✻ Baked for 3s\n> compare a >\n──────────────────────────────";
 
 		var verdict = ClaudeScreenProfile.Instance.Classify(screen);
 
-		verdict.PromptIsEmpty.ShouldBe(true);
-		verdict.PromptEvidence.ShouldNotBeNull().NonWhitespaceCharacterCount.ShouldBe(0);
+		verdict.PromptIsEmpty.ShouldBeNull();
+		verdict.PromptEvidence.ShouldBeNull();
 	}
 
 	[Test]
@@ -189,12 +190,12 @@ public sealed class AgentScreenProfileTests
 	}
 
 	[Test]
-	public void Codex_done_screen_keeps_inferred_empty_composer()
+	public void Codex_done_screen_does_not_infer_an_empty_composer()
 	{
 		var verdict = CodexScreenProfile.Instance.Classify("\n──────────────────────────────\n❯");
 
 		verdict.State.ShouldBe(TerminalScreenVerdictState.Done);
-		verdict.PromptIsEmpty.ShouldBe(true);
+		verdict.PromptIsEmpty.ShouldBeNull();
 		verdict.PromptEvidence.ShouldBeNull();
 	}
 

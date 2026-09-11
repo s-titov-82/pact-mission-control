@@ -16,6 +16,7 @@ namespace Pact.Core.Sessions;
 /// </param>
 /// <param name="ActivityEpoch">Monotonic activity cycle observed for the session.</param>
 /// <param name="IsBusy">Whether the session is in an active work cycle.</param>
+/// <param name="VerdictState">Latest stable classifier verdict, or null before classification.</param>
 public sealed record SessionScreenState(
 	string Screen,
 	string LastMessage,
@@ -24,4 +25,5 @@ public sealed record SessionScreenState(
 	string StatusLine = "",
 	bool? PromptIsEmpty = null,
 	long ActivityEpoch = 0,
-	bool IsBusy = false);
+	bool IsBusy = false,
+	TerminalScreenVerdictState? VerdictState = null);
