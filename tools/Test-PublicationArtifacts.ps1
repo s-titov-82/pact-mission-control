@@ -43,9 +43,12 @@ function Assert-PactChecksums {
         [Parameter(Mandatory)][string[]]$ExpectedNames
     )
 
-    $lines = @(Get-Content -LiteralPath $Path | Where-Object {
-            -not [string]::IsNullOrWhiteSpace($_)
-        })
+    $bytes = [System.IO.File]::ReadAllBytes($Path)
+    if ($bytes.Length -eq 0 -or $bytes[$bytes.Length - 1] -ne 0x0A -or
+        [System.Array]::IndexOf($bytes, [byte]0x0D) -ge 0) {
+        throw 'Checksum manifest must use LF lines and end with a final LF.'
+    }
+    $lines = @(Get-Content -LiteralPath $Path)
     if ($lines.Count -ne $ExpectedNames.Count) {
         throw "Checksum manifest must contain exactly $($ExpectedNames.Count) entries."
     }
@@ -53,7 +56,7 @@ function Assert-PactChecksums {
     $seen = [System.Collections.Generic.HashSet[string]]::new(
         [System.StringComparer]::Ordinal)
     foreach ($line in $lines) {
-        if ($line -notmatch '^([0-9a-fA-F]{64}) \*([^/\\]+)$') {
+        if ($line -cnotmatch '^([0-9a-f]{64}) \*([^/\\]+)$') {
             throw "Invalid checksum line: $line"
         }
 
@@ -117,6 +120,7 @@ function Assert-PactSpdx {
     }
     foreach ($requiredFile in @(
             'Pact.App.Avalonia.exe',
+            'Pact.Updater.exe',
             'conpty/conpty.dll',
             'conpty/OpenConsole.exe',
             'Web/vendor/xterm/xterm.js',
@@ -239,6 +243,12 @@ try {
     if ($entryTimestamps.Count -ne 1) {
         throw 'Archive entries do not share one canonical source timestamp.'
     }
+    $updaterEntries = @($entryNames | Where-Object {
+            [System.IO.Path]::GetFileName($_) -ceq 'Pact.Updater.exe'
+        })
+    if ($updaterEntries.Count -ne 1 -or $updaterEntries[0] -cne 'Pact.Updater.exe') {
+        throw "Archive must contain exactly one Pact.Updater.exe at its root; found $($updaterEntries.Count)."
+    }
 }
 finally {
     $archive.Dispose()
@@ -278,6 +288,7 @@ try {
             'licenses/nuget/Microsoft.Web.WebView2-NOTICE.txt',
             'licenses/nuget/MS-PL.txt',
             'Pact.App.Avalonia.exe',
+            'Pact.Updater.exe',
             'Microsoft.Web.WebView2.Core.dll',
             'conpty/conpty.dll',
             'conpty/OpenConsole.exe',
@@ -323,6 +334,12 @@ try {
     }
 
     Assert-PactAuthenticode -Root $resolvedTemporaryRoot
+    $updaterPath = Join-Path $resolvedTemporaryRoot 'Pact.Updater.exe'
+    $updaterVersion = [string]([System.Diagnostics.FileVersionInfo]::GetVersionInfo(
+            $updaterPath).ProductVersion)
+    if (($updaterVersion -split '\+', 2)[0] -ne $Version) {
+        throw "Pact.Updater.exe product version '$updaterVersion' does not match release version '$Version'."
+    }
     $archivedSpdxPath = Join-Path `
         $resolvedTemporaryRoot `
         '_manifest/spdx_2.2/manifest.spdx.json'

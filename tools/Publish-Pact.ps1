@@ -167,10 +167,17 @@ function Test-PactPreparedTree {
         (Get-PactFileSha256 -Path $pactSourceRuntimeComponentManifestPath)) {
         throw 'Published runtime component manifest differs from the repository source.'
     }
+    $updaters = @(Get-ChildItem -LiteralPath $pactPublishRoot -Recurse -File -Filter 'Pact.Updater.exe')
     $updaterPath = Join-Path $pactPublishRoot 'Pact.Updater.exe'
-    if (-not (Test-Path -LiteralPath $updaterPath -PathType Leaf) -or
-        (Get-Item -LiteralPath $updaterPath).Length -eq 0) {
-        throw 'Prepared publish tree does not contain Pact.Updater.exe.'
+    if ($updaters.Count -ne 1 -or
+        -not [System.IO.File]::Exists($updaterPath) -or
+        ([System.IO.FileInfo]::new($updaterPath)).Length -eq 0) {
+        throw "Prepared publish tree must contain exactly one Pact.Updater.exe at its root; found $($updaters.Count)."
+    }
+    $updaterProductVersion = [string]([System.Diagnostics.FileVersionInfo]::GetVersionInfo(
+            $updaterPath).ProductVersion)
+    if (($updaterProductVersion -split '\+', 2)[0] -ne $Version) {
+        throw "Pact.Updater.exe product version '$updaterProductVersion' does not match release version '$Version'."
     }
 
     $conptyManifestPath = Join-Path $pactRepositoryRoot 'third_party/conpty/SHA256SUMS.txt'

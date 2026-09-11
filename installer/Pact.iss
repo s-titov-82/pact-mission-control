@@ -19,7 +19,8 @@ AppPublisher=s-titov-82
 AppPublisherURL=https://github.com/s-titov-82/pact-mission-control
 AppSupportURL=https://github.com/s-titov-82/pact-mission-control/issues
 AppUpdatesURL=https://github.com/s-titov-82/pact-mission-control/releases
-DefaultDirName={localappdata}\Programs\Pact Mission Control
+DefaultDirName={code:GetPactDefaultDir}
+UsePreviousAppDir=no
 DefaultGroupName=PACT Mission Control
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
@@ -70,4 +71,23 @@ Name: "{autodesktop}\{#PactAppName}"; Filename: "{app}\Pact.App.Avalonia.exe"; W
 Filename: "{app}\Pact.App.Avalonia.exe"; Description: "{cm:LaunchProgram,{#PactAppName}}"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent
 
 [Code]
+function GetPactDefaultDir(Param: String): String;
+var
+  PreviousInstallLocation: String;
+begin
+  if RegQueryStringValue(
+      HKCU,
+      'Software\Microsoft\Windows\CurrentVersion\Uninstall\PactMissionControl_is1',
+      'InstallLocation',
+      PreviousInstallLocation) and
+    (Trim(PreviousInstallLocation) <> '') then
+  begin
+    Result := PreviousInstallLocation;
+  end
+  else
+  begin
+    Result := ExpandConstant('{localappdata}\Programs\Pact Mission Control');
+  end;
+end;
+
 #include "Prerequisites.iss"

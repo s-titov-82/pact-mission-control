@@ -60,11 +60,12 @@ function Assert-TrustedSignature
 	}
 }
 
-function Assert-X64ApplicationIdentity
+function Assert-X64ExecutableIdentity
 {
 	param(
 		[Parameter(Mandatory)][string]$Path,
-		[Parameter(Mandatory)][string]$ExpectedVersion
+		[Parameter(Mandatory)][string]$ExpectedVersion,
+		[Parameter(Mandatory)][string]$FileName
 	)
 
 	try
@@ -102,7 +103,7 @@ function Assert-X64ApplicationIdentity
 	}
 	catch
 	{
-		throw "Pact.App.Avalonia.exe is not a valid x64 PE application: $($_.Exception.Message)"
+		throw "$FileName is not a valid x64 PE application: $($_.Exception.Message)"
 	}
 
 	$versionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($Path)
@@ -110,7 +111,7 @@ function Assert-X64ApplicationIdentity
 	$semanticVersion = ($productVersion -split '\+', 2)[0]
 	if ($semanticVersion -ne $ExpectedVersion)
 	{
-		throw "Pact.App.Avalonia.exe product version '$productVersion' does not match requested installer version '$ExpectedVersion'."
+		throw "$FileName product version '$productVersion' does not match requested installer version '$ExpectedVersion'."
 	}
 }
 
@@ -192,7 +193,24 @@ if (-not [IO.File]::Exists((Join-Path $publishRoot 'Pact.App.Avalonia.exe')))
 	throw "Pact.App.Avalonia.exe is missing from publish directory '$publishRoot'."
 }
 $applicationPath = Join-Path $publishRoot 'Pact.App.Avalonia.exe'
-Assert-X64ApplicationIdentity -Path $applicationPath -ExpectedVersion $Version
+Assert-X64ExecutableIdentity `
+	-Path $applicationPath `
+	-ExpectedVersion $Version `
+	-FileName 'Pact.App.Avalonia.exe'
+$updaters = @(Get-ChildItem -LiteralPath $publishRoot -Recurse -File -Filter 'Pact.Updater.exe')
+if ($updaters.Count -eq 0)
+{
+	throw "Pact.Updater.exe is missing from publish directory '$publishRoot'."
+}
+if ($updaters.Count -ne 1 -or
+	([IO.Path]::GetRelativePath($publishRoot, $updaters[0].FullName)) -cne 'Pact.Updater.exe')
+{
+	throw "Publish directory must contain exactly one Pact.Updater.exe at its root; found $($updaters.Count)."
+}
+Assert-X64ExecutableIdentity `
+	-Path $updaters[0].FullName `
+	-ExpectedVersion $Version `
+	-FileName 'Pact.Updater.exe'
 foreach ($requiredRelativePath in @(
 	'LICENSE',
 	'_manifest/spdx_2.2/manifest.spdx.json',

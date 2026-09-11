@@ -27,15 +27,18 @@ if (-not $workRoot.StartsWith($runnerPrefix, [StringComparison]::OrdinalIgnoreCa
 	throw "WorkingDirectory must resolve below RUNNER_TEMP: $workRoot"
 }
 
-$installRoot = Join-Path $workRoot 'install'
+$installRootA = Join-Path $workRoot 'install-a'
+$installRootB = Join-Path $workRoot 'install-b with spaces'
 $expectedRoot = Join-Path $workRoot 'expected'
-$setupLog = Join-Path $workRoot 'setup.log'
-$reinstallLog = Join-Path $workRoot 'reinstall.log'
+$setupLog = Join-Path $workRoot 'setup-a.log'
+$rememberedUpgradeLog = Join-Path $workRoot 'upgrade-remembered-a.log'
+$explicitUpgradeLog = Join-Path $workRoot 'upgrade-explicit-b.log'
 $uninstallLog = Join-Path $workRoot 'uninstall.log'
-$sentinelPath = Join-Path $installRoot 'user-sentinel.txt'
+$sentinelPath = Join-Path $installRootA 'user-sentinel.txt'
 $profileRoot = Join-Path $env:APPDATA 'Pact'
 $profileSentinelPath = Join-Path $profileRoot ('.installer-smoke-{0}.sentinel' -f [Guid]::NewGuid().ToString('N'))
 $uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\PactMissionControl_is1'
+$defaultInstallRoot = [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'Programs\Pact Mission Control'))
 $uninstallerPath = $null
 
 function Invoke-CheckedExecutable
@@ -46,11 +49,19 @@ function Invoke-CheckedExecutable
 		[Parameter(Mandatory)][string]$Description
 	)
 
-	$process = Start-Process `
-		-FilePath $Path `
-		-ArgumentList $Arguments `
-		-Wait `
-		-PassThru
+	$startInfo = [Diagnostics.ProcessStartInfo]::new()
+	$startInfo.FileName = $Path
+	$startInfo.UseShellExecute = $false
+	foreach ($argument in $Arguments)
+	{
+		$startInfo.ArgumentList.Add($argument)
+	}
+	$process = [Diagnostics.Process]::Start($startInfo)
+	if ($null -eq $process)
+	{
+		throw "$Description did not start."
+	}
+	$process.WaitForExit()
 	if ($process.ExitCode -ne 0)
 	{
 		$logArgument = $Arguments |
@@ -71,10 +82,12 @@ function Invoke-CheckedExecutable
 
 function Assert-InstalledPayload
 {
+	param([Parameter(Mandatory)][string]$InstallRoot)
+
 	foreach ($expectedFile in Get-ChildItem -LiteralPath $expectedRoot -Recurse -File)
 	{
 		$relativePath = [IO.Path]::GetRelativePath($expectedRoot, $expectedFile.FullName)
-		$installedPath = Join-Path $installRoot $relativePath
+		$installedPath = Join-Path $InstallRoot $relativePath
 		if (-not [IO.File]::Exists($installedPath))
 		{
 			throw "Installed payload is missing: $relativePath"
@@ -83,16 +96,16 @@ function Assert-InstalledPayload
 		$actualHash = (Get-FileHash -LiteralPath $installedPath -Algorithm SHA256).Hash
 		if ($actualHash -ne $expectedHash)
 		{
-			throw "Installed payload hash mismatch: $relativePath"
+			throw "Installed payload hash mismatch in '$InstallRoot': $relativePath (expected $expectedHash; actual $actualHash)."
 		}
 	}
 
 	$expectedPaths = @(
 		Get-ChildItem -LiteralPath $expectedRoot -Recurse -File |
 			ForEach-Object { [IO.Path]::GetRelativePath($expectedRoot, $_.FullName) })
-	foreach ($installedFile in Get-ChildItem -LiteralPath $installRoot -Recurse -File)
+	foreach ($installedFile in Get-ChildItem -LiteralPath $InstallRoot -Recurse -File)
 	{
-		$relativePath = [IO.Path]::GetRelativePath($installRoot, $installedFile.FullName)
+		$relativePath = [IO.Path]::GetRelativePath($InstallRoot, $installedFile.FullName)
 		$isExpected = $expectedPaths -contains $relativePath
 		$isInstallerOwned = $relativePath -match '^unins[0-9]{3}\.(exe|dat|msg)$'
 		$isSentinel = $installedFile.FullName -eq $sentinelPath
@@ -103,9 +116,30 @@ function Assert-InstalledPayload
 	}
 }
 
+function Assert-RegisteredInstallLocation
+{
+	param([Parameter(Mandatory)][string]$ExpectedRoot)
+
+	$registration = Get-ItemProperty -LiteralPath $uninstallKey
+	if ([string]$registration.DisplayVersion -ne $Version)
+	{
+		throw "Installed Apps registration has version '$($registration.DisplayVersion)', expected '$Version'."
+	}
+	$actualRoot = [IO.Path]::GetFullPath(([string]$registration.InstallLocation).TrimEnd('\'))
+	if ($actualRoot -cne [IO.Path]::GetFullPath($ExpectedRoot))
+	{
+		throw "Installed Apps registration points to '$actualRoot', expected '$ExpectedRoot'."
+	}
+}
+
 if ([IO.Directory]::Exists($workRoot))
 {
 	[IO.Directory]::Delete($workRoot, $true)
+}
+$defaultRootExisted = [IO.Directory]::Exists($defaultInstallRoot)
+if ($defaultRootExisted -or (Test-Path -LiteralPath $uninstallKey))
+{
+	throw 'Installer smoke requires a disposable user profile with no existing Pact installation.'
 }
 $null = [IO.Directory]::CreateDirectory($workRoot)
 try
@@ -113,23 +147,18 @@ try
 	[IO.Compression.ZipFile]::ExtractToDirectory($zip, $expectedRoot)
 	Invoke-CheckedExecutable `
 		-Path $setup `
-		-Description 'Setup' `
+		-Description 'Initial custom-directory Setup' `
 		-Arguments @(
 			'/VERYSILENT',
 			'/SUPPRESSMSGBOXES',
 			'/NORESTART',
 			'/NOICONS',
-			"/DIR=$installRoot",
+			"/DIR=$installRootA",
 			"/LOG=$setupLog")
 
-	Assert-InstalledPayload
-
-	$registration = Get-ItemProperty -LiteralPath $uninstallKey
-	if ([string]$registration.DisplayVersion -ne $Version)
-	{
-		throw "Installed Apps registration has version '$($registration.DisplayVersion)', expected '$Version'."
-	}
-	$uninstallerPath = Join-Path $installRoot 'unins000.exe'
+	Assert-InstalledPayload -InstallRoot $installRootA
+	Assert-RegisteredInstallLocation -ExpectedRoot $installRootA
+	$uninstallerPath = Join-Path $installRootA 'unins000.exe'
 	if (-not [IO.File]::Exists($uninstallerPath))
 	{
 		throw 'Installed uninstaller is missing.'
@@ -141,26 +170,53 @@ try
 		throw "Uninstaller Authenticode status is $actualSignature, expected $expectedSignature."
 	}
 
-	[IO.File]::WriteAllText($sentinelPath, 'preserve')
-	$null = [IO.Directory]::CreateDirectory($profileRoot)
-	[IO.File]::WriteAllText($profileSentinelPath, 'preserve')
+	$rememberedProbe = Join-Path $installRootA 'Pact.App.Avalonia.runtimeconfig.json'
+	[IO.File]::WriteAllText($rememberedProbe, 'stale-a')
 	Invoke-CheckedExecutable `
 		-Path $setup `
-		-Description 'Same-version reinstall' `
+		-Description 'Upgrade using remembered custom directory' `
 		-Arguments @(
 			'/VERYSILENT',
 			'/SUPPRESSMSGBOXES',
 			'/NORESTART',
 			'/NOICONS',
-			"/DIR=$installRoot",
-			"/LOG=$reinstallLog")
-	Assert-InstalledPayload
+			"/LOG=$rememberedUpgradeLog")
+	Assert-InstalledPayload -InstallRoot $installRootA
+	Assert-RegisteredInstallLocation -ExpectedRoot $installRootA
+	if ([IO.Directory]::Exists($defaultInstallRoot))
+	{
+		throw "Upgrade without /DIR created the hard-coded default directory: $defaultInstallRoot"
+	}
+
+	[IO.File]::WriteAllText($sentinelPath, 'preserve')
+	$null = [IO.Directory]::CreateDirectory($profileRoot)
+	[IO.File]::WriteAllText($profileSentinelPath, 'preserve')
+	[IO.Compression.ZipFile]::ExtractToDirectory($zip, $installRootB)
+	$explicitProbe = Join-Path $installRootB 'Pact.App.Avalonia.runtimeconfig.json'
+	[IO.File]::WriteAllText($explicitProbe, 'stale-b')
+	[IO.File]::WriteAllText($rememberedProbe, 'leave-a-untouched')
+	Invoke-CheckedExecutable `
+		-Path $setup `
+		-Description 'Upgrade using explicit running directory' `
+		-Arguments @(
+			'/VERYSILENT',
+			'/SUPPRESSMSGBOXES',
+			'/NORESTART',
+			'/NOICONS',
+			"/DIR=$installRootB",
+			"/LOG=$explicitUpgradeLog")
+	Assert-InstalledPayload -InstallRoot $installRootB
+	Assert-RegisteredInstallLocation -ExpectedRoot $installRootB
+	if ([IO.File]::ReadAllText($rememberedProbe) -cne 'leave-a-untouched')
+	{
+		throw 'Explicit /DIR upgrade modified the remembered installation instead of the running directory.'
+	}
 	if (-not [IO.File]::Exists($sentinelPath) -or
 		-not [IO.File]::Exists($profileSentinelPath))
 	{
-		throw 'Same-version reinstall removed a user-owned sentinel file.'
+		throw 'Upgrade removed a user-owned sentinel file.'
 	}
-	$uninstallerPath = Join-Path $installRoot 'unins000.exe'
+	$uninstallerPath = Join-Path $installRootB 'unins000.exe'
 	$actualSignature = [string](Get-AuthenticodeSignature -LiteralPath $uninstallerPath).Status
 	if ($actualSignature -ne $expectedSignature)
 	{
@@ -174,7 +230,7 @@ try
 	foreach ($expectedFile in Get-ChildItem -LiteralPath $expectedRoot -Recurse -File)
 	{
 		$relativePath = [IO.Path]::GetRelativePath($expectedRoot, $expectedFile.FullName)
-		if ([IO.File]::Exists((Join-Path $installRoot $relativePath)))
+		if ([IO.File]::Exists((Join-Path $installRootB $relativePath)))
 		{
 			throw "Uninstall left a registered payload file: $relativePath"
 		}
@@ -189,7 +245,7 @@ try
 		throw 'Uninstall left the Apps registration behind.'
 	}
 
-	Write-Output 'PASS: Setup installed and reinstalled the exact ZIP payload; uninstall preserved user-owned files.'
+	Write-Output 'PASS: Setup preserved the remembered custom directory, explicit /DIR won, ZIP/updater bytes matched, and uninstall preserved user-owned files.'
 }
 finally
 {
@@ -204,5 +260,12 @@ finally
 	if ([IO.File]::Exists($profileSentinelPath))
 	{
 		[IO.File]::Delete($profileSentinelPath)
+	}
+	foreach ($cleanupRoot in @($installRootB, $installRootA))
+	{
+		if ([IO.Directory]::Exists($cleanupRoot))
+		{
+			[IO.Directory]::Delete($cleanupRoot, $true)
+		}
 	}
 }

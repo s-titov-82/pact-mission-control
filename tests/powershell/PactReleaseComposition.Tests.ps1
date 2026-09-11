@@ -26,7 +26,14 @@ try
 	}
 
 	& $ScriptPath -Version $version -ReleaseDirectory $root | Out-Null
-	$checksumLines = @(Get-Content -LiteralPath (Join-Path $root 'SHA256SUMS.txt'))
+	$checksumPath = Join-Path $root 'SHA256SUMS.txt'
+	$checksumBytes = [IO.File]::ReadAllBytes($checksumPath)
+	if ($checksumBytes.Length -eq 0 -or $checksumBytes[-1] -ne 0x0A -or
+		$checksumBytes.Contains([byte]0x0D))
+	{
+		throw 'Checksum manifest must use LF lines and end with a final LF.'
+	}
+	$checksumLines = @(Get-Content -LiteralPath $checksumPath)
 	if ($checksumLines.Count -ne 3)
 	{
 		throw "Expected three checksum entries, found $($checksumLines.Count)."
@@ -37,6 +44,13 @@ try
 		if (-not ($checksumLines -contains "$($expectedHash.ToLowerInvariant()) *$name"))
 		{
 			throw "Checksum entry is missing or incorrect: $name"
+		}
+	}
+	foreach ($line in $checksumLines)
+	{
+		if ($line -cnotmatch '^[0-9a-f]{64} \*[^/\\]+$')
+		{
+			throw "Checksum entry is not canonical: $line"
 		}
 	}
 

@@ -16,6 +16,7 @@ $resolvedTemporaryRoot = [IO.Path]::GetFullPath($TemporaryRoot)
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $artifactsRoot = [IO.Path]::GetFullPath((Join-Path $repositoryRoot 'artifacts'))
 $validAppHostPath = [IO.Path]::GetFullPath((Join-Path $repositoryRoot 'src/Pact.App.Avalonia/bin/Debug/net10.0-windows/win-x64/Pact.App.Avalonia.exe'))
+$validUpdaterPath = [IO.Path]::GetFullPath((Join-Path $repositoryRoot 'src/Pact.Updater/bin/Debug/net10.0-windows/win-x64/Pact.Updater.exe'))
 [xml]$buildProperties = Get-Content -LiteralPath (Join-Path $repositoryRoot 'Directory.Build.props') -Raw
 $declaredVersions = @(
 	$buildProperties.SelectNodes('/Project/PropertyGroup/VersionPrefix') |
@@ -72,6 +73,11 @@ function New-PublishFixture
 		throw "The built x64 apphost fixture is missing: $validAppHostPath"
 	}
 	[IO.File]::Copy($validAppHostPath, (Join-Path $Path 'Pact.App.Avalonia.exe'))
+	if (-not [IO.File]::Exists($validUpdaterPath))
+	{
+		throw "The built x64 updater fixture is missing: $validUpdaterPath"
+	}
+	[IO.File]::Copy($validUpdaterPath, (Join-Path $Path 'Pact.Updater.exe'))
 	Write-TextFile (Join-Path $Path 'LICENSE') 'fixture license'
 	Write-JsonFile (Join-Path $Path '_manifest/spdx_2.2/manifest.spdx.json') ([ordered]@{
 		packages = @([ordered]@{
@@ -171,6 +177,31 @@ try
 		-ExpectedText 'Unsupported runtime framework' `
 		-Scenario 'Unsupported runtime framework'
 
+	$missingUpdaterRoot = Join-Path $resolvedTemporaryRoot 'missing-updater'
+	New-PublishFixture $missingUpdaterRoot
+	[IO.File]::Delete((Join-Path $missingUpdaterRoot 'Pact.Updater.exe'))
+	$missingUpdater = Invoke-Build `
+		-PublishDirectory $missingUpdaterRoot `
+		-OutputDirectory (Join-Path $resolvedTemporaryRoot 'missing-updater-output')
+	Assert-FailsWith `
+		-Result $missingUpdater `
+		-ExpectedText 'Pact.Updater.exe is missing' `
+		-Scenario 'Missing updater payload'
+
+	$multipleUpdaterRoot = Join-Path $resolvedTemporaryRoot 'multiple-updaters'
+	New-PublishFixture $multipleUpdaterRoot
+	$null = [IO.Directory]::CreateDirectory((Join-Path $multipleUpdaterRoot 'nested'))
+	[IO.File]::Copy(
+		$validUpdaterPath,
+		(Join-Path $multipleUpdaterRoot 'nested/Pact.Updater.exe'))
+	$multipleUpdaters = Invoke-Build `
+		-PublishDirectory $multipleUpdaterRoot `
+		-OutputDirectory (Join-Path $resolvedTemporaryRoot 'multiple-updaters-output')
+	Assert-FailsWith `
+		-Result $multipleUpdaters `
+		-ExpectedText 'exactly one Pact.Updater.exe at its root' `
+		-Scenario 'Multiple updater payloads'
+
 	$invalidExecutableRoot = Join-Path $resolvedTemporaryRoot 'invalid-executable'
 	New-PublishFixture $invalidExecutableRoot
 	Write-TextFile (Join-Path $invalidExecutableRoot 'Pact.App.Avalonia.exe') 'not a PE application'
@@ -195,6 +226,20 @@ try
 		-Result $wrongExecutableVersion `
 		-ExpectedText 'product version' `
 		-Scenario 'Mismatched application executable version'
+
+	$wrongUpdaterVersionRoot = Join-Path $resolvedTemporaryRoot 'wrong-updater-version'
+	New-PublishFixture $wrongUpdaterVersionRoot
+	[IO.File]::Copy(
+		$resolvedCompilerPath,
+		(Join-Path $wrongUpdaterVersionRoot 'Pact.Updater.exe'),
+		$true)
+	$wrongUpdaterVersion = Invoke-Build `
+		-PublishDirectory $wrongUpdaterVersionRoot `
+		-OutputDirectory (Join-Path $resolvedTemporaryRoot 'wrong-updater-version-output')
+	Assert-FailsWith `
+		-Result $wrongUpdaterVersion `
+		-ExpectedText 'Pact.Updater.exe product version' `
+		-Scenario 'Mismatched updater executable version'
 
 	$versionMismatchRoot = Join-Path $resolvedTemporaryRoot 'version-mismatch'
 	New-PublishFixture $versionMismatchRoot 'Microsoft.NETCore.App' '9.9.9'

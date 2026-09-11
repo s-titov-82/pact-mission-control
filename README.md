@@ -63,12 +63,31 @@ Get-FileHash .\pact-mission-control-0.1.1-win-x64-setup.exe -Algorithm SHA256
 ```
 
 Run Setup and follow its prompts. It installs PACT for the current user under
-`%LOCALAPPDATA%\Programs\Pact Mission Control`, creates a Start menu shortcut,
-and can optionally create a desktop shortcut. Installing or uninstalling PACT
-does not remove the data under `%APPDATA%\Pact`.
+`%LOCALAPPDATA%\Programs\Pact Mission Control` by default, but you may choose
+another directory. A later interactive Setup remembers that chosen directory.
+Setup creates a Start menu shortcut and can optionally create a desktop
+shortcut. Installing or uninstalling PACT does not remove the data under
+`%APPDATA%\Pact`.
 Run a newer Setup to upgrade in place; Setup blocks installing an older version
 over a newer one. Close PACT normally before upgrading so live agents are not
 terminated while files are replaced.
+
+PACT checks the stable GitHub release channel at startup and then
+once per hour. When a newer `vMAJOR.MINOR.PATCH` release is available, PACT
+shows its release notes and asks before downloading it. The verified Setup is
+staged under the PACT data root. Once no terminal is busy, no review is active,
+and shutdown has not begun, PACT offers `Restart and update`. The helper waits
+until both PACT and its bundled ConPTY executable are no longer locked, updates
+the directory containing the running `Pact.App.Avalonia.exe`, deletes the Setup
+package, and relaunches PACT without requesting a Windows reboot.
+
+The update restart restores the tabs that were active immediately before the
+handoff, their selection, and unread completion markers. Agent terminals resume
+only when both a resume command and an extracted conversation id are available;
+other terminals cold-start and are named in the restoration summary. Tabs that
+were paused stay paused. A diagnostic `Soft restart and restore active tabs`
+action is available under `Settings -> Updates -> Diagnostics` for exercising
+the same restoration path without installing an update.
 
 The ZIP remains available as a portable/manual alternative. It requires the
 two runtimes listed above to be installed first; extract it to a user-writable

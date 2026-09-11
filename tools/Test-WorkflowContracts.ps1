@@ -82,6 +82,45 @@ function Assert-PactDotnetTestsFailFast {
     }
 }
 
+function Assert-PactSixBoundedTestCommands {
+    param(
+        [Parameter(Mandatory)][string]$Text,
+        [Parameter(Mandatory)][string]$WorkflowName
+    )
+
+    $testCommands = [regex]::Matches(
+        $Text,
+        '(?m)^\s*dotnet test\s+(?<command>[^\r\n]+)$')
+    if ($testCommands.Count -ne 6) {
+        throw "$WorkflowName must contain exactly six sequential dotnet test commands; found $($testCommands.Count)."
+    }
+    $updaterCommands = @($testCommands | Where-Object {
+            $_.Groups['command'].Value.Contains(
+                'tests/Pact.Updater.Tests/Pact.Updater.Tests.csproj',
+                [System.StringComparison]::Ordinal)
+        })
+    if ($updaterCommands.Count -ne 1) {
+        throw "$WorkflowName must contain exactly one Pact.Updater.Tests command; found $($updaterCommands.Count)."
+    }
+    foreach ($testCommand in $testCommands) {
+        $command = $testCommand.Groups['command'].Value
+        foreach ($requiredArgument in @(
+                '--no-build',
+                '--no-restore',
+                '-m:1',
+                '-nr:false',
+                'NUnit.NumberOfTestWorkers=2')) {
+            if (-not $command.Contains(
+                    $requiredArgument,
+                    [System.StringComparison]::Ordinal)) {
+                throw "Test command is missing $requiredArgument`: $command"
+            }
+        }
+    }
+
+    Assert-PactDotnetTestsFailFast -Text $Text
+}
+
 function Test-PactCiWorkflow {
     param([Parameter(Mandatory)][string]$Text)
 
@@ -115,29 +154,7 @@ function Test-PactCiWorkflow {
         Assert-PactContains -Text $Text -Pattern $contract[0] -Description $contract[1]
     }
 
-    $testCommands = [regex]::Matches(
-        $Text,
-        '(?m)^\s*dotnet test\s+(?<command>[^\r\n]+)$')
-    if ($testCommands.Count -ne 5) {
-        throw "CI must contain exactly five sequential dotnet test commands; found $($testCommands.Count)."
-    }
-    foreach ($testCommand in $testCommands) {
-        $command = $testCommand.Groups['command'].Value
-        foreach ($requiredArgument in @(
-                '--no-build',
-                '--no-restore',
-                '-m:1',
-                '-nr:false',
-                'NUnit.NumberOfTestWorkers=2')) {
-            if (-not $command.Contains(
-                    $requiredArgument,
-                    [System.StringComparison]::Ordinal)) {
-                throw "Test command is missing $requiredArgument`: $command"
-            }
-        }
-    }
-
-    Assert-PactDotnetTestsFailFast -Text $Text
+    Assert-PactSixBoundedTestCommands -Text $Text -WorkflowName 'CI'
 
     Assert-PactHostedNativeGateContract -Text $Text
 
@@ -207,7 +224,7 @@ function Test-PactReleaseWorkflow {
         throw "Release workflow must use the reviewed actions/attest v4 commit exactly twice; found $($attestPins.Count)."
     }
 
-    Assert-PactDotnetTestsFailFast -Text $Text
+    Assert-PactSixBoundedTestCommands -Text $Text -WorkflowName 'Release'
     Assert-PactHostedNativeGateContract -Text $Text
     if ($Text -match '(?m)/p\s+\$env:PACT_SIGNING_PFX_PASSWORD') {
         throw 'The PFX password must not be forwarded to Inno Setup or signtool arguments.'
@@ -261,6 +278,26 @@ uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
     dotnet test first.csproj --no-build
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 '@
+
+    $boundedCommands = @(
+        'tests/Pact.Core.Tests/Pact.Core.Tests.csproj',
+        'tests/Pact.Infrastructure.Tests/Pact.Infrastructure.Tests.csproj',
+        'tests/Pact.Presentation.Tests/Pact.Presentation.Tests.csproj',
+        'tests/Pact.App.Avalonia.Tests/Pact.App.Avalonia.Tests.csproj',
+        'tests/Pact.Updater.Tests/Pact.Updater.Tests.csproj',
+        'tests/Pact.Infrastructure.Tests/Pact.Infrastructure.Tests.csproj') |
+        ForEach-Object {
+            "dotnet test $_ --no-build --no-restore -m:1 -nr:false -- NUnit.NumberOfTestWorkers=2`nif (`$LASTEXITCODE -ne 0) { exit `$LASTEXITCODE }"
+        }
+    $boundedFixture = [string]::Join("`n", $boundedCommands)
+    Assert-PactSixBoundedTestCommands -Text $boundedFixture -WorkflowName 'Fixture'
+    Assert-PactFixtureFails `
+        -Action {
+            Assert-PactSixBoundedTestCommands `
+                -Text ($boundedFixture -replace ' -m:1', '') `
+                -WorkflowName 'Fixture'
+        } `
+        -ExpectedMessage 'missing -m:1'
 
     $invalidRelease = $validCommon + "`npermissions:`n  contents: write`n  id-token: write`n  attestations: write"
     Assert-PactFixtureFails `

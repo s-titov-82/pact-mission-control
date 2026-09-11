@@ -329,13 +329,55 @@ messages through the normal prompt lock.
 The only supported package is framework-dependent `win-x64`
 (`SelfContained=false`). A complete `tools/Publish-Pact.ps1` run requires the
 pinned Inno Setup compiler path and emits ZIP, Setup, standalone SPDX, and one
-checksum manifest. It cleans only `artifacts/publish/win-x64` and the selected
-version below `artifacts/release`, and fails if the payload contains PDBs,
-Linux/macOS, win-x86 or win-arm64 runtime folders, or exceeds 50 MiB. Do not add
-another RID until the bundled ConPTY payload exists for that architecture.
+checksum manifest. The common payload contains exactly one framework-dependent,
+single-file `Pact.Updater.exe` at its root. Its product version must match
+`VersionPrefix`; ZIP and Setup consume the same bytes, and the helper appears in
+the SPDX file inventory. Release checksum lines have exactly
+`<64 lowercase hex> *<filename>` followed by LF, including a final LF.
 
-Before update installation is enabled, run the soft-restart native gate against
-an existing publish directory; the gate never builds or publishes the product:
+The publish script cleans only `artifacts/publish/win-x64`, its disposable
+updater publish directory, and the selected version below `artifacts/release`.
+It fails if the payload contains a missing, duplicate, misplaced, or
+wrong-version updater, PDBs, Linux/macOS, win-x86 or win-arm64 runtime folders,
+or exceeds 50 MiB. Do not add another RID until the bundled ConPTY payload
+exists for that architecture.
+
+Inno uses `UsePreviousAppDir=no`. Its code-backed default directory reads the
+nonempty `InstallLocation` from the exact current-user uninstall key
+`Software\Microsoft\Windows\CurrentVersion\Uninstall\PactMissionControl_is1`
+and otherwise falls back to
+`%LOCALAPPDATA%\Programs\Pact Mission Control`. Thus ordinary interactive Setup
+still remembers a custom directory, while the updater's explicit `/DIR` always
+wins and targets the parent of the running executable.
+
+Update discovery accepts only stable tags matching exact
+`vMAJOR.MINOR.PATCH`. Pact checks at startup and hourly, applies GitHub
+rate-limit reset/backoff, and downloads only after user consent. A package is
+ready to apply only after the exact Setup checksum has been verified. The
+persistent restart action appears when no terminal reports activity, no review
+is active or paused, and shutdown has not begun; the handoff checks that safety
+again immediately before launching the helper.
+
+The helper waits for the source Pact PID and for same-iteration exclusive opens
+of the installed `Pact.App.Avalonia.exe` and `conpty/OpenConsole.exe`. It then
+rehashes Setup, invokes it with silent no-close/no-restart arguments and
+`/DIR=<running executable parent>`, deletes the staged package, records one
+terminal ticket outcome, and relaunches the exact Pact path. The ticket path is
+derived directly from the opaque restart id; restoration never scans sibling
+handoffs.
+
+Soft restart is an overlay on durable project, ROOT, layout, and browser state.
+It restores only the terminal/browser set that was active at capture time,
+selection, orchestrator state, and unread markers; paused items remain paused.
+Agent resume needs both the configured resume command and an extracted
+conversation id. When either is unavailable, Pact cold-starts that terminal and
+names the fallback in the restoration summary instead of skipping it. The
+collapsed `Updates -> Diagnostics -> Soft restart and restore active tabs`
+button runs the same path without downloading or applying Setup.
+
+To exercise restoration independently of update installation, run the
+soft-restart native gate against an existing publish directory; the gate never
+builds or publishes the product:
 
 ```powershell
 rtk proxy pwsh -NoProfile -File tools/Test-PactSoftRestart.ps1 `

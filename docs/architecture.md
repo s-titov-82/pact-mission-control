@@ -234,6 +234,44 @@ views. Completion, maximum-iteration, abort, and failure states remove only that
 run's Pact-owned directory, and startup removes abandoned `.pact-reviews`.
 Generic `.reviews` directories are never owned by Pact.
 
+## Update and soft-restart boundary
+
+The process-wide update coordinator checks only the fixed public GitHub
+repository's stable `vMAJOR.MINOR.PATCH` releases. It checks at startup and then
+hourly, honors GitHub rate-limit reset time, and never downloads an asset until
+the user accepts the release offer. Downloaded Setup and checksum assets are
+bounded, streamed, verified, and atomically staged below
+`Temp/Retained/Updates`; update state is not durable product configuration.
+
+Applying an update uses the same restoration overlay as the diagnostic soft
+restart. The shell captures only live tab identities, selection, unread state,
+and available agent resume data, then writes a one-time ticket at the path
+derived from a cryptographic restart id. Active terminal work, any active or
+paused review, or begun shutdown blocks handoff. Safety is checked again after
+the updater copy and ticket are ready; only a successfully started helper may
+enter the confirmed graceful-shutdown path.
+
+`Pact.Updater.exe` is copied out of the installation before launch. It waits for
+the source Pact process and then requires both `Pact.App.Avalonia.exe` and
+`conpty/OpenConsole.exe` to accept exclusive read/write opens in the same poll
+iteration. Setup receives the running executable's parent through an explicit
+`/DIR`, never a compiled-in assumption about the installation directory. The
+installer disables its implicit previous-directory override; its code-backed
+interactive default reads the current-user AppId `InstallLocation` and falls
+back to `%LOCALAPPDATA%\Programs\Pact Mission Control`. The helper forbids
+Windows restart, records one terminal outcome in the same ticket, deletes the
+staged Setup, and relaunches the exact Pact path.
+
+Restoration consumes only the ticket derived from the supplied restart id and
+does so once. Persisted tabs remain the durable base; the overlay starts the
+previously active terminal and browser set, restores unread markers and
+selection, and starts the orchestrator through its separate provisioned path.
+An agent terminal resumes only when its command template and extracted id are
+both available. Otherwise it cold-starts and the bounded summary reports that
+fallback rather than omitting the tab. Paused tabs remain paused. A failed Setup
+uses `UpdateNotApplied`, allowing the previous executable to consume the same
+snapshot and report the sanitized failure category.
+
 ## Lifetime ownership
 
 The application bootstrap owns startup cancellation and the close-during-start
