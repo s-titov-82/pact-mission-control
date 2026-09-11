@@ -4,7 +4,7 @@
 
 ## The application does not start
 
-- Confirm that Windows is x64 and the .NET 10 Desktop Runtime x64 is installed.
+- Confirm that Windows is x64 and the .NET 10 Runtime x64 is installed.
 - Install or repair the Microsoft Edge WebView2 Runtime.
 - If SmartScreen warns about an early unsigned release, verify its checksum and
   GitHub attestation before deciding whether to run it.

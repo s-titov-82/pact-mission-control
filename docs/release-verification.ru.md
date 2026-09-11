@@ -2,9 +2,10 @@
 
 [English](release-verification.md) | [Русский](release-verification.ru.md)
 
-Каждый релиз для Windows x64 содержит три файла:
+Каждый релиз для Windows x64 содержит четыре файла:
 
 - `pact-mission-control-<version>-win-x64.zip`;
+- `pact-mission-control-<version>-win-x64-setup.exe`;
 - `manifest.spdx.json`;
 - `SHA256SUMS.txt`.
 
@@ -14,6 +15,17 @@
 архив не входят PDB, исходный код, тесты, приватная история проектирования или
 компоненты среды выполнения других платформ.
 
+Документ SPDX описывает payload приложения, общий для ZIP и установщика. Это
+не полный SBOM оболочки Inno Setup, встроенного загрузчика WebView2 или
+скачиваемого позднее установщика .NET. Их закреплённые сборочные входы,
+официальные URL и контрольные суммы записаны в
+`installer/dependencies.lock.json` соответствующей ревизии исходников.
+
+В lock-файле также указана минимальная версия WebView2 Runtime, которую
+принимает установщик. Она соответствует семейству Runtime закреплённого в
+репозитории WebView2 SDK; перед установкой PACT более старую среду обновляет
+официальный Evergreen-загрузчик Microsoft.
+
 Файл `licenses/runtime-packages.json` внутри ZIP — это читаемый точный список
 пакетов конкретной сборки. Наборы пакетов проверяются по документу SPDX и
 опубликованному `.deps.json`, а классификация лицензий и подтверждающие данные —
@@ -22,11 +34,12 @@
 
 ## Проверка контрольных сумм
 
-Поместите три файла в один каталог. Сравните результат PowerShell со строкой
-ZIP в `SHA256SUMS.txt`:
+Поместите четыре файла в один каталог. Сравните результаты PowerShell с
+соответствующими строками в `SHA256SUMS.txt`:
 
 ```powershell
-Get-FileHash .\pact-mission-control-0.1.0-win-x64.zip -Algorithm SHA256
+Get-FileHash .\pact-mission-control-0.1.1-win-x64.zip -Algorithm SHA256
+Get-FileHash .\pact-mission-control-0.1.1-win-x64-setup.exe -Algorithm SHA256
 Get-FileHash .\manifest.spdx.json -Algorithm SHA256
 ```
 
@@ -37,11 +50,12 @@ Get-FileHash .\manifest.spdx.json -Algorithm SHA256
 Если установлен GitHub CLI, выполните:
 
 ```powershell
-gh attestation verify .\pact-mission-control-0.1.0-win-x64.zip --repo s-titov-82/pact-mission-control
+gh attestation verify .\pact-mission-control-0.1.1-win-x64.zip --repo s-titov-82/pact-mission-control
 ```
 
-Процесс выпуска публикует подтверждение происхождения сборки для обоих файлов,
-чьи контрольные суммы вошли в список, и аттестацию SPDX SBOM для ZIP.
+Процесс выпуска публикует подтверждение происхождения сборки для трёх файлов
+из списка контрольных сумм и аттестацию SPDX SBOM для ZIP. `SHA256SUMS.txt`
+охватывает ZIP, установщик и отдельный документ SPDX.
 Аттестация подтверждает, что
 артефакт для этого репозитория выпустил GitHub Actions, но не заменяет подпись
 кода.
@@ -49,8 +63,8 @@ gh attestation verify .\pact-mission-control-0.1.0-win-x64.zip --repo s-titov-82
 ## Authenticode и SmartScreen
 
 Первые релизы `0.1.x` могут не иметь подписи Authenticode. Валидатор релиза
-записывает фактическое состояние подписи и не допускает ложного утверждения
-`Signed`. Windows SmartScreen способен предупредить о неподписанном или ещё не
+проверяет и бинарные файлы Pact, и установщик и не допускает ложного
+утверждения `Signed`. Windows SmartScreen способен предупредить о неподписанном или ещё не
 набравшем репутацию файле. Прежде чем решать, запускать ли его, проверьте
 контрольную сумму и аттестацию GitHub.
 
