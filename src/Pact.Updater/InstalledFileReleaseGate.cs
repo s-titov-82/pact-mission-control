@@ -20,12 +20,14 @@ internal sealed class InstalledFileReleaseGate : IInstalledFileReleaseGate
 	private readonly TimeSpan _retryInterval;
 	private readonly Func<TimeSpan, CancellationToken, Task> _delay;
 	private readonly Action<IReadOnlyList<string>>? _blockedObserved;
+	private readonly Func<string, bool> _isLocked;
 
 	public InstalledFileReleaseGate()
 		: this(
 			DefaultRetryInterval,
 			static (delay, token) => Task.Delay(delay, token),
-			blockedObserved: null)
+			blockedObserved: null,
+			IsLocked)
 	{
 	}
 
@@ -33,11 +35,21 @@ internal sealed class InstalledFileReleaseGate : IInstalledFileReleaseGate
 		TimeSpan retryInterval,
 		Func<TimeSpan, CancellationToken, Task> delay,
 		Action<IReadOnlyList<string>>? blockedObserved)
+		: this(retryInterval, delay, blockedObserved, IsLocked)
+	{
+	}
+
+	internal InstalledFileReleaseGate(
+		TimeSpan retryInterval,
+		Func<TimeSpan, CancellationToken, Task> delay,
+		Action<IReadOnlyList<string>>? blockedObserved,
+		Func<string, bool> isLocked)
 	{
 		ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(retryInterval, TimeSpan.Zero);
 		_retryInterval = retryInterval;
 		_delay = delay ?? throw new ArgumentNullException(nameof(delay));
 		_blockedObserved = blockedObserved;
+		_isLocked = isLocked ?? throw new ArgumentNullException(nameof(isLocked));
 	}
 
 	public async Task<FileReleaseResult> WaitAsync(
@@ -66,7 +78,7 @@ internal sealed class InstalledFileReleaseGate : IInstalledFileReleaseGate
 		while (true)
 		{
 			cancellationToken.ThrowIfCancellationRequested();
-			var lockedPaths = normalizedPaths.Where(IsLocked).ToArray();
+			var lockedPaths = normalizedPaths.Where(_isLocked).ToArray();
 			if (lockedPaths.Length == 0)
 			{
 				return new FileReleaseResult(true, []);

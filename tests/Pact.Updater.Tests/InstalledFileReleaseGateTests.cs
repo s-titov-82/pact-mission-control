@@ -49,6 +49,41 @@ public sealed class InstalledFileReleaseGateTests : IDisposable
 		result.LockedPaths.ShouldBe([lockedPath]);
 	}
 
+	[Test]
+	public async Task Gate_requires_every_image_to_be_released_in_the_same_iteration()
+	{
+		var paths = CreateInstalledFiles();
+		var iteration = 0;
+		List<string> probes = [];
+		InstalledFileReleaseGate gate = new(
+			TimeSpan.FromMilliseconds(10),
+			(_, _) =>
+			{
+				iteration++;
+				return Task.CompletedTask;
+			},
+			blockedObserved: null,
+			path =>
+			{
+				probes.Add(path);
+				return iteration switch
+				{
+					0 => string.Equals(path, paths[1], StringComparison.OrdinalIgnoreCase),
+					1 => string.Equals(path, paths[0], StringComparison.OrdinalIgnoreCase),
+					_ => false
+				};
+			});
+
+		var result = await gate.WaitAsync(
+			paths,
+			TimeSpan.FromSeconds(1),
+			CancellationToken.None);
+
+		result.ShouldBe(new FileReleaseResult(true, []));
+		iteration.ShouldBe(2);
+		probes.ShouldBe([paths[0], paths[1], paths[0], paths[1], paths[0], paths[1]]);
+	}
+
 	private string[] CreateInstalledFiles()
 	{
 		var pactPath = Path.Combine(_temporaryDirectory.Path, "Pact.App.Avalonia.exe");

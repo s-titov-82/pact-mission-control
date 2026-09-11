@@ -27,6 +27,34 @@ internal static class UpdaterTicketStore
 	{
 		ArgumentNullException.ThrowIfNull(outcome);
 		var ticket = await LoadPendingAsync(ticketPath, cancellationToken).ConfigureAwait(false);
+		await RewriteAsync(ticketPath, ticket, outcome, cancellationToken).ConfigureAwait(false);
+	}
+
+	public static async Task RewriteAppliedRelaunchFailureAsync(
+		string ticketPath,
+		CancellationToken cancellationToken)
+	{
+		var ticket = await LoadTerminalAsync(ticketPath, cancellationToken).ConfigureAwait(false);
+		if (ticket.Mode != SoftRestartMode.ApplyUpdate
+			|| ticket.Outcome.Kind != SoftRestartOutcomeKind.UpdateApplied)
+		{
+			throw new InvalidDataException("Only an applied update may record relaunch failure.");
+		}
+		await RewriteAsync(
+			ticketPath,
+			ticket,
+			new SoftRestartOutcome(
+				SoftRestartOutcomeKind.UpdateNotApplied,
+				"relaunch-failed"),
+			cancellationToken).ConfigureAwait(false);
+	}
+
+	private static async Task RewriteAsync(
+		string ticketPath,
+		SoftRestartTicket ticket,
+		SoftRestartOutcome outcome,
+		CancellationToken cancellationToken)
+	{
 		var updated = ticket with { Outcome = outcome };
 		Validate(updated, ticketPath, requirePending: false);
 		var temporaryPath = Path.Combine(
@@ -109,13 +137,9 @@ internal static class UpdaterTicketStore
 		bool requirePending)
 	{
 		if (ticket.SchemaVersion != 1
-			|| ticket.SourceProcessId <= 0
-			|| ticket.Mode != SoftRestartMode.RestartOnly
-			|| ticket.ExpectedTargetVersion is not null
-			|| ticket.SetupPath is not null
-			|| ticket.SetupSha256 is not null)
+			|| ticket.SourceProcessId <= 0)
 		{
-			throw new InvalidDataException("The helper supports only a valid RestartOnly ticket.");
+			throw new InvalidDataException("The helper requires a valid restart ticket.");
 		}
 		if (!IsRestartId(ticket.RestartId))
 		{
@@ -164,6 +188,7 @@ internal static class UpdaterTicketStore
 		{
 			throw new InvalidDataException("The diagnostic output path escapes Temp.");
 		}
+		ValidateMode(ticket, dataRoot);
 		if (ticket.LiveTerminalIds is null
 			|| ticket.LoadedWebPageIds is null
 			|| ticket.UnreadTerminalIds is null)
@@ -179,10 +204,57 @@ internal static class UpdaterTicketStore
 				throw new InvalidDataException("The helper requires a Pending ticket.");
 			}
 		}
-		else if (ticket.Outcome.Kind != SoftRestartOutcomeKind.Restarted
-			|| ticket.Outcome.ErrorCategory is not null)
+		else if (ticket.Mode == SoftRestartMode.RestartOnly
+			&& (ticket.Outcome.Kind != SoftRestartOutcomeKind.Restarted
+				|| ticket.Outcome.ErrorCategory is not null))
 		{
 			throw new InvalidDataException("The RestartOnly ticket has no terminal outcome.");
+		}
+		else if (ticket.Mode == SoftRestartMode.ApplyUpdate
+			&& (ticket.Outcome.Kind == SoftRestartOutcomeKind.UpdateApplied
+				? ticket.Outcome.ErrorCategory is not null
+				: ticket.Outcome.Kind != SoftRestartOutcomeKind.UpdateNotApplied
+					|| !IsErrorCategory(ticket.Outcome.ErrorCategory)))
+		{
+			throw new InvalidDataException("The ApplyUpdate ticket has no terminal outcome.");
+		}
+	}
+
+	private static void ValidateMode(SoftRestartTicket ticket, string dataRoot)
+	{
+		if (ticket.Mode == SoftRestartMode.RestartOnly)
+		{
+			if (ticket.ExpectedTargetVersion is not null
+				|| ticket.SetupPath is not null
+				|| ticket.SetupSha256 is not null)
+			{
+				throw new InvalidDataException("RestartOnly must not carry update fields.");
+			}
+			return;
+		}
+		if (ticket.Mode != SoftRestartMode.ApplyUpdate
+			|| ticket.ExpectedTargetVersion is not { } version
+			|| ticket.SoftRestartProbeOutputPath is not null
+			|| ticket.SetupPath is null
+			|| ticket.SetupSha256 is null
+			|| !IsLowerSha256(ticket.SetupSha256))
+		{
+			throw new InvalidDataException("ApplyUpdate requires exact package fields.");
+		}
+
+		var setup = NormalizeAbsolute(ticket.SetupPath, "Setup");
+		var expectedDirectory = Path.Combine(
+			dataRoot,
+			"Temp",
+			"Retained",
+			"Updates",
+			"Packages",
+			version.ToString());
+		var expectedName = $"pact-mission-control-{version}-win-x64-setup.exe";
+		if (!string.Equals(Path.GetDirectoryName(setup), expectedDirectory, StringComparison.OrdinalIgnoreCase)
+			|| !string.Equals(Path.GetFileName(setup), expectedName, StringComparison.Ordinal))
+		{
+			throw new InvalidDataException("The Setup path does not match the target version.");
 		}
 	}
 
@@ -198,6 +270,12 @@ internal static class UpdaterTicketStore
 	private static bool IsRestartId(string value) =>
 		value.Length == 64
 		&& value.All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f');
+
+	private static bool IsLowerSha256(string value) => IsRestartId(value);
+
+	private static bool IsErrorCategory(string? value) =>
+		value is { Length: > 0 and <= 64 }
+		&& value.All(character => character is >= 'a' and <= 'z' or >= '0' and <= '9' or '-');
 
 	private static bool IsStrictDescendant(string candidate, string parent)
 	{

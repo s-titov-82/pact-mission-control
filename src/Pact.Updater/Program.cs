@@ -5,6 +5,8 @@ try
 	var options = UpdaterCommandLine.Parse(args);
 	UpdaterRunner runner = new(
 		new ProcessLauncher(),
+		new InstalledFileReleaseGate(),
+		TimeSpan.FromSeconds(30),
 		TimeSpan.FromSeconds(30));
 	return await runner.RunAsync(options, CancellationToken.None).ConfigureAwait(false);
 }
