@@ -8,6 +8,7 @@ using Pact.Infrastructure.Updates;
 using Pact.Presentation.Settings;
 using Pact.Presentation.Services;
 using Pact.Presentation.Services.WebMonitoring;
+using Pact.Presentation.Updates;
 
 namespace Pact.App.Avalonia.Tests;
 
@@ -46,6 +47,8 @@ public sealed class CompositionRootTests : IDisposable
 		services.GetRequiredService<ScenarioDefinitionStore>().ShouldNotBeNull();
 		services.GetRequiredService<IGitHubReleaseClient>()
 			.ShouldBeOfType<GitHubReleaseClient>();
+		services.GetRequiredService<UpdateCoordinator>()
+			.ShouldBeSameAs(services.GetRequiredService<UpdateCoordinator>());
 		services.GetRequiredService<IRootTabsStore>().ShouldBeOfType<JsonRootTabsStore>();
 		services.GetRequiredService<IProjectSettingsEditor>()
 			.ShouldBeAssignableTo<IRootTabsSettingsEditor>();

@@ -11,6 +11,7 @@ using Pact.Infrastructure.Updates;
 using Pact.Presentation.Services;
 using Pact.Presentation.Services.WebMonitoring;
 using Pact.Presentation.Settings;
+using Pact.Presentation.Updates;
 using Pact.Presentation.ViewModels;
 
 namespace Pact.App.Avalonia;
@@ -33,6 +34,10 @@ internal static class CompositionRoot
 		services.AddSingleton<TimeProvider>(TimeProvider.System);
 		services.AddHttpClient<IGitHubReleaseClient, GitHubReleaseClient>(client =>
 			client.Timeout = TimeSpan.FromSeconds(15));
+		services.AddSingleton(provider => new UpdateCoordinator(
+			provider.GetRequiredService<IGitHubReleaseClient>(),
+			provider.GetRequiredService<TimeProvider>(),
+			RunningPactVersion.Read(typeof(App).Assembly)));
 		services.AddSingleton(provider => new ObservedTaskGroup(
 			(operationName, exception) => AppLog.AppendAsync(
 				provider.GetRequiredService<AppPaths>().RootDirectory,
