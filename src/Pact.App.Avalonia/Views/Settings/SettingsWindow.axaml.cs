@@ -29,6 +29,8 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 		static _ => Task.CompletedTask;
 	private readonly Func<CancellationToken, Task> _openUpdateReleaseNotesAsync =
 		static _ => Task.CompletedTask;
+	private readonly Func<CancellationToken, Task> _openUpdateContainingFolderAsync =
+		static _ => Task.CompletedTask;
 	private SettingsSectionViewModelBase? _previousSection;
 	private bool _suppressSectionSelection;
 	private bool _initialized;
@@ -52,7 +54,8 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 		ObservedTaskGroup? eventTasks = null,
 		Func<Exception, Task>? reportUserFailureAsync = null,
 		Func<CancellationToken, Task>? checkForUpdatesAsync = null,
-		Func<CancellationToken, Task>? openUpdateReleaseNotesAsync = null)
+		Func<CancellationToken, Task>? openUpdateReleaseNotesAsync = null,
+		Func<CancellationToken, Task>? openUpdateContainingFolderAsync = null)
 		: this()
 	{
 		_viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
@@ -64,6 +67,8 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 		_checkForUpdatesAsync = checkForUpdatesAsync ?? _checkForUpdatesAsync;
 		_openUpdateReleaseNotesAsync =
 			openUpdateReleaseNotesAsync ?? _openUpdateReleaseNotesAsync;
+		_openUpdateContainingFolderAsync =
+			openUpdateContainingFolderAsync ?? _openUpdateContainingFolderAsync;
 		DataContext = viewModel;
 		SectionList.ItemsSource = viewModel.Sections;
 		viewModel.PropertyChanged += OnWindowViewModelPropertyChanged;
@@ -72,6 +77,7 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 		{
 			updates.CheckRequested += OnUpdateCheckRequested;
 			updates.OpenReleaseNotesRequested += OnUpdateReleaseNotesRequested;
+			updates.OpenContainingFolderRequested += OnUpdateContainingFolderRequested;
 		}
 	}
 
@@ -290,6 +296,11 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 			"settings-open-update-release-notes",
 			() => _openUpdateReleaseNotesAsync(_lifetimeCancellation.Token));
 
+	private void OnUpdateContainingFolderRequested(object? sender, EventArgs e) =>
+		RunEvent(
+			"settings-open-update-containing-folder",
+			() => _openUpdateContainingFolderAsync(_lifetimeCancellation.Token));
+
 	private async Task RevertAsync()
 	{
 		if (_viewModel?.ActiveSection is not { SupportsFileOperations: true } section)
@@ -432,6 +443,9 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 			case "OpenUpdateReleaseNotes" when button.DataContext is UpdatesSectionViewModel updates:
 				updates.RequestOpenReleaseNotes();
 				break;
+			case "OpenUpdateContainingFolder" when button.DataContext is UpdatesSectionViewModel updates:
+				updates.RequestOpenContainingFolder();
+				break;
 		}
 	}
 
@@ -505,6 +519,7 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 		{
 			updates.CheckRequested -= OnUpdateCheckRequested;
 			updates.OpenReleaseNotesRequested -= OnUpdateReleaseNotesRequested;
+			updates.OpenContainingFolderRequested -= OnUpdateContainingFolderRequested;
 			updates.Dispose();
 		}
 

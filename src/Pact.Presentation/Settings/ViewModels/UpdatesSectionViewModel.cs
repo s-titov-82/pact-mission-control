@@ -47,11 +47,17 @@ public sealed class UpdatesSectionViewModel : SettingsSectionViewModelBase, IDis
 	/// <summary>Gets whether a validated HTTPS release-notes link is currently available.</summary>
 	public bool CanOpenReleaseNotes { get; private set => SetField(ref field, value); }
 
+	/// <summary>Gets whether a verified staged package directory can be opened.</summary>
+	public bool CanOpenContainingFolder { get; private set => SetField(ref field, value); }
+
 	/// <summary>Occurs when the user explicitly requests a release check.</summary>
 	public event EventHandler? CheckRequested;
 
 	/// <summary>Occurs when the user requests the current release notes.</summary>
 	public event EventHandler? OpenReleaseNotesRequested;
+
+	/// <summary>Occurs when the user requests the verified package's containing folder.</summary>
+	public event EventHandler? OpenContainingFolderRequested;
 
 	/// <summary>Raises the manual-check action when the coordinator is not busy.</summary>
 	public void RequestCheck()
@@ -68,6 +74,15 @@ public sealed class UpdatesSectionViewModel : SettingsSectionViewModelBase, IDis
 		if (CanOpenReleaseNotes)
 		{
 			OpenReleaseNotesRequested?.Invoke(this, EventArgs.Empty);
+		}
+	}
+
+	/// <summary>Raises the containing-folder action only after a package was verified.</summary>
+	public void RequestOpenContainingFolder()
+	{
+		if (CanOpenContainingFolder)
+		{
+			OpenContainingFolderRequested?.Invoke(this, EventArgs.Empty);
 		}
 	}
 
@@ -120,5 +135,6 @@ public sealed class UpdatesSectionViewModel : SettingsSectionViewModelBase, IDis
 		CanCheck = status.State is UpdateState.Idle or UpdateState.Available or UpdateState.Failed;
 		CanOpenReleaseNotes = _availableRelease?.ReleaseNotesUri is { IsAbsoluteUri: true } uri
 			&& uri.Scheme == Uri.UriSchemeHttps;
+		CanOpenContainingFolder = status.PreparedPackage is not null;
 	}
 }

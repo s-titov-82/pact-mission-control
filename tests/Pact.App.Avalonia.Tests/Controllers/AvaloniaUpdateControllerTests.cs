@@ -3,6 +3,7 @@ using Pact.App.Avalonia.Lifecycle;
 using Pact.App.Avalonia.Views.Dialogs;
 using Pact.Core.Platform;
 using Pact.Core.Updates;
+using Pact.Infrastructure.Storage;
 using Pact.Infrastructure.Updates;
 using Pact.Presentation.Updates;
 
@@ -10,6 +11,9 @@ namespace Pact.App.Avalonia.Tests.Controllers;
 
 public sealed class AvaloniaUpdateControllerTests
 {
+	private static readonly string TestRoot = Path.Combine(
+		Path.GetTempPath(),
+		"pact-update-controller-tests");
 	[Test]
 	public async Task Available_release_shows_one_dialog_and_later_defers_it()
 	{
@@ -53,6 +57,7 @@ public sealed class AvaloniaUpdateControllerTests
 		AvaloniaUpdateController controller = new(
 			coordinator,
 			new RecordingLauncher(),
+			new UpdatePathPolicy(new AppPaths(TestRoot)),
 			new Fakes.ImmediateUiTaskDispatcher(),
 			tasks,
 			(phase, _) =>
@@ -120,15 +125,28 @@ public sealed class AvaloniaUpdateControllerTests
 	}
 
 	[Test]
-	public async Task Download_is_a_phase_one_placeholder_without_asset_request()
+	public async Task Download_prepares_verified_package_without_running_it_and_folder_can_be_opened()
 	{
+		var release = CreateRelease();
+		var setupPath = Path.Combine(
+			new AppPaths(TestRoot).UpdatePackagesDirectory,
+			release.Version.ToString(),
+			release.Setup.Name);
+		PreparedUpdatePackage package = new(
+			release,
+			setupPath,
+			new string('a', 64),
+			"NotSigned");
+		RecordingPackageStore packages = new(package);
 		await using UpdateCoordinator coordinator = CreateCoordinator(
-			new GitHubReleaseResponse.Available(CreateRelease()));
+			new GitHubReleaseResponse.Available(release),
+			packages);
 		ObservedTaskGroup tasks = new(static (_, _) => Task.CompletedTask);
 		List<string> messages = [];
+		RecordingLauncher launcher = new();
 		AvaloniaUpdateController controller = CreateController(
 			coordinator,
-			new RecordingLauncher(),
+			launcher,
 			tasks);
 		controller.ConfigureHost(
 			static _ => Task.FromResult(UpdateAvailableDialogResult.Download),
@@ -142,7 +160,11 @@ public sealed class AvaloniaUpdateControllerTests
 		await controller.CheckNowAsync(CancellationToken.None);
 		await tasks.WaitForIdleAsync();
 
-		messages.ShouldContain("Downloading is available in the next delivery phase");
+		messages.ShouldHaveSingleItem().ShouldContain("downloaded and verified");
+		packages.DownloadCount.ShouldBe(1);
+		coordinator.Status.State.ShouldBe(UpdateState.ReadyWaitingForSafeState);
+		await controller.OpenContainingFolderAsync(CancellationToken.None);
+		launcher.OpenedFiles.ShouldBe([Path.GetDirectoryName(setupPath)!]);
 		controller.Stop();
 	}
 
@@ -205,14 +227,18 @@ public sealed class AvaloniaUpdateControllerTests
 		ObservedTaskGroup tasks) => new(
 			coordinator,
 			launcher,
+			new UpdatePathPolicy(new AppPaths(TestRoot)),
 			new Fakes.ImmediateUiTaskDispatcher(),
 			tasks,
 			static (_, _) => Task.CompletedTask);
 
-	private static UpdateCoordinator CreateCoordinator(GitHubReleaseResponse response) => new(
+	private static UpdateCoordinator CreateCoordinator(
+		GitHubReleaseResponse response,
+		IUpdatePackageStore? packageStore = null) => new(
 		new FixedReleaseClient(response),
 		TimeProvider.System,
-		new StableReleaseVersion(1, 2, 3));
+		new StableReleaseVersion(1, 2, 3),
+		packageStore);
 
 	private static UpdateRelease CreateRelease(string scheme = "https") => new(
 		new StableReleaseVersion(1, 3, 0),
@@ -236,10 +262,34 @@ public sealed class AvaloniaUpdateControllerTests
 			Task.FromException<GitHubReleaseResponse>(new HttpRequestException("offline"));
 	}
 
+	private sealed class RecordingPackageStore(PreparedUpdatePackage package)
+		: IUpdatePackageStore
+	{
+		public int DownloadCount { get; private set; }
+
+		public Task<PreparedUpdatePackage?> TryGetVerifiedAsync(
+			UpdateRelease release,
+			CancellationToken cancellationToken) => Task.FromResult<PreparedUpdatePackage?>(null);
+
+		public Task<PreparedUpdatePackage> DownloadAndVerifyAsync(
+			UpdateRelease release,
+			IProgress<long>? progress,
+			CancellationToken cancellationToken)
+		{
+			DownloadCount++;
+			return Task.FromResult(package);
+		}
+	}
+
 	private sealed class RecordingLauncher : IExternalLauncher
 	{
 		public List<Uri> OpenedUris { get; } = [];
-		public Task OpenFileAsync(string path) => Task.CompletedTask;
+		public List<string> OpenedFiles { get; } = [];
+		public Task OpenFileAsync(string path)
+		{
+			OpenedFiles.Add(path);
+			return Task.CompletedTask;
+		}
 		public Task OpenHttpUriAsync(Uri uri)
 		{
 			OpenedUris.Add(uri);

@@ -12,9 +12,8 @@ namespace Pact.App.Avalonia.Controllers;
 /// </summary>
 internal sealed class AvaloniaUpdateController
 {
-	private const string DownloadPlaceholder =
-		"Downloading is available in the next delivery phase";
 	private readonly IExternalLauncher _externalLauncher;
+	private readonly UpdatePathPolicy _pathPolicy;
 	private readonly IUiTaskDispatcher _uiTaskDispatcher;
 	private readonly ObservedTaskGroup _eventTasks;
 	private readonly Func<string, Exception?, Task> _logAsync;
@@ -22,17 +21,21 @@ internal sealed class AvaloniaUpdateController
 	private Func<string, Task>? _showInformationAsync;
 	private int _dialogOpen;
 	private int _manualChecks;
+	private int _preparing;
 	private bool _started;
+	private CancellationToken _lifetimeToken;
 
 	public AvaloniaUpdateController(
 		UpdateCoordinator coordinator,
 		IExternalLauncher externalLauncher,
+		UpdatePathPolicy pathPolicy,
 		IUiTaskDispatcher uiTaskDispatcher,
 		ObservedTaskGroup eventTasks,
 		Func<string, Exception?, Task> logAsync)
 	{
 		Coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
 		_externalLauncher = externalLauncher ?? throw new ArgumentNullException(nameof(externalLauncher));
+		_pathPolicy = pathPolicy ?? throw new ArgumentNullException(nameof(pathPolicy));
 		_uiTaskDispatcher = uiTaskDispatcher ?? throw new ArgumentNullException(nameof(uiTaskDispatcher));
 		_eventTasks = eventTasks ?? throw new ArgumentNullException(nameof(eventTasks));
 		_logAsync = logAsync ?? throw new ArgumentNullException(nameof(logAsync));
@@ -61,6 +64,7 @@ internal sealed class AvaloniaUpdateController
 		}
 
 		_started = true;
+		_lifetimeToken = lifetimeToken;
 		Coordinator.StatusChanged += OnStatusChanged;
 		return Coordinator.StartAsync(lifetimeToken);
 	}
@@ -118,6 +122,28 @@ internal sealed class AvaloniaUpdateController
 		await OpenReleaseNotesAsync(release);
 	}
 
+	public Task OpenContainingFolderAsync(CancellationToken cancellationToken)
+	{
+		cancellationToken.ThrowIfCancellationRequested();
+		if (Coordinator.Status.PreparedPackage is not { } package)
+		{
+			return Task.CompletedTask;
+		}
+
+		try
+		{
+			var setupPath = _pathPolicy.EnsureOwnedPath(package.SetupPath);
+			var directory = Path.GetDirectoryName(setupPath)
+				?? throw new InvalidDataException("The staged Setup has no containing directory.");
+			_pathPolicy.EnsureOwnedPath(directory);
+			return _externalLauncher.OpenFileAsync(directory);
+		}
+		catch (Exception exception)
+		{
+			return _logAsync("Rejected invalid staged update path", exception);
+		}
+	}
+
 	public void Stop()
 	{
 		if (!_started)
@@ -132,7 +158,8 @@ internal sealed class AvaloniaUpdateController
 	private void OnStatusChanged(object? sender, UpdateStatusChangedEventArgs args)
 	{
 		if (args.Status.State == UpdateState.Failed
-			&& Volatile.Read(ref _manualChecks) == 0)
+			&& Volatile.Read(ref _manualChecks) == 0
+			&& Volatile.Read(ref _preparing) == 0)
 		{
 			_eventTasks.TryRun(
 				"automatic-update-check-failure",
@@ -165,7 +192,7 @@ internal sealed class AvaloniaUpdateController
 				switch (action)
 				{
 					case UpdateAvailableDialogResult.Download:
-						await ShowInformationAsync(DownloadPlaceholder);
+						await PrepareUpdateAsync(release);
 						return;
 					case UpdateAvailableDialogResult.Later:
 						Coordinator.DeferAutomaticPrompt(release.Version);
@@ -181,6 +208,33 @@ internal sealed class AvaloniaUpdateController
 		finally
 		{
 			Interlocked.Exchange(ref _dialogOpen, 0);
+		}
+	}
+
+	private async Task PrepareUpdateAsync(UpdateRelease release)
+	{
+		try
+		{
+			Interlocked.Increment(ref _preparing);
+			var package = await Coordinator.PrepareUpdateAsync(
+				release,
+				progress: null,
+				_lifetimeToken);
+			await ShowInformationAsync(
+				$"Pact {package.Release.Version} was downloaded and verified. Open its containing folder from Settings to install it manually.");
+		}
+		catch (OperationCanceledException) when (_lifetimeToken.IsCancellationRequested)
+		{
+		}
+		catch (Exception exception)
+		{
+			await _logAsync("Update download failed", exception);
+			await ShowInformationAsync(
+				"Pact could not download and verify the update. Try again later.");
+		}
+		finally
+		{
+			Interlocked.Decrement(ref _preparing);
 		}
 	}
 

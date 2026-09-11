@@ -4,6 +4,7 @@ using Pact.Core.Platform;
 using Pact.Core.Presentation;
 using Pact.Infrastructure.Storage;
 using Pact.Infrastructure.Terminal;
+using Pact.Infrastructure.Updates;
 using Pact.Presentation.Services;
 using Pact.Presentation.Services.WebMonitoring;
 using Pact.Presentation.Settings;
@@ -21,7 +22,8 @@ internal sealed record AvaloniaWindowServices(
 	IProjectSettingsEditor ProjectSettingsEditor,
 	IExternalLauncher ExternalLauncher,
 	WindowLayoutStore WindowLayoutStore,
-	UpdateCoordinator UpdateCoordinator);
+	UpdateCoordinator UpdateCoordinator,
+	UpdatePathPolicy UpdatePathPolicy);
 
 /// <summary>
 /// Composes the application shell from DI-owned services and the two hosts owned by
@@ -88,6 +90,7 @@ internal sealed class AvaloniaShellControllerFactory
 		AvaloniaUpdateController updateController = new(
 			WindowServices.UpdateCoordinator,
 			WindowServices.ExternalLauncher,
+			WindowServices.UpdatePathPolicy,
 			WindowServices.UiTaskDispatcher,
 			WindowServices.EventTasks,
 			(phase, exception) => AppLog.AppendAsync(

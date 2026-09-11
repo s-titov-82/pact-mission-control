@@ -34,10 +34,18 @@ internal static class CompositionRoot
 		services.AddSingleton<TimeProvider>(TimeProvider.System);
 		services.AddHttpClient<IGitHubReleaseClient, GitHubReleaseClient>(client =>
 			client.Timeout = TimeSpan.FromSeconds(15));
+		services.AddSingleton<UpdatePathPolicy>();
+		services.AddHttpClient<IUpdatePackageStore, UpdatePackageStore>(client =>
+			client.Timeout = TimeSpan.FromMinutes(10))
+			.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+			{
+				AllowAutoRedirect = false
+			});
 		services.AddSingleton(provider => new UpdateCoordinator(
 			provider.GetRequiredService<IGitHubReleaseClient>(),
 			provider.GetRequiredService<TimeProvider>(),
-			RunningPactVersion.Read(typeof(App).Assembly)));
+			RunningPactVersion.Read(typeof(App).Assembly),
+			provider.GetRequiredService<IUpdatePackageStore>()));
 		services.AddSingleton(provider => new ObservedTaskGroup(
 			(operationName, exception) => AppLog.AppendAsync(
 				provider.GetRequiredService<AppPaths>().RootDirectory,

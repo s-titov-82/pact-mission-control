@@ -85,7 +85,7 @@ public sealed class SettingsWindowHeadlessTests
 
 		root.GetSelfAndVisualDescendants().OfType<Button>()
 			.Select(button => button.Content)
-			.ShouldBe(["Check now", "Open release notes"]);
+			.ShouldBe(["Check now", "Open release notes", "Open containing folder"]);
 	}
 
 	[AvaloniaTest]

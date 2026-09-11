@@ -11,10 +11,14 @@ public sealed class UpdateCoordinator : IAsyncDisposable
 	private static readonly TimeSpan InitialCheckDelay = TimeSpan.FromSeconds(30);
 	private static readonly TimeSpan NormalCheckCadence = TimeSpan.FromHours(1);
 	private const string CheckFailureMessage = "The update check could not be completed.";
+	private const string DownloadFailureMessage =
+		"The update could not be downloaded and verified.";
 	private readonly IGitHubReleaseClient _releaseClient;
 	private readonly TimeProvider _timeProvider;
 	private readonly SemaphoreSlim _checkGate = new(1, 1);
+	private readonly SemaphoreSlim _prepareGate = new(1, 1);
 	private readonly CancellationTokenSource _disposeSource = new();
+	private readonly IUpdatePackageStore? _packageStore;
 	private readonly Lock _stateSync = new();
 	private UpdateStatus _status;
 	private DateTimeOffset? _automaticChecksSuppressedUntil;
@@ -31,15 +35,18 @@ public sealed class UpdateCoordinator : IAsyncDisposable
 	/// <param name="releaseClient">The fixed-repository release client.</param>
 	/// <param name="timeProvider">The clock used for cadence and backoff.</param>
 	/// <param name="runningVersion">The stable version of this Pact process.</param>
+	/// <param name="packageStore">Optional verified package store used by download phases.</param>
 	public UpdateCoordinator(
 		IGitHubReleaseClient releaseClient,
 		TimeProvider timeProvider,
-		StableReleaseVersion runningVersion)
+		StableReleaseVersion runningVersion,
+		IUpdatePackageStore? packageStore = null)
 	{
 		ArgumentNullException.ThrowIfNull(releaseClient);
 		ArgumentNullException.ThrowIfNull(timeProvider);
 		_releaseClient = releaseClient;
 		_timeProvider = timeProvider;
+		_packageStore = packageStore;
 		_status = new UpdateStatus(
 			UpdateState.Idle,
 			runningVersion,
@@ -198,6 +205,88 @@ public sealed class UpdateCoordinator : IAsyncDisposable
 		}
 	}
 
+	/// <summary>
+	/// Downloads and verifies a user-approved release without invoking its Setup program.
+	/// </summary>
+	/// <param name="release">The currently offered validated release.</param>
+	/// <param name="progress">Optional cumulative Setup-byte progress observer.</param>
+	/// <param name="cancellationToken">Cancels the download and returns the release to Available.</param>
+	public async Task<PreparedUpdatePackage> PrepareUpdateAsync(
+		UpdateRelease release,
+		IProgress<long>? progress,
+		CancellationToken cancellationToken)
+	{
+		ArgumentNullException.ThrowIfNull(release);
+		if (_packageStore is null)
+		{
+			throw new InvalidOperationException("Update package storage is not configured.");
+		}
+
+		ThrowIfDisposed();
+		using var operationSource = CancellationTokenSource.CreateLinkedTokenSource(
+			cancellationToken,
+			_disposeSource.Token);
+		var operationToken = operationSource.Token;
+		await _prepareGate.WaitAsync(operationToken).ConfigureAwait(false);
+		try
+		{
+			var beforeDownload = Status;
+			if (beforeDownload.AvailableRelease?.Version != release.Version)
+			{
+				throw new InvalidOperationException(
+					"Only the currently available release can be downloaded.");
+			}
+
+			Transition(new UpdateStatus(
+				UpdateState.Downloading,
+				beforeDownload.RunningVersion,
+				release,
+				PreparedPackage: null,
+				Error: null));
+			try
+			{
+				var package = await _packageStore.DownloadAndVerifyAsync(
+					release,
+					progress,
+					operationToken).ConfigureAwait(false);
+				var current = Status;
+				if (!HasNewerReleaseOrPackage(current, release.Version))
+				{
+					Transition(new UpdateStatus(
+						UpdateState.ReadyWaitingForSafeState,
+						current.RunningVersion,
+						release,
+						package,
+						Error: null));
+				}
+				return package;
+			}
+			catch (OperationCanceledException) when (operationToken.IsCancellationRequested)
+			{
+				RestoreAvailableUnlessNewer(release);
+				throw;
+			}
+			catch (Exception)
+			{
+				var current = Status;
+				if (!HasNewerReleaseOrPackage(current, release.Version))
+				{
+					Transition(new UpdateStatus(
+						UpdateState.Failed,
+						current.RunningVersion,
+						release,
+						PreparedPackage: null,
+						Error: DownloadFailureMessage));
+				}
+				throw;
+			}
+		}
+		finally
+		{
+			_prepareGate.Release();
+		}
+	}
+
 	/// <summary>Stops the schedule and waits for its current operation to observe cancellation.</summary>
 	public async ValueTask DisposeAsync()
 	{
@@ -236,7 +325,10 @@ public sealed class UpdateCoordinator : IAsyncDisposable
 		_lifetimeSource = null;
 		await _checkGate.WaitAsync().ConfigureAwait(false);
 		_checkGate.Release();
+		await _prepareGate.WaitAsync().ConfigureAwait(false);
+		_prepareGate.Release();
 		_checkGate.Dispose();
+		_prepareGate.Dispose();
 		_disposeSource.Dispose();
 	}
 
@@ -427,4 +519,24 @@ public sealed class UpdateCoordinator : IAsyncDisposable
 			ObjectDisposedException.ThrowIf(_disposed, this);
 		}
 	}
+
+	private void RestoreAvailableUnlessNewer(UpdateRelease release)
+	{
+		var current = Status;
+		if (!HasNewerReleaseOrPackage(current, release.Version))
+		{
+			Transition(new UpdateStatus(
+				UpdateState.Available,
+				current.RunningVersion,
+				release,
+				PreparedPackage: null,
+				Error: null));
+		}
+	}
+
+	private static bool HasNewerReleaseOrPackage(
+		UpdateStatus status,
+		StableReleaseVersion version) =>
+		status.AvailableRelease?.Version > version
+		|| status.PreparedPackage?.Release.Version > version;
 }

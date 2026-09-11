@@ -239,6 +239,105 @@ public sealed class UpdateCoordinatorTests
 		coordinator.Status.State.ShouldBe(UpdateState.Failed);
 	}
 
+	[Test]
+	public async Task Available_release_downloads_into_ready_waiting_state()
+	{
+		var release = Release(1, 3, 0);
+		PreparedUpdatePackage package = new(
+			release,
+			@"C:\updates\setup.exe",
+			new string('a', 64),
+			"NotSigned");
+		FakePackageStore packages = new((_, _, _) => Task.FromResult(package));
+		await using UpdateCoordinator coordinator = new(
+			new FakeReleaseClient((_, _) => Task.FromResult<GitHubReleaseResponse>(
+				new GitHubReleaseResponse.Available(release))),
+			new ManualTimeProvider(Start),
+			Running,
+			packages);
+		List<UpdateState> states = [];
+		coordinator.StatusChanged += (_, args) => states.Add(args.Status.State);
+		await coordinator.CheckNowAsync(UpdateCheckOrigin.Manual, CancellationToken.None);
+
+		var result = await coordinator.PrepareUpdateAsync(
+			release,
+			progress: null,
+			CancellationToken.None);
+
+		result.ShouldBeSameAs(package);
+		coordinator.Status.State.ShouldBe(UpdateState.ReadyWaitingForSafeState);
+		coordinator.Status.PreparedPackage.ShouldBeSameAs(package);
+		states.ShouldContain(UpdateState.Downloading);
+	}
+
+	[Test]
+	public async Task Download_cancellation_returns_to_available_and_failure_is_visible()
+	{
+		var release = Release(1, 3, 0);
+		using CancellationTokenSource canceled = new();
+		await canceled.CancelAsync();
+		FakePackageStore canceledStore = new((_, _, token) =>
+			Task.FromCanceled<PreparedUpdatePackage>(token));
+		await using UpdateCoordinator canceledCoordinator = await CreateWithPackageStore(
+			release,
+			canceledStore);
+		await canceledCoordinator.CheckNowAsync(
+			UpdateCheckOrigin.Manual,
+			CancellationToken.None);
+
+		await Should.ThrowAsync<OperationCanceledException>(() =>
+			canceledCoordinator.PrepareUpdateAsync(release, null, canceled.Token));
+		canceledCoordinator.Status.State.ShouldBe(UpdateState.Available);
+
+		FakePackageStore failedStore = new((_, _, _) =>
+			Task.FromException<PreparedUpdatePackage>(new InvalidDataException("bad hash")));
+		await using UpdateCoordinator failedCoordinator = await CreateWithPackageStore(
+			release,
+			failedStore);
+		await failedCoordinator.CheckNowAsync(
+			UpdateCheckOrigin.Manual,
+			CancellationToken.None);
+
+		await Should.ThrowAsync<InvalidDataException>(() =>
+			failedCoordinator.PrepareUpdateAsync(release, null, CancellationToken.None));
+		failedCoordinator.Status.State.ShouldBe(UpdateState.Failed);
+		failedCoordinator.Status.AvailableRelease.ShouldBeSameAs(release);
+	}
+
+	[Test]
+	public async Task Older_download_completion_cannot_replace_a_newer_offer()
+	{
+		var older = Release(1, 3, 0);
+		var newer = Release(1, 4, 0);
+		PreparedUpdatePackage olderPackage = new(
+			older,
+			@"C:\updates\old.exe",
+			new string('a', 64),
+			"NotSigned");
+		TaskCompletionSource<PreparedUpdatePackage> completion = new(
+			TaskCreationOptions.RunContinuationsAsynchronously);
+		Queue<GitHubReleaseResponse> responses = new([
+			new GitHubReleaseResponse.Available(older),
+			new GitHubReleaseResponse.Available(newer)
+		]);
+		await using UpdateCoordinator coordinator = new(
+			new FakeReleaseClient((_, _) => Task.FromResult(responses.Dequeue())),
+			new ManualTimeProvider(Start),
+			Running,
+			new FakePackageStore((_, _, _) => completion.Task));
+		await coordinator.CheckNowAsync(UpdateCheckOrigin.Manual, CancellationToken.None);
+		var preparing = coordinator.PrepareUpdateAsync(older, null, CancellationToken.None);
+		await WaitUntilAsync(() => coordinator.Status.State == UpdateState.Downloading);
+
+		await coordinator.CheckNowAsync(UpdateCheckOrigin.Manual, CancellationToken.None);
+		completion.SetResult(olderPackage);
+		await preparing;
+
+		coordinator.Status.State.ShouldBe(UpdateState.Available);
+		coordinator.Status.AvailableRelease.ShouldBeSameAs(newer);
+		coordinator.Status.PreparedPackage.ShouldBeNull();
+	}
+
 	private static UpdateRelease Release(int major, int minor, int patch)
 	{
 		var version = new StableReleaseVersion(major, minor, patch);
@@ -255,6 +354,20 @@ public sealed class UpdateCoordinatorTests
 				"SHA256SUMS.txt",
 				new Uri($"https://github.com/download/{tag}/SHA256SUMS.txt"),
 				65));
+	}
+
+	private static async Task<UpdateCoordinator> CreateWithPackageStore(
+		UpdateRelease release,
+		IUpdatePackageStore packageStore)
+	{
+		UpdateCoordinator coordinator = new(
+			new FakeReleaseClient((_, _) => Task.FromResult<GitHubReleaseResponse>(
+				new GitHubReleaseResponse.Available(release))),
+			new ManualTimeProvider(Start),
+			Running,
+			packageStore);
+		await Task.CompletedTask;
+		return coordinator;
 	}
 
 	private static TaskCompletionSource<GitHubReleaseResponse> NewCompletion() =>
@@ -326,6 +439,20 @@ public sealed class UpdateCoordinatorTests
 				}
 			}
 		}
+	}
+
+	private sealed class FakePackageStore(
+		Func<UpdateRelease, IProgress<long>?, CancellationToken, Task<PreparedUpdatePackage>>
+			download) : IUpdatePackageStore
+	{
+		public Task<PreparedUpdatePackage?> TryGetVerifiedAsync(
+			UpdateRelease release,
+			CancellationToken cancellationToken) => Task.FromResult<PreparedUpdatePackage?>(null);
+
+		public Task<PreparedUpdatePackage> DownloadAndVerifyAsync(
+			UpdateRelease release,
+			IProgress<long>? progress,
+			CancellationToken cancellationToken) => download(release, progress, cancellationToken);
 	}
 
 	private sealed class ManualTimeProvider(DateTimeOffset start) : TimeProvider

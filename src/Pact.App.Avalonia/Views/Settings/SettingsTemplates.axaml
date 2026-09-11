@@ -34,6 +34,8 @@
 						IsEnabled="{Binding CanCheck}" />
 				<Button Content="Open release notes" Tag="OpenUpdateReleaseNotes"
 						IsEnabled="{Binding CanOpenReleaseNotes}" />
+				<Button Content="Open containing folder" Tag="OpenUpdateContainingFolder"
+						IsEnabled="{Binding CanOpenContainingFolder}" />
 			</StackPanel>
 			<TextBlock Foreground="{DynamicResource AppTextMutedBrush}" TextWrapping="Wrap"
 						 Text="Only stable GitHub releases are considered. Automatic checks run once per hour." />

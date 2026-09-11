@@ -750,7 +750,10 @@ internal sealed partial class MainWindow : Window, IDisposable
 				: _updateController.CheckNowAsync,
 			openUpdateReleaseNotesAsync: _updateController is null
 				? null
-				: _updateController.OpenCurrentReleaseNotesAsync)
+				: _updateController.OpenCurrentReleaseNotesAsync,
+			openUpdateContainingFolderAsync: _updateController is null
+				? null
+				: _updateController.OpenContainingFolderAsync)
 		{
 			InitialSection = section,
 			InitialItemId = itemId,
