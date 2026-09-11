@@ -11,6 +11,7 @@ namespace Pact.Infrastructure.Updates;
 /// </summary>
 public sealed class UpdatePackageStore : IUpdatePackageStore
 {
+	private static readonly TimeSpan DefaultAssetTimeout = TimeSpan.FromMinutes(10);
 	private const int MaximumRedirects = 5;
 	private const long MaximumChecksumBytes = 1024 * 1024;
 	private const string RepositoryDownloadPath =
@@ -18,10 +19,17 @@ public sealed class UpdatePackageStore : IUpdatePackageStore
 	private readonly HttpClient _httpClient;
 	private readonly UpdatePathPolicy _pathPolicy;
 	private readonly Func<string, string?> _authenticodeStatusReader;
+	private readonly TimeProvider _timeProvider;
+	private readonly TimeSpan _assetTimeout;
 
 	/// <summary>Creates a package store with a redirect-visible HTTP transport.</summary>
 	public UpdatePackageStore(HttpClient httpClient, UpdatePathPolicy pathPolicy)
-		: this(httpClient, pathPolicy, ReadAuthenticodeStatus)
+		: this(
+			httpClient,
+			pathPolicy,
+			ReadAuthenticodeStatus,
+			TimeProvider.System,
+			DefaultAssetTimeout)
 	{
 	}
 
@@ -29,11 +37,29 @@ public sealed class UpdatePackageStore : IUpdatePackageStore
 		HttpClient httpClient,
 		UpdatePathPolicy pathPolicy,
 		Func<string, string?> authenticodeStatusReader)
+		: this(
+			httpClient,
+			pathPolicy,
+			authenticodeStatusReader,
+			TimeProvider.System,
+			DefaultAssetTimeout)
+	{
+	}
+
+	internal UpdatePackageStore(
+		HttpClient httpClient,
+		UpdatePathPolicy pathPolicy,
+		Func<string, string?> authenticodeStatusReader,
+		TimeProvider timeProvider,
+		TimeSpan assetTimeout)
 	{
 		_httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
 		_pathPolicy = pathPolicy ?? throw new ArgumentNullException(nameof(pathPolicy));
 		_authenticodeStatusReader = authenticodeStatusReader
 			?? throw new ArgumentNullException(nameof(authenticodeStatusReader));
+		_timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+		ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(assetTimeout, TimeSpan.Zero);
+		_assetTimeout = assetTimeout;
 	}
 
 	/// <inheritdoc />
@@ -162,17 +188,22 @@ public sealed class UpdatePackageStore : IUpdatePackageStore
 		IProgress<long>? progress,
 		CancellationToken cancellationToken)
 	{
+		using CancellationTokenSource timeoutSource = new(_assetTimeout, _timeProvider);
+		using var operationSource = CancellationTokenSource.CreateLinkedTokenSource(
+			cancellationToken,
+			timeoutSource.Token);
+		var operationToken = operationSource.Token;
 		using HttpResponseMessage response = await SendFollowingHttpsRedirectsAsync(
 			release,
 			asset,
-			cancellationToken).ConfigureAwait(false);
+			operationToken).ConfigureAwait(false);
 		if (response.Content.Headers.ContentLength is { } contentLength
 			&& contentLength != asset.Size)
 		{
 			throw new InvalidDataException("The release asset length does not match GitHub metadata.");
 		}
 
-		await using Stream source = await response.Content.ReadAsStreamAsync(cancellationToken)
+		await using Stream source = await response.Content.ReadAsStreamAsync(operationToken)
 			.ConfigureAwait(false);
 		await using FileStream destination = new(
 			partialPath,
@@ -186,7 +217,7 @@ public sealed class UpdatePackageStore : IUpdatePackageStore
 		var total = 0L;
 		while (true)
 		{
-			var read = await source.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+			var read = await source.ReadAsync(buffer, operationToken).ConfigureAwait(false);
 			if (read == 0)
 			{
 				break;
@@ -198,12 +229,12 @@ public sealed class UpdatePackageStore : IUpdatePackageStore
 				throw new InvalidDataException("The release asset is larger than GitHub metadata.");
 			}
 			hash.AppendData(buffer.AsSpan(0, read));
-			await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken)
+			await destination.WriteAsync(buffer.AsMemory(0, read), operationToken)
 				.ConfigureAwait(false);
 			progress?.Report(total);
 		}
 
-		await destination.FlushAsync(cancellationToken).ConfigureAwait(false);
+		await destination.FlushAsync(operationToken).ConfigureAwait(false);
 		if (total != asset.Size)
 		{
 			throw new InvalidDataException("The release asset is truncated.");

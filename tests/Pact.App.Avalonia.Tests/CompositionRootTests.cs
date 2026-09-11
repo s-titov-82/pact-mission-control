@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Pact.App.Avalonia.Platform;
 using Pact.Core.Platform;
@@ -99,6 +100,70 @@ public sealed class CompositionRootTests : IDisposable
 		AppStartupHousekeeping.Run(new AppPaths(_root));
 
 		File.Exists(oldLog).ShouldBeFalse();
+	}
+
+	[Test]
+	public void Startup_housekeeping_removes_only_consumed_update_handoffs()
+	{
+		AppPaths paths = new(_root);
+		var consumed = Path.Combine(paths.UpdateHandoffsDirectory, new string('a', 64));
+		var active = Path.Combine(paths.UpdateHandoffsDirectory, new string('b', 64));
+		Directory.CreateDirectory(consumed);
+		Directory.CreateDirectory(active);
+		File.WriteAllText(Path.Combine(consumed, "Pact.Updater.exe"), "stale");
+		File.WriteAllText(Path.Combine(consumed, "setup.log"), "stale");
+		File.WriteAllText(Path.Combine(active, "Pact.Updater.exe"), "active");
+		File.WriteAllText(Path.Combine(active, "update-resume.json"), "active");
+
+		AppStartupHousekeeping.Run(paths);
+
+		Directory.Exists(consumed).ShouldBeFalse();
+		File.Exists(Path.Combine(active, "Pact.Updater.exe")).ShouldBeTrue();
+		File.Exists(Path.Combine(active, "update-resume.json")).ShouldBeTrue();
+	}
+
+	[Test]
+	public void Startup_housekeeping_never_follows_a_handoff_reparse_point()
+	{
+		AppPaths paths = new(_root);
+		var outside = Path.Combine(_root, "outside-handoff");
+		var link = Path.Combine(paths.UpdateHandoffsDirectory, new string('c', 64));
+		Directory.CreateDirectory(outside);
+		Directory.CreateDirectory(paths.UpdateHandoffsDirectory);
+		var outsideHelper = Path.Combine(outside, "Pact.Updater.exe");
+		var outsideLog = Path.Combine(outside, "setup.log");
+		File.WriteAllText(outsideHelper, "outside");
+		File.WriteAllText(outsideLog, "outside");
+		try
+		{
+			Directory.CreateSymbolicLink(link, outside);
+		}
+		catch (Exception exception) when (exception is UnauthorizedAccessException
+			or PlatformNotSupportedException
+			or IOException)
+		{
+			ProcessStartInfo startInfo = new(Environment.GetEnvironmentVariable("COMSPEC") ?? "cmd.exe")
+			{
+				UseShellExecute = false,
+				CreateNoWindow = true
+			};
+			startInfo.ArgumentList.Add("/d");
+			startInfo.ArgumentList.Add("/c");
+			startInfo.ArgumentList.Add("mklink");
+			startInfo.ArgumentList.Add("/J");
+			startInfo.ArgumentList.Add(link);
+			startInfo.ArgumentList.Add(outside);
+			using var junction = Process.Start(startInfo)
+				?? throw new InvalidOperationException("Junction helper did not start.", exception);
+			junction.WaitForExit();
+			junction.ExitCode.ShouldBe(0, $"Could not create a test junction: {exception.Message}");
+		}
+
+		AppStartupHousekeeping.Run(paths);
+
+		File.Exists(outsideHelper).ShouldBeTrue();
+		File.Exists(outsideLog).ShouldBeTrue();
+		Directory.Exists(link).ShouldBeTrue();
 	}
 	public void Dispose()
 	{

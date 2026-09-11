@@ -142,6 +142,10 @@ The hourly check continues after **Later**, so a still newer release can be
 discovered. A manual check may present the suppressed version again. There is no
 durable ignored-version setting.
 
+Once a package is verified and waiting for restart, later hourly or manual
+checks do not issue another GitHub request. The prepared package and restart
+action remain authoritative until handoff.
+
 ## Download and integrity
 
 Release packages are staged under:
@@ -156,9 +160,10 @@ or consume a prepared release. Real update handoffs use the same Handoffs layout
 and refer to the independently staged package.
 
 Each asset is first written with a `.partial` suffix. Completion uses an atomic
-rename within the same directory. Download code uses bounded HTTP timeouts,
-streams to disk rather than buffering the whole installer, enforces the asset
-size from GitHub metadata, and supports cancellation during shutdown.
+rename within the same directory. Download code uses bounded HTTP timeouts that
+cover response headers and the complete response body, streams to disk rather
+than buffering the whole installer, enforces the asset size from GitHub
+metadata, and supports cancellation during shutdown.
 
 The checksum document must be BOM-free UTF-8 text whose non-empty lines each
 have the exact GNU binary-checksum form
@@ -306,9 +311,10 @@ bounded timeout and reports which file remained locked. The updater never kills
 Pact, OpenConsole, or agent processes. A file-release timeout occurs after Pact
 has exited, so the helper marks the existing ticket `UpdateNotApplied` and
 relaunches Pact without applying the update. If the source PID itself does not
-exit within its earlier bounded wait, the helper removes the still-pending
+exit within the 15-minute bounded wait, the helper removes the still-pending
 ticket and exits without Setup or relaunch: the original process still owns the
-data-root lease.
+data-root lease. This budget deliberately exceeds bounded resume capture and
+sequential terminal teardown.
 
 For `ApplyUpdate`, the updater starts Setup with structured arguments equivalent
 to:
@@ -349,6 +355,10 @@ The copied helper may still be executing when the relaunched application starts.
 Retained-update housekeeping removes stale helper copies and completed staging
 directories on a later safe cleanup pass. It never recursively deletes a path
 that has not been resolved and verified below `Temp/Retained/Updates`.
+At startup, a handoff directory is eligible only when its name is a canonical
+restart id, it has no ticket, and it is not a reparse point. Cleanup deletes
+only the known `Pact.Updater.exe` and `setup.log` files before removing an empty
+directory.
 
 ## Restoration after relaunch
 

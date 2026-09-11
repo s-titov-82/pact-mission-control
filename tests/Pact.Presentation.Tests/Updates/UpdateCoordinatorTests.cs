@@ -297,6 +297,41 @@ public sealed class UpdateCoordinatorTests
 	}
 
 	[Test]
+	public async Task Prepared_update_survives_later_checks_without_a_second_GitHub_request()
+	{
+		var release = Release(1, 3, 0);
+		PreparedUpdatePackage package = new(
+			release,
+			@"C:\updates\setup.exe",
+			new string('a', 64),
+			"NotSigned");
+		var calls = 0;
+		await using UpdateCoordinator coordinator = new(
+			new FakeReleaseClient((_, _) =>
+			{
+				calls++;
+				return Task.FromResult<GitHubReleaseResponse>(
+					new GitHubReleaseResponse.Available(release));
+			}),
+			new ManualTimeProvider(Start),
+			Running,
+			new FakePackageStore((_, _, _) => Task.FromResult(package)));
+		await coordinator.CheckNowAsync(UpdateCheckOrigin.Manual, CancellationToken.None);
+		await coordinator.PrepareUpdateAsync(release, null, CancellationToken.None);
+		coordinator.UpdateRestartSafety(canRestart: true);
+
+		var response = await coordinator.CheckNowAsync(
+			UpdateCheckOrigin.Automatic,
+			CancellationToken.None);
+
+		response.ShouldBeOfType<GitHubReleaseResponse.Available>()
+			.Release.ShouldBeSameAs(release);
+		calls.ShouldBe(1);
+		coordinator.Status.State.ShouldBe(UpdateState.ReadyToRestart);
+		coordinator.Status.PreparedPackage.ShouldBeSameAs(package);
+	}
+
+	[Test]
 	public async Task Download_cancellation_returns_to_available_and_failure_is_visible()
 	{
 		var release = Release(1, 3, 0);

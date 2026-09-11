@@ -3,11 +3,7 @@ using Pact.Updater;
 try
 {
 	var options = UpdaterCommandLine.Parse(args);
-	UpdaterRunner runner = new(
-		new ProcessLauncher(),
-		new InstalledFileReleaseGate(),
-		TimeSpan.FromSeconds(30),
-		TimeSpan.FromSeconds(30));
+	UpdaterRunner runner = new(new ProcessLauncher());
 	return await runner.RunAsync(options, CancellationToken.None).ConfigureAwait(false);
 }
 catch (Exception exception) when (exception is ArgumentException

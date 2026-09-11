@@ -52,6 +52,38 @@ public sealed class UpdatePackageStoreTests : IDisposable
 		]);
 	}
 
+	[Test]
+	public async Task Asset_body_is_canceled_by_the_bounded_operation_timeout()
+	{
+		byte[] setup = Encoding.UTF8.GetBytes("setup");
+		var release = CreateRelease(setup);
+		ManualTimeProvider time = new();
+		BlockingReadStream body = new();
+		HttpResponseMessage response = new(HttpStatusCode.OK)
+		{
+			Content = new StreamContent(body)
+		};
+		response.Content.Headers.ContentLength = release.Checksums.Size;
+		SequenceHandler handler = new([response]);
+		HttpClient client = new(handler);
+		_clients.Add(client);
+		UpdatePackageStore store = new(
+			client,
+			new UpdatePathPolicy(new AppPaths(_temporaryDirectory.Path)),
+			static _ => "NotSigned",
+			time,
+			TimeSpan.FromMinutes(10));
+
+		var download = store.DownloadAndVerifyAsync(
+			release,
+			progress: null,
+			CancellationToken.None);
+		await body.ReadStarted;
+		time.Advance(TimeSpan.FromMinutes(10));
+
+		await Should.ThrowAsync<OperationCanceledException>(() => download);
+	}
+
 	[TestCase("truncated")]
 	[TestCase("oversized")]
 	[TestCase("hash")]
@@ -258,5 +290,40 @@ public sealed class UpdatePackageStoreTests : IDisposable
 			}
 			base.Dispose(disposing);
 		}
+	}
+
+	private sealed class BlockingReadStream : Stream
+	{
+		private readonly TaskCompletionSource _readStarted = new(
+			TaskCreationOptions.RunContinuationsAsynchronously);
+
+		public Task ReadStarted => _readStarted.Task;
+		public override bool CanRead => true;
+		public override bool CanSeek => false;
+		public override bool CanWrite => false;
+		public override long Length => throw new NotSupportedException();
+		public override long Position
+		{
+			get => throw new NotSupportedException();
+			set => throw new NotSupportedException();
+		}
+
+		public override int Read(byte[] buffer, int offset, int count) =>
+			throw new NotSupportedException();
+
+		public override async ValueTask<int> ReadAsync(
+			Memory<byte> buffer,
+			CancellationToken cancellationToken = default)
+		{
+			_readStarted.TrySetResult();
+			await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+			return 0;
+		}
+
+		public override void Flush() => throw new NotSupportedException();
+		public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+		public override void SetLength(long value) => throw new NotSupportedException();
+		public override void Write(byte[] buffer, int offset, int count) =>
+			throw new NotSupportedException();
 	}
 }

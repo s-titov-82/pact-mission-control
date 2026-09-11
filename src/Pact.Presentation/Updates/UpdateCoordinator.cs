@@ -188,13 +188,18 @@ public sealed class UpdateCoordinator : IAsyncDisposable
 		try
 		{
 			ThrowIfDisposed();
+			var beforeCheck = Status;
+			if (beforeCheck.PreparedPackage is { } preparedPackage)
+			{
+				return new GitHubReleaseResponse.Available(preparedPackage.Release);
+			}
+
 			var now = _timeProvider.GetUtcNow();
 			if (TryGetActiveRateLimit(now, out var activeRateLimit))
 			{
 				return activeRateLimit!;
 			}
 
-			var beforeCheck = Status;
 			var preserveVisibleOffer = beforeCheck.State == UpdateState.Available;
 			if (!preserveVisibleOffer)
 			{

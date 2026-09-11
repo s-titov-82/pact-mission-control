@@ -6,10 +6,21 @@ namespace Pact.Updater;
 
 internal sealed class UpdaterRunner
 {
+	private static readonly TimeSpan DefaultSourceExitTimeout = TimeSpan.FromMinutes(15);
+	private static readonly TimeSpan DefaultFileReleaseTimeout = TimeSpan.FromSeconds(30);
 	private readonly IProcessLauncher _processLauncher;
 	private readonly IInstalledFileReleaseGate _fileReleaseGate;
 	private readonly TimeSpan _sourceExitTimeout;
 	private readonly TimeSpan _fileReleaseTimeout;
+
+	public UpdaterRunner(IProcessLauncher processLauncher)
+		: this(
+			processLauncher,
+			new InstalledFileReleaseGate(),
+			DefaultSourceExitTimeout,
+			DefaultFileReleaseTimeout)
+	{
+	}
 
 	public UpdaterRunner(
 		IProcessLauncher processLauncher,
@@ -18,7 +29,7 @@ internal sealed class UpdaterRunner
 			processLauncher,
 			new InstalledFileReleaseGate(),
 			sourceExitTimeout,
-			TimeSpan.FromSeconds(30))
+			DefaultFileReleaseTimeout)
 	{
 	}
 

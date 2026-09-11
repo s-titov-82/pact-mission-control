@@ -9,6 +9,7 @@ namespace Pact.Infrastructure.Updates;
 /// </summary>
 public sealed class GitHubReleaseClient : IGitHubReleaseClient
 {
+	private static readonly TimeSpan DefaultOperationTimeout = TimeSpan.FromSeconds(15);
 	private static readonly Uri LatestReleaseUri = new(
 		"https://api.github.com/repos/s-titov-82/pact-mission-control/releases/latest");
 	private const string RepositoryReleasePath =
@@ -17,6 +18,7 @@ public sealed class GitHubReleaseClient : IGitHubReleaseClient
 		"/s-titov-82/pact-mission-control/releases/download/";
 	private readonly HttpClient _httpClient;
 	private readonly TimeProvider _timeProvider;
+	private readonly TimeSpan _operationTimeout;
 
 	/// <summary>
 	/// Creates a client with an injected HTTP transport and clock.
@@ -24,11 +26,21 @@ public sealed class GitHubReleaseClient : IGitHubReleaseClient
 	/// <param name="httpClient">The dedicated bounded-timeout HTTP client.</param>
 	/// <param name="timeProvider">The clock used to interpret retry headers.</param>
 	public GitHubReleaseClient(HttpClient httpClient, TimeProvider timeProvider)
+		: this(httpClient, timeProvider, DefaultOperationTimeout)
+	{
+	}
+
+	internal GitHubReleaseClient(
+		HttpClient httpClient,
+		TimeProvider timeProvider,
+		TimeSpan operationTimeout)
 	{
 		ArgumentNullException.ThrowIfNull(httpClient);
 		ArgumentNullException.ThrowIfNull(timeProvider);
+		ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(operationTimeout, TimeSpan.Zero);
 		_httpClient = httpClient;
 		_timeProvider = timeProvider;
+		_operationTimeout = operationTimeout;
 	}
 
 	/// <inheritdoc />
@@ -36,6 +48,11 @@ public sealed class GitHubReleaseClient : IGitHubReleaseClient
 		StableReleaseVersion runningVersion,
 		CancellationToken cancellationToken)
 	{
+		using CancellationTokenSource timeoutSource = new(_operationTimeout, _timeProvider);
+		using var operationSource = CancellationTokenSource.CreateLinkedTokenSource(
+			cancellationToken,
+			timeoutSource.Token);
+		var operationToken = operationSource.Token;
 		using HttpRequestMessage request = new(HttpMethod.Get, LatestReleaseUri);
 		request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(
 			"application/vnd.github+json"));
@@ -47,10 +64,10 @@ public sealed class GitHubReleaseClient : IGitHubReleaseClient
 		using var response = await _httpClient.SendAsync(
 			request,
 			HttpCompletionOption.ResponseHeadersRead,
-			cancellationToken).ConfigureAwait(false);
+			operationToken).ConfigureAwait(false);
 		var body = response.Content is null
 			? string.Empty
-			: await response.Content.ReadAsStringAsync(cancellationToken)
+			: await response.Content.ReadAsStringAsync(operationToken)
 				.ConfigureAwait(false);
 		if (GitHubRateLimit.TryCreateResponse(
 			response,

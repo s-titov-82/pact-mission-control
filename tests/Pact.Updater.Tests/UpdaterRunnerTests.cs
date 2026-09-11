@@ -62,6 +62,20 @@ public sealed class UpdaterRunnerTests : IDisposable
 	}
 
 	[Test]
+	public async Task Default_source_wait_covers_the_bounded_graceful_shutdown_budget()
+	{
+		var fixture = await CreateTicketAsync();
+		RecordingProcessLauncher launcher = new(
+			fixture.Ticket.ExecutablePath,
+			waitResult: null);
+		UpdaterRunner runner = new(launcher);
+
+		await runner.RunAsync(new UpdaterOptions(fixture.Path), CancellationToken.None);
+
+		launcher.WaitTimeout.ShouldBe(TimeSpan.FromMinutes(15));
+	}
+
+	[Test]
 	public async Task Live_source_executable_must_match_ticket_before_waiting()
 	{
 		var fixture = await CreateTicketAsync();
@@ -489,6 +503,7 @@ public sealed class UpdaterRunnerTests : IDisposable
 		public IReadOnlyList<string>? StartedArguments { get; private set; }
 		public string? SetupPath { get; private set; }
 		public IReadOnlyList<string>? SetupArguments { get; private set; }
+		public TimeSpan? WaitTimeout { get; private set; }
 
 		public string? GetExecutablePath(int processId)
 		{
@@ -499,6 +514,7 @@ public sealed class UpdaterRunnerTests : IDisposable
 		public Task<int?> WaitForExitAsync(int processId, TimeSpan timeout, CancellationToken token)
 		{
 			Events.Add("wait");
+			WaitTimeout = timeout;
 			return Task.FromResult(waitResult);
 		}
 

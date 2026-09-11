@@ -40,6 +40,30 @@ public sealed class GitHubReleaseClientTests
 		request.UserAgent.ShouldContain("Pact", Case.Insensitive);
 	}
 
+	[Test]
+	public async Task Metadata_body_is_canceled_by_the_bounded_operation_timeout()
+	{
+		ManualTimeProvider time = new(Now);
+		BlockingReadStream body = new();
+		using ScriptedHandler handler = new(_ => new HttpResponseMessage(HttpStatusCode.OK)
+		{
+			Content = new StreamContent(body)
+		});
+		using HttpClient httpClient = new(handler, disposeHandler: false);
+		GitHubReleaseClient client = new(
+			httpClient,
+			time,
+			TimeSpan.FromSeconds(15));
+
+		var request = client.GetLatestStableAsync(
+			new StableReleaseVersion(1, 2, 2),
+			CancellationToken.None);
+		await body.ReadStarted;
+		time.Advance(TimeSpan.FromSeconds(15));
+
+		await Should.ThrowAsync<OperationCanceledException>(() => request);
+	}
+
 	[TestCase(true, false)]
 	[TestCase(false, true)]
 	public async Task Drafts_and_prereleases_are_invalid(bool draft, bool prerelease)
@@ -318,4 +342,39 @@ public sealed class GitHubReleaseClientTests
 		string Accept,
 		string ApiVersion,
 		string UserAgent);
+
+	private sealed class BlockingReadStream : Stream
+	{
+		private readonly TaskCompletionSource _readStarted = new(
+			TaskCreationOptions.RunContinuationsAsynchronously);
+
+		public Task ReadStarted => _readStarted.Task;
+		public override bool CanRead => true;
+		public override bool CanSeek => false;
+		public override bool CanWrite => false;
+		public override long Length => throw new NotSupportedException();
+		public override long Position
+		{
+			get => throw new NotSupportedException();
+			set => throw new NotSupportedException();
+		}
+
+		public override int Read(byte[] buffer, int offset, int count) =>
+			throw new NotSupportedException();
+
+		public override async ValueTask<int> ReadAsync(
+			Memory<byte> buffer,
+			CancellationToken cancellationToken = default)
+		{
+			_readStarted.TrySetResult();
+			await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+			return 0;
+		}
+
+		public override void Flush() => throw new NotSupportedException();
+		public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+		public override void SetLength(long value) => throw new NotSupportedException();
+		public override void Write(byte[] buffer, int offset, int count) =>
+			throw new NotSupportedException();
+	}
 }
