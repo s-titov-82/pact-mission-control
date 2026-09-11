@@ -52,6 +52,21 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 	}
 
 	/// <summary>
+	/// Copies the ids whose runtime currently owns an attached terminal controller.
+	/// </summary>
+	public IReadOnlyList<string> GetActiveSessionIds()
+	{
+		lock (_lifecycleGate)
+		{
+			return _runtimes
+				.Where(pair => pair.Value.TryGetController(out _))
+				.Select(pair => pair.Key)
+				.Order(StringComparer.Ordinal)
+				.ToArray();
+		}
+	}
+
+	/// <summary>
 	/// Creates a coordinator over the terminal host that renders the sessions.
 	/// </summary>
 	public SessionRuntimeCoordinator(ITerminalWebViewHost terminalHost)

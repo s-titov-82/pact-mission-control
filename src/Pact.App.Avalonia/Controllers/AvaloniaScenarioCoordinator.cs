@@ -29,6 +29,9 @@ internal sealed class AvaloniaScenarioCoordinator
 	private readonly Lock _slotSync = new();
 	private readonly HashSet<string> _reservedProjectIds = new(StringComparer.Ordinal);
 
+	/// <summary>Whether any scenario is still nonterminal, including a paused run.</summary>
+	internal bool HasActiveRun => _viewModel.ScenarioRuns.Any(run => !run.IsTerminal);
+
 	public AvaloniaScenarioCoordinator(
 		MainWindowViewModel viewModel,
 		AppPaths appPaths,

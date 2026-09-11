@@ -35,6 +35,21 @@ public sealed class TerminalTabStatusCoordinator
 	public event EventHandler<TerminalClassifierDiagnosticsChangedEventArgs>? DiagnosticsChanged;
 
 	/// <summary>
+	/// Copies current classifier diagnostics for every registered terminal without exposing
+	/// the mutable registration table.
+	/// </summary>
+	public IReadOnlyDictionary<string, TerminalClassifierDiagnostics> GetDiagnosticsSnapshot()
+	{
+		lock (_gate)
+		{
+			return _registrations.ToDictionary(
+				pair => pair.Key,
+				pair => pair.Value.Engine.CurrentDiagnostics,
+				StringComparer.Ordinal);
+		}
+	}
+
+	/// <summary>
 	/// Starts tracking a session, seeding the engine with the current selection and window
 	/// facts. Re-registering the same id replaces the previous engine and discards its state.
 	/// </summary>

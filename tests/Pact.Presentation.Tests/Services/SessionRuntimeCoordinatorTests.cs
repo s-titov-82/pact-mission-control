@@ -20,6 +20,20 @@ public sealed class SessionRuntimeCoordinatorTests
 	private const string PlainEnter = "\r";
 
 	[Test]
+	public void Active_session_snapshot_includes_only_runtimes_with_attached_controllers()
+	{
+		using SessionRuntimeCoordinator coordinator = CreateFastCoordinator();
+		coordinator.GetOrCreateRuntime("live").AttachController(new TerminalController());
+		coordinator.GetOrCreateRuntime("empty");
+
+		var snapshot = coordinator.GetActiveSessionIds();
+		coordinator.GetOrCreateRuntime("later").AttachController(new TerminalController());
+
+		snapshot.ShouldBe(["live"]);
+		coordinator.GetActiveSessionIds().ShouldBe(["later", "live"], ignoreOrder: true);
+	}
+
+	[Test]
 	public async Task ActivateSessionAsync_SupersededActivation_DoesNotShowStaleSession()
 	{
 		RecordingHost host = new();

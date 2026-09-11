@@ -58,6 +58,20 @@ internal sealed class AvaloniaWebPageCoordinator : IDisposable
 	/// <summary>Relays a stable document URL for persistence.</summary>
 	public event EventHandler<WebMonitorStableUrlChangedEventArgs>? StableUrlChanged;
 
+	/// <summary>Copies the ids of pages whose native browser hosts are currently loaded.</summary>
+	internal IReadOnlyList<string> GetLoadedPageIds()
+	{
+		_lifecycleGate.Wait();
+		try
+		{
+			return _hosts.Keys.Order(StringComparer.Ordinal).ToArray();
+		}
+		finally
+		{
+			_lifecycleGate.Release();
+		}
+	}
+
 	/// <summary>
 	/// Ensures one host and monitoring registration exist for <paramref name="page"/>.
 	/// </summary>

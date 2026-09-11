@@ -10,6 +10,22 @@ public sealed class TerminalTabStatusCoordinatorTests
 	private static readonly DateTimeOffset T0 = new(2026, 7, 18, 10, 0, 0, TimeSpan.Zero);
 
 	[Test]
+	public void Diagnostics_snapshot_is_a_stable_copy_of_all_registered_engines()
+	{
+		TerminalTabStatusCoordinator coordinator = new(action => action());
+		coordinator.RegisterSession(CreateSession("busy"));
+		coordinator.RegisterSession(CreateSession("idle"));
+		coordinator.OnUserInput("busy", "run\r", T0);
+
+		var snapshot = coordinator.GetDiagnosticsSnapshot();
+		coordinator.RemoveSession("busy");
+
+		snapshot.Keys.ShouldBe(["busy", "idle"], ignoreOrder: true);
+		snapshot["busy"].ActivityInProgress.ShouldBeTrue();
+		coordinator.GetDiagnosticsSnapshot().Keys.ShouldBe(["idle"]);
+	}
+
+	[Test]
 	public void Registration_projects_initial_lifecycle_and_cached_global_facts()
 	{
 		TerminalTabStatusCoordinator coordinator = new(action => action());

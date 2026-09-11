@@ -12,6 +12,24 @@ namespace Pact.App.Avalonia.Tests.Controllers;
 public sealed class AvaloniaWebPageCoordinatorTests
 {
 	[Test]
+	public async Task Loaded_page_snapshot_is_copied_and_excludes_closed_hosts()
+	{
+		await using CoordinatorFixture fixture = new();
+		await fixture.Coordinator.EnsureLoadedAsync(
+			fixture.Page,
+			CancellationToken.None);
+
+		var snapshot = fixture.Coordinator.GetLoadedPageIds();
+		await fixture.Coordinator.CloseAsync(
+			fixture.Page.Record.Id,
+			deleteSnapshot: false,
+			CancellationToken.None);
+
+		snapshot.ShouldBe([fixture.Page.Record.Id]);
+		fixture.Coordinator.GetLoadedPageIds().ShouldBeEmpty();
+	}
+
+	[Test]
 	public async Task MonitorProjectionUpdatesTheOwnedRootPage()
 	{
 		await using CoordinatorFixture fixture = new(isRootItem: true);
