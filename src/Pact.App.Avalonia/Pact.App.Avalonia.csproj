@@ -21,6 +21,7 @@
     <PackageReference Include="Avalonia.Labs.Gif" />
     <PackageReference Include="ClassIsland.Markdown.Avalonia" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.Http" />
     <PackageReference Include="Microsoft.Web.WebView2"
                       GeneratePathProperty="true"
                       ExcludeAssets="all" />

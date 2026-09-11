@@ -7,6 +7,7 @@ using Pact.Core.Platform;
 using Pact.Core.Projects;
 using Pact.Core.RootTabs;
 using Pact.Infrastructure.Storage;
+using Pact.Infrastructure.Updates;
 using Pact.Presentation.Services;
 using Pact.Presentation.Services.WebMonitoring;
 using Pact.Presentation.Settings;
@@ -30,6 +31,8 @@ internal static class CompositionRoot
 		services.AddSingleton<IProjectMarkdownFileStore, ProjectMarkdownFileStore>();
 		services.AddSingleton<IUiTaskDispatcher, UiTaskDispatcher>();
 		services.AddSingleton<TimeProvider>(TimeProvider.System);
+		services.AddHttpClient<IGitHubReleaseClient, GitHubReleaseClient>(client =>
+			client.Timeout = TimeSpan.FromSeconds(15));
 		services.AddSingleton(provider => new ObservedTaskGroup(
 			(operationName, exception) => AppLog.AppendAsync(
 				provider.GetRequiredService<AppPaths>().RootDirectory,
