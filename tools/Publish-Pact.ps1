@@ -21,6 +21,8 @@ $pactScriptDirectory = Split-Path -Parent $PSCommandPath
 $pactRepositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $pactScriptDirectory '..'))
 $pactPublishRoot = [System.IO.Path]::GetFullPath(
     (Join-Path $pactRepositoryRoot 'artifacts/publish/win-x64'))
+$pactUpdaterPublishRoot = [System.IO.Path]::GetFullPath(
+    (Join-Path $pactRepositoryRoot 'artifacts/publish/updater-win-x64'))
 $pactReleaseParent = [System.IO.Path]::GetFullPath(
     (Join-Path $pactRepositoryRoot 'artifacts/release'))
 $pactReleaseDirectory = [System.IO.Path]::GetFullPath(
@@ -164,6 +166,11 @@ function Test-PactPreparedTree {
     if ((Get-PactFileSha256 -Path $pactRuntimeComponentManifestPath) -ne
         (Get-PactFileSha256 -Path $pactSourceRuntimeComponentManifestPath)) {
         throw 'Published runtime component manifest differs from the repository source.'
+    }
+    $updaterPath = Join-Path $pactPublishRoot 'Pact.Updater.exe'
+    if (-not (Test-Path -LiteralPath $updaterPath -PathType Leaf) -or
+        (Get-Item -LiteralPath $updaterPath).Length -eq 0) {
+        throw 'Prepared publish tree does not contain Pact.Updater.exe.'
     }
 
     $conptyManifestPath = Join-Path $pactRepositoryRoot 'third_party/conpty/SHA256SUMS.txt'
@@ -357,12 +364,19 @@ function Invoke-PactPrepare {
         -Path $pactReleaseDirectory `
         -Root $pactReleaseParent `
         -Description 'Release directory'
+    Remove-PactOwnedDirectory `
+        -Path $pactUpdaterPublishRoot `
+        -Root (Join-Path $pactRepositoryRoot 'artifacts/publish') `
+        -Description 'Updater publish directory'
 
     $restoreArguments = @(
         'restore'
         'Pact.slnx'
         '--disable-parallel'
         '--locked-mode'
+        '-m:2'
+        '-nr:false'
+        '-p:BuildInParallel=false'
     )
     $publishArguments = @(
         'publish'
@@ -381,6 +395,22 @@ function Invoke-PactPrepare {
         '-p:ContinuousIntegrationBuild=true'
         '-o', $pactPublishRoot
     )
+    $updaterPublishArguments = @(
+        'publish'
+        'src/Pact.Updater/Pact.Updater.csproj'
+        '-c', 'Release'
+        '--runtime', 'win-x64'
+        '--self-contained', 'false'
+        '--no-restore'
+        '-m:2'
+        '-nr:false'
+        '-v', 'q'
+        '-p:BuildInParallel=false'
+        "-p:Version=$Version"
+        "-p:RepositoryUrl=$RepositoryUrl"
+        '-p:ContinuousIntegrationBuild=true'
+        '-o', $pactUpdaterPublishRoot
+    )
 
     Push-Location $pactRepositoryRoot
     try {
@@ -393,9 +423,25 @@ function Invoke-PactPrepare {
         if ($LASTEXITCODE -ne 0) {
             throw "dotnet publish failed with exit code $LASTEXITCODE."
         }
+
+        & dotnet @updaterPublishArguments
+        if ($LASTEXITCODE -ne 0) {
+            throw "Pact.Updater publish failed with exit code $LASTEXITCODE."
+        }
+
+        $publishedUpdater = Join-Path $pactUpdaterPublishRoot 'Pact.Updater.exe'
+        if (-not (Test-Path -LiteralPath $publishedUpdater -PathType Leaf)) {
+            throw "Pact.Updater single-file publish is missing: $publishedUpdater"
+        }
+        Copy-Item -LiteralPath $publishedUpdater -Destination (
+            Join-Path $pactPublishRoot 'Pact.Updater.exe') -Force
     }
     finally {
         Pop-Location
+        Remove-PactOwnedDirectory `
+            -Path $pactUpdaterPublishRoot `
+            -Root (Join-Path $pactRepositoryRoot 'artifacts/publish') `
+            -Description 'Updater publish directory'
     }
 
     $summary = Test-PactPreparedTree
