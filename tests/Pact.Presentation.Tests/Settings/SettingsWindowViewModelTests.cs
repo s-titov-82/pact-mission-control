@@ -2,8 +2,10 @@ using Pact.Core.Agents;
 using Pact.Core.Projects;
 using Pact.Core.Sessions;
 using Pact.Infrastructure.Orchestrator;
+using Pact.Infrastructure.Updates;
 using Pact.Presentation.Settings;
 using Pact.Presentation.Settings.ViewModels;
+using Pact.Presentation.Updates;
 using Pact.Presentation.ViewModels;
 
 namespace Pact.Presentation.Tests.Settings;
@@ -46,6 +48,24 @@ public sealed class SettingsWindowViewModelTests : IDisposable
 				"Recent directories",
 				"Appearance"
 			]);
+	}
+
+	[Test]
+	public async Task Updates_section_is_inserted_after_appearance_when_available()
+	{
+		await using UpdateCoordinator coordinator = CreateUpdateCoordinator();
+		using UpdatesSectionViewModel updates = new(coordinator);
+		SettingsFileStore store = new(_dir);
+		SettingsWindowViewModel vm = new(
+			store,
+			() => [],
+			new FakeProjectSettingsEditor(),
+			() => Task.FromResult<string?>(null),
+			updatesSection: updates);
+
+		vm.Sections[^2].Section.ShouldBe(SettingsSection.Appearance);
+		vm.Sections[^1].ShouldBeSameAs(updates);
+		updates.SupportsFileOperations.ShouldBeFalse();
 	}
 
 	[Test]
@@ -324,6 +344,11 @@ public sealed class SettingsWindowViewModelTests : IDisposable
 			() => Task.FromResult<string?>(null));
 	}
 
+	private static UpdateCoordinator CreateUpdateCoordinator() => new(
+		new NoUpdateReleaseClient(),
+		TimeProvider.System,
+		new Pact.Core.Updates.StableReleaseVersion(1, 2, 3));
+
 	private OrchestratorSectionViewModel CreateOrchestratorSection()
 	{
 		var hermesHome = Path.Combine(_dir, ".hermes");
@@ -390,5 +415,13 @@ public sealed class SettingsWindowViewModelTests : IDisposable
 		public Task<HermesCliResult> CreateProfileAsync(
 			string profileName,
 			CancellationToken cancellationToken) => throw new InvalidOperationException();
+	}
+
+	private sealed class NoUpdateReleaseClient : IGitHubReleaseClient
+	{
+		public Task<GitHubReleaseResponse> GetLatestStableAsync(
+			Pact.Core.Updates.StableReleaseVersion runningVersion,
+			CancellationToken cancellationToken) =>
+			Task.FromResult<GitHubReleaseResponse>(new GitHubReleaseResponse.NoUpdate());
 	}
 }

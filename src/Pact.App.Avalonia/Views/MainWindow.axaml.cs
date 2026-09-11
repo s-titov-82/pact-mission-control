@@ -13,6 +13,7 @@ using Pact.App.Avalonia.Views.Settings;
 using Pact.App.Avalonia.Web;
 using Pact.Core.Platform;
 using Pact.Core.Prompting;
+using Pact.Core.Updates;
 using Pact.Presentation.Settings;
 using Pact.Presentation.Settings.ViewModels;
 using Pact.Presentation.ViewModels;
@@ -29,6 +30,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 	private readonly IUserAttention? _userAttention;
 	private readonly ObservedTaskGroup _eventTasks;
 	private readonly IUiTaskDispatcher _uiTaskDispatcher;
+	private readonly AvaloniaUpdateController? _updateController;
 	private readonly List<Action> _eventDetachments = [];
 	private bool _closeApproved;
 	private bool _closePromptRunning;
@@ -56,6 +58,8 @@ internal sealed partial class MainWindow : Window, IDisposable
 	internal bool IsEmptyPaneVisible => EmptyPane.IsVisible;
 	internal Func<SettingsWindow, Task>? ShowSettingsWindowAsyncOverride { get; set; }
 	internal Func<MessageDialogRequest, Task<MessageDialogResult>>? ShowMessageDialogAsyncOverride { get; set; }
+	internal Func<UpdateRelease, Task<UpdateAvailableDialogResult>>? ShowUpdateAvailableDialogAsyncOverride { get; set; }
+	internal Func<string, Task>? ShowUpdateInformationAsyncOverride { get; set; }
 	internal Action? StartGracefulShutdownOverride { get; set; }
 	public MainWindow()
 	{
@@ -91,6 +95,8 @@ internal sealed partial class MainWindow : Window, IDisposable
 		EngineProbeController = factory.Create(
 			TerminalPane.WebViewControl.Host,
 			BrowserPane.Factory);
+		_updateController = EngineProbeController.UpdateController;
+		ConfigureUpdateController();
 		NotesPane.ConfigureLifecycle(
 			eventTasks,
 			exception => EngineProbeController.ReportUiFailureAsync("Notes", exception),
@@ -136,6 +142,8 @@ internal sealed partial class MainWindow : Window, IDisposable
 		InitializeComponent();
 		Title = AppProfileDefaults.ProductTitle;
 		EngineProbeController = controller;
+		_updateController = controller.UpdateController;
+		ConfigureUpdateController();
 		_eventTasks = controller.GetEventTasks();
 		_uiTaskDispatcher = controller.GetUiTaskDispatcher();
 		NotesPane.ConfigureLifecycle(
@@ -703,6 +711,11 @@ internal sealed partial class MainWindow : Window, IDisposable
 		{
 			return _folderPicker.PickFolderAsync(null, "Select project directory");
 		}
+		using UpdatesSectionViewModel? updatesSection = _updateController is null
+			? null
+			: new UpdatesSectionViewModel(
+				_updateController.Coordinator,
+				_uiTaskDispatcher.Post);
 		SettingsWindowViewModel viewModel = new(
 			_settingsFileStore,
 			() => EngineProbeController.ViewModel.Workspaces,
@@ -723,14 +736,21 @@ internal sealed partial class MainWindow : Window, IDisposable
 					cancellationToken),
 			rootTabsProvider: () => EngineProbeController.ViewModel.RootTabs,
 			rootTabsEditor: _projectSettingsEditor as IRootTabsSettingsEditor,
-			orchestratorSection: EngineProbeController.CreateOrchestratorSectionViewModel());
+			orchestratorSection: EngineProbeController.CreateOrchestratorSectionViewModel(),
+			updatesSection: updatesSection);
 		using SettingsWindow dialog = new(
 			viewModel,
 			_externalLauncher,
 			pickDirectoryAsync: pickDirectoryAsync,
 			eventTasks: _eventTasks,
 			reportUserFailureAsync: exception =>
-				EngineProbeController.ReportUiFailureAsync("Settings", exception))
+				EngineProbeController.ReportUiFailureAsync("Settings", exception),
+			checkForUpdatesAsync: _updateController is null
+				? null
+				: _updateController.CheckNowAsync,
+			openUpdateReleaseNotesAsync: _updateController is null
+				? null
+				: _updateController.OpenCurrentReleaseNotesAsync)
 		{
 			InitialSection = section,
 			InitialItemId = itemId,
@@ -984,6 +1004,10 @@ internal sealed partial class MainWindow : Window, IDisposable
 		{
 			Uri terminalPage = new(Path.Combine(AppContext.BaseDirectory, "Web", "terminal.html"));
 			await EngineProbeController.InitializeAsync(terminalPage, cancellationToken);
+			if (_updateController is not null)
+			{
+				await _updateController.StartAsync(cancellationToken);
+			}
 			cancellationToken.ThrowIfCancellationRequested();
 			ProjectTree.SetProjectActionsEnabled(true);
 			StartSubscriptionUsagePolling();
@@ -1186,6 +1210,26 @@ internal sealed partial class MainWindow : Window, IDisposable
 		_usageRefreshGate.Dispose();
 	}
 
+	private void ConfigureUpdateController()
+	{
+		_updateController?.ConfigureHost(
+			release => ShowUpdateAvailableDialogAsyncOverride?.Invoke(release)
+				?? UpdateAvailableDialogWindow.ShowOwnedAsync(this, release),
+			message => ShowUpdateInformationAsyncOverride?.Invoke(message)
+				?? ShowUpdateInformationAsync(message));
+	}
+
+	private async Task ShowUpdateInformationAsync(string message)
+	{
+		await MessageDialogWindow.ShowOwnedAsync(
+			this,
+			new MessageDialogRequest(
+				"Pact updates",
+				message,
+				MessageDialogButtons.Ok,
+				MessageDialogResult.Ok));
+	}
+
 	private void DetachEventProducers()
 	{
 		if (_eventProducersDetached)
@@ -1194,6 +1238,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 		}
 
 		_eventProducersDetached = true;
+		_updateController?.Stop();
 		_usageRefreshCancellation.Cancel();
 		SelectionActions.DetachEventProducers();
 		NotesPane.DetachEventProducers();

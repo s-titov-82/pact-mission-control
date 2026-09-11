@@ -113,7 +113,8 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		TimeProvider timeProvider,
 		int? agentControlPort = null,
 		IProcessTreeSnapshotReader? processTreeSnapshotReader = null,
-		IWebProcessMetricsSnapshotReader? webProcessMetricsSnapshotReader = null)
+		IWebProcessMetricsSnapshotReader? webProcessMetricsSnapshotReader = null,
+		AvaloniaUpdateController? updateController = null)
 	{
 		ViewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
 		_settingsFileStore = settingsFileStore ?? throw new ArgumentNullException(nameof(settingsFileStore));
@@ -217,6 +218,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		ViewModel.TerminalTabStatuses.DiagnosticsChanged += OnTerminalDiagnosticsChanged;
 		RebindSelectedDetailsSource();
 		Clipboard = clipboard ?? throw new ArgumentNullException(nameof(clipboard));
+		UpdateController = updateController;
 	}
 
 	public event PropertyChangedEventHandler? PropertyChanged;
@@ -226,6 +228,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 	public event EventHandler<bool>? TerminalLoadingChanged;
 
 	public MainWindowViewModel ViewModel { get; }
+	internal AvaloniaUpdateController? UpdateController { get; }
 	public IReadOnlyDictionary<string, SessionRuntime> Runtimes => _runtimeCoordinator.Runtimes;
 	internal Uri AgentControlAddress { get; }
 	internal WebViewDiagnosticEntry[] DiagnosticSnapshot => _diagnostics.Snapshot();

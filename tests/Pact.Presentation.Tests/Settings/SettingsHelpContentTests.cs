@@ -34,6 +34,7 @@ public sealed class SettingsHelpContentTests
 	[TestCase(SettingsSection.Scenarios, "footer-complete reviewer response file")]
 	[TestCase(SettingsSection.Scenarios, "Manual Pause")]
 	[TestCase(SettingsSection.Appearance, "external process metrics")]
+	[TestCase(SettingsSection.Updates, "stable GitHub releases")]
 	[TestCase(SettingsSection.WebLinkTemplates, "project and ROOT")]
 	public void Help_covers_current_runtime_behavior(SettingsSection section, string expectedText)
 	{

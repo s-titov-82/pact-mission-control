@@ -28,7 +28,8 @@ public sealed class SettingsWindowViewModel : SettingsObservableObject
 			testCurrentWebTabAsync = null,
 		Func<RootTabsViewModel>? rootTabsProvider = null,
 		IRootTabsSettingsEditor? rootTabsEditor = null,
-		OrchestratorSectionViewModel? orchestratorSection = null)
+		OrchestratorSectionViewModel? orchestratorSection = null,
+		UpdatesSectionViewModel? updatesSection = null)
 	{
 		ArgumentNullException.ThrowIfNull(store);
 		ArgumentNullException.ThrowIfNull(workspacesProvider);
@@ -75,6 +76,10 @@ public sealed class SettingsWindowViewModel : SettingsObservableObject
 			new RecentFoldersSectionViewModel(store),
 			new AppearanceSectionViewModel(appearanceStore, applyAppearance)
 		];
+		if (updatesSection is not null)
+		{
+			sections.Add(updatesSection);
+		}
 		if (orchestratorSection is not null)
 		{
 			var reviewProfileIndex = sections.FindIndex(

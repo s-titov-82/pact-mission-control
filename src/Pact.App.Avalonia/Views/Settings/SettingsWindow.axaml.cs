@@ -25,6 +25,10 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 		static (_, _) => Task.CompletedTask);
 	private readonly Func<Exception, Task> _reportUserFailureAsync =
 		static _ => Task.CompletedTask;
+	private readonly Func<CancellationToken, Task> _checkForUpdatesAsync =
+		static _ => Task.CompletedTask;
+	private readonly Func<CancellationToken, Task> _openUpdateReleaseNotesAsync =
+		static _ => Task.CompletedTask;
 	private SettingsSectionViewModelBase? _previousSection;
 	private bool _suppressSectionSelection;
 	private bool _initialized;
@@ -46,7 +50,9 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 		Func<MessageDialogRequest, Task<MessageDialogResult>>? showMessageAsync = null,
 		Func<Task<string?>>? pickDirectoryAsync = null,
 		ObservedTaskGroup? eventTasks = null,
-		Func<Exception, Task>? reportUserFailureAsync = null)
+		Func<Exception, Task>? reportUserFailureAsync = null,
+		Func<CancellationToken, Task>? checkForUpdatesAsync = null,
+		Func<CancellationToken, Task>? openUpdateReleaseNotesAsync = null)
 		: this()
 	{
 		_viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
@@ -55,10 +61,18 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 		_pickDirectoryAsync = pickDirectoryAsync ?? _pickDirectoryAsync;
 		_eventTasks = eventTasks ?? _eventTasks;
 		_reportUserFailureAsync = reportUserFailureAsync ?? _reportUserFailureAsync;
+		_checkForUpdatesAsync = checkForUpdatesAsync ?? _checkForUpdatesAsync;
+		_openUpdateReleaseNotesAsync =
+			openUpdateReleaseNotesAsync ?? _openUpdateReleaseNotesAsync;
 		DataContext = viewModel;
 		SectionList.ItemsSource = viewModel.Sections;
 		viewModel.PropertyChanged += OnWindowViewModelPropertyChanged;
 		AddHandler(Button.ClickEvent, OnTemplateButtonClicked, RoutingStrategies.Bubble);
+		foreach (var updates in viewModel.Sections.OfType<UpdatesSectionViewModel>())
+		{
+			updates.CheckRequested += OnUpdateCheckRequested;
+			updates.OpenReleaseNotesRequested += OnUpdateReleaseNotesRequested;
+		}
 	}
 
 	public SettingsSection InitialSection { get; set; } = SettingsSection.Projects;
@@ -136,7 +150,8 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 
 	internal async Task<bool> OpenRawJsonAsync()
 	{
-		if (_viewModel?.ActiveSection is not { } section || _externalLauncher is null)
+		if (_viewModel?.ActiveSection is not { SupportsFileOperations: true } section
+			|| _externalLauncher is null)
 		{
 			return false;
 		}
@@ -233,7 +248,9 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 			return;
 		}
 
-		if (e.Key == Key.S && e.KeyModifiers == KeyModifiers.Control)
+		if (e.Key == Key.S
+			&& e.KeyModifiers == KeyModifiers.Control
+			&& _viewModel.ActiveSection?.SupportsFileOperations == true)
 		{
 			e.Handled = true;
 			RunEvent("settings-save-shortcut", SaveAsync);
@@ -263,9 +280,19 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 	private void OnRevertClicked(object? sender, RoutedEventArgs e) =>
 		RunEvent("settings-revert", RevertAsync);
 
+	private void OnUpdateCheckRequested(object? sender, EventArgs e) =>
+		RunEvent(
+			"settings-check-for-updates",
+			() => _checkForUpdatesAsync(_lifetimeCancellation.Token));
+
+	private void OnUpdateReleaseNotesRequested(object? sender, EventArgs e) =>
+		RunEvent(
+			"settings-open-update-release-notes",
+			() => _openUpdateReleaseNotesAsync(_lifetimeCancellation.Token));
+
 	private async Task RevertAsync()
 	{
-		if (_viewModel?.ActiveSection is not { } section)
+		if (_viewModel?.ActiveSection is not { SupportsFileOperations: true } section)
 		{
 			return;
 		}
@@ -399,12 +426,18 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 				when button.DataContext is WebMonitoringRulesSectionViewModel monitoring:
 				await monitoring.TestSelectedItemAsync(_lifetimeCancellation.Token);
 				break;
+			case "CheckForUpdates" when button.DataContext is UpdatesSectionViewModel updates:
+				updates.RequestCheck();
+				break;
+			case "OpenUpdateReleaseNotes" when button.DataContext is UpdatesSectionViewModel updates:
+				updates.RequestOpenReleaseNotes();
+				break;
 		}
 	}
 
 	private async Task SaveAsync()
 	{
-		if (_viewModel is null)
+		if (_viewModel?.ActiveSection is not { SupportsFileOperations: true })
 		{
 			return;
 		}
@@ -466,6 +499,14 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 		{
 			monitoring.CancelCurrentTest();
 		}
+		foreach (var updates in
+				 _viewModel?.Sections.OfType<UpdatesSectionViewModel>()
+				 ?? [])
+		{
+			updates.CheckRequested -= OnUpdateCheckRequested;
+			updates.OpenReleaseNotesRequested -= OnUpdateReleaseNotesRequested;
+			updates.Dispose();
+		}
 
 		_lifetimeCancellation.Dispose();
 	}
@@ -514,7 +555,11 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 
 		SectionTitle.Text = active?.Label ?? string.Empty;
 		StatusText.Text = active?.StatusText ?? string.Empty;
-		RevertButton.IsEnabled = active?.IsDirty == true;
+		var supportsFileOperations = active?.SupportsFileOperations == true;
+		OpenRawJsonButton.IsVisible = supportsFileOperations;
+		RevertButton.IsVisible = supportsFileOperations;
+		RevertButton.IsEnabled = supportsFileOperations && active?.IsDirty == true;
+		SaveButton.IsVisible = supportsFileOperations;
 		SectionContent.Content = active;
 		SectionContent.ContentTemplate = active is null ? null : ResolveSectionTemplate(active.Section);
 	}
@@ -536,6 +581,7 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 			SettingsSection.Scenarios => "ScenariosSectionTemplate",
 			SettingsSection.RecentFolders => "RecentDirectoriesSectionTemplate",
 			SettingsSection.Appearance => "AppearanceSectionTemplate",
+			SettingsSection.Updates => "UpdatesSectionTemplate",
 			_ => throw new ArgumentOutOfRangeException(nameof(section), section, null)
 		};
 		return TryGetResource(key, ActualThemeVariant, out var resource)

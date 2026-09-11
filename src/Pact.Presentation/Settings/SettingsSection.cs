@@ -9,6 +9,9 @@ public enum SettingsSection
 	/// <summary>Color theme preference.</summary>
 	Appearance,
 
+	/// <summary>Stable GitHub release discovery and update actions.</summary>
+	Updates,
+
 	/// <summary>Project-independent ROOT terminal and browser tabs.</summary>
 	RootTabs,
 

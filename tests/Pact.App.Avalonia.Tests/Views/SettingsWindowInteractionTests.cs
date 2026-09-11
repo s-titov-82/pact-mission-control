@@ -16,10 +16,13 @@ using Pact.Core.Agents;
 using Pact.Core.Platform;
 using Pact.Core.Projects;
 using Pact.Core.Sessions;
+using Pact.Core.Updates;
 using Pact.Core.Web.Monitoring;
 using Pact.Infrastructure.Storage;
+using Pact.Infrastructure.Updates;
 using Pact.Presentation.Settings;
 using Pact.Presentation.Settings.ViewModels;
+using Pact.Presentation.Updates;
 using Pact.Presentation.ViewModels;
 
 namespace Pact.App.Avalonia.Tests.Views;
@@ -29,6 +32,39 @@ public sealed class SettingsWindowInteractionTests : IDisposable
 	private readonly TemporaryDirectory _temporaryDirectory = TemporaryDirectory.Create();
 	private string _root => _temporaryDirectory.Path;
 	public void Dispose() => _temporaryDirectory.Dispose();
+
+	[AvaloniaTest]
+	public async Task Updates_section_hides_file_actions_and_routes_manual_check()
+	{
+		await using UpdateCoordinator coordinator = new(
+			new NoUpdateReleaseClient(),
+			TimeProvider.System,
+			new StableReleaseVersion(1, 2, 3));
+		using UpdatesSectionViewModel updates = new(coordinator);
+		(var vm, _) = await CreateViewModelAsync(updatesSection: updates);
+		var checks = 0;
+		using SettingsWindow window = new(
+			vm,
+			new RecordingExternalLauncher(),
+			checkForUpdatesAsync: _ =>
+			{
+				checks++;
+				return Task.CompletedTask;
+			});
+		window.InitialSection = SettingsSection.Updates;
+		await window.InitializeAsync();
+		window.Show();
+		await DrainUiTwiceAsync();
+
+		window.FindControl<Button>("OpenRawJsonButton")!.IsVisible.ShouldBeFalse();
+		window.FindControl<Button>("RevertButton")!.IsVisible.ShouldBeFalse();
+		window.FindControl<Button>("SaveButton")!.IsVisible.ShouldBeFalse();
+		window.GetVisualDescendants().OfType<Button>()
+			.Single(button => Equals(button.Tag, "CheckForUpdates"))
+			.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+		await WaitUntilAsync(() => checks == 1);
+		window.Close();
+	}
 
 	[AvaloniaTest]
 	public async Task Initialize_materializes_all_sections_in_order_and_selects_session_deep_link()
@@ -1067,7 +1103,8 @@ public sealed class SettingsWindowInteractionTests : IDisposable
 	private async Task<(SettingsWindowViewModel ViewModel, WorkspaceViewModel Workspace)> CreateViewModelAsync(
 		bool includeSession = false,
 		Func<WebMonitorRule, CancellationToken, Task<WebMonitorTestResult>>?
-			testCurrentWebTabAsync = null)
+			testCurrentWebTabAsync = null,
+		UpdatesSectionViewModel? updatesSection = null)
 	{
 		SettingsFileStore store = new(_root);
 		await store.EnsureDefaultFilesAsync(CancellationToken.None);
@@ -1088,7 +1125,8 @@ public sealed class SettingsWindowInteractionTests : IDisposable
 			() => [workspace],
 			new FakeProjectSettingsEditor(),
 			() => Task.FromResult<string?>(null),
-			testCurrentWebTabAsync: testCurrentWebTabAsync);
+			testCurrentWebTabAsync: testCurrentWebTabAsync,
+			updatesSection: updatesSection);
 		return (vm, workspace);
 	}
 
@@ -1220,5 +1258,13 @@ public sealed class SettingsWindowInteractionTests : IDisposable
 
 		public Task<string?> CreateProjectForDirectoryAsync(string directory, CancellationToken ct) =>
 			Task.FromResult<string?>(null);
+	}
+
+	private sealed class NoUpdateReleaseClient : IGitHubReleaseClient
+	{
+		public Task<GitHubReleaseResponse> GetLatestStableAsync(
+			StableReleaseVersion runningVersion,
+			CancellationToken cancellationToken) =>
+			Task.FromResult<GitHubReleaseResponse>(new GitHubReleaseResponse.NoUpdate());
 	}
 }

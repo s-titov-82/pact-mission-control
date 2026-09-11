@@ -23,6 +23,23 @@
     </StackPanel>
   </DataTemplate>
 
+	<DataTemplate x:Key="UpdatesSectionTemplate" DataType="s:UpdatesSectionViewModel">
+		<StackPanel Margin="0,10,20,0" Spacing="10">
+			<TextBlock Classes="SettingsFieldLabel" Text="Running version" />
+			<TextBlock Text="{Binding RunningVersion}" />
+			<TextBlock Classes="SettingsFieldLabel" Margin="0,8,0,0" Text="Status" />
+			<TextBlock Text="{Binding StateText}" TextWrapping="Wrap" />
+			<StackPanel Margin="0,8,0,0" Orientation="Horizontal" Spacing="8">
+				<Button Content="Check now" Tag="CheckForUpdates"
+						IsEnabled="{Binding CanCheck}" />
+				<Button Content="Open release notes" Tag="OpenUpdateReleaseNotes"
+						IsEnabled="{Binding CanOpenReleaseNotes}" />
+			</StackPanel>
+			<TextBlock Foreground="{DynamicResource AppTextMutedBrush}" TextWrapping="Wrap"
+						 Text="Only stable GitHub releases are considered. Automatic checks run once per hour." />
+		</StackPanel>
+	</DataTemplate>
+
   <DataTemplate x:Key="OrchestratorSectionTemplate" DataType="s:OrchestratorSectionViewModel">
     <ScrollViewer VerticalScrollBarVisibility="Auto">
       <StackPanel Margin="0,10,20,0" Spacing="8">

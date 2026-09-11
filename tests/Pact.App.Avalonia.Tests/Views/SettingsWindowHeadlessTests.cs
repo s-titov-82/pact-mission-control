@@ -73,6 +73,22 @@ public sealed class SettingsWindowHeadlessTests
 	}
 
 	[AvaloniaTest]
+	public void Updates_template_offers_check_and_release_notes_actions()
+	{
+		using SettingsWindow window = new();
+		window.TryGetResource(
+			"UpdatesSectionTemplate",
+			window.ActualThemeVariant,
+			out var resource).ShouldBeTrue();
+		var root = resource.ShouldBeAssignableTo<IDataTemplate>()!
+			.Build(null).ShouldBeAssignableTo<Control>()!;
+
+		root.GetSelfAndVisualDescendants().OfType<Button>()
+			.Select(button => button.Content)
+			.ShouldBe(["Check now", "Open release notes"]);
+	}
+
+	[AvaloniaTest]
 	public void Secondary_window_palette_has_distinct_light_and_dark_surfaces()
 	{
 		App app = new();

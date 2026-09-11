@@ -5,12 +5,14 @@ namespace Pact.App.Avalonia.Views.Dialogs;
 
 internal enum MessageDialogButtons
 {
+	Ok,
 	YesNo,
 	YesNoCancel
 }
 
 internal enum MessageDialogResult
 {
+	Ok,
 	Yes,
 	No,
 	Cancel
@@ -24,6 +26,8 @@ internal sealed record MessageDialogRequest(
 
 internal sealed partial class MessageDialogWindow : Window
 {
+	private readonly MessageDialogButtons _buttons;
+
 	public MessageDialogWindow()
 		: this(new MessageDialogRequest(
 			"Confirm", "Continue?", MessageDialogButtons.YesNo, MessageDialogResult.No))
@@ -34,8 +38,11 @@ internal sealed partial class MessageDialogWindow : Window
 	{
 		ArgumentNullException.ThrowIfNull(request);
 		InitializeComponent();
+		_buttons = request.Buttons;
 		Title = request.Title;
 		MessageText.Text = request.Message;
+		YesButton.Content = request.Buttons == MessageDialogButtons.Ok ? "OK" : "Yes";
+		NoButton.IsVisible = request.Buttons != MessageDialogButtons.Ok;
 		CancelButton.IsVisible = request.Buttons == MessageDialogButtons.YesNoCancel;
 	}
 
@@ -49,7 +56,8 @@ internal sealed partial class MessageDialogWindow : Window
 		return result ?? request.DefaultResult;
 	}
 
-	private void OnYesClicked(object? sender, RoutedEventArgs e) => Close(MessageDialogResult.Yes);
+	private void OnYesClicked(object? sender, RoutedEventArgs e) =>
+		Close(_buttons == MessageDialogButtons.Ok ? MessageDialogResult.Ok : MessageDialogResult.Yes);
 
 	private void OnNoClicked(object? sender, RoutedEventArgs e) => Close(MessageDialogResult.No);
 

@@ -38,6 +38,11 @@ public abstract class SettingsSectionViewModelBase : SettingsObservableObject
 	/// <summary>Absolute path of the backing file.</summary>
 	public string FilePath { get; }
 
+	/// <summary>
+	/// Whether this section supports the settings window's raw-file, save, and revert actions.
+	/// </summary>
+	public virtual bool SupportsFileOperations => true;
+
 	/// <summary>Whether the section holds unsaved edits.</summary>
 	public bool IsDirty { get; protected internal set => SetField(ref field, value); }
 

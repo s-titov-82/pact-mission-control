@@ -28,10 +28,13 @@ public static class SettingsHelpContent
 		SettingsSection.GitHelpers => ("Git popup", GitHelpersBody),
 		SettingsSection.RecentFolders => ("Recent directories", RecentDirectoriesBody),
 		SettingsSection.Appearance => ("Appearance", AppearanceBody),
+		SettingsSection.Updates => ("Updates", UpdatesBody),
 		_ => throw new ArgumentOutOfRangeException(nameof(section), section, "Unknown settings section.")
 	};
 
 	private const string AppearanceBody = "Choose System to follow Windows, or force the Light or Dark application theme. You can independently hide the selected-tab diagnostic facts shown below Quick actions and opt in to external process metrics. External process metrics sampling stays off while that option is disabled. Saved choices apply immediately.";
+
+	private const string UpdatesBody = "Pact checks stable GitHub releases after startup and then once per hour. Check now runs the same discovery manually. Pact ignores prereleases and draft releases. Release notes open in the default browser. Downloading and installation always require the update actions shown by Pact; this section does not edit a settings file.";
 
 	private const string RootTabsBody = """
         ROOT holds terminal and browser tabs that are not owned by any project. Their definitions, last selected item, and individual pause states are stored in root-tabs.json.

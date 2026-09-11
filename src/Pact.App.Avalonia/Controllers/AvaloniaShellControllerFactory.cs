@@ -1,4 +1,5 @@
 using Pact.App.Avalonia.Lifecycle;
+using Pact.App.Avalonia.Diagnostics;
 using Pact.Core.Platform;
 using Pact.Core.Presentation;
 using Pact.Infrastructure.Storage;
@@ -6,6 +7,7 @@ using Pact.Infrastructure.Terminal;
 using Pact.Presentation.Services;
 using Pact.Presentation.Services.WebMonitoring;
 using Pact.Presentation.Settings;
+using Pact.Presentation.Updates;
 using Pact.Presentation.ViewModels;
 
 namespace Pact.App.Avalonia.Controllers;
@@ -18,7 +20,8 @@ internal sealed record AvaloniaWindowServices(
 	IFolderPicker FolderPicker,
 	IProjectSettingsEditor ProjectSettingsEditor,
 	IExternalLauncher ExternalLauncher,
-	WindowLayoutStore WindowLayoutStore);
+	WindowLayoutStore WindowLayoutStore,
+	UpdateCoordinator UpdateCoordinator);
 
 /// <summary>
 /// Composes the application shell from DI-owned services and the two hosts owned by
@@ -82,6 +85,16 @@ internal sealed class AvaloniaShellControllerFactory
 		ArgumentNullException.ThrowIfNull(terminalHost);
 		ArgumentNullException.ThrowIfNull(webPageHostFactory);
 
+		AvaloniaUpdateController updateController = new(
+			WindowServices.UpdateCoordinator,
+			WindowServices.ExternalLauncher,
+			WindowServices.UiTaskDispatcher,
+			WindowServices.EventTasks,
+			(phase, exception) => AppLog.AppendAsync(
+				WindowServices.AppPaths.RootDirectory,
+				phase,
+				exception));
+
 		return new AvaloniaMainShellController(
 			_viewModel,
 			WindowServices.SettingsFileStore,
@@ -99,6 +112,7 @@ internal sealed class AvaloniaShellControllerFactory
 			WindowServices.EventTasks,
 			_scenarioDefinitionStore,
 			_clipboard,
-			_timeProvider);
+			_timeProvider,
+			updateController: updateController);
 	}
 }
