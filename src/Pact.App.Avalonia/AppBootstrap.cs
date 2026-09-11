@@ -7,7 +7,7 @@ namespace Pact.App.Avalonia;
 internal sealed class AppBootstrap : IDisposable, IAsyncDisposable
 {
 	private readonly AppDataProcessLease _lease;
-	private readonly Func<AppDataProfile, ServiceProvider> _buildServices;
+	private readonly Func<AppLaunchOptions, ServiceProvider> _buildServices;
 	private readonly CancellationTokenSource _lifetimeCancellation = new();
 	private readonly AsyncLocal<bool> _insideShellInitialization = new();
 	private ServiceProvider? _services;
@@ -20,7 +20,15 @@ internal sealed class AppBootstrap : IDisposable, IAsyncDisposable
 
 	public AppBootstrap(AppDataProfile profile, AppDataProcessLease lease, EngineProbeRunner? probeRunner = null)
 		: this(
-			profile,
+			new AppLaunchOptions(profile, true, null, null, null),
+			lease,
+			probeRunner)
+	{
+	}
+
+	public AppBootstrap(AppLaunchOptions options, AppDataProcessLease lease, EngineProbeRunner? probeRunner = null)
+		: this(
+			options,
 			lease,
 			CompositionRoot.BuildServiceProvider,
 			probeRunner)
@@ -32,8 +40,22 @@ internal sealed class AppBootstrap : IDisposable, IAsyncDisposable
 		AppDataProcessLease lease,
 		Func<AppDataProfile, ServiceProvider> buildServices,
 		EngineProbeRunner? probeRunner = null)
+		: this(
+			new AppLaunchOptions(profile, true, null, null, null),
+			lease,
+			options => buildServices(options.Profile),
+			probeRunner)
 	{
-		Profile = profile;
+	}
+
+	internal AppBootstrap(
+		AppLaunchOptions options,
+		AppDataProcessLease lease,
+		Func<AppLaunchOptions, ServiceProvider> buildServices,
+		EngineProbeRunner? probeRunner = null)
+	{
+		LaunchOptions = options ?? throw new ArgumentNullException(nameof(options));
+		Profile = options.Profile;
 		_lease = lease;
 		_buildServices = buildServices
 			?? throw new ArgumentNullException(nameof(buildServices));
@@ -41,6 +63,7 @@ internal sealed class AppBootstrap : IDisposable, IAsyncDisposable
 	}
 
 	public AppDataProfile Profile { get; }
+	public AppLaunchOptions LaunchOptions { get; }
 	public EngineProbeRunner? ProbeRunner { get; }
 	public ServiceProvider Services
 	{
@@ -112,7 +135,7 @@ internal sealed class AppBootstrap : IDisposable, IAsyncDisposable
 	private ServiceProvider BuildServices()
 	{
 		AppStartupHousekeeping.Run(new AppPaths(Profile.RootDirectory));
-		return _buildServices(Profile);
+		return _buildServices(LaunchOptions);
 	}
 
 	private async Task ShutdownCoreAsync()

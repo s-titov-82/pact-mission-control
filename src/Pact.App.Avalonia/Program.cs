@@ -10,8 +10,11 @@ internal static partial class Program
 	[STAThread]
 	public static int Main(string[] args)
 	{
-		var profile = AppProfileDefaults.Resolve(args);
-		var probeRunner = EngineProbeRunner.TryCreate(args, profile);
+		var options = AppLaunchOptions.Parse(args);
+		var profile = options.Profile;
+		var probeRunner = EngineProbeRunner.TryCreate(
+			options.EngineProbeOutputPath,
+			profile);
 		if (!AppDataProcessLease.TryAcquire(profile.RootDirectory, out var lease))
 		{
 			var message = AppProfileDefaults.DataRootInUseMessage(profile);
@@ -19,7 +22,7 @@ internal static partial class Program
 			return 2;
 		}
 
-		AppBootstrap bootstrap = new(profile, lease!, probeRunner);
+		AppBootstrap bootstrap = new(options, lease!, probeRunner);
 		App.Bootstrap = bootstrap;
 		try
 		{

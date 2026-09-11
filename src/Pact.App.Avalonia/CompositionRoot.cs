@@ -21,10 +21,23 @@ internal static class CompositionRoot
 	public static ServiceProvider BuildServiceProvider(AppDataProfile profile)
 	{
 		ArgumentNullException.ThrowIfNull(profile);
+		return BuildServiceProvider(new AppLaunchOptions(
+			profile,
+			PassDataRoot: true,
+			EngineProbeOutputPath: null,
+			SoftRestartId: null,
+			SoftRestartProbeOutputPath: null));
+	}
+
+	public static ServiceProvider BuildServiceProvider(AppLaunchOptions options)
+	{
+		ArgumentNullException.ThrowIfNull(options);
+		var profile = options.Profile;
 		ServiceCollection services = new();
 		AppPaths appPaths = new(profile.RootDirectory);
 
 		services.AddSingleton(profile);
+		services.AddSingleton(options);
 		services.AddSingleton(appPaths);
 		services.AddSingleton<IProjectStore, JsonProjectStore>();
 		services.AddSingleton<IRootTabsStore, JsonRootTabsStore>();
@@ -35,6 +48,7 @@ internal static class CompositionRoot
 		services.AddHttpClient<IGitHubReleaseClient, GitHubReleaseClient>(client =>
 			client.Timeout = TimeSpan.FromSeconds(15));
 		services.AddSingleton<UpdatePathPolicy>();
+		services.AddSingleton<ISoftRestartTicketStore, SoftRestartTicketStore>();
 		services.AddHttpClient<IUpdatePackageStore, UpdatePackageStore>(client =>
 			client.Timeout = TimeSpan.FromMinutes(10))
 			.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler

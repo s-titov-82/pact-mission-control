@@ -14,10 +14,19 @@ internal static class AppProfileDefaults
 
 	internal static string ReadyWindowTitle => ProductTitle;
 
-	internal static AppDataProfile Resolve(string[] args) => AppDataProfileResolver.Resolve(
-		args,
-		defaultDirectoryName: DataDirectoryName,
-		profileName: ProfileName);
+	internal static AppDataProfile Resolve(string[] args) => AppLaunchOptions.Parse(args).Profile;
+
+	internal static AppDataProfile ResolveProfile(string? dataRoot)
+	{
+		var root = dataRoot ?? Path.Combine(
+			Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+			DataDirectoryName);
+		if (!Path.IsPathFullyQualified(root))
+		{
+			throw new ArgumentException("--data-root requires an absolute path.", nameof(dataRoot));
+		}
+		return new AppDataProfile(ProfileName, Path.GetFullPath(root));
+	}
 
 	internal static string StartupFailedWindowTitle(string message) =>
 		$"{ProductTitle} - Startup failed: {message}";

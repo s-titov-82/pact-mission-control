@@ -17,7 +17,6 @@ namespace Pact.App.Avalonia.Diagnostics;
 internal sealed class EngineProbeRunner
 {
 	private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
-	private const string OutputArgument = "--engine-probe-output";
 	private const string Candidate = "Avalonia.Controls.WebView 12.0.1 / Windows WebView2";
 	private const string HostTransport = "chrome.webview";
 	private const string ProbePage =
@@ -54,31 +53,10 @@ internal sealed class EngineProbeRunner
 	}
 
 	public static EngineProbeRunner? TryCreate(
-		IReadOnlyList<string> args,
+		string? outputPath,
 		AppDataProfile profile)
 	{
 		ArgumentNullException.ThrowIfNull(profile);
-		string? outputPath = null;
-		for (var index = 0; index < args.Count; index++)
-		{
-			if (!string.Equals(args[index], OutputArgument, StringComparison.OrdinalIgnoreCase))
-			{
-				continue;
-			}
-
-			if (outputPath is not null)
-			{
-				throw new ArgumentException($"{OutputArgument} may be specified only once.", nameof(args));
-			}
-
-			if (++index >= args.Count || string.IsNullOrWhiteSpace(args[index]))
-			{
-				throw new ArgumentException($"{OutputArgument} requires an absolute JSON path.", nameof(args));
-			}
-
-			outputPath = args[index];
-		}
-
 		if (outputPath is null)
 		{
 			return null;
@@ -86,7 +64,9 @@ internal sealed class EngineProbeRunner
 
 		if (!Path.IsPathFullyQualified(outputPath))
 		{
-			throw new ArgumentException($"{OutputArgument} requires an absolute JSON path.", nameof(args));
+			throw new ArgumentException(
+				"The engine probe requires an absolute JSON path.",
+				nameof(outputPath));
 		}
 
 		var fullOutputPath = Path.GetFullPath(outputPath);
@@ -94,8 +74,8 @@ internal sealed class EngineProbeRunner
 		if (!IsPathBelow(fullOutputPath, tempDirectory))
 		{
 			throw new ArgumentException(
-				$"{OutputArgument} must be below the selected data root's Temp directory.",
-				nameof(args));
+				"The engine probe output must be below the selected data root's Temp directory.",
+				nameof(outputPath));
 		}
 
 		return new EngineProbeRunner(fullOutputPath, tempDirectory);

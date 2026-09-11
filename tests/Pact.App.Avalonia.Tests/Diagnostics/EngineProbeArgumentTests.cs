@@ -27,7 +27,7 @@ public sealed class EngineProbeArgumentTests
 	{
 		var profile = CreateProfile();
 
-		EngineProbeRunner.TryCreate(["--data-root", profile.RootDirectory], profile).ShouldBeNull();
+		EngineProbeRunner.TryCreate(null, profile).ShouldBeNull();
 	}
 
 	[Test]
@@ -35,24 +35,9 @@ public sealed class EngineProbeArgumentTests
 	{
 		var profile = CreateProfile();
 		var exception = Should.Throw<ArgumentException>(() =>
-			EngineProbeRunner.TryCreate(["--engine-probe-output", "probe.json"], profile));
+			EngineProbeRunner.TryCreate("probe.json", profile));
 
 		exception.Message.Contains("absolute", StringComparison.OrdinalIgnoreCase).ShouldBeTrue();
-	}
-
-	[Test]
-	public void TryCreate_rejects_duplicate_argument()
-	{
-		var profile = CreateProfile();
-		var first = Path.Combine(profile.RootDirectory, "Temp", "first.json");
-		var second = Path.Combine(profile.RootDirectory, "Temp", "second.json");
-
-		var exception = Should.Throw<ArgumentException>(() =>
-			EngineProbeRunner.TryCreate([
-				"--engine-probe-output", first,
-				"--engine-probe-output", second], profile));
-
-		exception.Message.Contains("once", StringComparison.OrdinalIgnoreCase).ShouldBeTrue();
 	}
 
 	[Test]
@@ -62,7 +47,7 @@ public sealed class EngineProbeArgumentTests
 		var outsideTemp = Path.Combine(profile.RootDirectory, "Settings", "probe.json");
 
 		var exception = Should.Throw<ArgumentException>(() =>
-			EngineProbeRunner.TryCreate(["--engine-probe-output", outsideTemp], profile));
+			EngineProbeRunner.TryCreate(outsideTemp, profile));
 
 		exception.Message.Contains("Temp", StringComparison.OrdinalIgnoreCase).ShouldBeTrue();
 	}
@@ -73,7 +58,7 @@ public sealed class EngineProbeArgumentTests
 		var profile = CreateProfile();
 		var output = Path.Combine(profile.RootDirectory, "Temp", "engine-probe.json");
 
-		EngineProbeRunner.TryCreate(["--engine-probe-output", output], profile).ShouldNotBeNull();
+		EngineProbeRunner.TryCreate(output, profile).ShouldNotBeNull();
 	}
 
 	[Test]
