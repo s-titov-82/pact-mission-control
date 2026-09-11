@@ -70,6 +70,35 @@ public sealed class TerminalTabStatusEngineTests
 	}
 
 	[Test]
+	public void Restored_unread_remains_until_the_tab_is_selected_in_an_active_visible_window()
+	{
+		var engine = CreateEngine(selected: false, windowVisible: true, windowActive: true);
+
+		engine.RestoreUnreadCompletion(T0);
+
+		engine.HasUnreadCompletion.ShouldBeTrue();
+		engine.CurrentIndicator.ShouldBe(TerminalTabIndicator.Unread);
+
+		engine.SetSelected(true, T0.AddSeconds(1));
+
+		engine.HasUnreadCompletion.ShouldBeFalse();
+		engine.CurrentIndicator.ShouldBe(TerminalTabIndicator.None);
+	}
+
+	[Test]
+	public void Restored_selected_unread_waits_for_window_activation()
+	{
+		var engine = CreateEngine(selected: true, windowVisible: false, windowActive: false);
+
+		engine.RestoreUnreadCompletion(T0);
+		engine.HasUnreadCompletion.ShouldBeTrue();
+
+		engine.SetWindowFacts(true, true, T0.AddSeconds(1));
+
+		engine.HasUnreadCompletion.ShouldBeFalse();
+	}
+
+	[Test]
 	public void Only_input_containing_carriage_return_starts_activity()
 	{
 		var engine = CreateEngine();

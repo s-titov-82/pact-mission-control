@@ -159,6 +159,16 @@ public sealed class TerminalTabStatusEngine
 	}
 
 	/// <summary>
+	/// Seeds a one-time unread completion from a soft-restart handoff. Normal selection and
+	/// window-activation acknowledgement rules still apply.
+	/// </summary>
+	public void RestoreUnreadCompletion(DateTimeOffset occurredAt) =>
+		Process(
+			TerminalTabEventKind.UnreadRestored,
+			occurredAt,
+			() => _hasUnreadCompletion = true);
+
+	/// <summary>
 	/// Atomically reads the delivery-relevant status retained from settled screen evidence.
 	/// </summary>
 	public SessionStatusSnapshot CurrentStatus

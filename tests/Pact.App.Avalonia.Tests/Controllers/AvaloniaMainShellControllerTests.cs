@@ -2404,6 +2404,12 @@ public sealed class AvaloniaMainShellControllerTests
 		await using ControllerFixture normalFixture = new(firstResumeCommand: string.Empty);
 		await normalFixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
 		normalFixture.ViewModel.Sessions[0].Indicator.ShouldBe(TerminalTabIndicator.None);
+
+		await using ControllerFixture templateOnlyFixture = new(firstResumeCommand: "codex resume");
+		await templateOnlyFixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		templateOnlyFixture.ViewModel.Sessions[0].Indicator.ShouldBe(TerminalTabIndicator.None);
+		templateOnlyFixture.Backends[0].LastStartOptions.ShouldNotBeNull()
+			.CommandLine.ShouldStartWith("codex ");
 	}
 
 	[Test]

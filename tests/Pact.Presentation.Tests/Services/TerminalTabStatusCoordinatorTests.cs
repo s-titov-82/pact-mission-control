@@ -26,6 +26,25 @@ public sealed class TerminalTabStatusCoordinatorTests
 	}
 
 	[Test]
+	public void Restored_unread_is_seeded_per_registered_session_and_acknowledged_normally()
+	{
+		TerminalTabStatusCoordinator coordinator = new(action => action());
+		var first = CreateSession("first");
+		var second = CreateSession("second");
+		coordinator.RegisterSession(first);
+		coordinator.RegisterSession(second);
+
+		coordinator.RestoreUnreadCompletion("first", T0).ShouldBeTrue();
+		coordinator.RestoreUnreadCompletion("missing", T0).ShouldBeFalse();
+
+		first.Indicator.ShouldBe(TerminalTabIndicator.Unread);
+		second.Indicator.ShouldBe(TerminalTabIndicator.None);
+		coordinator.SetWindowFacts(true, true, T0.AddSeconds(1));
+		coordinator.SetSelectedSession("first", T0.AddSeconds(2));
+		first.Indicator.ShouldBe(TerminalTabIndicator.None);
+	}
+
+	[Test]
 	public void Registration_projects_initial_lifecycle_and_cached_global_facts()
 	{
 		TerminalTabStatusCoordinator coordinator = new(action => action());

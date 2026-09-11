@@ -27,5 +27,8 @@ public enum TerminalTabEventKind
 	ScreenSnapshot,
 
 	/// <summary>The terminal viewport was resized or scrolled.</summary>
-	ViewportChanged
+	ViewportChanged,
+
+	/// <summary>An unread completion was restored from a one-time restart handoff.</summary>
+	UnreadRestored
 }

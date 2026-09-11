@@ -21,31 +21,57 @@ public static class ShellProfileCommandPlanner
 	/// </returns>
 	public static string GetStartCommand(
 		SessionRecord session,
+		bool preferResumeCommand) =>
+		GetStartPlan(session, preferResumeCommand).CommandLine;
+
+	/// <summary>
+	/// Returns the actual command and mode, including a stable reason when a requested resume
+	/// must cold-start instead. Only a concrete Codex or Claude conversation id is resumable.
+	/// </summary>
+	public static SessionStartPlan GetStartPlan(
+		SessionRecord session,
 		bool preferResumeCommand)
 	{
 		ArgumentNullException.ThrowIfNull(session);
 
 		if (!preferResumeCommand)
 		{
-			return session.LaunchCommand;
-		}
-
-		if (string.IsNullOrWhiteSpace(session.ResumeCommand))
-		{
-			return session.LaunchCommand;
+			return Normal(session, fellBack: false, reason: null);
 		}
 
 		if (session.Kind is not (AgentKind.Codex or AgentKind.Claude))
 		{
-			return session.ResumeCommand;
+			return Normal(session, fellBack: true, "resume-not-supported");
 		}
 
-		if (!AgentResumeCommandExtractor.IsConcreteResumeCommand(session.ResumeCommand)
-			&& !AgentResumeCommandExtractor.IsGenericResumeCommand(session.ResumeCommand))
+		if (string.IsNullOrWhiteSpace(session.ResumeCommand))
 		{
-			return session.LaunchCommand;
+			return Normal(session, fellBack: true, "resume-command-unavailable");
 		}
 
-		return session.ResumeCommand;
+		if (AgentResumeCommandExtractor.IsGenericResumeCommand(session.ResumeCommand))
+		{
+			return Normal(session, fellBack: true, "resume-id-unavailable");
+		}
+
+		if (!AgentResumeCommandExtractor.IsConcreteResumeCommand(session.ResumeCommand))
+		{
+			return Normal(session, fellBack: true, "resume-command-invalid");
+		}
+
+		return new SessionStartPlan(
+			session.ResumeCommand,
+			TerminalStartMode.Resume,
+			FellBackToColdStart: false,
+			FallbackReason: null);
 	}
+
+	private static SessionStartPlan Normal(
+		SessionRecord session,
+		bool fellBack,
+		string? reason) => new(
+			session.LaunchCommand,
+			TerminalStartMode.Normal,
+			fellBack,
+			reason);
 }

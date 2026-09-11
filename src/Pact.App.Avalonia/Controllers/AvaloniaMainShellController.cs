@@ -3099,9 +3099,11 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			return;
 		}
 
-		var command = ShellProfileCommandPlanner.GetStartCommand(session.Record, preferResumeCommand);
+		var startPlan = ShellProfileCommandPlanner.GetStartPlan(
+			session.Record,
+			preferResumeCommand);
 		var injection = CreateAgentLaunchInjection(session.Record);
-		var commandLine = await _resolveCommandAsync(command, injection.Arguments);
+		var commandLine = await _resolveCommandAsync(startPlan.CommandLine, injection.Arguments);
 		if (string.IsNullOrWhiteSpace(commandLine))
 		{
 			_agentControlTokens.Revoke(session.Record.Id);
@@ -3160,13 +3162,9 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 				ViewportChangedHandler,
 				cancellationToken);
 			await ViewModel.UpdateSessionStatusAsync(session.Record.Id, SessionStatus.Running, cancellationToken);
-			var startMode =
-				preferResumeCommand && !string.IsNullOrWhiteSpace(session.Record.ResumeCommand)
-					? TerminalStartMode.Resume
-					: TerminalStartMode.Normal;
 			ViewModel.TerminalTabStatuses.OnSessionStarted(
 				session.Record.Id,
-				startMode,
+				startPlan.Mode,
 				DateTimeOffset.UtcNow);
 		}
 		catch

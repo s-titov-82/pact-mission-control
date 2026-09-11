@@ -50,6 +50,21 @@ public sealed class TerminalTabStatusCoordinator
 	}
 
 	/// <summary>
+	/// Restores one session's unread completion marker. Unknown ids are ignored and reported.
+	/// </summary>
+	/// <returns><see langword="true"/> when a registered engine received the marker.</returns>
+	public bool RestoreUnreadCompletion(string sessionId, DateTimeOffset occurredAt)
+	{
+		if (!TryGetEngine(sessionId, out var engine))
+		{
+			return false;
+		}
+
+		engine.RestoreUnreadCompletion(occurredAt);
+		return true;
+	}
+
+	/// <summary>
 	/// Starts tracking a session, seeding the engine with the current selection and window
 	/// facts. Re-registering the same id replaces the previous engine and discards its state.
 	/// </summary>
