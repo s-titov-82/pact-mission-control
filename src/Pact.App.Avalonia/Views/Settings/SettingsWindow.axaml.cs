@@ -31,6 +31,8 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 		static _ => Task.CompletedTask;
 	private readonly Func<CancellationToken, Task> _openUpdateContainingFolderAsync =
 		static _ => Task.CompletedTask;
+	private readonly Func<CancellationToken, Task> _softRestartAsync =
+		static _ => Task.CompletedTask;
 	private SettingsSectionViewModelBase? _previousSection;
 	private bool _suppressSectionSelection;
 	private bool _initialized;
@@ -55,7 +57,8 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 		Func<Exception, Task>? reportUserFailureAsync = null,
 		Func<CancellationToken, Task>? checkForUpdatesAsync = null,
 		Func<CancellationToken, Task>? openUpdateReleaseNotesAsync = null,
-		Func<CancellationToken, Task>? openUpdateContainingFolderAsync = null)
+		Func<CancellationToken, Task>? openUpdateContainingFolderAsync = null,
+		Func<CancellationToken, Task>? softRestartAsync = null)
 		: this()
 	{
 		_viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
@@ -69,6 +72,7 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 			openUpdateReleaseNotesAsync ?? _openUpdateReleaseNotesAsync;
 		_openUpdateContainingFolderAsync =
 			openUpdateContainingFolderAsync ?? _openUpdateContainingFolderAsync;
+		_softRestartAsync = softRestartAsync ?? _softRestartAsync;
 		DataContext = viewModel;
 		SectionList.ItemsSource = viewModel.Sections;
 		viewModel.PropertyChanged += OnWindowViewModelPropertyChanged;
@@ -78,6 +82,7 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 			updates.CheckRequested += OnUpdateCheckRequested;
 			updates.OpenReleaseNotesRequested += OnUpdateReleaseNotesRequested;
 			updates.OpenContainingFolderRequested += OnUpdateContainingFolderRequested;
+			updates.SoftRestartRequested += OnSoftRestartRequested;
 		}
 	}
 
@@ -301,6 +306,11 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 			"settings-open-update-containing-folder",
 			() => _openUpdateContainingFolderAsync(_lifetimeCancellation.Token));
 
+	private void OnSoftRestartRequested(object? sender, EventArgs e) =>
+		RunEvent(
+			"settings-soft-restart",
+			() => _softRestartAsync(_lifetimeCancellation.Token));
+
 	private async Task RevertAsync()
 	{
 		if (_viewModel?.ActiveSection is not { SupportsFileOperations: true } section)
@@ -446,6 +456,9 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 			case "OpenUpdateContainingFolder" when button.DataContext is UpdatesSectionViewModel updates:
 				updates.RequestOpenContainingFolder();
 				break;
+			case "SoftRestart" when button.DataContext is UpdatesSectionViewModel updates:
+				updates.RequestSoftRestart();
+				break;
 		}
 	}
 
@@ -520,6 +533,7 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 			updates.CheckRequested -= OnUpdateCheckRequested;
 			updates.OpenReleaseNotesRequested -= OnUpdateReleaseNotesRequested;
 			updates.OpenContainingFolderRequested -= OnUpdateContainingFolderRequested;
+			updates.SoftRestartRequested -= OnSoftRestartRequested;
 			updates.Dispose();
 		}
 

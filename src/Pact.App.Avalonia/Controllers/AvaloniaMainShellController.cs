@@ -19,12 +19,14 @@ using Pact.Core.Prompting;
 using Pact.Core.Scenarios;
 using Pact.Core.Sessions;
 using Pact.Core.Terminal;
+using Pact.Core.Updates;
 using Pact.Core.Web;
 using Pact.Core.Web.Monitoring;
 using Pact.Infrastructure.AgentControl;
 using Pact.Infrastructure.Orchestrator;
 using Pact.Infrastructure.Storage;
 using Pact.Infrastructure.Diagnostics;
+using Pact.Infrastructure.Updates;
 using Pact.Presentation.Services;
 using Pact.Presentation.Services.AgentControl;
 using Pact.Presentation.Services.Orchestrator;
@@ -92,6 +94,9 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 	private readonly SelectedProcessMetricsMonitor _processMetricsMonitor;
 	private readonly SelectedWebProcessMetricsMonitor _webProcessMetricsMonitor;
 	private bool _externalProcessMetricsEnabled;
+	private readonly ISoftRestartTicketStore? _softRestartTicketStore;
+	private readonly AppLaunchOptions? _launchOptions;
+	private readonly SoftRestartRestorer? _softRestartRestorer;
 
 	internal AvaloniaMainShellController(
 		MainWindowViewModel viewModel,
@@ -114,7 +119,9 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		int? agentControlPort = null,
 		IProcessTreeSnapshotReader? processTreeSnapshotReader = null,
 		IWebProcessMetricsSnapshotReader? webProcessMetricsSnapshotReader = null,
-		AvaloniaUpdateController? updateController = null)
+		AvaloniaUpdateController? updateController = null,
+		AppLaunchOptions? launchOptions = null,
+		ISoftRestartTicketStore? softRestartTicketStore = null)
 	{
 		ViewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
 		_settingsFileStore = settingsFileStore ?? throw new ArgumentNullException(nameof(settingsFileStore));
@@ -219,6 +226,36 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		RebindSelectedDetailsSource();
 		Clipboard = clipboard ?? throw new ArgumentNullException(nameof(clipboard));
 		UpdateController = updateController;
+		_launchOptions = launchOptions;
+		_softRestartTicketStore = softRestartTicketStore;
+		if (launchOptions is not null && softRestartTicketStore is not null)
+		{
+			SoftRestartSafetyPolicy safetyPolicy = new(
+				_runtimeCoordinator.GetActiveSessionIds,
+				ViewModel.TerminalTabStatuses.GetDiagnosticsSnapshot,
+				() => _scenarioCoordinator.HasActiveRun,
+				IsShutdownBegun);
+			SoftRestartSnapshotBuilder snapshotBuilder = new(
+				ViewModel,
+				_runtimeCoordinator.GetActiveSessionIds,
+				ViewModel.TerminalTabStatuses.GetDiagnosticsSnapshot,
+				_webPageCoordinator.GetLoadedPageIds);
+			SoftRestartCoordinator = new SoftRestartCoordinator(
+				launchOptions,
+				softRestartTicketStore,
+				safetyPolicy,
+				snapshotBuilder);
+			_softRestartRestorer = new SoftRestartRestorer(
+				FindRestorableSession,
+				StartRestoredSessionAsync,
+				FindRestorableWebPage,
+				_webPageCoordinator.ResumeInBackgroundAsync,
+				ViewModel.TerminalTabStatuses.RestoreUnreadCompletion,
+				RestoreOrchestratorAsync,
+				RestoreSelectionAsync,
+				id => string.Equals(id, OrchestratorSessionId, StringComparison.Ordinal),
+				_timeProvider);
+		}
 	}
 
 	public event PropertyChangedEventHandler? PropertyChanged;
@@ -229,6 +266,8 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 
 	public MainWindowViewModel ViewModel { get; }
 	internal AvaloniaUpdateController? UpdateController { get; }
+	internal SoftRestartCoordinator? SoftRestartCoordinator { get; }
+	internal RestorationSummary? LastRestorationSummary { get; private set; }
 	public IReadOnlyDictionary<string, SessionRuntime> Runtimes => _runtimeCoordinator.Runtimes;
 	internal Uri AgentControlAddress { get; }
 	internal WebViewDiagnosticEntry[] DiagnosticSnapshot => _diagnostics.Snapshot();
@@ -887,23 +926,26 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		await ReloadExternalSettingsAsync(cancellationToken);
 		await _terminalHost.InitializeAsync(terminalPage, cancellationToken);
 		_terminalHostInitialized = true;
-		if (_orchestratorRecord.Enabled
-			&& _orchestratorRecord.IsProvisioned
-			&& !IsOrchestratorRunning)
+		if (!await TryRestoreSoftRestartAsync(cancellationToken))
 		{
-			await StartOrchestratorAsync(cancellationToken);
-		}
-		if (ViewModel.SelectedSession is { } selected)
-		{
-			await SelectSessionAsync(selected, startIfNeeded: true, cancellationToken: cancellationToken);
-		}
-		else if (ViewModel.SelectedWebPage is { } webPage)
-		{
-			await SelectWebPageAsync(webPage, cancellationToken);
-		}
-		if (ViewModel.SelectedWorkspace is { } workspace)
-		{
-			await SelectWorkspaceAsync(workspace);
+			if (_orchestratorRecord.Enabled
+				&& _orchestratorRecord.IsProvisioned
+				&& !IsOrchestratorRunning)
+			{
+				await StartOrchestratorAsync(cancellationToken);
+			}
+			if (ViewModel.SelectedSession is { } selected)
+			{
+				await SelectSessionAsync(selected, startIfNeeded: true, cancellationToken: cancellationToken);
+			}
+			else if (ViewModel.SelectedWebPage is { } webPage)
+			{
+				await SelectWebPageAsync(webPage, cancellationToken);
+			}
+			if (ViewModel.SelectedWorkspace is { } workspace)
+			{
+				await SelectWorkspaceAsync(workspace);
+			}
 		}
 	}
 
@@ -951,6 +993,30 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 
 			page.SetMonitorUnread(snapshot?.Unread == true);
 		}
+	}
+
+	private async Task<bool> TryRestoreSoftRestartAsync(CancellationToken cancellationToken)
+	{
+		if (_launchOptions?.SoftRestartId is not { } restartId
+			|| _softRestartTicketStore is null
+			|| _softRestartRestorer is null)
+		{
+			return false;
+		}
+
+		var ticket = await _softRestartTicketStore.ConsumeExactAsync(
+			restartId,
+			RunningPactVersion.Read(typeof(App).Assembly),
+			cancellationToken);
+		if (ticket is null)
+		{
+			return false;
+		}
+
+		LastRestorationSummary = await _softRestartRestorer.RestoreAsync(
+			ticket,
+			cancellationToken);
+		return true;
 	}
 
 	private static bool IsExpectedWebMonitorSnapshotRestoreFailure(
@@ -3080,28 +3146,140 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		await ViewModel.SetActiveItemAsync(session.Record.Id, cancellationToken);
 	}
 
-	private async Task ActivateRuntimeAsync(
+	private SessionViewModel? FindRestorableSession(string sessionId) =>
+		ViewModel.Workspaces
+			.SelectMany(workspace => workspace.Sessions)
+			.Concat(ViewModel.RootTabs.Sessions.Where(session => !session.IsManuallyPaused))
+			.FirstOrDefault(session => string.Equals(
+				session.Record.Id,
+				sessionId,
+				StringComparison.Ordinal));
+
+	private WebPageViewModel? FindRestorableWebPage(string pageId) =>
+		ViewModel.Workspaces
+			.SelectMany(workspace => workspace.WebPages)
+			.Concat(ViewModel.RootTabs.WebPages.Where(page => !page.IsManuallyPaused))
+			.FirstOrDefault(page => string.Equals(
+				page.Record.Id,
+				pageId,
+				StringComparison.Ordinal));
+
+	private async Task<SessionStartPlan> StartRestoredSessionAsync(
+		SessionViewModel session,
+		CancellationToken cancellationToken)
+	{
+		if (!_runtimeCoordinator.TryGetActiveController(session.Record.Id, out _, out _))
+		{
+			await _terminalHost.CreateTerminalAsync(session.Record.Id);
+		}
+		return await ActivateRuntimeAsync(
+			session,
+			startIfNeeded: true,
+			preferResumeCommand: true,
+			cancellationToken);
+	}
+
+	private async Task<bool> RestoreOrchestratorAsync(CancellationToken cancellationToken)
+	{
+		if (!_orchestratorRecord.Enabled || !_orchestratorRecord.IsProvisioned)
+		{
+			return false;
+		}
+		if (!IsOrchestratorRunning)
+		{
+			await StartOrchestratorAsync(cancellationToken);
+		}
+		return IsOrchestratorRunning;
+	}
+
+	private async Task<bool> RestoreSelectionAsync(
+		SoftRestartSelection selection,
+		CancellationToken cancellationToken)
+	{
+		if (selection.ItemId is { } itemId)
+		{
+			if (_orchestratorSession is not null
+				&& string.Equals(itemId, OrchestratorSessionId, StringComparison.Ordinal)
+				&& IsOrchestratorRunning)
+			{
+				await SelectOrchestratorAsync(cancellationToken);
+				return true;
+			}
+
+			var session = FindRestorableSession(itemId);
+			if (session is not null)
+			{
+				await SelectSessionAsync(
+					session,
+					startIfNeeded: false,
+					cancellationToken: cancellationToken);
+				return true;
+			}
+			var page = FindRestorableWebPage(itemId);
+			if (page is not null)
+			{
+				await SelectWebPageAsync(page, cancellationToken);
+				return true;
+			}
+			if (selection.ProjectId is { } noteProjectId)
+			{
+				var workspace = ViewModel.Workspaces.FirstOrDefault(item =>
+					string.Equals(item.Id, noteProjectId, StringComparison.Ordinal));
+				var note = workspace?.Notes.FirstOrDefault(item =>
+					string.Equals(item.Record.Id, itemId, StringComparison.Ordinal));
+				if (note is not null)
+				{
+					await SelectNoteAsync(note, cancellationToken);
+					return true;
+				}
+			}
+			return false;
+		}
+
+		if (selection.ProjectId is not { } projectId)
+		{
+			return false;
+		}
+		var selectedWorkspace = ViewModel.Workspaces.FirstOrDefault(workspace =>
+			string.Equals(workspace.Id, projectId, StringComparison.Ordinal));
+		if (selectedWorkspace is null)
+		{
+			return false;
+		}
+		await SelectWorkspaceAsync(selectedWorkspace);
+		return true;
+	}
+
+	private bool IsShutdownBegun()
+	{
+		lock (_shutdownGate)
+		{
+			return _shutdownBegun;
+		}
+	}
+
+	private async Task<SessionStartPlan> ActivateRuntimeAsync(
 		SessionViewModel session,
 		bool startIfNeeded,
 		bool preferResumeCommand,
 		CancellationToken cancellationToken)
 	{
+		var startPlan = ShellProfileCommandPlanner.GetStartPlan(
+			session.Record,
+			preferResumeCommand);
 		var runtime = _runtimeCoordinator.GetOrCreateRuntime(session.Record.Id);
 		if (runtime.TryGetController(out var existingController)
 			&& existingController.IsActive)
 		{
 			(var columns, var rows) = _terminalHost.GetCurrentSize(session.Record.Id);
 			await existingController.ResizeAsync(columns, rows);
-			return;
+			return startPlan;
 		}
 		if (!startIfNeeded)
 		{
-			return;
+			return startPlan;
 		}
 
-		var startPlan = ShellProfileCommandPlanner.GetStartPlan(
-			session.Record,
-			preferResumeCommand);
 		var injection = CreateAgentLaunchInjection(session.Record);
 		var commandLine = await _resolveCommandAsync(startPlan.CommandLine, injection.Arguments);
 		if (string.IsNullOrWhiteSpace(commandLine))
@@ -3166,6 +3344,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 				session.Record.Id,
 				startPlan.Mode,
 				DateTimeOffset.UtcNow);
+			return startPlan;
 		}
 		catch
 		{

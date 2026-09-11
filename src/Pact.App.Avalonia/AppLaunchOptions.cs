@@ -57,11 +57,18 @@ internal sealed record AppLaunchOptions(
 		var profile = AppProfileDefaults.ResolveProfile(dataRoot);
 		engineProbe = NormalizeAbsolutePath(engineProbe, EngineProbeArgument);
 		restartProbe = NormalizeAbsolutePath(restartProbe, SoftRestartProbeArgument);
+		var tempDirectory = new AppPaths(profile.RootDirectory).TempDirectory;
 		if (engineProbe is not null
-			&& !IsStrictDescendant(engineProbe, new AppPaths(profile.RootDirectory).TempDirectory))
+			&& !IsStrictDescendant(engineProbe, tempDirectory))
 		{
 			throw new ArgumentException(
 				$"{EngineProbeArgument} must be below the selected data root's Temp directory.",
+				nameof(args));
+		}
+		if (restartProbe is not null && !IsStrictDescendant(restartProbe, tempDirectory))
+		{
+			throw new ArgumentException(
+				$"{SoftRestartProbeArgument} must be below the selected data root's Temp directory.",
 				nameof(args));
 		}
 		if (restartId is not null && !IsRestartId(restartId))
@@ -70,13 +77,6 @@ internal sealed record AppLaunchOptions(
 				$"{SoftRestartIdArgument} requires 64 lowercase hexadecimal characters.",
 				nameof(args));
 		}
-		if (restartProbe is not null && restartId is null)
-		{
-			throw new ArgumentException(
-				$"{SoftRestartProbeArgument} requires {SoftRestartIdArgument}.",
-				nameof(args));
-		}
-
 		return new AppLaunchOptions(
 			profile,
 			passDataRoot,

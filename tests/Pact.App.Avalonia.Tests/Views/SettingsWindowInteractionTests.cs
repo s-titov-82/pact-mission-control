@@ -43,12 +43,18 @@ public sealed class SettingsWindowInteractionTests : IDisposable
 		using UpdatesSectionViewModel updates = new(coordinator);
 		(var vm, _) = await CreateViewModelAsync(updatesSection: updates);
 		var checks = 0;
+		var softRestarts = 0;
 		using SettingsWindow window = new(
 			vm,
 			new RecordingExternalLauncher(),
 			checkForUpdatesAsync: _ =>
 			{
 				checks++;
+				return Task.CompletedTask;
+			},
+			softRestartAsync: _ =>
+			{
+				softRestarts++;
 				return Task.CompletedTask;
 			});
 		window.InitialSection = SettingsSection.Updates;
@@ -63,6 +69,16 @@ public sealed class SettingsWindowInteractionTests : IDisposable
 			.Single(button => Equals(button.Tag, "CheckForUpdates"))
 			.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
 		await WaitUntilAsync(() => checks == 1);
+		var diagnostics = window.GetVisualDescendants().OfType<Expander>()
+			.Single(expander => Equals(expander.Header, "Diagnostics"));
+		diagnostics.IsExpanded.ShouldBeFalse();
+		diagnostics.IsExpanded = true;
+		await DrainUiTwiceAsync();
+		var softRestart = window.GetVisualDescendants().OfType<Button>()
+			.Single(button => Equals(button.Tag, "SoftRestart"));
+		softRestart.Content.ShouldBe("Soft restart and restore active tabs");
+		softRestart.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+		await WaitUntilAsync(() => softRestarts == 1);
 		window.Close();
 	}
 

@@ -23,7 +23,9 @@ internal sealed record AvaloniaWindowServices(
 	IExternalLauncher ExternalLauncher,
 	WindowLayoutStore WindowLayoutStore,
 	UpdateCoordinator UpdateCoordinator,
-	UpdatePathPolicy UpdatePathPolicy);
+	UpdatePathPolicy UpdatePathPolicy,
+	AppLaunchOptions LaunchOptions,
+	ISoftRestartTicketStore SoftRestartTicketStore);
 
 /// <summary>
 /// Composes the application shell from DI-owned services and the two hosts owned by
@@ -116,6 +118,8 @@ internal sealed class AvaloniaShellControllerFactory
 			_scenarioDefinitionStore,
 			_clipboard,
 			_timeProvider,
-			updateController: updateController);
+			updateController: updateController,
+			launchOptions: WindowServices.LaunchOptions,
+			softRestartTicketStore: WindowServices.SoftRestartTicketStore);
 	}
 }

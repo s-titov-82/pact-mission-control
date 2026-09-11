@@ -72,6 +72,27 @@ public sealed class SoftRestartTicketStore : ISoftRestartTicketStore
 	}
 
 	/// <inheritdoc />
+	public Task DeleteExactAsync(string restartId, CancellationToken cancellationToken)
+	{
+		cancellationToken.ThrowIfCancellationRequested();
+		var path = GetTicketPath(restartId);
+		if (File.Exists(path))
+		{
+			File.Delete(path);
+		}
+		var directory = Path.GetDirectoryName(path);
+		if (Directory.Exists(directory))
+		{
+			foreach (var helperPath in Directory.GetFiles(directory, "Pact.Updater.exe"))
+			{
+				File.Delete(helperPath);
+			}
+			TryDeleteEmptyDirectory(directory);
+		}
+		return Task.CompletedTask;
+	}
+
+	/// <inheritdoc />
 	public async Task<SoftRestartTicket?> ConsumeExactAsync(
 		string restartId,
 		StableReleaseVersion runningVersion,

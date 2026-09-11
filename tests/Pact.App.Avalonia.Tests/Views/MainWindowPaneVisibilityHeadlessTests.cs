@@ -110,6 +110,78 @@ public sealed class MainWindowPaneVisibilityHeadlessTests
 	}
 
 	[AvaloniaTest]
+	public async Task Diagnostic_soft_restart_defaults_to_no_and_confirmed_path_skips_close_prompt()
+	{
+		await using WindowFixture fixture = new(includeSession: true);
+		await fixture.Controller.InitializeAsync(
+			new Uri("file:///terminal.html"),
+			TestContext.CurrentContext.CancellationToken);
+		using MainWindow window = new(fixture.Controller);
+		var restartRequests = 0;
+		var shutdowns = 0;
+		var prompts = 0;
+		MessageDialogRequest? confirmation = null;
+		window.RequestSoftRestartAsyncOverride = _ =>
+		{
+			restartRequests++;
+			return Task.FromResult(new SoftRestartRequestResult(true, [], null));
+		};
+		window.StartGracefulShutdownOverride = () => shutdowns++;
+		window.ShowMessageDialogAsyncOverride = request =>
+		{
+			prompts++;
+			confirmation = request;
+			return Task.FromResult(request.DefaultResult);
+		};
+
+		await window.RequestDiagnosticSoftRestartAsync(CancellationToken.None);
+
+		confirmation.ShouldNotBeNull().DefaultResult.ShouldBe(MessageDialogResult.No);
+		restartRequests.ShouldBe(0);
+		shutdowns.ShouldBe(0);
+
+		window.ShowMessageDialogAsyncOverride = _ =>
+		{
+			prompts++;
+			return Task.FromResult(MessageDialogResult.Yes);
+		};
+		await window.RequestDiagnosticSoftRestartAsync(CancellationToken.None);
+
+		restartRequests.ShouldBe(1);
+		shutdowns.ShouldBe(1);
+		prompts.ShouldBe(2);
+	}
+
+	[AvaloniaTest]
+	public async Task Blocked_diagnostic_soft_restart_lists_blockers_without_shutdown()
+	{
+		await using WindowFixture fixture = new();
+		await fixture.Controller.InitializeAsync(
+			new Uri("file:///terminal.html"),
+			TestContext.CurrentContext.CancellationToken);
+		using MainWindow window = new(fixture.Controller);
+		var shutdowns = 0;
+		List<MessageDialogRequest> dialogs = [];
+		window.RequestSoftRestartAsyncOverride = _ => Task.FromResult(
+			new SoftRestartRequestResult(
+				false,
+				[new SoftRestartBlocker("busy", "Codex is still busy.")],
+				null));
+		window.StartGracefulShutdownOverride = () => shutdowns++;
+		window.ShowMessageDialogAsyncOverride = request =>
+		{
+			dialogs.Add(request);
+			return Task.FromResult(MessageDialogResult.Yes);
+		};
+
+		await window.RequestDiagnosticSoftRestartAsync(CancellationToken.None);
+
+		dialogs.Count.ShouldBe(2);
+		dialogs[1].Message.ShouldContain("Codex is still busy.");
+		shutdowns.ShouldBe(0);
+	}
+
+	[AvaloniaTest]
 	public async Task Close_session_handler_honors_confirmation_before_stopping_runtime()
 	{
 		await using WindowFixture fixture = new(includeSession: true);

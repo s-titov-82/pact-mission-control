@@ -16,6 +16,9 @@ public interface ISoftRestartTicketStore
 		SoftRestartOutcome outcome,
 		CancellationToken cancellationToken);
 
+	/// <summary>Deletes only the ticket and handoff directory derived from the supplied id.</summary>
+	Task DeleteExactAsync(string restartId, CancellationToken cancellationToken);
+
 	/// <summary>
 	/// Consumes only the ticket derived from the supplied id. Invalid tickets are quarantined.
 	/// </summary>

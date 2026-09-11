@@ -59,6 +59,9 @@ public sealed class UpdatesSectionViewModel : SettingsSectionViewModelBase, IDis
 	/// <summary>Occurs when the user requests the verified package's containing folder.</summary>
 	public event EventHandler? OpenContainingFolderRequested;
 
+	/// <summary>Occurs when the user requests the diagnostic soft-restart path.</summary>
+	public event EventHandler? SoftRestartRequested;
+
 	/// <summary>Raises the manual-check action when the coordinator is not busy.</summary>
 	public void RequestCheck()
 	{
@@ -85,6 +88,9 @@ public sealed class UpdatesSectionViewModel : SettingsSectionViewModelBase, IDis
 			OpenContainingFolderRequested?.Invoke(this, EventArgs.Empty);
 		}
 	}
+
+	/// <summary>Raises the diagnostic soft-restart action.</summary>
+	public void RequestSoftRestart() => SoftRestartRequested?.Invoke(this, EventArgs.Empty);
 
 	/// <inheritdoc />
 	public override Task LoadAsync(CancellationToken cancellationToken)

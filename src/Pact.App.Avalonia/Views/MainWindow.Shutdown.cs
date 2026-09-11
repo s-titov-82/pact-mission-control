@@ -90,6 +90,11 @@ internal sealed partial class MainWindow
 			});
 	}
 
+	/// <summary>
+	/// Starts an already-confirmed soft-restart shutdown without re-entering close confirmation.
+	/// </summary>
+	internal void StartConfirmedSoftRestart() => StartGracefulShutdown();
+
 	private void BeginShellShutdown()
 	{
 		DetachEventProducers();

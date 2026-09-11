@@ -39,6 +39,16 @@
 			</StackPanel>
 			<TextBlock Foreground="{DynamicResource AppTextMutedBrush}" TextWrapping="Wrap"
 						 Text="Only stable GitHub releases are considered. Automatic checks run once per hour." />
+			<Expander Margin="0,12,0,0" Header="Diagnostics">
+				<StackPanel Margin="0,8,0,0" Spacing="8">
+					<Button HorizontalAlignment="Left"
+							Content="Soft restart and restore active tabs"
+							Tag="SoftRestart" />
+					<TextBlock Foreground="{DynamicResource AppTextMutedBrush}"
+							 TextWrapping="Wrap"
+							 Text="Tests the same handoff used by updates without installing anything." />
+				</StackPanel>
+			</Expander>
 		</StackPanel>
 	</DataTemplate>
 

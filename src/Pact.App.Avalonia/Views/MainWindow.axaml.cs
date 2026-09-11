@@ -61,6 +61,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 	internal Func<UpdateRelease, Task<UpdateAvailableDialogResult>>? ShowUpdateAvailableDialogAsyncOverride { get; set; }
 	internal Func<string, Task>? ShowUpdateInformationAsyncOverride { get; set; }
 	internal Action? StartGracefulShutdownOverride { get; set; }
+	internal Func<CancellationToken, Task<SoftRestartRequestResult>>? RequestSoftRestartAsyncOverride { get; set; }
 	public MainWindow()
 	{
 		InitializeComponent();
@@ -753,7 +754,8 @@ internal sealed partial class MainWindow : Window, IDisposable
 				: _updateController.OpenCurrentReleaseNotesAsync,
 			openUpdateContainingFolderAsync: _updateController is null
 				? null
-				: _updateController.OpenContainingFolderAsync)
+				: _updateController.OpenContainingFolderAsync,
+			softRestartAsync: RequestDiagnosticSoftRestartAsync)
 		{
 			InitialSection = section,
 			InitialItemId = itemId,
@@ -774,6 +776,103 @@ internal sealed partial class MainWindow : Window, IDisposable
 		if (dialog.SavedAnyFile && loaded)
 		{
 			await RefreshSubscriptionUsageOnceAsync(CancellationToken.None);
+		}
+	}
+
+	internal async Task RequestDiagnosticSoftRestartAsync(CancellationToken cancellationToken)
+	{
+		var coordinator = EngineProbeController.SoftRestartCoordinator;
+		if (coordinator is null && RequestSoftRestartAsyncOverride is null)
+		{
+			return;
+		}
+
+		var request = new MessageDialogRequest(
+			"Soft restart",
+			"Restart Pact and restore the terminal and browser tabs that are currently live?",
+			MessageDialogButtons.YesNo,
+			MessageDialogResult.No);
+		var confirmation = ShowMessageDialogAsyncOverride is { } showOverride
+			? await showOverride(request)
+			: await MessageDialogWindow.ShowOwnedAsync(this, request);
+		if (confirmation != MessageDialogResult.Yes)
+		{
+			return;
+		}
+
+		var result = RequestSoftRestartAsyncOverride is { } requestOverride
+			? await requestOverride(cancellationToken)
+			: await coordinator!.RequestRestartOnlyAsync(cancellationToken);
+		if (result.Started)
+		{
+			StartConfirmedSoftRestart();
+			return;
+		}
+
+		var message = result.Blockers.Count > 0
+			? string.Join(Environment.NewLine, result.Blockers.Select(blocker => blocker.Description))
+			: "Pact could not start the soft restart helper.";
+		var information = new MessageDialogRequest(
+			"Soft restart unavailable",
+			message,
+			MessageDialogButtons.Ok,
+			MessageDialogResult.Ok);
+		if (ShowMessageDialogAsyncOverride is { } showInformation)
+		{
+			await showInformation(information);
+		}
+		else
+		{
+			await MessageDialogWindow.ShowOwnedAsync(this, information);
+		}
+	}
+
+	private async Task ShowRestorationSummaryAsync(RestorationSummary summary)
+	{
+		const int maximumListedItems = 20;
+		List<string> lines =
+		[
+			$"Restored terminal tabs: {summary.RestoredTerminalIds.Count}",
+			$"Restored browser tabs: {summary.RestoredWebPageIds.Count}"
+		];
+		AppendBoundedSection(lines, "Cold starts", summary.ColdStartFallbacks, maximumListedItems);
+		AppendBoundedSection(lines, "Could not restore", summary.Failures, maximumListedItems);
+		if (!string.IsNullOrWhiteSpace(summary.UpdateFailureCategory))
+		{
+			lines.Add($"Update was not applied: {summary.UpdateFailureCategory}");
+		}
+
+		var request = new MessageDialogRequest(
+			"Soft restart complete",
+			string.Join(Environment.NewLine, lines),
+			MessageDialogButtons.Ok,
+			MessageDialogResult.Ok);
+		if (ShowMessageDialogAsyncOverride is { } showOverride)
+		{
+			await showOverride(request);
+		}
+		else
+		{
+			await MessageDialogWindow.ShowOwnedAsync(this, request);
+		}
+	}
+
+	private static void AppendBoundedSection(
+		List<string> lines,
+		string heading,
+		IReadOnlyList<string> items,
+		int maximumItems)
+	{
+		if (items.Count == 0)
+		{
+			return;
+		}
+
+		lines.Add($"{heading}:");
+		lines.AddRange(items.Take(maximumItems).Select(item => $"- {item}"));
+		if (items.Count > maximumItems)
+		{
+			lines.Add($"- ... (+{items.Count - maximumItems} more)");
 		}
 	}
 
@@ -1015,6 +1114,29 @@ internal sealed partial class MainWindow : Window, IDisposable
 			ProjectTree.SetProjectActionsEnabled(true);
 			StartSubscriptionUsagePolling();
 			Title = AppProfileDefaults.ReadyWindowTitle;
+
+			if (App.Bootstrap.LaunchOptions.SoftRestartProbeOutputPath is not null)
+			{
+				var exitCode = await new SoftRestartProbeRunner(
+					App.Bootstrap.LaunchOptions).RunAsync(
+						EngineProbeController,
+						cancellationToken);
+				if (exitCode is null)
+				{
+					StartConfirmedSoftRestart();
+					return;
+				}
+
+				await App.Bootstrap.ShutdownAsync();
+				_closeApproved = true;
+				App.Shutdown(exitCode.Value);
+				return;
+			}
+
+			if (EngineProbeController.LastRestorationSummary is { } restorationSummary)
+			{
+				await ShowRestorationSummaryAsync(restorationSummary);
+			}
 
 			if (App.Bootstrap.ProbeRunner is { } probeRunner)
 			{

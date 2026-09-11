@@ -84,8 +84,26 @@ public sealed class AppLaunchOptionsTests
 			"--soft-restart-id", RestartId
 		]));
 		Should.Throw<ArgumentException>(() => AppLaunchOptions.Parse([
-			"--soft-restart-probe-output", first
+			"--data-root", root,
+			"--soft-restart-probe-output", first,
+			"--soft-restart-probe-output", second
 		]));
+	}
+
+	[Test]
+	public void Diagnostic_probe_is_valid_on_the_initial_launch_without_a_restart_id()
+	{
+		using var temporaryDirectory = TemporaryDirectory.Create();
+		var root = temporaryDirectory.Path;
+		var output = Path.Combine(root, "Temp", "restart.json");
+
+		var options = AppLaunchOptions.Parse([
+			"--data-root", root,
+			"--soft-restart-probe-output", output
+		]);
+
+		options.SoftRestartId.ShouldBeNull();
+		options.SoftRestartProbeOutputPath.ShouldBe(output);
 	}
 
 	[Test]
@@ -98,6 +116,19 @@ public sealed class AppLaunchOptionsTests
 		Should.Throw<ArgumentException>(() => AppLaunchOptions.Parse([
 			"--data-root", root,
 			"--engine-probe-output", outside
+		]));
+	}
+
+	[Test]
+	public void Soft_restart_probe_output_must_be_below_selected_data_root_temp()
+	{
+		using var temporaryDirectory = TemporaryDirectory.Create();
+		var root = temporaryDirectory.Path;
+		var outside = Path.Combine(root, "Settings", "probe.json");
+
+		Should.Throw<ArgumentException>(() => AppLaunchOptions.Parse([
+			"--data-root", root,
+			"--soft-restart-probe-output", outside
 		]));
 	}
 }
