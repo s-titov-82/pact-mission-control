@@ -795,7 +795,7 @@ public sealed class AgentControlCompositionTests
 				reviewer.Record.Id,
 				reviewer.Record.Kind == AgentKind.Codex
 					? "\n──────────────────────────────\n❯"
-					: "❯\n──────────────────────────────",
+					: "✻ Worked for 1s\n❯\n──────────────────────────────",
 				stable: true);
 		}
 
