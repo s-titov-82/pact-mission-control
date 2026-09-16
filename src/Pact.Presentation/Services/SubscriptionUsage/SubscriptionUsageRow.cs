@@ -101,11 +101,14 @@ public sealed class SubscriptionUsageRow : INotifyPropertyChanged
 		RawResponseText = string.IsNullOrWhiteSpace(snapshot.RawResponseText)
 			? null
 			: snapshot.RawResponseText;
-		ErrorDetailsText = snapshot.State == SubscriptionUsageState.Ready
-			? null
-			: string.IsNullOrWhiteSpace(snapshot.ErrorDetailsText)
-				? snapshot.StatusText
-				: snapshot.ErrorDetailsText;
+		// A successful read may still carry a warning - figures kept from an earlier source
+		// because the live one could not be reached - and that warning belongs in the same
+		// indicator as a failure.
+		ErrorDetailsText = !string.IsNullOrWhiteSpace(snapshot.ErrorDetailsText)
+			? snapshot.ErrorDetailsText
+			: snapshot.State == SubscriptionUsageState.Ready
+				? null
+				: snapshot.StatusText;
 
 		IsNearLimit = FiveHour?.IsLowAt(now) == true
 			|| Weekly?.IsLowAt(now) == true

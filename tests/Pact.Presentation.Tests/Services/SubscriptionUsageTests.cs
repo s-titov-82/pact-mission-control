@@ -701,6 +701,127 @@ public sealed class SubscriptionUsageTests : IDisposable
 		row.ErrorDetailsText.ShouldBe("unexpected boom");
 	}
 
+	[Test]
+	public async Task LocalReader_uses_codex_session_files_while_they_are_fresh()
+	{
+		var root = CreateTempDirectory();
+		FixedTimeProvider clock = new(new DateTimeOffset(2026, 9, 16, 12, 0, 0, TimeSpan.Zero));
+		await WriteCodexSessionFileAsync(root, usedPercent: 20, windowMinutes: 10080, clock.GetUtcNow().AddMinutes(-1));
+		StubCodexUsageApiClient codexApi = new();
+		var reader = CreateCodexReader(root, codexApi, clock);
+
+		var snapshot = await reader.ReadAsync(CodexProfile, CancellationToken.None);
+
+		snapshot.State.ShouldBe(SubscriptionUsageState.Ready);
+		(snapshot.Weekly?.RemainingPercent).ShouldBe(80);
+		codexApi.Calls.ShouldBe(0);
+	}
+
+	[Test]
+	public async Task LocalReader_asks_codex_for_live_limits_when_session_files_are_stale()
+	{
+		var root = CreateTempDirectory();
+		FixedTimeProvider clock = new(new DateTimeOffset(2026, 9, 16, 12, 0, 0, TimeSpan.Zero));
+		await WriteCodexSessionFileAsync(root, usedPercent: 20, windowMinutes: 10080, clock.GetUtcNow().AddHours(-3));
+		StubCodexUsageApiClient codexApi = new(SucceedingCodexApiResult(usedPercent: 70, windowMinutes: 10080));
+		var reader = CreateCodexReader(root, codexApi, clock);
+
+		var snapshot = await reader.ReadAsync(CodexProfile, CancellationToken.None);
+
+		snapshot.State.ShouldBe(SubscriptionUsageState.Ready);
+		(snapshot.Weekly?.RemainingPercent).ShouldBe(30);
+		snapshot.ErrorDetailsText.ShouldBeNull();
+		snapshot.UpdatedAt.ShouldBe(clock.GetUtcNow());
+		codexApi.Calls.ShouldBe(1);
+		codexApi.Commands.ShouldBe(["codex"]);
+	}
+
+	[Test]
+	public async Task LocalReader_keeps_stale_codex_figures_and_warns_when_the_live_read_fails()
+	{
+		var root = CreateTempDirectory();
+		FixedTimeProvider clock = new(new DateTimeOffset(2026, 9, 16, 12, 0, 0, TimeSpan.Zero));
+		await WriteCodexSessionFileAsync(root, usedPercent: 20, windowMinutes: 10080, clock.GetUtcNow().AddHours(-3));
+		StubCodexUsageApiClient codexApi = new(new CodexUsageApiResult(
+			Succeeded: false,
+			ResponseJson: string.Empty,
+			FailureMessage: "Codex usage request timed out.",
+			DateTimeOffset.UtcNow));
+		var reader = CreateCodexReader(root, codexApi, clock);
+
+		var snapshot = await reader.ReadAsync(CodexProfile, CancellationToken.None);
+
+		snapshot.State.ShouldBe(SubscriptionUsageState.Ready);
+		(snapshot.Weekly?.RemainingPercent).ShouldBe(80);
+		snapshot.ErrorDetailsText.ShouldNotBeNull();
+		snapshot.ErrorDetailsText.ShouldContain("Codex usage request timed out.");
+	}
+
+	[Test]
+	public async Task LocalReader_repeats_a_failed_live_codex_read_only_after_the_refresh_interval()
+	{
+		var root = CreateTempDirectory();
+		FixedTimeProvider clock = new(new DateTimeOffset(2026, 9, 16, 12, 0, 0, TimeSpan.Zero));
+		await WriteCodexSessionFileAsync(root, usedPercent: 20, windowMinutes: 10080, clock.GetUtcNow().AddHours(-3));
+		StubCodexUsageApiClient codexApi = new(
+			new CodexUsageApiResult(false, string.Empty, "Codex usage request timed out.", DateTimeOffset.UtcNow),
+			SucceedingCodexApiResult(usedPercent: 55, windowMinutes: 10080));
+		var reader = CreateCodexReader(root, codexApi, clock);
+		await reader.ReadAsync(CodexProfile, CancellationToken.None);
+
+		clock.Advance(TimeSpan.FromMinutes(2));
+		var throttled = await reader.ReadAsync(CodexProfile, CancellationToken.None);
+		codexApi.Calls.ShouldBe(1);
+		throttled.ErrorDetailsText.ShouldNotBeNull();
+
+		clock.Advance(TimeSpan.FromMinutes(9));
+		var retried = await reader.ReadAsync(CodexProfile, CancellationToken.None);
+
+		codexApi.Calls.ShouldBe(2);
+		(retried.Weekly?.RemainingPercent).ShouldBe(45);
+		retried.ErrorDetailsText.ShouldBeNull();
+	}
+
+	[Test]
+	public async Task LocalReader_serves_the_retained_live_codex_answer_between_refresh_intervals()
+	{
+		var root = CreateTempDirectory();
+		FixedTimeProvider clock = new(new DateTimeOffset(2026, 9, 16, 12, 0, 0, TimeSpan.Zero));
+		StubCodexUsageApiClient codexApi = new(SucceedingCodexApiResult(usedPercent: 70, windowMinutes: 10080));
+		var reader = CreateCodexReader(Path.Combine(root, "missing-codex"), codexApi, clock);
+		await reader.ReadAsync(CodexProfile, CancellationToken.None);
+
+		clock.Advance(TimeSpan.FromMinutes(2));
+		var snapshot = await reader.ReadAsync(CodexProfile, CancellationToken.None);
+
+		codexApi.Calls.ShouldBe(1);
+		snapshot.State.ShouldBe(SubscriptionUsageState.Ready);
+		(snapshot.Weekly?.RemainingPercent).ShouldBe(30);
+	}
+
+	[Test]
+	public void Row_shows_the_warning_of_a_successful_read_that_kept_older_figures()
+	{
+		AgentProfileRecord profile = new("codex", AgentKind.Codex, "Codex", "codex", null, "pwsh");
+		SubscriptionUsageSnapshot snapshot = new(
+			profile.Id,
+			profile.DisplayName,
+			profile.Kind,
+			SubscriptionUsageState.Ready,
+			FiveHour: null,
+			new SubscriptionLimitSnapshot(20, null),
+			"Updated 16.09 09:00",
+			RawResponseText: null,
+			ErrorDetailsText: "Live Codex usage is unavailable: boom.",
+			DateTimeOffset.UtcNow);
+
+		var row = new SubscriptionUsageRow(profile).Apply(snapshot);
+
+		row.WeeklyText.StartsWith("80%", StringComparison.Ordinal).ShouldBeTrue();
+		row.HasErrorDetails.ShouldBeTrue();
+		row.ErrorDetailsText.ShouldBe("Live Codex usage is unavailable: boom.");
+	}
+
 	private static SubscriptionUsageRow CreateRow(
 		string profileId,
 		int fiveHourUsedPercent,
@@ -726,6 +847,83 @@ public sealed class SubscriptionUsageTests : IDisposable
 			DateTimeOffset.UtcNow);
 
 		return new SubscriptionUsageRow(profile).Apply(snapshot);
+	}
+
+	private static readonly AgentProfileRecord CodexProfile =
+		new("codex", AgentKind.Codex, "Codex", "codex", "codex resume", "pwsh");
+
+	private static LocalSubscriptionUsageReader CreateCodexReader(
+		string root,
+		ICodexUsageApiClient codexUsageApiClient,
+		TimeProvider timeProvider) => new(
+			Path.Combine(root, ".codex", "sessions"),
+			Path.Combine(root, "missing-claude", "statusline-input.json"),
+			new StubClaudeUsageCommandRunner(),
+			codexUsageApiClient,
+			timeProvider);
+
+	private static async Task WriteCodexSessionFileAsync(
+		string root,
+		int usedPercent,
+		int windowMinutes,
+		DateTimeOffset writtenAt)
+	{
+		var directory = Path.Combine(root, ".codex", "sessions");
+		Directory.CreateDirectory(directory);
+		var path = Path.Combine(directory, "rollout.jsonl");
+		await File.WriteAllTextAsync(
+			path,
+			$$"""
+            {"payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":{{usedPercent}},"window_minutes":{{windowMinutes}},"resets_at":1789805418 } } } }
+            """);
+		File.SetLastWriteTimeUtc(path, writtenAt.UtcDateTime);
+	}
+
+	private static CodexUsageApiResult SucceedingCodexApiResult(int usedPercent, int windowMinutes) =>
+		new(
+			Succeeded: true,
+			ResponseJson:
+			$$"""
+            {"id":2,"result":{"rateLimits":{"primary":{"usedPercent":{{usedPercent}},"windowDurationMins":{{windowMinutes}},"resetsAt":1789805418 },"secondary":null } } }
+            """,
+			FailureMessage: null,
+			DateTimeOffset.UtcNow);
+
+	private sealed class StubCodexUsageApiClient : ICodexUsageApiClient
+	{
+		private readonly Queue<CodexUsageApiResult> _results;
+
+		public StubCodexUsageApiClient(params CodexUsageApiResult[] results)
+		{
+			_results = new Queue<CodexUsageApiResult>(results);
+		}
+
+		public int Calls { get; private set; }
+
+		public List<string> Commands { get; } = [];
+
+		public Task<CodexUsageApiResult> ReadRateLimitsAsync(
+			string commandName,
+			CancellationToken cancellationToken)
+		{
+			Calls++;
+			Commands.Add(commandName);
+			return Task.FromResult(_results.Dequeue());
+		}
+	}
+
+	private sealed class FixedTimeProvider : TimeProvider
+	{
+		private DateTimeOffset _utcNow;
+
+		public FixedTimeProvider(DateTimeOffset utcNow)
+		{
+			_utcNow = utcNow;
+		}
+
+		public override DateTimeOffset GetUtcNow() => _utcNow;
+
+		public void Advance(TimeSpan delta) => _utcNow += delta;
 	}
 
 	private string CreateTempDirectory()

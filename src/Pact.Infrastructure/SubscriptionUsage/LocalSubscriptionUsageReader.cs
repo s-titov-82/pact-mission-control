@@ -16,13 +16,32 @@ public sealed partial class LocalSubscriptionUsageReader : ISubscriptionUsageRea
 	private static readonly Regex ClaudeCurrentSessionRegex = MyRegex();
 	private static readonly Regex ClaudeCurrentWeekRegex = MyRegex1();
 	private static readonly Regex ClaudeFableWeekRegex = CreateClaudeFableWeekRegex();
+	private static readonly CodexLimitPropertyNames CodexSessionFileLimitNames =
+		new("used_percent", "resets_at", "window_minutes");
+	private static readonly CodexLimitPropertyNames CodexApiLimitNames =
+		new("usedPercent", "resetsAt", "windowDurationMins");
+	private readonly Lock _codexApiGate = new();
+	private readonly Dictionary<string, CodexApiCacheEntry> _codexApiCache = new(StringComparer.Ordinal);
 	private readonly string _codexSessionsDirectory;
 	private readonly string _claudeStatuslineInputPath;
 	private readonly IClaudeUsageCommandRunner _claudeUsageCommandRunner;
+	private readonly ICodexUsageApiClient _codexUsageApiClient;
+	private readonly TimeProvider _timeProvider;
 
 	/// <summary>
-	/// Creates a reader over the given agent data locations, running Claude's usage command
-	/// through PowerShell.
+	/// How old Codex session-file figures may be before Codex itself is asked for live limits.
+	/// </summary>
+	public static readonly TimeSpan CodexSessionFreshness = TimeSpan.FromMinutes(10);
+
+	/// <summary>
+	/// Shortest interval between two live Codex usage requests, which each cost a process
+	/// launch and a network round trip.
+	/// </summary>
+	public static readonly TimeSpan CodexApiRefreshInterval = TimeSpan.FromMinutes(10);
+
+	/// <summary>
+	/// Creates a reader over the given agent data locations, running Claude's usage command and
+	/// Codex's app server through PowerShell.
 	/// </summary>
 	public LocalSubscriptionUsageReader(
 		string codexSessionsDirectory,
@@ -39,11 +58,49 @@ public sealed partial class LocalSubscriptionUsageReader : ISubscriptionUsageRea
 		string codexSessionsDirectory,
 		string claudeStatuslineInputPath,
 		IClaudeUsageCommandRunner claudeUsageCommandRunner)
+		: this(
+			codexSessionsDirectory,
+			claudeStatuslineInputPath,
+			claudeUsageCommandRunner,
+			new PowerShellCodexUsageApiClient(),
+			TimeProvider.System)
 	{
+	}
+
+	/// <summary>
+	/// Creates a reader with injectable agent clients and clock, for tests that must not launch
+	/// a process or wait for real time to pass.
+	/// </summary>
+	public LocalSubscriptionUsageReader(
+		string codexSessionsDirectory,
+		string claudeStatuslineInputPath,
+		IClaudeUsageCommandRunner claudeUsageCommandRunner,
+		ICodexUsageApiClient codexUsageApiClient,
+		TimeProvider timeProvider)
+	{
+		ArgumentNullException.ThrowIfNull(codexUsageApiClient);
+		ArgumentNullException.ThrowIfNull(timeProvider);
+
 		_codexSessionsDirectory = codexSessionsDirectory;
 		_claudeStatuslineInputPath = claudeStatuslineInputPath;
 		_claudeUsageCommandRunner = claudeUsageCommandRunner;
+		_codexUsageApiClient = codexUsageApiClient;
+		_timeProvider = timeProvider;
 	}
+
+	private sealed class CodexApiCacheEntry
+	{
+		public SubscriptionUsageSnapshot? Snapshot { get; set; }
+
+		public DateTimeOffset? AttemptedAt { get; set; }
+
+		public string? FailureMessage { get; set; }
+	}
+
+	private readonly record struct CodexLimitPropertyNames(
+		string UsedPercent,
+		string ResetsAt,
+		string WindowMinutes);
 
 	/// <summary>
 	/// Creates a reader pointed at the current user's agent data under their profile directory.
@@ -338,7 +395,188 @@ public sealed partial class LocalSubscriptionUsageReader : ISubscriptionUsageRea
 			: trimmed[..separatorIndex];
 	}
 
+	/// <summary>
+	/// Reads Codex usage from its session files, and falls back to asking Codex itself once
+	/// those figures age past <see cref="CodexSessionFreshness"/> - which they do whenever no
+	/// Codex session has run recently.
+	/// </summary>
+	/// <remarks>
+	/// A live read is attempted at most once per <see cref="CodexApiRefreshInterval"/>, and its
+	/// answer is retained so the faster refresh loop keeps showing it. When the live read fails
+	/// the last known figures stay on screen, carrying the failure as a warning rather than
+	/// blanking the row.
+	/// </remarks>
 	private async Task<SubscriptionUsageSnapshot> ReadCodexAsync(
+		AgentProfileRecord profile,
+		CancellationToken cancellationToken)
+	{
+		var fromSessions = await ReadCodexSessionFilesAsync(profile, cancellationToken)
+			.ConfigureAwait(false);
+		var now = _timeProvider.GetUtcNow();
+		SubscriptionUsageSnapshot? cached;
+		DateTimeOffset? attemptedAt;
+		string? failureMessage;
+		lock (_codexApiGate)
+		{
+			var entry = GetCodexApiCacheEntryUnsafe(profile.Id);
+			cached = entry.Snapshot;
+			attemptedAt = entry.AttemptedAt;
+			failureMessage = entry.FailureMessage;
+		}
+
+		var best = PickFresher(fromSessions, cached);
+		if (IsFresh(best, now))
+		{
+			return best!;
+		}
+
+		if (attemptedAt is null || now - attemptedAt.Value >= CodexApiRefreshInterval)
+		{
+			var live = await ReadCodexUsageApiAsync(profile, now, cancellationToken)
+				.ConfigureAwait(false);
+			lock (_codexApiGate)
+			{
+				var entry = GetCodexApiCacheEntryUnsafe(profile.Id);
+				entry.AttemptedAt = now;
+				entry.FailureMessage = live.Snapshot is null ? live.FailureMessage : null;
+				if (live.Snapshot is not null)
+				{
+					entry.Snapshot = live.Snapshot;
+				}
+
+				cached = entry.Snapshot;
+			}
+
+			if (live.Snapshot is not null)
+			{
+				return live.Snapshot;
+			}
+
+			failureMessage = live.FailureMessage;
+			best = PickFresher(fromSessions, cached);
+		}
+
+		return WithLiveReadWarning(best ?? fromSessions, failureMessage);
+	}
+
+	private CodexApiCacheEntry GetCodexApiCacheEntryUnsafe(string profileId)
+	{
+		if (!_codexApiCache.TryGetValue(profileId, out var entry))
+		{
+			entry = new CodexApiCacheEntry();
+			_codexApiCache[profileId] = entry;
+		}
+
+		return entry;
+	}
+
+	private static bool IsFresh(SubscriptionUsageSnapshot? snapshot, DateTimeOffset now) =>
+		snapshot is { State: SubscriptionUsageState.Ready }
+		&& now - snapshot.UpdatedAt <= CodexSessionFreshness;
+
+	private static SubscriptionUsageSnapshot? PickFresher(
+		SubscriptionUsageSnapshot? first,
+		SubscriptionUsageSnapshot? second)
+	{
+		if (first is not { State: SubscriptionUsageState.Ready })
+		{
+			return second is { State: SubscriptionUsageState.Ready } ? second : null;
+		}
+
+		if (second is not { State: SubscriptionUsageState.Ready })
+		{
+			return first;
+		}
+
+		return second.UpdatedAt > first.UpdatedAt ? second : first;
+	}
+
+	// The figures are still worth showing when the live read fails; the warning is what tells
+	// the user they are no longer current.
+	private static SubscriptionUsageSnapshot WithLiveReadWarning(
+		SubscriptionUsageSnapshot snapshot,
+		string? failureMessage)
+	{
+		if (string.IsNullOrWhiteSpace(failureMessage)
+			|| snapshot.State != SubscriptionUsageState.Ready)
+		{
+			return snapshot;
+		}
+
+		var localUpdatedAt = snapshot.UpdatedAt.ToLocalTime();
+		return snapshot with
+		{
+			ErrorDetailsText =
+				$"Live Codex usage is unavailable: {failureMessage} "
+				+ $"Showing figures from {localUpdatedAt:dd.MM HH:mm}."
+		};
+	}
+
+	private async Task<(SubscriptionUsageSnapshot? Snapshot, string? FailureMessage)> ReadCodexUsageApiAsync(
+		AgentProfileRecord profile,
+		DateTimeOffset now,
+		CancellationToken cancellationToken)
+	{
+		var commandName = GetCommandName(profile.CommandTemplate);
+		if (string.IsNullOrWhiteSpace(commandName))
+		{
+			return (null, "The profile has no Codex command to ask.");
+		}
+
+		var result = await _codexUsageApiClient
+			.ReadRateLimitsAsync(commandName, cancellationToken)
+			.ConfigureAwait(false);
+		if (!result.Succeeded)
+		{
+			return (null, result.FailureMessage ?? "Codex usage request failed.");
+		}
+
+		var parsed = TryParseCodexUsageApiResponse(profile, result.ResponseJson, now);
+		return parsed is null
+			? (null, "Codex returned no recognizable rate limits.")
+			: (parsed, null);
+	}
+
+	private static SubscriptionUsageSnapshot? TryParseCodexUsageApiResponse(
+		AgentProfileRecord profile,
+		string responseJson,
+		DateTimeOffset now)
+	{
+		if (string.IsNullOrWhiteSpace(responseJson))
+		{
+			return null;
+		}
+
+		JsonElement rateLimits;
+		try
+		{
+			using var document = JsonDocument.Parse(responseJson);
+			if (document.RootElement.ValueKind != JsonValueKind.Object
+				|| !document.RootElement.TryGetProperty("result", out var result)
+				|| result.ValueKind != JsonValueKind.Object
+				|| !result.TryGetProperty("rateLimits", out var limits)
+				|| limits.ValueKind != JsonValueKind.Object)
+			{
+				return null;
+			}
+
+			rateLimits = limits.Clone();
+		}
+		catch (JsonException)
+		{
+			return null;
+		}
+
+		SubscriptionLimitSnapshot? fiveHour = null;
+		SubscriptionLimitSnapshot? weekly = null;
+		ReadCodexLimit(rateLimits, "primary", CodexApiLimitNames, isLegacyFiveHour: true, ref fiveHour, ref weekly);
+		ReadCodexLimit(rateLimits, "secondary", CodexApiLimitNames, isLegacyFiveHour: false, ref fiveHour, ref weekly);
+		return fiveHour is null && weekly is null
+			? null
+			: CreateReady(profile, fiveHour, weekly, now, responseJson);
+	}
+
+	private async Task<SubscriptionUsageSnapshot> ReadCodexSessionFilesAsync(
 		AgentProfileRecord profile,
 		CancellationToken cancellationToken)
 	{
@@ -410,8 +648,20 @@ public sealed partial class LocalSubscriptionUsageReader : ISubscriptionUsageRea
 					continue;
 				}
 
-				ReadCodexLimit(rateLimits, "primary", isLegacyFiveHour: true, ref fiveHour, ref weekly);
-				ReadCodexLimit(rateLimits, "secondary", isLegacyFiveHour: false, ref fiveHour, ref weekly);
+				ReadCodexLimit(
+					rateLimits,
+					"primary",
+					CodexSessionFileLimitNames,
+					isLegacyFiveHour: true,
+					ref fiveHour,
+					ref weekly);
+				ReadCodexLimit(
+					rateLimits,
+					"secondary",
+					CodexSessionFileLimitNames,
+					isLegacyFiveHour: false,
+					ref fiveHour,
+					ref weekly);
 			}
 			catch (JsonException)
 			{
@@ -427,11 +677,12 @@ public sealed partial class LocalSubscriptionUsageReader : ISubscriptionUsageRea
 	private static void ReadCodexLimit(
 		JsonElement rateLimits,
 		string propertyName,
+		CodexLimitPropertyNames names,
 		bool isLegacyFiveHour,
 		ref SubscriptionLimitSnapshot? fiveHour,
 		ref SubscriptionLimitSnapshot? weekly)
 	{
-		var snapshot = ReadLimit(rateLimits, propertyName, "used_percent");
+		var snapshot = ReadLimit(rateLimits, propertyName, names.UsedPercent, names.ResetsAt);
 		if (snapshot is null
 			|| !rateLimits.TryGetProperty(propertyName, out var limit)
 			|| limit.ValueKind != JsonValueKind.Object)
@@ -439,7 +690,7 @@ public sealed partial class LocalSubscriptionUsageReader : ISubscriptionUsageRea
 			return;
 		}
 
-		int? windowMinutes = limit.TryGetProperty("window_minutes", out var window)
+		int? windowMinutes = limit.TryGetProperty(names.WindowMinutes, out var window)
 			&& window.ValueKind == JsonValueKind.Number
 			&& window.TryGetInt32(out var parsedWindow)
 				? parsedWindow
@@ -465,7 +716,8 @@ public sealed partial class LocalSubscriptionUsageReader : ISubscriptionUsageRea
 	private static SubscriptionLimitSnapshot? ReadLimit(
 		JsonElement parent,
 		string propertyName,
-		string usedPercentPropertyName)
+		string usedPercentPropertyName,
+		string resetsAtPropertyName = "resets_at")
 	{
 		if (parent.ValueKind != JsonValueKind.Object
 			|| !parent.TryGetProperty(propertyName, out var limit)
@@ -477,7 +729,7 @@ public sealed partial class LocalSubscriptionUsageReader : ISubscriptionUsageRea
 		}
 
 		DateTimeOffset? resetsAt = null;
-		if (limit.TryGetProperty("resets_at", out var resetsAtElement)
+		if (limit.TryGetProperty(resetsAtPropertyName, out var resetsAtElement)
 			&& resetsAtElement.ValueKind == JsonValueKind.Number
 			&& resetsAtElement.TryGetInt64(out var unixSeconds))
 		{
