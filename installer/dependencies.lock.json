@@ -15,8 +15,8 @@
     "detectionRule": "pv >= minimumVersion in HKCU or HKLM x86 registry view",
     "bootstrapperFileName": "MicrosoftEdgeWebview2Setup.exe",
     "bootstrapperUrl": "https://go.microsoft.com/fwlink/p/?LinkId=2124703",
-    "bootstrapperSha256": "17debf797a6c737959bc588236e897936ffac1af5f7e515e674ab32f9edfe719",
-    "bootstrapperBytes": 1783000,
+    "bootstrapperSha256": "83004a28553bcf2f932bf03564fbab407b8e1f59cd265f8dc99cc53d028e459c",
+    "bootstrapperBytes": 1844944,
     "publisher": "Microsoft Corporation"
   },
   "innoSetup": {

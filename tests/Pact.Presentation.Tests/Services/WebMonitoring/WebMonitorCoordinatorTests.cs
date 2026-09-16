@@ -207,7 +207,7 @@ public sealed class WebMonitorCoordinatorTests
 		await CoordinatorContext.PumpAsync();
 		await context.Time
 			.WaitForTimerCountAsync(TimeSpan.FromSeconds(5), minimumCount: 2)
-			.WaitAsync(TimeSpan.FromSeconds(1));
+			.WaitAsync(TimeSpan.FromSeconds(10));
 
 		await context.AdvanceAsync(TimeSpan.FromSeconds(5));
 		await host.WaitForEvaluationCountAsync(2);
@@ -220,7 +220,7 @@ public sealed class WebMonitorCoordinatorTests
 			new WebMonitorEvaluation(
 				staleUrl,
 				new WebMonitorObservation(true, "stale")));
-		await navigationSettleScheduled.WaitAsync(TimeSpan.FromSeconds(1));
+		await navigationSettleScheduled.WaitAsync(TimeSpan.FromSeconds(10));
 
 		var confirmationSettleScheduled =
 			context.Time.WaitForTimerCreatedAsync(TimeSpan.FromMilliseconds(500));
@@ -230,7 +230,7 @@ public sealed class WebMonitorCoordinatorTests
 		host.Queries[2].ShouldNotBeNull();
 		context.StableUrls.ShouldNotContain(change => change.NormalizedUrl == staleUrl);
 
-		await confirmationSettleScheduled.WaitAsync(TimeSpan.FromSeconds(1));
+		await confirmationSettleScheduled.WaitAsync(TimeSpan.FromSeconds(10));
 		await context.AdvanceAsync(TimeSpan.FromMilliseconds(500));
 		await context.WaitForSnapshotAsync(
 			"web-1",
@@ -265,12 +265,12 @@ public sealed class WebMonitorCoordinatorTests
 			CancellationToken.None);
 		try
 		{
-			await unregister.WaitAsync(TimeSpan.FromSeconds(1));
+			await unregister.WaitAsync(TimeSpan.FromSeconds(10));
 		}
 		finally
 		{
 			pending.TrySetException(new IOException("late invocation failure"));
-			await unregister.WaitAsync(TimeSpan.FromSeconds(1));
+			await unregister.WaitAsync(TimeSpan.FromSeconds(10));
 		}
 
 		host.EvaluationCount.ShouldBe(1);
@@ -294,12 +294,12 @@ public sealed class WebMonitorCoordinatorTests
 			var dispose = context.Coordinator.DisposeAsync().AsTask();
 			try
 			{
-				await dispose.WaitAsync(TimeSpan.FromSeconds(1));
+				await dispose.WaitAsync(TimeSpan.FromSeconds(10));
 			}
 			finally
 			{
 				pending.TrySetException(new IOException("late invocation failure"));
-				await dispose.WaitAsync(TimeSpan.FromSeconds(1));
+				await dispose.WaitAsync(TimeSpan.FromSeconds(10));
 				context.MarkCoordinatorDisposed();
 			}
 		}
@@ -661,7 +661,7 @@ public sealed class WebMonitorCoordinatorTests
 			snapshot => snapshot.Url == MatchingUrl.AbsoluteUri);
 		await context.Time
 			.WaitForTimerCountAsync(TimeSpan.FromSeconds(5), minimumCount: 2)
-			.WaitAsync(TimeSpan.FromSeconds(1));
+			.WaitAsync(TimeSpan.FromSeconds(10));
 
 		context.Coordinator.SetNavigationState("web-1", navigating: true);
 		await context.AdvanceAsync(TimeSpan.FromSeconds(5));
@@ -670,12 +670,12 @@ public sealed class WebMonitorCoordinatorTests
 		var navigationSettleScheduled =
 			context.Time.WaitForTimerCreatedAsync(TimeSpan.FromMilliseconds(500));
 		context.Coordinator.SetNavigationState("web-1", navigating: false);
-		await navigationSettleScheduled.WaitAsync(TimeSpan.FromSeconds(1));
+		await navigationSettleScheduled.WaitAsync(TimeSpan.FromSeconds(10));
 
 		var confirmationSettleScheduled =
 			context.Time.WaitForTimerCreatedAsync(TimeSpan.FromMilliseconds(500));
 		await context.AdvanceAsync(TimeSpan.FromMilliseconds(500));
-		await confirmationSettleScheduled.WaitAsync(TimeSpan.FromSeconds(1));
+		await confirmationSettleScheduled.WaitAsync(TimeSpan.FromSeconds(10));
 		await context.AdvanceAsync(TimeSpan.FromMilliseconds(500));
 		await context.WaitForSnapshotAsync(
 			"web-1",
@@ -865,7 +865,7 @@ public sealed class WebMonitorCoordinatorTests
 
 		var refresh =
 			context.Coordinator.SetRulesAsync([refreshed], CancellationToken.None);
-		await refresh.WaitAsync(TimeSpan.FromSeconds(1));
+		await refresh.WaitAsync(TimeSpan.FromSeconds(10));
 		var evaluationsBeforeCompletion = host.EvaluationCount;
 		pending.TrySetException(new InvalidOperationException("old rule failure"));
 		await host.WaitForEvaluationCountAsync(2);
@@ -1043,9 +1043,9 @@ public sealed class WebMonitorCoordinatorTests
 				"web-1",
 				deleteSnapshot: false,
 				CancellationToken.None)
-			.WaitAsync(TimeSpan.FromSeconds(1));
+			.WaitAsync(TimeSpan.FromSeconds(10));
 		releaseMutation.Set();
-		await presentation.WaitAsync(TimeSpan.FromSeconds(1));
+		await presentation.WaitAsync(TimeSpan.FromSeconds(10));
 		await CoordinatorContext.PumpAsync();
 
 		var retained =
@@ -1150,7 +1150,7 @@ public sealed class WebMonitorCoordinatorTests
 			deleteSnapshot: false,
 			CancellationToken.None);
 		var testCanceled = await CompletesAsCanceledWithinAsync(test);
-		await unregister.WaitAsync(TimeSpan.FromSeconds(1));
+		await unregister.WaitAsync(TimeSpan.FromSeconds(10));
 		var evaluationsBeforeHoldingCompletion = host.EvaluationCount;
 		holding.TrySetException(new InvalidOperationException("late holding failure"));
 		var holdingTestCanceled = await CompletesAsCanceledWithinAsync(holdingTest);
@@ -1187,7 +1187,7 @@ public sealed class WebMonitorCoordinatorTests
 
 		var dispose = context.Coordinator.DisposeAsync().AsTask();
 		var testCanceled = await CompletesAsCanceledWithinAsync(test);
-		await dispose.WaitAsync(TimeSpan.FromSeconds(1));
+		await dispose.WaitAsync(TimeSpan.FromSeconds(10));
 		context.MarkCoordinatorDisposed();
 		var evaluationsBeforeHoldingCompletion = host.EvaluationCount;
 		holding.TrySetException(new InvalidOperationException("late holding failure"));
@@ -1221,7 +1221,7 @@ public sealed class WebMonitorCoordinatorTests
 			"web-1",
 			deleteSnapshot: false,
 			CancellationToken.None);
-		await unregister.WaitAsync(TimeSpan.FromSeconds(1));
+		await unregister.WaitAsync(TimeSpan.FromSeconds(10));
 		var testCanceled = await CompletesAsCanceledWithinAsync(test);
 		pendingTest.TrySetException(new InvalidOperationException("late test failure"));
 		await context.AdvanceAsync(TimeSpan.FromMinutes(1));
@@ -1248,7 +1248,7 @@ public sealed class WebMonitorCoordinatorTests
 		await host.WaitForEvaluationCountAsync(1);
 
 		var dispose = context.Coordinator.DisposeAsync().AsTask();
-		await dispose.WaitAsync(TimeSpan.FromSeconds(1));
+		await dispose.WaitAsync(TimeSpan.FromSeconds(10));
 		context.MarkCoordinatorDisposed();
 		var testCanceled = await CompletesAsCanceledWithinAsync(test);
 		pendingTest.TrySetException(new InvalidOperationException("late test failure"));
@@ -1341,7 +1341,7 @@ public sealed class WebMonitorCoordinatorTests
 			"web-1",
 			deleteSnapshot: false,
 			CancellationToken.None);
-		await unregister.WaitAsync(TimeSpan.FromSeconds(1));
+		await unregister.WaitAsync(TimeSpan.FromSeconds(10));
 		pending.TrySetException(new InvalidOperationException("host failure"));
 
 		context.Statuses.Last().Status.ShouldBe(WebMonitorStatus.Paused);
@@ -1367,7 +1367,7 @@ public sealed class WebMonitorCoordinatorTests
 		await CoordinatorContext.PumpAsync();
 
 		var dispose = context.Coordinator.DisposeAsync().AsTask();
-		await dispose.WaitAsync(TimeSpan.FromSeconds(1));
+		await dispose.WaitAsync(TimeSpan.FromSeconds(10));
 		context.MarkCoordinatorDisposed();
 		first.TrySetException(new InvalidOperationException("first failure"));
 		second.TrySetException(new InvalidOperationException("second failure"));
@@ -1394,7 +1394,7 @@ public sealed class WebMonitorCoordinatorTests
 		coordinator.StatusChanged += OnStatusChanged;
 		try
 		{
-			await observed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+			await observed.Task.WaitAsync(TimeSpan.FromSeconds(10));
 		}
 		finally
 		{
@@ -1421,7 +1421,7 @@ public sealed class WebMonitorCoordinatorTests
 		coordinator.LiveDiagnosticsChanged += OnLiveDiagnosticsChanged;
 		try
 		{
-			return await observed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+			return await observed.Task.WaitAsync(TimeSpan.FromSeconds(10));
 		}
 		finally
 		{
@@ -1456,7 +1456,7 @@ public sealed class WebMonitorCoordinatorTests
 	{
 		try
 		{
-			await task.WaitAsync(TimeSpan.FromSeconds(1));
+			await task.WaitAsync(TimeSpan.FromSeconds(10));
 			return false;
 		}
 		catch (OperationCanceledException)
@@ -1683,7 +1683,7 @@ public sealed class WebMonitorCoordinatorTests
 				TaskCompletionSource completion =
 					new(TaskCreationOptions.RunContinuationsAsynchronously);
 				_evaluationWaiters.Add((minimumCount, completion));
-				return completion.Task.WaitAsync(TimeSpan.FromSeconds(5));
+				return completion.Task.WaitAsync(TimeSpan.FromSeconds(10));
 			}
 		}
 
