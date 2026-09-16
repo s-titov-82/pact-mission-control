@@ -4,7 +4,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <VersionPrefix>0.1.5</VersionPrefix>
+    <VersionPrefix>0.1.6</VersionPrefix>
     <Authors>Sergei Titov</Authors>
     <Company>Sergei Titov</Company>
     <Product>PACT:&gt; Mission Control</Product>
