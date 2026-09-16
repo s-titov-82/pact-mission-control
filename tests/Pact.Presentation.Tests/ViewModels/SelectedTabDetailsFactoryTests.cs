@@ -79,6 +79,45 @@ public sealed class SelectedTabDetailsFactoryTests
 	}
 
 	[Test]
+	public void Terminal_details_report_the_verdict_the_indicator_was_derived_from()
+	{
+		SessionViewModel session = new(new SessionRecord(
+			"session-1",
+			AgentKind.Claude,
+			"Author",
+			@"D:\Work\Project",
+			"claude",
+			null,
+			SessionStatus.Running,
+			ObservedAt,
+			ObservedAt));
+		TerminalClassifierDiagnostics diagnostics = new(
+			"session-1",
+			AgentKind.Claude,
+			SessionStatus.Running,
+			TerminalScreenVerdictState.Unknown,
+			string.Empty,
+			TerminalTabIndicator.Busy,
+			"Cogitating",
+			PromptIsEmpty: null,
+			InputRequested: false,
+			StatusLine: string.Empty,
+			ActivityInProgress: true,
+			ActivityEpoch: 4,
+			HasUnreadCompletion: false,
+			Columns: 215,
+			Rows: 37,
+			LastClassificationAt: ObservedAt,
+			PromptEvidence: null,
+			AcceptedVerdictState: TerminalScreenVerdictState.Busy);
+
+		var details = SelectedTabDetailsFactory.Create(session, diagnostics);
+
+		Rows(details)["Classifier"].ShouldBe("Busy — Cogitating · settled Unknown");
+		Rows(details)["Indicator"].ShouldBe("Busy");
+	}
+
+	[Test]
 	public void Terminal_details_report_an_unavailable_external_snapshot()
 	{
 		SessionViewModel session = new(new SessionRecord(

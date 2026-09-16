@@ -256,17 +256,33 @@ public static class SelectedTabDetailsFactory
 			$"{(metrics.WorkingSetBytes / 1024d / 1024d).ToString("0.0", CultureInfo.InvariantCulture)} MiB"));
 	}
 
+	// The accepted verdict is what the indicator was derived from, including evidence read
+	// from a still-repainting screen. An animating agent can go a whole turn without a settled
+	// screen, so reporting only the settled verdict would contradict the visible indicator.
 	private static string FormatClassifier(TerminalClassifierDiagnostics? diagnostics)
 	{
-		if (diagnostics?.VerdictState is not { } state)
+		if (diagnostics is null)
 		{
 			return "Unknown";
 		}
 
-		return string.IsNullOrWhiteSpace(diagnostics.VerdictDescription)
-			? state.ToString()
-			: $"{state} — {diagnostics.VerdictDescription}";
+		if (diagnostics.AcceptedVerdictState is not { } accepted)
+		{
+			return diagnostics.VerdictState is { } settledOnly
+				? FormatVerdict(settledOnly, diagnostics.VerdictDescription)
+				: "Unknown";
+		}
+
+		var text = FormatVerdict(accepted, diagnostics.IndicatorDescription);
+		return diagnostics.VerdictState is { } settled && settled != accepted
+			? $"{text} · settled {settled}"
+			: text;
 	}
+
+	private static string FormatVerdict(TerminalScreenVerdictState state, string description) =>
+		string.IsNullOrWhiteSpace(description)
+			? state.ToString()
+			: $"{state} — {description}";
 
 	private static string FormatComposer(bool? promptIsEmpty) => promptIsEmpty switch
 	{

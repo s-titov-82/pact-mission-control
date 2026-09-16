@@ -22,6 +22,11 @@ namespace Pact.Core.Sessions;
 /// <param name="PromptEvidence">
 /// Structural composer evidence suitable for diagnostics without exposing terminal text.
 /// </param>
+/// <param name="AcceptedVerdictState">
+/// Latest verdict the engine accepted as evidence, which is what the indicator reflects. It
+/// includes busy verdicts read from a still-repainting screen, so it keeps reporting an
+/// animating agent that never settles long enough for a stable classification.
+/// </param>
 public sealed record TerminalClassifierDiagnostics(
 	string SessionId,
 	AgentKind TerminalKind,
@@ -39,7 +44,8 @@ public sealed record TerminalClassifierDiagnostics(
 	int? Columns,
 	int? Rows,
 	DateTimeOffset? LastClassificationAt,
-	TerminalPromptEvidence? PromptEvidence = null);
+	TerminalPromptEvidence? PromptEvidence = null,
+	TerminalScreenVerdictState? AcceptedVerdictState = null);
 
 /// <summary>Reports a change to one session's classifier diagnostics.</summary>
 public sealed class TerminalClassifierDiagnosticsChangedEventArgs : EventArgs

@@ -419,6 +419,44 @@ public sealed class TerminalTabStatusEngineTests
 	}
 
 	[Test]
+	public void Unstable_snapshot_busy_verdict_clears_an_answered_question()
+	{
+		ScriptedProfile profile = new()
+		{
+			Verdict = new TerminalScreenVerdict(TerminalScreenVerdictState.InputRequested, "Approve?")
+		};
+		var engine = CreateEngine(profile: profile);
+		engine.OnScreenSnapshot("question", T0);
+
+		profile.Verdict = new TerminalScreenVerdict(TerminalScreenVerdictState.Busy, "Working");
+		engine.OnScreenSnapshot("Working (3s - Esc to interrupt)", T0.AddSeconds(1), stable: false);
+
+		var status = engine.CurrentStatus;
+		status.InputRequested.ShouldBeFalse();
+		status.StatusLine.ShouldBeEmpty();
+		status.Indicator.ShouldBe(TerminalTabIndicator.Busy);
+	}
+
+	[Test]
+	public void Diagnostics_report_a_busy_verdict_read_from_an_unsettled_screen()
+	{
+		ScriptedProfile profile = new()
+		{
+			Verdict = new TerminalScreenVerdict(TerminalScreenVerdictState.Unknown, string.Empty)
+		};
+		var engine = CreateEngine(profile: profile);
+		engine.OnScreenSnapshot("settled but unrecognized", T0);
+
+		profile.Verdict = new TerminalScreenVerdict(TerminalScreenVerdictState.Busy, "Cogitating");
+		engine.OnScreenSnapshot("* Cogitating (esc to interrupt)", T0.AddSeconds(1), stable: false);
+
+		var diagnostics = engine.CurrentDiagnostics;
+		diagnostics.AcceptedVerdictState.ShouldBe(TerminalScreenVerdictState.Busy);
+		diagnostics.IndicatorDescription.ShouldBe("Cogitating");
+		diagnostics.VerdictState.ShouldBe(TerminalScreenVerdictState.Unknown);
+	}
+
+	[Test]
 	public void Unstable_snapshot_done_verdict_does_not_end_activity()
 	{
 		ScriptedProfile profile = new() { Verdict = new TerminalScreenVerdict(TerminalScreenVerdictState.Done, string.Empty) };

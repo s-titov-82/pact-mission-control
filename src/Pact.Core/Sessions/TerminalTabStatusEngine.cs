@@ -24,7 +24,7 @@ public sealed class TerminalTabStatusEngine
 	private bool? _promptIsEmpty;
 	private TerminalPromptEvidence? _promptEvidence;
 	private TerminalTabIndicator _currentIndicator;
-	private TerminalScreenVerdictState _currentVerdictState;
+	private TerminalScreenVerdictState? _currentVerdictState;
 	private string _currentDescription = string.Empty;
 	private TerminalScreenVerdictState? _lastStableVerdictState;
 	private string _lastStableVerdictDescription = string.Empty;
@@ -368,6 +368,13 @@ public sealed class TerminalTabStatusEngine
 			switch (verdict.State)
 			{
 				case TerminalScreenVerdictState.Busy:
+					// Busy evidence is trusted from a mid-repaint frame too, and an
+					// agent that is working is no longer holding a question. Without
+					// this the answered question would keep the tab marked as waiting
+					// for the whole turn, because an animating agent produces no
+					// settled screen to clear it with.
+					_inputRequested = false;
+					_inputRequestStatusLine = string.Empty;
 					ApplyVerdict(verdict);
 					StartActivity(occurredAt);
 					break;
@@ -467,7 +474,8 @@ public sealed class TerminalTabStatusEngine
 		LastColumns,
 		LastRows,
 		_lastClassificationAt,
-		_promptEvidence);
+		_promptEvidence,
+		_currentVerdictState);
 
 	private void ApplyVerdict(TerminalScreenVerdict verdict)
 	{
