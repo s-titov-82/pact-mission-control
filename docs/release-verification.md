@@ -37,8 +37,8 @@ Keep the four files in one directory. Compare PowerShell's results with the
 entries in `SHA256SUMS.txt`:
 
 ```powershell
-Get-FileHash .\pact-mission-control-0.1.4-win-x64.zip -Algorithm SHA256
-Get-FileHash .\pact-mission-control-0.1.4-win-x64-setup.exe -Algorithm SHA256
+Get-FileHash .\pact-mission-control-0.1.5-win-x64.zip -Algorithm SHA256
+Get-FileHash .\pact-mission-control-0.1.5-win-x64-setup.exe -Algorithm SHA256
 Get-FileHash .\manifest.spdx.json -Algorithm SHA256
 ```
 
@@ -49,7 +49,7 @@ Do not run the application when a digest differs.
 With GitHub CLI installed:
 
 ```powershell
-gh attestation verify .\pact-mission-control-0.1.4-win-x64.zip --repo s-titov-82/pact-mission-control
+gh attestation verify .\pact-mission-control-0.1.5-win-x64.zip --repo s-titov-82/pact-mission-control
 ```
 
 The release workflow publishes build provenance for the three checksummed

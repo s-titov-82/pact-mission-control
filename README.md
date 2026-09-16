@@ -59,7 +59,7 @@ Download the Setup executable and `SHA256SUMS.txt` from the
 Compare Setup's SHA-256 digest before running it:
 
 ```powershell
-Get-FileHash .\pact-mission-control-0.1.4-win-x64-setup.exe -Algorithm SHA256
+Get-FileHash .\pact-mission-control-0.1.5-win-x64-setup.exe -Algorithm SHA256
 ```
 
 Run Setup and follow its prompts. It installs PACT for the current user under

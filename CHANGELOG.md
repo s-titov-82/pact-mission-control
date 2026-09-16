@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] - 2026-09-16
+
+### Added
+
+- Codex subscription limits are read from Codex itself when its session files
+  age past ten minutes, so the panel keeps reporting without a recent Codex
+  session. A failed live read keeps the last known figures and explains why.
+
+### Fixed
+
+- An agent that animates its screen is reported as busy instead of staying on
+  "Input needed" for the whole turn after its question was answered, and
+  terminal details name the verdict the indicator was derived from.
+
 ## [0.1.1] - 2026-09-07
 
 ### Added

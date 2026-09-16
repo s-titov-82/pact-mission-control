@@ -38,8 +38,8 @@
 соответствующими строками в `SHA256SUMS.txt`:
 
 ```powershell
-Get-FileHash .\pact-mission-control-0.1.4-win-x64.zip -Algorithm SHA256
-Get-FileHash .\pact-mission-control-0.1.4-win-x64-setup.exe -Algorithm SHA256
+Get-FileHash .\pact-mission-control-0.1.5-win-x64.zip -Algorithm SHA256
+Get-FileHash .\pact-mission-control-0.1.5-win-x64-setup.exe -Algorithm SHA256
 Get-FileHash .\manifest.spdx.json -Algorithm SHA256
 ```
 
@@ -50,7 +50,7 @@ Get-FileHash .\manifest.spdx.json -Algorithm SHA256
 Если установлен GitHub CLI, выполните:
 
 ```powershell
-gh attestation verify .\pact-mission-control-0.1.4-win-x64.zip --repo s-titov-82/pact-mission-control
+gh attestation verify .\pact-mission-control-0.1.5-win-x64.zip --repo s-titov-82/pact-mission-control
 ```
 
 Процесс выпуска публикует подтверждение происхождения сборки для трёх файлов
