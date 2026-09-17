@@ -500,7 +500,7 @@ public sealed class ScenarioRunServiceTests : IDisposable
 
 		handle.StuckSessionId.ShouldBeNull();
 		handle.UnlockAllSessionsWhilePaused.ShouldBeTrue();
-		handle.Journal.ShouldContain(entry => entry.Message == "paused by user");
+		await WaitForJournalAsync(handle, entry => entry.Message == "paused by user");
 		gateway.Sent.ShouldHaveSingleItem();
 
 		responseReady.TrySetResult("file response");
@@ -812,7 +812,7 @@ public sealed class ScenarioRunServiceTests : IDisposable
 
 		handle.UnlockAllSessionsWhilePaused.ShouldBeTrue();
 		handle.StuckSessionId.ShouldBeNull();
-		handle.Journal.ShouldContain(entry => entry.Message == "paused by user");
+		await WaitForJournalAsync(handle, entry => entry.Message == "paused by user");
 
 		responseReady.TrySetResult("file response");
 		await handle.Completion.WaitAsync(TimeSpan.FromSeconds(2));
@@ -1503,6 +1503,37 @@ public sealed class ScenarioRunServiceTests : IDisposable
 			candidate.StartsWith(prefix, StringComparison.Ordinal));
 		line.EndsWith('`').ShouldBeTrue();
 		return line[prefix.Length..^1];
+	}
+
+	// A run publishes its new state before it records the journal entry explaining it, so a test
+	// that has only observed the state change may not see that entry yet.
+	private static async Task WaitForJournalAsync(
+		ScenarioRunHandle handle,
+		Func<ScenarioJournalEntry, bool> condition)
+	{
+		TaskCompletionSource recorded = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		void OnJournalEntryAdded(object? _, ScenarioJournalEntry entry)
+		{
+			if (condition(entry))
+			{
+				recorded.TrySetResult();
+			}
+		}
+
+		handle.JournalEntryAdded += OnJournalEntryAdded;
+		try
+		{
+			if (handle.Journal.Any(condition))
+			{
+				return;
+			}
+
+			await recorded.Task.WaitAsync(TimeSpan.FromSeconds(5));
+		}
+		finally
+		{
+			handle.JournalEntryAdded -= OnJournalEntryAdded;
+		}
 	}
 
 	private static async Task WaitForStateAsync(ScenarioRunHandle handle, ScenarioRunState state)
