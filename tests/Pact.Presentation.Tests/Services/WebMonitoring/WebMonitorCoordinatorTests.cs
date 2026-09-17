@@ -964,6 +964,41 @@ public sealed class WebMonitorCoordinatorTests
 	}
 
 	[Test]
+	public async Task Becoming_presented_while_the_loop_reaches_its_wait_is_not_lost()
+	{
+		// The loop reads the delay it will sleep for and the pulse it will wake on separately.
+		// A presentation change that lands between the two shortens the delay and pulses, so a
+		// loop that captured them apart would wait on the already-replaced pulse for the stale
+		// delay and never poll faster.
+		CoordinatorContext? context = null;
+		var presented = 0;
+		context = new CoordinatorContext(
+			beforeLoopWait: _ =>
+			{
+				if (Interlocked.Exchange(ref presented, 1) == 0)
+				{
+					context!.Coordinator.SetPresentationFacts(
+						selectedWebPageId: "web-1",
+						windowVisible: true,
+						windowActive: true);
+				}
+			});
+		await using (context)
+		{
+			FakeWebPageHost host = new("web-1", MatchingUrl);
+			host.Enqueue(MatchingUrl, activity: true, revision: "1");
+			host.Enqueue(MatchingUrl, activity: true, revision: "1");
+			await context.Coordinator.SetRulesAsync([CreateRule()], CancellationToken.None);
+			var initialEvaluation =
+				WaitForNextStatusAsync(context.Coordinator, WebMonitorStatus.Activity);
+			await context.Coordinator.RegisterAsync("web-1", host, CancellationToken.None);
+			await initialEvaluation;
+
+			await host.WaitForEvaluationCountAsync(2);
+		}
+	}
+
+	[Test]
 	public async Task Actively_viewed_page_keeps_polling_faster_than_its_rule_interval()
 	{
 		await using CoordinatorContext context = new();
@@ -1497,7 +1532,8 @@ public sealed class WebMonitorCoordinatorTests
 
 		public CoordinatorContext(
 			Action<Action>? dispatcher = null,
-			Action<string>? beforePresentationMutation = null)
+			Action<string>? beforePresentationMutation = null,
+			Action<string>? beforeLoopWait = null)
 		{
 			Paths = new AppPaths(_root);
 			Store = new WebMonitorSnapshotStore(Paths);
@@ -1512,7 +1548,8 @@ public sealed class WebMonitorCoordinatorTests
 					DispatchCount++;
 					action();
 				}),
-				beforePresentationMutation);
+				beforePresentationMutation,
+				beforeLoopWait);
 			Coordinator.StatusChanged += (_, args) => Statuses.Add(args);
 			Coordinator.DiagnosticChanged += (_, args) => Diagnostics.Add(args);
 			Coordinator.LiveDiagnosticsChanged += (_, args) =>

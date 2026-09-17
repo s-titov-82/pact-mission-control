@@ -106,6 +106,10 @@ public sealed class WebMonitorCoordinator : IAsyncDisposable
 	private readonly TimeProvider _timeProvider;
 	private readonly Action<Action> _uiDispatcher;
 	private readonly Action<string>? _beforePresentationMutation;
+
+	// Runs after the loop has captured the state it will wait on, and before it actually waits,
+	// so a test can drive a presentation change into exactly that window.
+	private readonly Action<string>? _beforeLoopWait;
 	private readonly Lock _sync = new();
 	private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
 	private readonly Dictionary<string, Registration> _registrations =
@@ -136,7 +140,8 @@ public sealed class WebMonitorCoordinator : IAsyncDisposable
 		WebMonitorSnapshotStore snapshotStore,
 		TimeProvider timeProvider,
 		Action<Action> uiDispatcher,
-		Action<string>? beforePresentationMutation)
+		Action<string>? beforePresentationMutation,
+		Action<string>? beforeLoopWait = null)
 	{
 		ArgumentNullException.ThrowIfNull(snapshotStore);
 		ArgumentNullException.ThrowIfNull(timeProvider);
@@ -146,6 +151,7 @@ public sealed class WebMonitorCoordinator : IAsyncDisposable
 		_timeProvider = timeProvider;
 		_uiDispatcher = uiDispatcher;
 		_beforePresentationMutation = beforePresentationMutation;
+		_beforeLoopWait = beforeLoopWait;
 	}
 
 	/// <summary>
@@ -732,6 +738,11 @@ public sealed class WebMonitorCoordinator : IAsyncDisposable
 				bool pendingInvocation;
 				bool cleanup;
 				long evaluationGeneration;
+
+				// The pulse must be captured with the state it belongs to. A pulse raised after
+				// this lock releases replaces the source, so a later read would wait on a pulse
+				// that nothing has signalled yet while acting on already-stale state.
+				Task pulse;
 				lock (registration.SyncRoot)
 				{
 					if (registration.Stopping || registration.Removed)
@@ -751,6 +762,12 @@ public sealed class WebMonitorCoordinator : IAsyncDisposable
 						&& !registration.CleanedForNoMatch;
 					delay = registration.NextAttemptAt - _timeProvider.GetUtcNow();
 					evaluationGeneration = registration.NavigationGeneration;
+					pulse = registration.PulseSource.Task;
+				}
+
+				if (navigating || pendingInvocation || delay > TimeSpan.Zero)
+				{
+					_beforeLoopWait?.Invoke(registration.WebPageId);
 				}
 
 				if (cleanup)
@@ -761,14 +778,14 @@ public sealed class WebMonitorCoordinator : IAsyncDisposable
 
 				if (navigating)
 				{
-					await WaitForPulseAsync(registration, cancellationToken)
+					await WaitForPulseAsync(pulse, cancellationToken)
 						.ConfigureAwait(false);
 					continue;
 				}
 
 				if (pendingInvocation)
 				{
-					await WaitForPulseAsync(registration, cancellationToken)
+					await WaitForPulseAsync(pulse, cancellationToken)
 						.ConfigureAwait(false);
 					continue;
 				}
@@ -776,7 +793,7 @@ public sealed class WebMonitorCoordinator : IAsyncDisposable
 				if (delay > TimeSpan.Zero)
 				{
 					await WaitForDelayOrPulseAsync(
-							registration,
+							pulse,
 							delay,
 							cancellationToken)
 						.ConfigureAwait(false);
@@ -1537,33 +1554,19 @@ public sealed class WebMonitorCoordinator : IAsyncDisposable
 	}
 
 	private async Task WaitForDelayOrPulseAsync(
-		Registration registration,
+		Task pulse,
 		TimeSpan delay,
 		CancellationToken cancellationToken)
 	{
-		Task pulse;
-		lock (registration.SyncRoot)
-		{
-			pulse = registration.PulseSource.Task;
-		}
-
 		var timer = Task.Delay(delay, _timeProvider, cancellationToken);
 		await Task.WhenAny(timer, pulse).ConfigureAwait(false);
 		cancellationToken.ThrowIfCancellationRequested();
 	}
 
 	private static async Task WaitForPulseAsync(
-		Registration registration,
-		CancellationToken cancellationToken)
-	{
-		Task pulse;
-		lock (registration.SyncRoot)
-		{
-			pulse = registration.PulseSource.Task;
-		}
-
+		Task pulse,
+		CancellationToken cancellationToken) =>
 		await pulse.WaitAsync(cancellationToken).ConfigureAwait(false);
-	}
 
 	private static void Pulse(Registration registration)
 	{
