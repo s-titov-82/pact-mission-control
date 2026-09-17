@@ -17,6 +17,9 @@ public sealed class TerminalTabStatusEngine
 	private bool _windowActive;
 	private DateTimeOffset? _activityStartedAt;
 	private bool _activityInProgress;
+
+	// Set while the activity in progress is only the agent redrawing a resumed conversation.
+	private bool _activityIsResumeReplay;
 	private long _activityEpoch;
 	private bool _hasUnreadCompletion;
 	private bool _inputRequested;
@@ -284,7 +287,7 @@ public sealed class TerminalTabStatusEngine
 		{
 			if (mode == TerminalStartMode.Resume)
 			{
-				StartActivity(occurredAt);
+				StartActivity(occurredAt, resumeReplay: true);
 			}
 		});
 
@@ -380,8 +383,11 @@ public sealed class TerminalTabStatusEngine
 					break;
 				case TerminalScreenVerdictState.Done when stable && _activityInProgress:
 					ApplyVerdict(verdict);
+					// Finishing a resume replay is not a completion the user is waiting for:
+					// the agent only redrew the conversation it was restarted with.
+					var completedWork = !_activityIsResumeReplay;
 					EndActivity();
-					_hasUnreadCompletion = true;
+					_hasUnreadCompletion |= completedWork;
 					break;
 				case TerminalScreenVerdictState.InputRequested when stable:
 					ApplyVerdict(verdict);
@@ -490,14 +496,25 @@ public sealed class TerminalTabStatusEngine
 		}
 	}
 
-	private void StartActivity(DateTimeOffset occurredAt, bool restart = false)
+	private void StartActivity(
+		DateTimeOffset occurredAt,
+		bool restart = false,
+		bool resumeReplay = false)
 	{
+		if (!resumeReplay)
+		{
+			// Real work supersedes a replay that is still in progress: its completion is
+			// something the user asked for and has not seen.
+			_activityIsResumeReplay = false;
+		}
+
 		if (_activityInProgress && !restart)
 		{
 			return;
 		}
 
 		_activityInProgress = true;
+		_activityIsResumeReplay = resumeReplay;
 		_activityStartedAt = occurredAt;
 		_activityEpoch++;
 	}
@@ -505,6 +522,7 @@ public sealed class TerminalTabStatusEngine
 	private void EndActivity()
 	{
 		_activityInProgress = false;
+		_activityIsResumeReplay = false;
 	}
 
 	private TerminalTabIndicator CalculateIndicator()

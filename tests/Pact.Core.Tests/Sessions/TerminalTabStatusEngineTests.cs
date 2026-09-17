@@ -81,6 +81,45 @@ public sealed class TerminalTabStatusEngineTests
 	}
 
 	[Test]
+	public void Finishing_a_resume_replay_does_not_mark_the_tab_unread()
+	{
+		ScriptedProfile profile = new()
+		{
+			Verdict = new TerminalScreenVerdict(TerminalScreenVerdictState.Done, "Idle")
+		};
+		var engine = CreateEngine(profile: profile);
+
+		engine.OnSessionStarted(TerminalStartMode.Resume, T0);
+		engine.ActivityInProgress.ShouldBeTrue();
+		engine.OnScreenSnapshot("restored conversation", T0.AddSeconds(1));
+		engine.OnScreenSnapshot("restored conversation", T0.AddSeconds(2));
+
+		engine.ActivityInProgress.ShouldBeFalse();
+		engine.HasUnreadCompletion.ShouldBeFalse();
+		engine.CurrentIndicator.ShouldBe(TerminalTabIndicator.None);
+	}
+
+	[Test]
+	public void Real_work_after_a_resume_replay_still_marks_the_tab_unread()
+	{
+		ScriptedProfile profile = new()
+		{
+			Verdict = new TerminalScreenVerdict(TerminalScreenVerdictState.Busy, "Cogitating")
+		};
+		var engine = CreateEngine(profile: profile);
+
+		engine.OnSessionStarted(TerminalStartMode.Resume, T0);
+		engine.OnScreenSnapshot("working", T0.AddSeconds(1));
+
+		profile.Verdict = new TerminalScreenVerdict(TerminalScreenVerdictState.Done, "Idle");
+		engine.OnScreenSnapshot("answer", T0.AddSeconds(2));
+		engine.OnScreenSnapshot("answer", T0.AddSeconds(3));
+
+		engine.HasUnreadCompletion.ShouldBeTrue();
+		engine.CurrentIndicator.ShouldBe(TerminalTabIndicator.Unread);
+	}
+
+	[Test]
 	public void Restored_unread_remains_until_the_tab_is_selected_in_an_active_visible_window()
 	{
 		var engine = CreateEngine(selected: false, windowVisible: true, windowActive: true);
