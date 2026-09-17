@@ -17,7 +17,7 @@ commands available on `PATH`. The starter profiles expect `codex`, `claude`,
 2. Compare the Setup digest with its entry in `SHA256SUMS.txt`:
 
    ```powershell
-   Get-FileHash .\pact-mission-control-0.1.7-win-x64-setup.exe -Algorithm SHA256
+   Get-FileHash .\pact-mission-control-0.1.8-win-x64-setup.exe -Algorithm SHA256
    ```
 
 3. Run Setup and follow its prompts. It installs for the current user and does

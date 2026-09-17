@@ -18,7 +18,7 @@ PACT:> Mission Control работает в Windows 11 x64. Установщик
    `SHA256SUMS.txt`:
 
    ```powershell
-   Get-FileHash .\pact-mission-control-0.1.7-win-x64-setup.exe -Algorithm SHA256
+   Get-FileHash .\pact-mission-control-0.1.8-win-x64-setup.exe -Algorithm SHA256
    ```
 
 3. Запустите установщик и следуйте его подсказкам. Сам PACT устанавливается

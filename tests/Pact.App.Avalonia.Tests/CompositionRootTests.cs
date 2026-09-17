@@ -29,7 +29,7 @@ public sealed class CompositionRootTests : IDisposable
 			.ShouldBe("Copyright (c) 2026 Sergei Titov");
 		assembly.GetCustomAttribute<AssemblyDescriptionAttribute>()!.Description
 			.ShouldBe("Windows mission control for persistent terminal-based AI agent sessions.");
-		assembly.GetName().Version.ShouldBe(new Version(0, 1, 7, 0));
+		assembly.GetName().Version.ShouldBe(new Version(0, 1, 8, 0));
 	}
 
 	[Test]
