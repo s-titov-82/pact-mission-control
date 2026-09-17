@@ -38,8 +38,24 @@ public sealed class ShellProfileCommandPlannerTests
 			FallbackReason: null));
 	}
 
+	[Test]
+	public void GetStartPlan_reports_a_picker_resume_when_only_a_generic_command_is_saved()
+	{
+		var session = CreateSessionRecord(
+			kind: AgentKind.Claude,
+			launchCommand: "claude-personal --permission-mode auto",
+			resumeCommand: "claude-personal --permission-mode auto --resume");
+
+		var plan = ShellProfileCommandPlanner.GetStartPlan(session, preferResumeCommand: true);
+
+		plan.ShouldBe(new SessionStartPlan(
+			"claude-personal --permission-mode auto --resume",
+			TerminalStartMode.ResumeSelection,
+			FellBackToColdStart: false,
+			FallbackReason: null));
+	}
+
 	[TestCase(null, "resume-command-unavailable")]
-	[TestCase("codex resume", "resume-id-unavailable")]
 	[TestCase("codex resume fallback", "resume-command-invalid")]
 	public void GetStartPlan_cold_starts_agent_when_resume_is_unavailable(
 		string? resumeCommand,
@@ -118,7 +134,7 @@ public sealed class ShellProfileCommandPlannerTests
 	}
 
 	[Test]
-	public void GetStartCommand_cold_starts_when_only_generic_resume_template_is_saved()
+	public void GetStartCommand_uses_generic_resume_template_to_pick_a_conversation()
 	{
 		var session = CreateSessionRecord(
 			kind: AgentKind.Codex,
@@ -129,7 +145,7 @@ public sealed class ShellProfileCommandPlannerTests
 			session,
 			preferResumeCommand: true);
 
-		command.ShouldBe("codex");
+		command.ShouldBe("codex resume");
 	}
 
 	[Test]
@@ -148,7 +164,7 @@ public sealed class ShellProfileCommandPlannerTests
 	}
 
 	[Test]
-	public void GetStartCommand_cold_starts_when_wrapper_has_no_concrete_resume_id()
+	public void GetStartCommand_uses_wrapper_generic_resume_command_to_pick_a_conversation()
 	{
 		var session = CreateSessionRecord(
 			kind: AgentKind.Claude,
@@ -159,7 +175,7 @@ public sealed class ShellProfileCommandPlannerTests
 			session,
 			preferResumeCommand: true);
 
-		command.ShouldBe("claude-personal");
+		command.ShouldBe("claude-personal --resume");
 	}
 
 	[Test]

@@ -70,6 +70,17 @@ public sealed class TerminalTabStatusEngineTests
 	}
 
 	[Test]
+	public void Resume_selection_start_waits_for_the_user_to_pick_a_conversation()
+	{
+		var engine = CreateEngine();
+
+		engine.OnSessionStarted(TerminalStartMode.ResumeSelection, T0);
+
+		engine.CurrentIndicator.ShouldBe(TerminalTabIndicator.None);
+		engine.ActivityInProgress.ShouldBeFalse();
+	}
+
+	[Test]
 	public void Restored_unread_remains_until_the_tab_is_selected_in_an_active_visible_window()
 	{
 		var engine = CreateEngine(selected: false, windowVisible: true, windowActive: true);

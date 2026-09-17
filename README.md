@@ -82,9 +82,11 @@ the directory containing the running `Pact.App.Avalonia.exe`, deletes the Setup
 package, and relaunches PACT without requesting a Windows reboot.
 
 The update restart restores the tabs that were active immediately before the
-handoff, their selection, and unread completion markers. Agent terminals resume
-only when both a resume command and an extracted conversation id are available;
-other terminals cold-start and are named in the restoration summary. Tabs that
+handoff, their selection, and unread completion markers. An agent terminal with
+an extracted conversation id resumes that conversation directly; one with only a
+resume command template resumes into the agent's own conversation picker, which
+is also how a session survives an unexpected exit. Other terminals cold-start
+and are named in the restoration summary. Tabs that
 were paused stay paused. A diagnostic `Soft restart and restore active tabs`
 action is available under `Settings -> Updates -> Diagnostics` for exercising
 the same restoration path without installing an update.

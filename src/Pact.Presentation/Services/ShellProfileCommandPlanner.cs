@@ -16,8 +16,8 @@ public static class ShellProfileCommandPlanner
 	/// <returns>
 	/// The resume command when resuming is both requested and viable, otherwise the fresh launch
 	/// command. For Codex and Claude the stored resume command must additionally still look like
-	/// a usable resume invocation; a corrupted one falls back to a fresh start rather than
-	/// failing the launch with a malformed command line.
+	/// a usable resume invocation, with or without a conversation id; a corrupted one falls back
+	/// to a fresh start rather than failing the launch with a malformed command line.
 	/// </returns>
 	public static string GetStartCommand(
 		SessionRecord session,
@@ -26,7 +26,9 @@ public static class ShellProfileCommandPlanner
 
 	/// <summary>
 	/// Returns the actual command and mode, including a stable reason when a requested resume
-	/// must cold-start instead. Only a concrete Codex or Claude conversation id is resumable.
+	/// must cold-start instead. A stored conversation id resumes that conversation directly; a
+	/// Codex or Claude resume command without an id still runs, so the agent's own picker can
+	/// recover a conversation whose id was never captured — after a crash, for instance.
 	/// </summary>
 	public static SessionStartPlan GetStartPlan(
 		SessionRecord session,
@@ -51,7 +53,11 @@ public static class ShellProfileCommandPlanner
 
 		if (AgentResumeCommandExtractor.IsGenericResumeCommand(session.ResumeCommand))
 		{
-			return Normal(session, fellBack: true, "resume-id-unavailable");
+			return new SessionStartPlan(
+				session.ResumeCommand,
+				TerminalStartMode.ResumeSelection,
+				FellBackToColdStart: false,
+				FallbackReason: null);
 		}
 
 		if (!AgentResumeCommandExtractor.IsConcreteResumeCommand(session.ResumeCommand))

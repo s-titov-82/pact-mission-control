@@ -2409,7 +2409,7 @@ public sealed class AvaloniaMainShellControllerTests
 		await templateOnlyFixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
 		templateOnlyFixture.ViewModel.Sessions[0].Indicator.ShouldBe(TerminalTabIndicator.None);
 		templateOnlyFixture.Backends[0].LastStartOptions.ShouldNotBeNull()
-			.CommandLine.ShouldStartWith("codex ");
+			.CommandLine.ShouldStartWith("codex resume");
 	}
 
 	[Test]

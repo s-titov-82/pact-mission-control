@@ -369,9 +369,11 @@ handoffs.
 Soft restart is an overlay on durable project, ROOT, layout, and browser state.
 It restores only the terminal/browser set that was active at capture time,
 selection, orchestrator state, and unread markers; paused items remain paused.
-Agent resume needs both the configured resume command and an extracted
-conversation id. When either is unavailable, Pact cold-starts that terminal and
-names the fallback in the restoration summary instead of skipping it. The
+Agent resume uses the configured resume command; an extracted conversation id
+resumes that conversation directly, and without one the agent opens its own
+conversation picker. When no usable resume command is configured, Pact
+cold-starts that terminal and names the fallback in the restoration summary
+instead of skipping it. The
 collapsed `Updates -> Diagnostics -> Soft restart and restore active tabs`
 button runs the same path without downloading or applying Setup.
 
@@ -615,7 +617,7 @@ The UI still uses some workspace language internally and in services, but persis
   tab, or closing Pact prompts only when the affected session has a live runtime
   controller. Saved `Running`/`Starting` status alone is not confirmation
   evidence.
-- Restoring uses per-session `ResumeCommand` when available; otherwise it falls back through shell profile resume templates. New profile sessions store the profile `resumeCommandTemplate` immediately, and graceful shutdown later replaces it with a concrete resume id when capture succeeds.
+- Restoring uses per-session `ResumeCommand` when available; otherwise it falls back through shell profile resume templates. New profile sessions store the profile `resumeCommandTemplate` immediately, and graceful shutdown later replaces it with a concrete resume id when capture succeeds. A template without an id still launches for Codex and Claude, leaving the agent showing its conversation picker, so a session whose id was never captured stays recoverable.
 - Web pages are project items restored from their saved resume/current URL. Prompt and scenario target lists remain terminal-session-only.
 - Switching selected sessions does not stop the previous session.
 

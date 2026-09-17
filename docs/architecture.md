@@ -266,9 +266,10 @@ Restoration consumes only the ticket derived from the supplied restart id and
 does so once. Persisted tabs remain the durable base; the overlay starts the
 previously active terminal and browser set, restores unread markers and
 selection, and starts the orchestrator through its separate provisioned path.
-An agent terminal resumes only when its command template and extracted id are
-both available. Otherwise it cold-starts and the bounded summary reports that
-fallback rather than omitting the tab. Paused tabs remain paused. A failed Setup
+An agent terminal with both its command template and an extracted id resumes
+that conversation; with the template alone it resumes into the agent's own
+conversation picker. Without a usable template it cold-starts and the bounded
+summary reports that fallback rather than omitting the tab. Paused tabs remain paused. A failed Setup
 uses `UpdateNotApplied`, allowing the previous executable to consume the same
 snapshot and report the sanitized failure category.
 
