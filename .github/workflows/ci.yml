@@ -98,6 +98,7 @@ jobs:
           ./tools/Test-PublicTree.ps1
           ./tests/powershell/PactSbom.Tests.ps1 -ModulePath ./tools/PactSbom.psm1 -TemporaryRoot ./artifacts/sbom-selftest
           ./tests/powershell/PactReleaseComposition.Tests.ps1 -ScriptPath ./tools/Complete-PactRelease.ps1 -TemporaryRoot ./artifacts/release-composition-selftest
+          ./tests/powershell/PactReleaseNotes.Tests.ps1 -ScriptPath ./tools/Get-PactReleaseNotes.ps1 -TemporaryRoot ./artifacts/release-notes-selftest
           ./tests/powershell/PactInstalledSmoke.Tests.ps1 -ScriptPath ./tools/Test-PactInstaller.ps1
 
       - name: Validate workflow contracts

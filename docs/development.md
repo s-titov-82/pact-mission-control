@@ -96,6 +96,7 @@ pwsh -NoProfile -File tools/Test-WorkflowContracts.ps1 -SelfTest
 pwsh -NoProfile -File tools/Test-WorkflowContracts.ps1 -CiWorkflow .github/workflows/ci.yml -ReleaseWorkflow .github/workflows/release.yml
 pwsh -NoProfile -File tests/powershell/PactSbom.Tests.ps1 -ModulePath tools/PactSbom.psm1 -TemporaryRoot artifacts/sbom-selftest
 pwsh -NoProfile -File tests/powershell/PactReleaseComposition.Tests.ps1 -ScriptPath tools/Complete-PactRelease.ps1 -TemporaryRoot artifacts/release-composition-selftest
+pwsh -NoProfile -File tests/powershell/PactReleaseNotes.Tests.ps1 -ScriptPath tools/Get-PactReleaseNotes.ps1 -TemporaryRoot artifacts/release-notes-selftest
 ```
 
 ## Packaging
@@ -131,7 +132,12 @@ Maintainers publish from an existing `vMAJOR.MINOR.PATCH` tag:
 
 1. Update the single `VersionPrefix` in `Directory.Build.props`, update
    `CHANGELOG.md`, and run the full build, test, repository-validation, native,
-   and packaging gates above.
+   and packaging gates above. The `CHANGELOG.md` entry is the release body:
+   `tools/Get-PactReleaseNotes.ps1` reads that version's section and the
+   workflow publishes it verbatim, adding the download, verification, and
+   comparison links. A missing or empty section fails the release before
+   anything is built, so the release never falls back to a generated commit
+   list.
 2. Create and push a tag whose version exactly matches `VersionPrefix`. Pushing
    the tag starts `.github/workflows/release.yml`; a manual workflow dispatch
    accepts the same existing tag and does not create one.
@@ -141,7 +147,8 @@ Maintainers publish from an existing `vMAJOR.MINOR.PATCH` tag:
    only one is an error.
 4. Verify that the workflow publishes Setup, the portable ZIP, standalone SPDX
    manifest, and `SHA256SUMS.txt`, creates provenance/SBOM attestations, and
-   creates the GitHub release for the existing tag.
+   creates the GitHub release for the existing tag with the changelog entry as
+   its body.
 
 The exact manual installer matrix is in
 [`docs/manual-tests/installer-smoke.md`](manual-tests/installer-smoke.md). Its

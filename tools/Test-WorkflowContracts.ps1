@@ -213,7 +213,8 @@ function Test-PactReleaseWorkflow {
             @('sbom-path:\s*artifacts/release/.*/manifest\.spdx\.json', 'standalone SPDX attestation'),
             @('gh release create', 'GitHub CLI release creation'),
             @('--verify-tag', 'existing-tag verification'),
-            @('--generate-notes', 'generated release notes'))) {
+            @('Get-PactReleaseNotes\.ps1', 'release notes taken from the changelog'),
+            @('--notes-file \$env:RELEASE_NOTES', 'changelog-backed release notes'))) {
         Assert-PactContains -Text $Text -Pattern $contract[0] -Description $contract[1]
     }
 
