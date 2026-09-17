@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7] - 2026-09-17
+
+### Fixed
+
+- `Restart current` on an agent session resumes the conversation again instead
+  of silently starting a new one. When the conversation id is not known — after
+  an unexpected exit, or while the session is still running — the agent opens
+  its own conversation picker, so the previous conversation stays reachable
+  rather than being lost.
+
+### Changed
+
+- A published release now shows the changelog entry for that version, together
+  with what to download and how to verify it, in place of a generated list of
+  commits.
+
 ## [0.1.6] - 2026-09-16
 
 ### Added
