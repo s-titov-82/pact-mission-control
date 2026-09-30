@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.9] - 2026-09-30
+
+### Added
+
+- `Custom URL...` offers a copied address: when the clipboard holds exactly one
+  absolute HTTP(S) address, the dialog opens with it filled in and the cursor at
+  the end. Any other clipboard content leaves the field empty as before.
+
+### Fixed
+
+- Hidden terminals no longer keep repainting background agent output, which
+  delayed typing echo and session switches in the selected terminal.
+- Codex tabs launch in embedded mode when Pact passes configuration overrides,
+  so they no longer print "Running without the shared background server" on
+  every start.
+- A terminal restored after an update restart is no longer marked unread just
+  because its agent redrew the conversation. A completion the user actually
+  waited for is still marked unread.
+
 ## [0.1.8] - 2026-09-17
 
 ### Fixed
