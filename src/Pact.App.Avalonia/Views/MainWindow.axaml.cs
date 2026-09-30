@@ -1123,7 +1123,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 
 	private async Task OpenCustomProjectUrlAsync(WorkspaceViewModel workspace)
 	{
-		if (await CustomUrlDialog.ShowOwnedAsync(this) is { } uri)
+		if (await CustomUrlDialog.ShowOwnedAsync(this, await ReadClipboardUrlAsync()) is { } uri)
 		{
 			await EngineProbeController.AddWebPageAsync(workspace, uri);
 		}
@@ -1131,9 +1131,23 @@ internal sealed partial class MainWindow : Window, IDisposable
 
 	private async Task OpenCustomRootUrlAsync()
 	{
-		if (await CustomUrlDialog.ShowOwnedAsync(this) is { } uri)
+		if (await CustomUrlDialog.ShowOwnedAsync(this, await ReadClipboardUrlAsync()) is { } uri)
 		{
 			await EngineProbeController.AddRootWebPageAsync(uri);
+		}
+	}
+
+	/// <summary>Offers a copied HTTP(S) address to the custom URL dialog; never blocks opening it.</summary>
+	private async Task<string?> ReadClipboardUrlAsync()
+	{
+		try
+		{
+			return CustomUrlDialog.SuggestUrlFromClipboard(
+				await EngineProbeController.Clipboard.GetTextAsync());
+		}
+		catch
+		{
+			return null;
 		}
 	}
 

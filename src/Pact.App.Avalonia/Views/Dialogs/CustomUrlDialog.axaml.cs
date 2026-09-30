@@ -7,15 +7,52 @@ namespace Pact.App.Avalonia.Views.Dialogs;
 internal sealed partial class CustomUrlDialog : Window
 {
 	public CustomUrlDialog()
+		: this(null)
+	{
+	}
+
+	internal CustomUrlDialog(string? initialUrl)
 	{
 		InitializeComponent();
-		Opened += (_, _) => UrlTextBox.Focus();
+		if (!string.IsNullOrEmpty(initialUrl))
+		{
+			UrlText = initialUrl;
+		}
+
+		Opened += (_, _) =>
+		{
+			UrlTextBox.Focus();
+			UrlTextBox.CaretIndex = UrlText.Length;
+		};
 	}
 
 	internal string UrlText
 	{
 		get => UrlTextBox.Text ?? string.Empty;
-		set => UrlTextBox.Text = value;
+		set
+		{
+			UrlTextBox.Text = value;
+			UrlTextBox.CaretIndex = UrlText.Length;
+		}
+	}
+
+	internal int UrlCaretIndex => UrlTextBox.CaretIndex;
+
+	/// <summary>
+	/// Returns the trimmed clipboard text when it is exactly one absolute HTTP(S) address,
+	/// so the dialog can offer it; anything else (prose, several lines, other schemes) is ignored.
+	/// </summary>
+	internal static string? SuggestUrlFromClipboard(string? clipboardText)
+	{
+		var candidate = clipboardText?.Trim();
+		if (string.IsNullOrEmpty(candidate)
+			|| candidate.AsSpan().IndexOfAny('\r', '\n') >= 0
+			|| !HttpWebAddress.TryParse(candidate, out _))
+		{
+			return null;
+		}
+
+		return candidate;
 	}
 
 	internal string ValidationMessage
@@ -40,10 +77,10 @@ internal sealed partial class CustomUrlDialog : Window
 		return true;
 	}
 
-	internal static async Task<Uri?> ShowOwnedAsync(Window owner)
+	internal static async Task<Uri?> ShowOwnedAsync(Window owner, string? initialUrl = null)
 	{
 		ArgumentNullException.ThrowIfNull(owner);
-		CustomUrlDialog dialog = new();
+		CustomUrlDialog dialog = new(initialUrl);
 		return await dialog.ShowDialog<Uri?>(owner);
 	}
 
