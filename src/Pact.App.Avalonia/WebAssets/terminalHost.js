@@ -315,13 +315,17 @@ function createInstance(sessionId, options) {
   const container = document.createElement('div');
   container.style.position = 'absolute';
   container.style.inset = '0';
-  container.style.visibility = 'hidden';
   rootElement.appendChild(container);
 
   const term = new Terminal(createTerminalOptions(sessionId));
   const fitAddon = new FitAddon.FitAddon();
   term.loadAddon(fitAddon);
   term.open(container);
+  // Every session shares this page's main thread, and xterm pauses rendering
+  // only when its IntersectionObserver reports the element gone, which
+  // visibility:hidden never does. Hidden terminals must leave the layout, or
+  // background agent output delays typing echo and session switches.
+  container.style.display = 'none';
 
   const instance = {
     sessionId, term, fitAddon, container, lastSelectedText: '', hasSelection: false,
@@ -596,10 +600,10 @@ window.agentTerminal = {
     const next = createInstance(sessionId, options);
     const current = getActiveInstance();
     if (current && current !== next) {
-      current.container.style.visibility = 'hidden';
+      current.container.style.display = 'none';
     }
     activeSessionId = sessionId;
-    next.container.style.visibility = 'visible';
+    next.container.style.display = '';
     updateCursorBlink();
     flushOutput(next);
     resizeAllInstances();

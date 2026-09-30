@@ -633,6 +633,26 @@ function runTerminalLinkBehavior() {
   });
 }
 
+function runHiddenTerminalsLeaveLayoutBehavior() {
+  window.agentTerminal.createTerminal('session-1', { snapshotDebounceMs: 500 });
+  window.agentTerminal.createTerminal('session-2', { snapshotDebounceMs: 500 });
+  const first = terminalInstances[0].container;
+  const second = terminalInstances[1].container;
+
+  // xterm pauses rendering only through an IntersectionObserver, which still
+  // reports visibility:hidden elements as intersecting.
+  assert.equal(first.style.display, 'none', 'a created terminal must not render until shown');
+  assert.equal(second.style.display, 'none');
+
+  window.agentTerminal.showTerminal('session-1', { snapshotDebounceMs: 500 });
+  assert.equal(first.style.display, '');
+  assert.equal(second.style.display, 'none');
+
+  window.agentTerminal.showTerminal('session-2', { snapshotDebounceMs: 500 });
+  assert.equal(first.style.display, 'none', 'a switched-away terminal must stop rendering');
+  assert.equal(second.style.display, '');
+}
+
 if (behavior === 'same-final-screen') {
   runSameFinalScreenBehavior();
 } else if (behavior === 'wrapped-pwsh-prompt') {
@@ -655,6 +675,8 @@ if (behavior === 'same-final-screen') {
   runThemeSwitchBehavior();
 } else if (behavior === 'adaptive-output-batching') {
   runAdaptiveOutputBatchingBehavior();
+} else if (behavior === 'hidden-terminals-leave-layout') {
+  runHiddenTerminalsLeaveLayoutBehavior();
 } else if (behavior === 'prebatched-output') {
   runPrebatchedOutputBehavior();
 } else if (behavior === 'resize-bridge') {

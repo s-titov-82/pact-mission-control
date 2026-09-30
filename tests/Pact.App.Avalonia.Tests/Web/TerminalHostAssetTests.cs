@@ -22,6 +22,7 @@ public sealed partial class TerminalHostAssetTests
 	[TestCase("terminal-link-owned-by-session")]
 	[TestCase("theme-switch-updates-existing-and-new-terminals")]
 	[TestCase("adaptive-output-batching")]
+	[TestCase("hidden-terminals-leave-layout")]
 	[TestCase("prebatched-output")]
 	[TestCase("resize-bridge")]
 	[TestCase("modified-enter")]
