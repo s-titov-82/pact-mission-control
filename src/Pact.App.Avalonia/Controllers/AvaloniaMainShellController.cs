@@ -3283,7 +3283,10 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			return startPlan;
 		}
 
-		var injection = CreateAgentLaunchInjection(session.Record);
+		var injection = CodexEmbeddedMode.Apply(
+			session.Record.Kind,
+			startPlan.CommandLine,
+			CreateAgentLaunchInjection(session.Record));
 		var commandLine = await _resolveCommandAsync(startPlan.CommandLine, injection.Arguments);
 		if (string.IsNullOrWhiteSpace(commandLine))
 		{
