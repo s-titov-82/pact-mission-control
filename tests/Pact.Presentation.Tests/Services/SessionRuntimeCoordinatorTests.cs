@@ -161,6 +161,61 @@ public sealed class SessionRuntimeCoordinatorTests
 	}
 
 	[Test]
+	public async Task A_submitted_prompt_is_pasted_then_entered_separately()
+	{
+		var (coordinator, backend, controller) = await CreateAttachedSessionAsync();
+		await using var _ = controller;
+
+		await coordinator.SendPromptAsync(
+			CreateSession("session-1"),
+			"review this",
+			submit: true,
+			startIfNeeded: false,
+			enforceScenarioLock: false,
+			static (_, _) => Task.CompletedTask,
+			static _ => Task.CompletedTask);
+
+		backend.InputWrites.ShouldBe(["\u001b[200~review this\u001b[201~", "\r"]);
+	}
+
+	[Test]
+	public async Task A_submitted_prompt_to_codex_in_win32_mode_uses_the_encoded_enter()
+	{
+		var (coordinator, backend, controller) = await CreateAttachedSessionAsync(win32InputMode: true);
+		await using var _ = controller;
+
+		await coordinator.SendPromptAsync(
+			CreateSession("session-1", AgentKind.Codex),
+			"review this",
+			submit: true,
+			startIfNeeded: false,
+			enforceScenarioLock: false,
+			static (_, _) => Task.CompletedTask,
+			static _ => Task.CompletedTask);
+
+		backend.InputWrites.ShouldBe(["\u001b[200~review this\u001b[201~", Win32InputEncoder.EnterKey]);
+	}
+
+	[TestCase('\u0015', 85, 22)]
+	[TestCase('\u000b', 75, 37)]
+	[TestCase('\u0001', 65, 30)]
+	[TestCase('\u0003', 67, 46)]
+	public void RewriteInput_CodexWin32Mode_EncodesCtrlLetters(char control, int virtualKey, int scanCode)
+	{
+		var esc = (char)0x1b;
+		var code = (int)control;
+
+		SessionRuntimeCoordinator.RewriteInput(control.ToString(), true, true).ShouldBe(
+			$"{esc}[{virtualKey};{scanCode};{code};1;8;1_{esc}[{virtualKey};{scanCode};{code};0;8;1_");
+	}
+
+	[TestCase("\t")]
+	[TestCase("\r")]
+	[TestCase("\b")]
+	public void RewriteInput_CodexWin32Mode_LeavesKeysWithTheirOwnMeaningAlone(string input) =>
+		SessionRuntimeCoordinator.RewriteInput(input, true, true).ShouldBe(input);
+
+	[Test]
 	public async Task Codex_win32_mode_uses_encoded_enter_and_confirms_delivery()
 	{
 		var (coordinator, backend, controller) = await CreateAttachedSessionAsync(win32InputMode: true);
@@ -780,8 +835,8 @@ public sealed class SessionRuntimeCoordinatorTests
 	private static Task<IDisposable?> NoScope(SessionViewModel _, CancellationToken __) => Task.FromResult<IDisposable?>(null);
 	private static Task Noop(CancellationToken _) => Task.CompletedTask;
 
-	private static SessionViewModel CreateSession(string id) => new(new SessionRecord(
-		id, AgentKind.Pwsh, id, Environment.CurrentDirectory, "pwsh", null,
+	private static SessionViewModel CreateSession(string id, AgentKind kind = AgentKind.Pwsh) => new(new SessionRecord(
+		id, kind, id, Environment.CurrentDirectory, "pwsh", null,
 		SessionStatus.Running, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
 
 	private sealed class RecordingHost : ITerminalWebViewHost

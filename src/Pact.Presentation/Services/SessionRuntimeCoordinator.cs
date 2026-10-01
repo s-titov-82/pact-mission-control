@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using Pact.Core.Agents;
 using Pact.Core.Presentation;
 using Pact.Core.ScreenVerdictProfiles;
 using Pact.Core.Sessions;
@@ -547,10 +548,29 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 			throw new InvalidOperationException("Target session is not running.");
 		}
 
-		var input = BuildPastedInput(prompt, submit);
-		if (!await controller.WriteInputAsync(input).ConfigureAwait(false))
+		if (!await controller.WriteInputAsync(BuildPastedInput(prompt)).ConfigureAwait(false))
 		{
 			throw new InvalidOperationException("Target session input write failed.");
+		}
+
+		if (!submit)
+		{
+			return;
+		}
+
+		// An Enter glued to the paste can be taken as part of it, and under win32-input-mode a
+		// raw carriage return reaches Codex as text, so the submit is a separate key press.
+		if (_scenarioSubmitSettleDelay > TimeSpan.Zero)
+		{
+			await Task.Delay(_scenarioSubmitSettleDelay).ConfigureAwait(false);
+		}
+
+		var submitInput = runtime.Win32InputMode.IsActive && targetSession.Record.Kind == AgentKind.Codex
+			? Win32InputEncoder.EnterKey
+			: "\r";
+		if (!await controller.WriteInputAsync(submitInput).ConfigureAwait(false))
+		{
+			throw new InvalidOperationException("Target session submit failed.");
 		}
 	}
 
@@ -786,7 +806,7 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 
 		async Task SendAsync()
 		{
-			await WriteAsync(BuildPastedInput(trigger, submit: false)).ConfigureAwait(false);
+			await WriteAsync(BuildPastedInput(trigger)).ConfigureAwait(false);
 			cancellationToken.ThrowIfCancellationRequested();
 			if (_scenarioSubmitSettleDelay > TimeSpan.Zero)
 			{
@@ -936,19 +956,22 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 			return Win32InputEncoder.EscapeKey;
 		}
 
-		if (input.Length == 1 && input[0] == (char)0x03)
+		// Tab, Enter and Backspace share bytes with Ctrl+I, Ctrl+M and Ctrl+H but mean their own
+		// keys, which the client already receives correctly.
+		if (input.Length == 1
+			&& input[0] is >= (char)0x01 and <= (char)0x1A
+			&& input[0] is not ('\t' or '\r' or '\b'))
 		{
-			return Win32InputEncoder.CtrlC;
+			return Win32InputEncoder.CtrlLetter(input[0]);
 		}
 
 		return input;
 	}
 
-	private static string BuildPastedInput(string text, bool submit)
+	private static string BuildPastedInput(string text)
 	{
 		var normalized = text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace("\r", "\n", StringComparison.Ordinal);
-		var pastedInput = $"\u001b[200~{normalized}\u001b[201~";
-		return submit ? pastedInput + "\r" : pastedInput;
+		return $"\u001b[200~{normalized}\u001b[201~";
 	}
 
 	/// <summary>

@@ -53,4 +53,27 @@ public static class Win32InputEncoder
 	/// </summary>
 	public static readonly string CtrlC =
 		$"{Escape}[67;46;3;1;8;1_{Escape}[67;46;3;0;8;1_";
+
+	// Set-1 scan codes of the letter keys A..Z, in alphabetical order.
+	private static readonly int[] LetterScanCodes =
+	[
+		30, 48, 46, 32, 18, 33, 34, 35, 23, 36, 37, 38, 50,
+		49, 24, 25, 16, 19, 31, 20, 22, 47, 17, 45, 21, 44
+	];
+
+	/// <summary>
+	/// Encodes the control character a terminal sends for Ctrl+letter (0x01 for Ctrl+A through
+	/// 0x1A for Ctrl+Z) as a key-event pair with the letter's virtual key and Ctrl held. A bare
+	/// control byte reaches the client as a character without the Ctrl modifier, so editing
+	/// shortcuts such as Ctrl+U never fire.
+	/// </summary>
+	public static string CtrlLetter(char control)
+	{
+		ArgumentOutOfRangeException.ThrowIfLessThan(control, (char)0x01);
+		ArgumentOutOfRangeException.ThrowIfGreaterThan(control, (char)0x1A);
+		var virtualKey = 'A' + control - 1;
+		var scanCode = LetterScanCodes[control - 1];
+		var code = (int)control;
+		return $"{Escape}[{virtualKey};{scanCode};{code};1;8;1_{Escape}[{virtualKey};{scanCode};{code};0;8;1_";
+	}
 }

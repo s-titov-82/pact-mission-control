@@ -76,8 +76,8 @@ Do not persist terminal transcripts or scenario journals.
 - Preserve alternate-screen and mouse-tracking VT sequences. Claude exports
   internal selection through OSC 52; do not remove the host clipboard handler.
 - Keep the browser-side terminal host agent-neutral. Codex win32-input-mode
-  newline rewriting belongs in C#, where session kind and terminal mode are
-  known.
+  rewriting of newlines, Enter, Esc and Ctrl+letter keys belongs in C#, where
+  session kind and terminal mode are known.
 - Output remains batched at 33 ms for the presented session and 100 ms for
   hidden sessions, with an activation flush. Cursor blink is active only for
   the selected presented terminal.
