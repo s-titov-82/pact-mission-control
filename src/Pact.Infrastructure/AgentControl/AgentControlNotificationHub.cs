@@ -15,6 +15,18 @@ public sealed class AgentControlNotificationHub
 	private readonly Dictionary<Guid, SubscriptionState> _subscriptions = [];
 	private bool _completed;
 
+	/// <summary>Gets how many stream subscriptions are currently open.</summary>
+	internal int SubscriberCount
+	{
+		get
+		{
+			lock (_sync)
+			{
+				return _subscriptions.Count;
+			}
+		}
+	}
+
 	/// <summary>Creates one disposable stream subscription for an authenticated caller.</summary>
 	public AgentControlNotificationSubscription Subscribe(AgentControlCaller caller)
 	{

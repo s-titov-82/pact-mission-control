@@ -15,6 +15,9 @@ namespace Pact.Infrastructure.AgentControl;
 public sealed class AgentControlEndpoint : IDisposable
 {
 	private static readonly TimeSpan DisposeDrainDeadline = TimeSpan.FromSeconds(1);
+	private static readonly TimeSpan DefaultHeartbeatInterval = TimeSpan.FromSeconds(15);
+	private static readonly byte[] ConnectedFrame = Encoding.UTF8.GetBytes(": connected\n\n");
+	private static readonly byte[] KeepAliveFrame = Encoding.UTF8.GetBytes(": keepalive\n\n");
 
 	private readonly AgentControlTokenRegistry _registry;
 	private readonly AgentControlJsonRpc _rpc;
@@ -26,6 +29,7 @@ public sealed class AgentControlEndpoint : IDisposable
 	private readonly CancellationTokenSource _streamCancellation = new();
 	private readonly AgentControlNotificationHub _notificationHub = new();
 	private readonly byte[] _sessionKey = RandomNumberGenerator.GetBytes(32);
+	private readonly TimeSpan _heartbeatInterval;
 	private Task? _acceptLoop;
 	private Task<AgentControlShutdownResult>? _shutdown;
 	private bool _admitting;
@@ -33,15 +37,27 @@ public sealed class AgentControlEndpoint : IDisposable
 
 	/// <summary>Creates an endpoint authenticating requests against <paramref name="registry"/>.</summary>
 	public AgentControlEndpoint(AgentControlTokenRegistry registry, AgentControlJsonRpc rpc)
+		: this(registry, rpc, DefaultHeartbeatInterval)
+	{
+	}
+
+	internal AgentControlEndpoint(
+		AgentControlTokenRegistry registry,
+		AgentControlJsonRpc rpc,
+		TimeSpan heartbeatInterval)
 	{
 		ArgumentNullException.ThrowIfNull(registry);
 		ArgumentNullException.ThrowIfNull(rpc);
+		ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(heartbeatInterval, TimeSpan.Zero);
 		_registry = registry;
 		_rpc = rpc;
+		_heartbeatInterval = heartbeatInterval;
 	}
 
 	/// <summary>Gets whether the loopback listener is currently accepting connections.</summary>
 	public bool IsListening => _listener.IsListening;
+
+	internal int NotificationSubscriberCount => _notificationHub.SubscriberCount;
 
 	/// <summary>Publishes one coalesced tool-list change to ordinary authenticated streams.</summary>
 	public void PublishToolsListChanged() => _notificationHub.PublishToolsListChanged();
@@ -383,18 +399,45 @@ public sealed class AgentControlEndpoint : IDisposable
 		response.Headers["Cache-Control"] = "no-cache";
 		response.Headers["X-Accel-Buffering"] = "no";
 		response.SendChunked = true;
-		await response.OutputStream.WriteAsync(
-			Encoding.UTF8.GetBytes(": connected\n\n"),
-			cancellationToken).ConfigureAwait(false);
-		await response.OutputStream.FlushAsync(cancellationToken).ConfigureAwait(false);
 		try
 		{
-			await foreach (string payload in subscription.Reader.ReadAllAsync(cancellationToken)
-				.ConfigureAwait(false))
+			await WriteFrameAsync(response, ConnectedFrame, cancellationToken).ConfigureAwait(false);
+
+			// HttpListener notices a vanished client only when a write fails, and notifications
+			// are rare, so idle streams carry a periodic comment frame. Without it every
+			// abandoned stream would keep its subscription for the life of the endpoint.
+			while (true)
 			{
-				byte[] frame = Encoding.UTF8.GetBytes($"data: {payload}\n\n");
-				await response.OutputStream.WriteAsync(frame, cancellationToken).ConfigureAwait(false);
-				await response.OutputStream.FlushAsync(cancellationToken).ConfigureAwait(false);
+				bool hasPayload;
+				using (var heartbeat = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+				{
+					heartbeat.CancelAfter(_heartbeatInterval);
+					try
+					{
+						hasPayload = await subscription.Reader.WaitToReadAsync(heartbeat.Token)
+							.ConfigureAwait(false);
+					}
+					catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+					{
+						await WriteFrameAsync(response, KeepAliveFrame, cancellationToken)
+							.ConfigureAwait(false);
+						continue;
+					}
+				}
+
+				if (!hasPayload)
+				{
+					break;
+				}
+
+				while (subscription.Reader.TryRead(out string? payload))
+				{
+					await WriteFrameAsync(
+							response,
+							Encoding.UTF8.GetBytes($"data: {payload}\n\n"),
+							cancellationToken)
+						.ConfigureAwait(false);
+				}
 			}
 		}
 		catch (Exception exception) when (
@@ -414,6 +457,15 @@ public sealed class AgentControlEndpoint : IDisposable
 			{
 			}
 		}
+	}
+
+	private static async Task WriteFrameAsync(
+		HttpListenerResponse response,
+		byte[] frame,
+		CancellationToken cancellationToken)
+	{
+		await response.OutputStream.WriteAsync(frame, cancellationToken).ConfigureAwait(false);
+		await response.OutputStream.FlushAsync(cancellationToken).ConfigureAwait(false);
 	}
 
 	private string CreateSessionId(string bearerToken)

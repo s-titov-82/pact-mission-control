@@ -147,6 +147,41 @@ public sealed class AgentControlEndpointTests : IDisposable
 	}
 
 	[Test]
+	public async Task Idle_stream_sends_keepalive_comments()
+	{
+		using var endpoint = CreateHeartbeatEndpoint(out var address);
+		var token = _registry.Issue("session-1");
+		using var request = CreateGet(token, address: address);
+		using HttpResponseMessage response = await _client.SendAsync(
+			request,
+			HttpCompletionOption.ResponseHeadersRead);
+		using StreamReader reader = new(await response.Content.ReadAsStreamAsync());
+		(await reader.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(5))).ShouldBe(": connected");
+		(await reader.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(5))).ShouldBeEmpty();
+
+		(await reader.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(5))).ShouldBe(": keepalive");
+	}
+
+	[Test]
+	public async Task Abandoned_stream_releases_its_subscription()
+	{
+		using var endpoint = CreateHeartbeatEndpoint(out var address);
+		var token = _registry.Issue("session-1");
+		using (HttpClient client = new())
+		{
+			using var request = CreateGet(token, address: address);
+			using HttpResponseMessage response = await client.SendAsync(
+				request,
+				HttpCompletionOption.ResponseHeadersRead);
+			using StreamReader reader = new(await response.Content.ReadAsStreamAsync());
+			(await reader.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(5))).ShouldBe(": connected");
+			endpoint.NotificationSubscriberCount.ShouldBe(1);
+		}
+
+		await WaitUntilAsync(() => endpoint.NotificationSubscriberCount == 0);
+	}
+
+	[Test]
 	public async Task Get_accepts_an_authenticated_request_without_a_session_header()
 	{
 		var token = _registry.Issue("session-1");
@@ -364,9 +399,21 @@ public sealed class AgentControlEndpointTests : IDisposable
 		return await client.SendAsync(request);
 	}
 
-	private HttpRequestMessage CreateGet(string? token, string? sessionId = null)
+	private AgentControlEndpoint CreateHeartbeatEndpoint(out Uri address)
 	{
-		HttpRequestMessage request = new(HttpMethod.Get, _address);
+		AgentControlEndpoint endpoint = new(
+			_registry,
+			new AgentControlJsonRpc(
+				_ => new JsonObject { ["tools"] = new JsonArray() },
+				(_, _) => Task.FromResult(new AgentControlResultData("ok", IsError: false))),
+			TimeSpan.FromMilliseconds(100));
+		address = endpoint.Start(FreePort());
+		return endpoint;
+	}
+
+	private HttpRequestMessage CreateGet(string? token, string? sessionId = null, Uri? address = null)
+	{
+		HttpRequestMessage request = new(HttpMethod.Get, address ?? _address);
 		request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
 		if (token is not null)
 		{

@@ -237,7 +237,9 @@ Notes. Browser creation and file-first review requests remain owner-scoped.
 
 The endpoint declares `tools.listChanged=true`. A bearer-authenticated GET
 opens an SSE stream for server notifications; accepted JSON-RPC calls continue
-to use POST. The initialize response returns an opaque `Mcp-Session-Id` derived
+to use POST. An idle stream carries a `: keepalive` comment every 15 seconds, so
+a client that went away is detected by the failed write and its subscription is
+released. The initialize response returns an opaque `Mcp-Session-Id` derived
 for that bearer, and a supplied id must validate against the same bearer before
 the request is routed. Claude may open its authenticated GET stream without the
 session header, matching its current client transport behavior.
