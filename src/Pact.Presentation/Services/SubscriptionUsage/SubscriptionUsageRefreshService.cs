@@ -46,7 +46,11 @@ public sealed class SubscriptionUsageRefreshService
 				rows.Add(row);
 			}
 
-			var snapshot = await _reader.ReadAsync(profile, cancellationToken);
+			// Readers walk agent data on disk and start helper processes synchronously before
+			// their first await; the rows stay bound to the caller's context.
+			var snapshot = await Task.Run(
+				() => _reader.ReadAsync(profile, cancellationToken),
+				cancellationToken);
 			row.Apply(snapshot);
 		}
 

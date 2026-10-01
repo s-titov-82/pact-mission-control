@@ -585,9 +585,11 @@ public sealed partial class LocalSubscriptionUsageReader : ISubscriptionUsageRea
 			return CreateUnavailable(profile, "No Codex session data");
 		}
 
-		var files = Directory
-			.EnumerateFiles(_codexSessionsDirectory, "*.jsonl", SearchOption.AllDirectories)
-			.Select(path => new FileInfo(path))
+		// Resumed sessions append to their original dated file, so recency comes from write
+		// times. DirectoryInfo enumeration fills them from the directory listing itself instead
+		// of opening every session file.
+		var files = new DirectoryInfo(_codexSessionsDirectory)
+			.EnumerateFiles("*.jsonl", SearchOption.AllDirectories)
 			.OrderByDescending(file => file.LastWriteTimeUtc)
 			.Take(CodexCandidateFileCount)
 			.Select(file => file.FullName);
