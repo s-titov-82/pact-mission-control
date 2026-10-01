@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.11] - 2026-10-01
+
+### Added
+
+- Selecting text with the mouse in Codex opens the selection actions popover
+  again. Codex now copies its selection straight to the Windows clipboard, so
+  Pact picks up a clipboard change right after the mouse release and opens the
+  popover at that point.
+
+### Fixed
+
+- Typing and session switches no longer stall in bursts while a Codex session
+  shows code: classifying its screen took up to half a second on the UI
+  thread and now takes under a millisecond.
+- Subscription usage is read off the UI thread, and scanning Codex session
+  files no longer queries every file separately.
+- Quick actions and other prompts set to submit now actually submit in Codex
+  instead of leaving the text in the composer.
+- Ctrl+U, Ctrl+K and other Ctrl+letter editing shortcuts work in Codex.
+- Abandoned agent notification streams are released instead of accumulating
+  for the life of the application, and the in-memory WebView diagnostic trace
+  no longer grows without bound.
+
 ## [0.1.10] - 2026-09-30
 
 ### Added
