@@ -53,4 +53,23 @@ public sealed class WebViewDiagnosticTraceTests
 		firstSnapshot.ShouldHaveSingleItem();
 		trace.Snapshot().Length.ShouldBe(2);
 	}
+
+	[Test]
+	public void TraceKeepsOnlyTheMostRecentEntriesButSinkSeesEveryOne()
+	{
+		var sinkCount = 0;
+		WebViewDiagnosticTrace trace = new("terminal", _ => sinkCount++);
+		var total = WebViewDiagnosticTrace.Capacity + 10;
+
+		for (var index = 0; index < total; index++)
+		{
+			trace.Record("webmessage-handled", true, true, true, true, $"index={index}");
+		}
+
+		var entries = trace.Snapshot();
+		entries.Length.ShouldBe(WebViewDiagnosticTrace.Capacity);
+		entries[0].Sequence.ShouldBe(11);
+		entries[^1].Sequence.ShouldBe(total);
+		sinkCount.ShouldBe(total);
+	}
 }

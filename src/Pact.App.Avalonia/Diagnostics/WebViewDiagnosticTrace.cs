@@ -13,8 +13,14 @@ internal sealed record WebViewDiagnosticEntry(
 
 internal sealed class WebViewDiagnosticTrace
 {
+	/// <summary>
+	/// How many of the most recent entries stay in memory. Hosts record every web message, so an
+	/// unbounded trace would grow for the whole life of the process.
+	/// </summary>
+	internal const int Capacity = 1024;
+
 	private readonly Lock _sync = new();
-	private readonly List<WebViewDiagnosticEntry> _entries = [];
+	private readonly Queue<WebViewDiagnosticEntry> _entries = new(Capacity);
 	private readonly string _host;
 	private readonly Action<WebViewDiagnosticEntry>? _sink;
 	private long _sequence;
@@ -52,7 +58,12 @@ internal sealed class WebViewDiagnosticTrace
 				isAttached,
 				hasPlatformHandle,
 				detail);
-			_entries.Add(entry);
+			if (_entries.Count == Capacity)
+			{
+				_entries.Dequeue();
+			}
+
+			_entries.Enqueue(entry);
 		}
 
 		_sink?.Invoke(entry);
