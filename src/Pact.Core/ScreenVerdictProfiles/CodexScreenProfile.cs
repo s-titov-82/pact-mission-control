@@ -52,7 +52,33 @@ public sealed partial class CodexScreenProfile : AgentScreenProfileBase
 	[GeneratedRegex(@"^•\s+(?<message>.+?)(?=^[\s─]*?(?:Worked\s+for\s+\d|─{25,}))", RegexOptions.Multiline | RegexOptions.Singleline | RegexOptions.RightToLeft)]
 	private static partial Regex LastMessageRx();
 
-	[GeneratedRegex(@"•\s+(?<descr>[^\r\n]*?).*?\?[\s\r\n]*?[>›❯]|Question\s+\d\/\d[^\r\n]*?[\r\n\s]+(?<descr>[^\r\n]*?).*?enter to submit answer|Question\s+\d\/\d[^\r\n]*?[\r\n\s]+(?<descr>[^\r\n]*?).*?[>›❯]", RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.RightToLeft)]
+	/// <inheritdoc />
+	protected override (int Index, string Description) FindInputRequest(string scope)
+	{
+		ArgumentNullException.ThrowIfNull(scope);
+		var (index, description) = LastMatchIndex(scope, InputRequestedRx());
+
+		// A structured question counts once any prompt glyph follows it. Checking the glyph
+		// separately keeps the search anchored on the rare header: a right-to-left pattern that
+		// ends in a glyph is retried from every '>' on screen, which is quadratic on code output.
+		Match? question = null;
+		for (var match = QuestionHeaderRx().Match(scope); match.Success; match = match.NextMatch())
+		{
+			if (scope.AsSpan(match.Index + match.Length).IndexOfAny(PromptCharacters) >= 0)
+			{
+				question = match;
+			}
+		}
+
+		return question is not null && question.Index > index
+			? (question.Index, question.Groups["descr"].Value.TrimEnd())
+			: (index, description);
+	}
+
+	[GeneratedRegex(@"•\s+(?<descr>[^\r\n]*?).*?\?[\s\r\n]*?[>›❯]|Question\s+\d\/\d[^\r\n]*?[\r\n\s]+(?<descr>[^\r\n]*?).*?enter to submit answer", RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.RightToLeft)]
 	private static partial Regex InputRequestedRx();
+
+	[GeneratedRegex(@"Question\s+\d\/\d[^\r\n]*[\r\n]\s*(?<descr>[^\r\n]*)", RegexOptions.IgnoreCase)]
+	private static partial Regex QuestionHeaderRx();
 
 }

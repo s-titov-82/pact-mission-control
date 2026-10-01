@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using System.Globalization;
+using System.Text;
 using Pact.Core.Agents;
 using Pact.Core.ScreenVerdictProfiles;
 using Pact.Core.Sessions;
@@ -220,6 +223,45 @@ public sealed class AgentScreenProfileTests
 		verdict.State.ShouldBe(TerminalScreenVerdictState.InputRequested);
 		verdict.Description.ShouldBe("Какой режим повторной доставки Codex-подсказки использовать?");
 		verdict.PromptIsEmpty.ShouldBeNull();
+	}
+
+	[Test]
+	public void Codex_question_header_without_a_later_prompt_glyph_is_not_a_question()
+	{
+		const string screen =
+			"""
+			› earlier composer
+			Question 1/1 (1 unanswered)
+			  Какой режим повторной доставки Codex-подсказки использовать?
+			""";
+
+		var verdict = CodexScreenProfile.Instance.Classify(screen);
+
+		verdict.State.ShouldNotBe(TerminalScreenVerdictState.InputRequested);
+	}
+
+	[Test]
+	public void Codex_screen_full_of_code_is_classified_without_backtracking()
+	{
+		var screen = new StringBuilder();
+		for (var line = 0; line < 40; line++)
+		{
+			screen.Append(CultureInfo.InvariantCulture, $"  {line,4} + var x = items.Where(p => p.Id > {line}).Select(p => p?.Name);\n");
+		}
+
+		screen.Append("\n  Working (12s • esc to interrupt)\n");
+		var text = screen.ToString();
+		CodexScreenProfile.Instance.Classify(text);
+
+		var stopwatch = Stopwatch.StartNew();
+		for (var run = 0; run < 5; run++)
+		{
+			CodexScreenProfile.Instance.Classify(text);
+		}
+
+		// Snapshots are classified on the UI thread; the budget is generous for a slow test
+		// machine yet an order of magnitude below the backtracking cost of a glyph-anchored scan.
+		(stopwatch.Elapsed / 5).ShouldBeLessThan(TimeSpan.FromMilliseconds(20));
 	}
 
 	[Test]

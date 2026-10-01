@@ -53,6 +53,13 @@ namespace Pact.Core.ScreenVerdictProfiles
 		protected abstract Regex InputRequestedRegex { get; }
 
 		/// <summary>
+		/// Finds the most recent human-answer request in <paramref name="scope"/>, returning its
+		/// start index and description, or -1 when there is none.
+		/// </summary>
+		protected virtual (int Index, string Description) FindInputRequest(string scope) =>
+			LastMatchIndex(scope, InputRequestedRegex);
+
+		/// <summary>
 		/// Inspects the prompt tail without exposing its text. Profiles without a readable
 		/// composer return null.
 		/// </summary>
@@ -124,7 +131,7 @@ namespace Pact.Core.ScreenVerdictProfiles
 
 			var lastMessage = ExtractLastMessage(scope);
 			var (busyAt, busyDescr) = LastMatchIndex(scope, WorkingRegex);
-			var (inputRequestAt, inputRequestDescr) = LastMatchIndex(scope, InputRequestedRegex);
+			var (inputRequestAt, inputRequestDescr) = FindInputRequest(scope);
 			var (workedForAt, workedForDescr) = LastMatchIndex(scope, WorkedForRegex);
 			var (interruptedAt, interruptedDescr) = LastMatchIndex(scope, InterruptedRegex);
 			var (doneAt, doneDescr) = workedForAt > interruptedAt ? (workedForAt, workedForDescr) : (interruptedAt, interruptedDescr);
@@ -162,8 +169,14 @@ namespace Pact.Core.ScreenVerdictProfiles
 			return match.Success ? match.Groups["message"].Value.Trim() : string.Empty;
 		}
 
-		private static (int pos, string descr) LastMatchIndex(string text, Regex regex)
+		/// <summary>
+		/// Returns the start index and <c>descr</c> group of the first match of
+		/// <paramref name="regex"/>, which for a right-to-left pattern is the last one in the text.
+		/// </summary>
+		protected static (int pos, string descr) LastMatchIndex(string text, Regex regex)
 		{
+			ArgumentNullException.ThrowIfNull(text);
+			ArgumentNullException.ThrowIfNull(regex);
 			var match = regex.Match(text);
 			return match.Success ? (match.Index, match.Groups["descr"].Value) : (-1, string.Empty);
 		}
