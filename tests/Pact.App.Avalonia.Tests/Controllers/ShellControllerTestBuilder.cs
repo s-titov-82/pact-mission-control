@@ -195,6 +195,8 @@ internal sealed class ShellControllerTestBuilder : IAsyncDisposable
 
 	private sealed class EmptyClipboardService : IClipboardService
 	{
+		public uint ChangeSequence => 0;
+
 		public Task<string> GetTextAsync() => Task.FromResult(string.Empty);
 
 		public Task<bool> TrySetTextAsync(string text) => Task.FromResult(true);

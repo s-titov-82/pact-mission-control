@@ -793,6 +793,7 @@ public sealed class SessionRuntimeCoordinatorTests
 		public event EventHandler<(string SessionId, bool HasSelection)>? SelectionChanged { add { } remove { } }
 		public event EventHandler<TerminalSelectionCompleted>? SelectionCompleted { add { } remove { } }
 		public event EventHandler<string>? SelectionDismissed { add { } remove { } }
+		public event EventHandler<TerminalMouseReleased>? AgentMouseReleased { add { } remove { } }
 		public event EventHandler<(string SessionId, Uri Uri)>? LinkRequested { add { } remove { } }
 		public event EventHandler? PasteRequested { add { } remove { } }
 		public event EventHandler<TerminalCopyRequest>? CopyRequested { add { } remove { } }

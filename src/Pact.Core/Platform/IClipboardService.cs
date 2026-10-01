@@ -8,6 +8,12 @@ namespace Pact.Core.Platform;
 public interface IClipboardService
 {
 	/// <summary>
+	/// Gets a number that changes whenever any process writes the clipboard, letting callers
+	/// notice a copy they did not make themselves.
+	/// </summary>
+	uint ChangeSequence { get; }
+
+	/// <summary>
 	/// Reads clipboard text, returning an empty string when the clipboard holds no text.
 	/// </summary>
 	Task<string> GetTextAsync();

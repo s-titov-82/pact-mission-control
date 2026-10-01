@@ -29,6 +29,12 @@ public sealed class TerminalWebMessageDecoderTests
 				"""{"type":"selectionDismissed","sessionId":"s1"}""")
 			.ShouldBe(new TerminalWebMessage.SelectionDismissed("s1"));
 		TerminalWebMessageDecoder.TryDecode(
+				"""{"type":"agentMouseReleased","sessionId":"s1","x":100.5,"y":50,"revision":4}""")
+			.ShouldBe(new TerminalWebMessage.AgentMouseReleased("s1", 100.5, 50, 4));
+		TerminalWebMessageDecoder.TryDecode(
+				"""{"type":"agentMouseReleased","sessionId":"s1"}""")
+			.ShouldBeNull();
+		TerminalWebMessageDecoder.TryDecode(
 				"""{"type":"linkRequested","sessionId":"s1","url":"https://example.test/review/42"}""")
 			.ShouldBe(new TerminalWebMessage.LinkRequested(
 				"s1",

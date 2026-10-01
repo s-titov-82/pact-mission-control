@@ -43,6 +43,13 @@ public interface ITerminalWebViewHost
 	/// </summary>
 	event EventHandler<string>? SelectionDismissed;
 
+	/// <summary>
+	/// Raised when the mouse is released inside a terminal whose application tracks the mouse.
+	/// An agent that copies its own selection to the native clipboard reports nothing else, so
+	/// this release is the anchor for any copy that follows it.
+	/// </summary>
+	event EventHandler<TerminalMouseReleased>? AgentMouseReleased;
+
 	/// <summary>Raised when the user activates an HTTP(S) hyperlink rendered by xterm.</summary>
 	event EventHandler<(string SessionId, Uri Uri)>? LinkRequested;
 

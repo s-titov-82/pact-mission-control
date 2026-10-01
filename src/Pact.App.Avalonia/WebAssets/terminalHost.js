@@ -362,6 +362,17 @@ function createInstance(sessionId, options) {
     // handler, which runs after this release; the completion is posted there.
     instance.lastPointerAnchor = anchor;
     instance.pendingSelectionAnchor = anchor;
+    // An application tracking the mouse keeps its own selection and may copy it to the
+    // native clipboard without any terminal sequence; the host watches for that copy.
+    if (term.modes.mouseTrackingMode !== 'none') {
+      postHostMessage({
+        type: 'agentMouseReleased',
+        sessionId,
+        x: anchor.x,
+        y: anchor.y,
+        revision: instance.selectionRevision
+      });
+    }
   });
 
   // Shift+Enter / Ctrl+Enter must insert a newline in the agent's input box,

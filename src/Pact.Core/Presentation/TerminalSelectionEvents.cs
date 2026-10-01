@@ -22,3 +22,12 @@ public sealed record TerminalCopyRequest(
 	string SessionId,
 	string Text,
 	TerminalSelectionAnchor? Anchor);
+
+/// <summary>
+/// Reports a mouse release inside a terminal whose application tracks the mouse. Such an agent
+/// keeps its selection outside xterm and may copy it straight to the native clipboard, so the
+/// release point is the only anchor the host learns for that copy.
+/// </summary>
+public sealed record TerminalMouseReleased(
+	string SessionId,
+	TerminalSelectionAnchor Anchor);

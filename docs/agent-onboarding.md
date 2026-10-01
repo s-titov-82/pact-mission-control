@@ -405,7 +405,11 @@ reported from that isolated gate and never kills processes by image name.
 - Selection actions use one contextual cursor popover over the center pane.
   Terminal mouse selection anchors it to the xterm completion point; Claude
   OSC 52 copy uses its supplied point when available and otherwise falls back
-  to the center pane. Notes mouse selection uses an editor-local point, while
+  to the center pane. Codex copies its selection straight to the native
+  clipboard, so a mouse release inside a mouse-tracking application opens a
+  one-second watch on the clipboard sequence number; a change within it opens
+  the popover at the release with the clipboard text, and an OSC 52 copy or any
+  newer gesture ends the watch. Notes mouse selection uses an editor-local point, while
   keyboard selection falls back to the center pane when Avalonia exposes no
   reliable selected-range rectangle.
 - xterm publishes a completed selection only from its own mouse-up handling,

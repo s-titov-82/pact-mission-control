@@ -2202,6 +2202,75 @@ public sealed class AvaloniaMainShellControllerTests
 	}
 
 	[Test]
+	public async Task Native_copy_after_an_agent_mouse_release_opens_selection_actions_at_the_release()
+	{
+		await using ControllerFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+
+		fixture.Host.RaiseAgentMouseReleased(
+			new TerminalMouseReleased("session-1", new TerminalSelectionAnchor(120, 80, 3)));
+		fixture.Clipboard.NextRead = Task.FromResult("copied by codex");
+		fixture.Clipboard.ChangeSequence++;
+		await WaitForEventTasksAsync(fixture);
+
+		fixture.Controller.IsSelectionActionsOpen.ShouldBeTrue();
+		fixture.Controller.SelectionActionsAnchor.ShouldBe(
+			new SelectionActionAnchor(SelectionActionSourceKind.Terminal, 120, 80, true));
+		fixture.Clipboard.WrittenText.ShouldBeNull();
+	}
+
+	[Test]
+	public async Task Agent_mouse_release_without_a_clipboard_change_opens_nothing()
+	{
+		await using ControllerFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		fixture.Clipboard.NextRead = Task.FromResult("older clipboard text");
+
+		fixture.Host.RaiseAgentMouseReleased(
+			new TerminalMouseReleased("session-1", new TerminalSelectionAnchor(120, 80, 3)));
+		await WaitForEventTasksAsync(fixture);
+
+		fixture.Controller.IsSelectionActionsOpen.ShouldBeFalse();
+	}
+
+	[Test]
+	public async Task Osc52_copy_after_an_agent_mouse_release_is_not_reported_twice()
+	{
+		await using ControllerFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+
+		fixture.Host.RaiseAgentMouseReleased(
+			new TerminalMouseReleased("session-1", new TerminalSelectionAnchor(120, 80, 3)));
+		fixture.Host.RaiseCopyRequested(
+			new TerminalCopyRequest("session-1", "copied by claude", new TerminalSelectionAnchor(200, 160, 4)));
+		fixture.Clipboard.NextRead = Task.FromResult("copied by claude");
+		fixture.Clipboard.ChangeSequence++;
+		await WaitForEventTasksAsync(fixture);
+
+		fixture.Controller.SelectionActionsAnchor.ShouldBe(
+			new SelectionActionAnchor(SelectionActionSourceKind.Terminal, 200, 160, true));
+	}
+
+	[Test]
+	public async Task Native_copy_from_an_inactive_session_is_ignored()
+	{
+		await using ControllerFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		await fixture.Controller.SelectSessionAsync(
+			fixture.ViewModel.Sessions[1],
+			startIfNeeded: true,
+			cancellationToken: TestContext.CurrentContext.CancellationToken);
+
+		fixture.Host.RaiseAgentMouseReleased(
+			new TerminalMouseReleased("session-1", new TerminalSelectionAnchor(120, 80, 3)));
+		fixture.Clipboard.NextRead = Task.FromResult("copied by hidden codex");
+		fixture.Clipboard.ChangeSequence++;
+		await WaitForEventTasksAsync(fixture);
+
+		fixture.Controller.IsSelectionActionsOpen.ShouldBeFalse();
+	}
+
+	[Test]
 	public async Task NotesSelectionCompletionOpensActionsAtNotesAnchorAndEmptyTextClearsIt()
 	{
 		await using ControllerFixture fixture = new();
@@ -3117,6 +3186,7 @@ public sealed class AvaloniaMainShellControllerTests
 		public Task<string> NextRead { get; set; } = Task.FromResult(string.Empty);
 		public bool NextWriteResult { get; set; } = true;
 		public string? WrittenText { get; private set; }
+		public uint ChangeSequence { get; set; }
 		public Task<string> GetTextAsync() => NextRead;
 		public Task<bool> TrySetTextAsync(string text)
 		{

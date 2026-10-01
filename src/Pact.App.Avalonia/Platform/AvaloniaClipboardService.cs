@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -7,7 +8,7 @@ using Pact.Core.Platform;
 
 namespace Pact.App.Avalonia.Platform;
 
-internal sealed class AvaloniaClipboardService : IClipboardService
+internal sealed partial class AvaloniaClipboardService : IClipboardService
 {
 	private readonly IUiTaskDispatcher _uiTaskDispatcher;
 	private readonly Func<Task<string>> _readTextAsync;
@@ -27,6 +28,8 @@ internal sealed class AvaloniaClipboardService : IClipboardService
 		_readTextAsync = readTextAsync ?? throw new ArgumentNullException(nameof(readTextAsync));
 		_setTextAsync = setTextAsync ?? throw new ArgumentNullException(nameof(setTextAsync));
 	}
+
+	public uint ChangeSequence => GetClipboardSequenceNumber();
 
 	public async Task<string> GetTextAsync()
 	{
@@ -69,6 +72,9 @@ internal sealed class AvaloniaClipboardService : IClipboardService
 			?? throw new InvalidOperationException("The application clipboard is unavailable.");
 		return clipboard.SetTextAsync(text);
 	}
+
+	[LibraryImport("user32.dll")]
+	private static partial uint GetClipboardSequenceNumber();
 
 	private static TopLevel? GetTopLevel()
 	{

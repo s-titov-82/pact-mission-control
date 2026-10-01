@@ -23,6 +23,7 @@ internal sealed class FakeTerminalWebViewHost : ITerminalWebViewHost
 	public event EventHandler<(string SessionId, bool HasSelection)>? SelectionChanged;
 	public event EventHandler<TerminalSelectionCompleted>? SelectionCompleted;
 	public event EventHandler<string>? SelectionDismissed;
+	public event EventHandler<TerminalMouseReleased>? AgentMouseReleased;
 	public event EventHandler<(string SessionId, Uri Uri)>? LinkRequested;
 	public event EventHandler? PasteRequested;
 	public event EventHandler<TerminalCopyRequest>? CopyRequested;
@@ -100,5 +101,7 @@ internal sealed class FakeTerminalWebViewHost : ITerminalWebViewHost
 	public void RaiseLinkRequested(string sessionId, Uri uri) =>
 		LinkRequested?.Invoke(this, (sessionId, uri));
 	public void RaiseCopyRequested(TerminalCopyRequest request) => CopyRequested?.Invoke(this, request);
+	public void RaiseAgentMouseReleased(TerminalMouseReleased released) =>
+		AgentMouseReleased?.Invoke(this, released);
 	public void RaisePasteRequested() => PasteRequested?.Invoke(this, EventArgs.Empty);
 }

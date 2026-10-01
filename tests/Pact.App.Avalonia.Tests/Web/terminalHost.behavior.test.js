@@ -70,6 +70,7 @@ class FakeTerminal {
     this.lines = [];
     this.selectedText = '';
     this.oscHandlers = new Map();
+    this.modes = { mouseTrackingMode: 'none' };
     this.buffer = {
       active: {
         baseY: 0,
@@ -546,6 +547,27 @@ function runSelectionDismissBehavior() {
   });
 }
 
+function runAgentMouseReleaseBehavior() {
+  window.agentTerminal.showTerminal('session-1', { snapshotDebounceMs: 500 });
+  const terminal = terminalInstances[0];
+  const pointerUp = terminal.container.listeners.get('pointerup');
+  const releases = () => hostMessages.filter(message => message.type === 'agentMouseReleased');
+  hostMessages.length = 0;
+
+  pointerUp({ clientX: 110, clientY: 70 });
+  assert.deepEqual(releases(), [], 'xterm owns the selection while no application tracks the mouse');
+
+  terminal.modes.mouseTrackingMode = 'drag';
+  pointerUp({ clientX: 130, clientY: 90 });
+  assert.deepEqual(releases(), [{
+    type: 'agentMouseReleased',
+    sessionId: 'session-1',
+    x: 120,
+    y: 70,
+    revision: 0
+  }], 'a release inside a mouse-tracking application must reach the host with its anchor');
+}
+
 function runOsc52Behavior() {
   window.agentTerminal.createTerminal('session-1', { snapshotDebounceMs: 500 });
   const terminal = terminalInstances[0];
@@ -689,6 +711,8 @@ if (behavior === 'same-final-screen') {
   runSelectionCompletionBehavior();
 } else if (behavior === 'selection-dismiss') {
   runSelectionDismissBehavior();
+} else if (behavior === 'agent-mouse-release') {
+  runAgentMouseReleaseBehavior();
 } else if (behavior === 'osc52') {
   runOsc52Behavior();
 } else if (behavior === 'selected-text-request') {

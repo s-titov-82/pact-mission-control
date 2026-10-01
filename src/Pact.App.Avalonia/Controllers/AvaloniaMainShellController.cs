@@ -39,6 +39,8 @@ namespace Pact.App.Avalonia.Controllers;
 internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsyncDisposable
 {
 	private static readonly TimeSpan GracefulAgentExitTimeout = TimeSpan.FromSeconds(20);
+	private static readonly TimeSpan NativeCopyWindow = TimeSpan.FromSeconds(1);
+	private static readonly TimeSpan NativeCopyPollInterval = TimeSpan.FromMilliseconds(50);
 	private readonly SettingsFileStore _settingsFileStore;
 	private readonly AppPaths _appPaths;
 	private readonly IWebMonitorSnapshotReader _webMonitorSnapshotReader;
@@ -217,6 +219,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		_terminalHost.SelectionChanged += OnSelectionChanged;
 		_terminalHost.SelectionCompleted += OnSelectionCompleted;
 		_terminalHost.SelectionDismissed += OnSelectionDismissed;
+		_terminalHost.AgentMouseReleased += OnAgentMouseReleased;
 		_terminalHost.LinkRequested += OnTerminalLinkRequested;
 		_terminalHost.BusyOverlayActionRequested += OnBusyOverlayActionRequested;
 		_terminalHost.PasteRequested += OnPasteRequested;
@@ -3900,6 +3903,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		_terminalHost.SelectionChanged -= OnSelectionChanged;
 		_terminalHost.SelectionCompleted -= OnSelectionCompleted;
 		_terminalHost.SelectionDismissed -= OnSelectionDismissed;
+		_terminalHost.AgentMouseReleased -= OnAgentMouseReleased;
 		_terminalHost.LinkRequested -= OnTerminalLinkRequested;
 		_terminalHost.BusyOverlayActionRequested -= OnBusyOverlayActionRequested;
 		_terminalHost.PasteRequested -= OnPasteRequested;
@@ -4269,6 +4273,64 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 	}
 	private void OnBusyOverlayActionRequested(object? sender, EventArgs e) =>
 		BusyOverlayActionRequested?.Invoke(this, EventArgs.Empty);
+	private void OnAgentMouseReleased(object? sender, TerminalMouseReleased e)
+	{
+		var source = CaptureTerminalSelectionSource(e.SessionId);
+		if (source is null)
+		{
+			return;
+		}
+
+		var version = Interlocked.Increment(ref _selectionCaptureVersion);
+		var baseline = Clipboard.ChangeSequence;
+		RunEventOperation(
+			"terminal-native-copy",
+			() => WatchNativeCopyAsync(version, source, e.Anchor, baseline),
+			"Terminal selection actions failed");
+	}
+
+	// Agents that own the mouse may copy their selection straight to the native clipboard
+	// without telling the terminal. A clipboard change shortly after their mouse release is
+	// that copy; an OSC 52 copy or any newer gesture advances the version and ends the watch.
+	private async Task WatchNativeCopyAsync(
+		int version,
+		SelectionActionSourceIdentity source,
+		TerminalSelectionAnchor anchor,
+		uint baseline)
+	{
+		for (var waited = TimeSpan.Zero; waited < NativeCopyWindow; waited += NativeCopyPollInterval)
+		{
+			await Task.Delay(NativeCopyPollInterval, _timeProvider, CancellationToken.None);
+			if (version != Volatile.Read(ref _selectionCaptureVersion))
+			{
+				return;
+			}
+
+			if (Clipboard.ChangeSequence == baseline)
+			{
+				continue;
+			}
+
+			var text = await Clipboard.GetTextAsync();
+			if (version == Volatile.Read(ref _selectionCaptureVersion)
+				&& IsSelectionSourceCurrent(source)
+				&& !string.IsNullOrWhiteSpace(text))
+			{
+				ApplySelectionText(
+					version,
+					text,
+					new SelectionActionAnchor(
+						SelectionActionSourceKind.Terminal,
+						anchor.X,
+						anchor.Y,
+						IsAvailable: true),
+					source);
+			}
+
+			return;
+		}
+	}
+
 	private void OnCopyRequested(object? sender, TerminalCopyRequest e)
 	{
 		var source = CaptureTerminalSelectionSource(e.SessionId);

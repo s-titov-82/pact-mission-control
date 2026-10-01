@@ -29,6 +29,7 @@ public sealed partial class TerminalHostAssetTests
 	[TestCase("selection")]
 	[TestCase("selection-completion")]
 	[TestCase("selection-dismiss")]
+	[TestCase("agent-mouse-release")]
 	[TestCase("osc52")]
 	[TestCase("selected-text-request")]
 	public async Task Terminal_host_snapshot_behaviors_execute_in_node(string behavior)

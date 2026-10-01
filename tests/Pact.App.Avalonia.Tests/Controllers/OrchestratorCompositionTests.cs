@@ -373,6 +373,8 @@ public sealed class OrchestratorCompositionTests
 
 		public Task<string> NextRead { get; set; } = Task.FromResult(string.Empty);
 
+		public uint ChangeSequence => 0;
+
 		public Task<string> GetTextAsync() => NextRead;
 
 		public Task<bool> TrySetTextAsync(string text)

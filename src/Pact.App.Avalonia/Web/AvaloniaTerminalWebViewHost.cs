@@ -74,6 +74,7 @@ internal sealed class AvaloniaTerminalWebViewHost : ITerminalWebViewHost, IAsync
 	public event EventHandler<(string SessionId, bool HasSelection)>? SelectionChanged;
 	public event EventHandler<TerminalSelectionCompleted>? SelectionCompleted;
 	public event EventHandler<string>? SelectionDismissed;
+	public event EventHandler<TerminalMouseReleased>? AgentMouseReleased;
 	public event EventHandler<(string SessionId, Uri Uri)>? LinkRequested;
 	public event EventHandler? PasteRequested;
 	public event EventHandler<TerminalCopyRequest>? CopyRequested;
@@ -251,6 +252,7 @@ internal sealed class AvaloniaTerminalWebViewHost : ITerminalWebViewHost, IAsync
 			TerminalWebMessage.SelectionChanged => "selectionChanged",
 			TerminalWebMessage.SelectionCompleted => "selectionCompleted",
 			TerminalWebMessage.SelectionDismissed => "selectionDismissed",
+			TerminalWebMessage.AgentMouseReleased => "agentMouseReleased",
 			TerminalWebMessage.LinkRequested => "linkRequested",
 			TerminalWebMessage.PasteRequested => "pasteRequested",
 			TerminalWebMessage.BusyOverlayAction => "busyOverlayAction",
@@ -293,6 +295,13 @@ internal sealed class AvaloniaTerminalWebViewHost : ITerminalWebViewHost, IAsync
 				break;
 			case TerminalWebMessage.SelectionDismissed dismissed:
 				SelectionDismissed?.Invoke(this, dismissed.SessionId);
+				break;
+			case TerminalWebMessage.AgentMouseReleased released:
+				AgentMouseReleased?.Invoke(
+					this,
+					new TerminalMouseReleased(
+						released.SessionId,
+						new TerminalSelectionAnchor(released.X, released.Y, released.Revision)));
 				break;
 			case TerminalWebMessage.LinkRequested link
 				when HttpWebAddress.TryParse(link.Url, out var uri):

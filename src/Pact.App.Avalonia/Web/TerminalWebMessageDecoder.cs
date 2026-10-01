@@ -18,6 +18,8 @@ internal abstract record TerminalWebMessage
 
 	internal sealed record SelectionDismissed(string SessionId) : TerminalWebMessage;
 
+	internal sealed record AgentMouseReleased(string SessionId, double X, double Y, long Revision) : TerminalWebMessage;
+
 	internal sealed record LinkRequested(string SessionId, string Url) : TerminalWebMessage;
 
 	internal sealed record PasteRequested : TerminalWebMessage;
@@ -57,6 +59,7 @@ internal static class TerminalWebMessageDecoder
 				"selectionChanged" => DecodeSelectionChanged(root),
 				"selectionCompleted" => DecodeSelectionCompleted(root),
 				"selectionDismissed" => DecodeSelectionDismissed(root),
+				"agentMouseReleased" => DecodeAgentMouseReleased(root),
 				"linkRequested" => DecodeLinkRequested(root),
 				"pasteRequested" => new TerminalWebMessage.PasteRequested(),
 				"busyOverlayAction" => new TerminalWebMessage.BusyOverlayAction(),
@@ -148,6 +151,17 @@ internal static class TerminalWebMessageDecoder
 		TryGetString(root, "sessionId", out var sessionId)
 			? new TerminalWebMessage.SelectionDismissed(sessionId)
 			: null;
+
+	private static TerminalWebMessage.AgentMouseReleased? DecodeAgentMouseReleased(JsonElement root)
+	{
+		if (!TryGetString(root, "sessionId", out var sessionId)
+			|| !TryDecodeAnchor(root, required: true, out var x, out var y, out var revision))
+		{
+			return null;
+		}
+
+		return new TerminalWebMessage.AgentMouseReleased(sessionId, x!.Value, y!.Value, revision!.Value);
+	}
 
 	private static TerminalWebMessage.CopySelection? DecodeCopySelection(JsonElement root)
 	{
