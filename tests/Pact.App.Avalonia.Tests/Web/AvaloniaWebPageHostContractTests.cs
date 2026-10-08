@@ -366,6 +366,41 @@ public sealed class AvaloniaWebPageHostContractTests
 		await host.DisposeAsync();
 	}
 
+	[AvaloniaTest]
+	public async Task DisposingCapturesTheHolderWindowBeforeRemovalAndDestroysItAfterADelay()
+	{
+		NativeWebView webView = new();
+		Grid container = new();
+		container.Children.Add(webView);
+		var capturedWhileAttached = false;
+		List<nint> destroyed = [];
+		AvaloniaWebPageHost host = new(
+			"page-1",
+			webView,
+			container,
+			_ => new RecordingNativeWebViewVisibilityController(),
+			captureHolderWindow: view =>
+			{
+				capturedWhileAttached = container.Children.Contains(view);
+				return 42;
+			},
+			destroyHolderWindow: destroyed.Add);
+
+		await host.DisposeAsync();
+
+		capturedWhileAttached.ShouldBeTrue();
+		container.Children.ShouldNotContain(webView);
+		destroyed.ShouldBeEmpty();
+		var deadline = DateTime.UtcNow + AvaloniaWebPageHost.HolderWindowDestroyDelay + TimeSpan.FromSeconds(5);
+		while (destroyed.Count == 0 && DateTime.UtcNow < deadline)
+		{
+			Dispatcher.UIThread.RunJobs();
+			await Task.Delay(50);
+		}
+
+		destroyed.ShouldBe([42]);
+	}
+
 	private static AvaloniaWebPageHost CreateHost(
 		RecordingNativeWebViewVisibilityController visibilityController) =>
 		new("page-1", new NativeWebView(), new Grid(), _ => visibilityController);

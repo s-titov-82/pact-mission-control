@@ -22,6 +22,8 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 	private readonly IUiTaskDispatcher _uiTaskDispatcher;
 	private readonly Func<NativeWebView, string, Task<string?>> _scriptInvoker;
 	private readonly IWebView2ProcessInfoReader _processInfoReader;
+	private readonly Func<NativeWebView, nint?> _captureHolderWindow;
+	private readonly Action<nint> _destroyHolderWindow;
 	private INativeWebViewVisibilityController? _visibilityController;
 	private bool _isPresented;
 	private bool _isNavigationLoading;
@@ -39,8 +41,12 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 		IUiTaskDispatcher? uiTaskDispatcher = null,
 		Func<NativeWebView, string, Task<string?>>? scriptInvoker = null,
 		IWebView2ProcessInfoReader? processInfoReader = null,
-		Action<WebViewDiagnosticEntry>? diagnosticSink = null)
+		Action<WebViewDiagnosticEntry>? diagnosticSink = null,
+		Func<NativeWebView, nint?>? captureHolderWindow = null,
+		Action<nint>? destroyHolderWindow = null)
 	{
+		_captureHolderWindow = captureHolderWindow ?? NativeWebViewHolderWindow.TryCapture;
+		_destroyHolderWindow = destroyHolderWindow ?? NativeWebViewHolderWindow.DestroyIfOwned;
 		ArgumentException.ThrowIfNullOrWhiteSpace(id);
 		Id = id;
 		_diagnostics = new WebViewDiagnosticTrace($"browser:{id}", diagnosticSink);
@@ -191,9 +197,18 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 		await Dispatcher.UIThread.InvokeAsync(() =>
 		{
 			RecordDiagnostic("host-disposing");
+			var holderWindow = _captureHolderWindow(_webView);
 			_container.Children.Remove(_webView);
+			if (holderWindow is { } window)
+			{
+				// Removal queues the controller's disposal; the holder outlives it by design, so it
+				// is destroyed here on its owning thread once the controller has closed its windows.
+				DispatcherTimer.RunOnce(() => _destroyHolderWindow(window), HolderWindowDestroyDelay);
+			}
 		});
 	}
+
+	internal static readonly TimeSpan HolderWindowDestroyDelay = TimeSpan.FromSeconds(2);
 
 	internal void DetachEventProducers()
 	{
