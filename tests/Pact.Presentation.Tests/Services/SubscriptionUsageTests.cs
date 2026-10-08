@@ -89,7 +89,7 @@ public sealed class SubscriptionUsageTests : IDisposable
 
 		var interval = SubscriptionUsageRefreshPolicy.GetNextRefreshInterval(rows);
 
-		interval.ShouldBe(TimeSpan.FromSeconds(30));
+		interval.ShouldBe(TimeSpan.FromMinutes(1));
 	}
 
 	[Test]
@@ -103,7 +103,7 @@ public sealed class SubscriptionUsageTests : IDisposable
 
 		var interval = SubscriptionUsageRefreshPolicy.GetNextRefreshInterval(rows);
 
-		interval.ShouldBe(TimeSpan.FromMinutes(2));
+		interval.ShouldBe(TimeSpan.FromMinutes(5));
 	}
 
 	[Test]
