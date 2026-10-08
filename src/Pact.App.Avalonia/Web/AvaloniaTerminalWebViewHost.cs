@@ -16,6 +16,9 @@ internal sealed class AvaloniaTerminalWebViewHost : ITerminalWebViewHost, IAsync
 {
 	private static readonly (int Columns, int Rows) DefaultSize = (120, 36);
 	private const int SnapshotDebounceMs = 500;
+	private static readonly TimeSpan SlowScriptThreshold = TimeSpan.FromMilliseconds(300);
+	private static readonly TimeSpan SlowScriptLogInterval = TimeSpan.FromSeconds(5);
+	private long _lastSlowScriptLog;
 	private readonly NativeWebView _webView;
 	private readonly Dictionary<string, (int Columns, int Rows)> _sessionSizes = new(StringComparer.Ordinal);
 	private readonly SemaphoreSlim _selectionLock = new(1, 1);
@@ -137,11 +140,28 @@ internal sealed class AvaloniaTerminalWebViewHost : ITerminalWebViewHost, IAsync
 
 	public async Task ShowTerminalAsync(string sessionId)
 	{
+		var started = Stopwatch.GetTimestamp();
 		await _outputBatcher.ActivateAndFlushAsync(sessionId);
+		var flushed = Stopwatch.GetTimestamp();
 		await ExecuteScriptWhenReadyAsync(
 			$"window.agentTerminal.showTerminal({JsonSerializer.Serialize(sessionId)}, "
 			+ $"{{ snapshotDebounceMs: {SnapshotDebounceMs} }});");
+		LastShowTiming = (
+			Stopwatch.GetElapsedTime(started, flushed),
+			Stopwatch.GetElapsedTime(flushed));
 	}
+
+	/// <summary>
+	/// Time the most recent <see cref="ShowTerminalAsync"/> spent flushing the session's pending
+	/// output and then running the show script, for slow-switch diagnostics.
+	/// </summary>
+	internal (TimeSpan Flush, TimeSpan Script) LastShowTiming { get; private set; }
+
+	/// <summary>
+	/// Receives a line whenever a script round trip to the terminal page is slow, at most once per
+	/// <see cref="SlowScriptLogInterval"/>.
+	/// </summary>
+	internal Action<string>? SlowOperationLog { get; set; }
 
 	public Task WriteOutputAsync(string sessionId, string text) => _outputBatcher.EnqueueAsync(sessionId, text);
 
@@ -227,7 +247,29 @@ internal sealed class AvaloniaTerminalWebViewHost : ITerminalWebViewHost, IAsync
 	private Task WaitUntilReadyAsync() => _initializationGate?.Completion
 		?? throw new InvalidOperationException("Avalonia terminal WebView host has not been initialized.");
 
-	private async Task ExecuteScriptAsync(string script) => await Dispatcher.UIThread.InvokeAsync(() => _webView.InvokeScript(script));
+	private async Task ExecuteScriptAsync(string script)
+	{
+		var started = Stopwatch.GetTimestamp();
+		await Dispatcher.UIThread.InvokeAsync(() => _webView.InvokeScript(script));
+		var elapsed = Stopwatch.GetElapsedTime(started);
+		if (elapsed < SlowScriptThreshold || SlowOperationLog is not { } log)
+		{
+			return;
+		}
+
+		var now = Stopwatch.GetTimestamp();
+		var last = Interlocked.Read(ref _lastSlowScriptLog);
+		if (last != 0 && Stopwatch.GetElapsedTime(last, now) < SlowScriptLogInterval
+			|| Interlocked.CompareExchange(ref _lastSlowScriptLog, now, last) != last)
+		{
+			return;
+		}
+
+		var call = script.Length > 0 && script.IndexOf('(', StringComparison.Ordinal) is var open and > 0
+			? script[..open]
+			: "script";
+		log($"Slow terminal script: {call} took {elapsed.TotalMilliseconds:F0} ms ({script.Length} chars)");
+	}
 
 	private void ReceiveMessage(string json) =>
 		WebMessageThreadRouter.Route(

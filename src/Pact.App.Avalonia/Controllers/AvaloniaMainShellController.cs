@@ -130,6 +130,10 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		_appPaths = appPaths ?? throw new ArgumentNullException(nameof(appPaths));
 		_reviewProfileProvider = new ReviewProfileProvider(_appPaths.ReviewProfilesPath);
 		_terminalHost = terminalHost ?? throw new ArgumentNullException(nameof(terminalHost));
+		if (terminalHost is AvaloniaTerminalWebViewHost avaloniaTerminalHost)
+		{
+			avaloniaTerminalHost.SlowOperationLog = AppendDiagnosticLog;
+		}
 		ArgumentNullException.ThrowIfNull(backendFactory);
 		_resolveCommandAsync = resolveCommandAsync ?? throw new ArgumentNullException(nameof(resolveCommandAsync));
 		_runtimeCoordinator = new SessionRuntimeCoordinator(
@@ -1065,9 +1069,12 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 	{
 		ObjectDisposedException.ThrowIf(_disposed, this);
 		ThrowIfRejectingInput();
+		SessionSwitchTiming timing = new();
 		ClearSelectionActions(restoreTerminalFocus: false);
 		await FlushCurrentNoteAsync(cancellationToken);
+		timing.Mark("note");
 		await HideActiveWebPageAsync(cancellationToken);
+		timing.Mark("web");
 		CurrentDocsAndNotes = null;
 		CurrentNoteDocument = null;
 		SelectedScenarioRun = null;
@@ -1098,12 +1105,27 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 
 		await _runtimeCoordinator.ActivateSessionAsync(
 			session,
-			PrepareSessionAsync,
+			async (target, ct) =>
+			{
+				timing.Mark("gate");
+				await PrepareSessionAsync(target, ct);
+				timing.Mark("prepare");
+			},
 			static (_, _) => Task.FromResult<IDisposable?>(null),
-			(target, ct) => ActivateRuntimeAsync(target, startIfNeeded, preferResumeCommand, ct),
-			_ => _terminalHost.FocusAsync(),
+			async (target, ct) =>
+			{
+				timing.Mark("show");
+				await ActivateRuntimeAsync(target, startIfNeeded, preferResumeCommand, ct);
+				timing.Mark("runtime");
+			},
+			async _ =>
+			{
+				await _terminalHost.FocusAsync();
+				timing.Mark("focus");
+			},
 			(target, ct) => ViewModel.UpdateSessionStatusAsync(target.Record.Id, SessionStatus.Failed, ct),
 			cancellationToken);
+		LogSlowSessionSwitch(session, timing, startsRuntime);
 		if (startsRuntime
 			&& !_runtimeCoordinator.TryGetActiveController(
 				session.Record.Id,
@@ -3837,6 +3859,28 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			throw new InvalidOperationException("Application is shutting down.");
 		}
 	}
+
+	private void LogSlowSessionSwitch(SessionViewModel session, SessionSwitchTiming timing, bool startedRuntime)
+	{
+		var elapsed = timing.Elapsed;
+		if (elapsed < SessionSwitchTiming.SlowThreshold)
+		{
+			return;
+		}
+
+		var show = _terminalHost is AvaloniaTerminalWebViewHost host
+			? $" showFlush={host.LastShowTiming.Flush.TotalMilliseconds:F0} showScript={host.LastShowTiming.Script.TotalMilliseconds:F0}"
+			: string.Empty;
+		AppendDiagnosticLog(
+			$"Slow session switch to {session.Record.Kind} {session.Record.Id}: total={elapsed.TotalMilliseconds:F0} ms "
+			+ $"{timing.Describe()}{show} startedRuntime={startedRuntime}");
+	}
+
+	private void AppendDiagnosticLog(string message) =>
+		_eventTasks.TryRun(
+			"diagnostic-log",
+			() => AppLog.AppendAsync(_appPaths.RootDirectory, message),
+			static _ => Task.CompletedTask);
 
 	private Task ReportStatusAsync(string message)
 	{
