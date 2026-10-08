@@ -198,6 +198,67 @@ public sealed class ConPtyTerminalBackendTests
 			TestContext.CurrentContext.CancellationToken);
 	}
 
+	[Test]
+	public async Task Output_pump_reads_on_a_dedicated_thread_and_completes_at_end_of_stream()
+	{
+		using RecordingStream source = new([Encoding.ASCII.GetBytes("first"), Encoding.ASCII.GetBytes("second")]);
+		var channel = System.Threading.Channels.Channel.CreateBounded<byte[]>(1);
+
+		var pump = ConPtyTerminalBackend.StartOutputPump(source, channel.Writer, bufferSize: 64);
+		List<string> chunks = [];
+		await foreach (var chunk in channel.Reader.ReadAllAsync(TestContext.CurrentContext.CancellationToken))
+		{
+			chunks.Add(Encoding.ASCII.GetString(chunk));
+		}
+
+		pump.Join(TimeSpan.FromSeconds(5)).ShouldBeTrue();
+		chunks.ShouldBe(["first", "second"]);
+		source.ReadThreads.ShouldNotBeEmpty();
+		source.ReadThreads.ShouldAllBe(isThreadPoolThread => !isThreadPoolThread);
+	}
+
+	private sealed class RecordingStream(IReadOnlyList<byte[]> chunks) : Stream
+	{
+		private int _next;
+
+		public List<bool> ReadThreads { get; } = [];
+
+		public override bool CanRead => true;
+		public override bool CanSeek => false;
+		public override bool CanWrite => false;
+		public override long Length => throw new NotSupportedException();
+		public override long Position
+		{
+			get => throw new NotSupportedException();
+			set => throw new NotSupportedException();
+		}
+
+		public override int Read(byte[] buffer, int offset, int count)
+		{
+			lock (ReadThreads)
+			{
+				ReadThreads.Add(Thread.CurrentThread.IsThreadPoolThread);
+			}
+
+			if (_next == chunks.Count)
+			{
+				return 0;
+			}
+
+			var chunk = chunks[_next++];
+			chunk.CopyTo(buffer, offset);
+			return chunk.Length;
+		}
+
+		public override void Flush()
+		{
+		}
+
+		public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+		public override void SetLength(long value) => throw new NotSupportedException();
+		public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+	}
+
 	private static CancellationTokenSource CreateTimeout(TimeSpan timeout)
 	{
 		var cancellation = CancellationTokenSource.CreateLinkedTokenSource(

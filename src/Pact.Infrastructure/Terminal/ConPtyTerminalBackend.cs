@@ -2,6 +2,7 @@ using System.Collections;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Threading.Channels;
 using Microsoft.Win32.SafeHandles;
 using Pact.Core.Terminal;
 
@@ -20,6 +21,7 @@ namespace Pact.Infrastructure.Terminal;
 public sealed class ConPtyTerminalBackend : ITerminalBackend
 {
 	private const int PipeBufferSize = 8192;
+	private const int OutputChannelCapacity = 16;
 	private const uint StopWaitMilliseconds = 2000;
 	private const uint TerminateWaitMilliseconds = 500;
 
@@ -147,38 +149,100 @@ public sealed class ConPtyTerminalBackend : ITerminalBackend
 			_lifetimeLock.Release();
 		}
 
-		var buffer = new byte[PipeBufferSize];
-
-		while (!cancellationToken.IsCancellationRequested)
+		var channel = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(OutputChannelCapacity)
 		{
-			int bytesRead;
+			SingleReader = true,
+			SingleWriter = true,
+			FullMode = BoundedChannelFullMode.Wait
+		});
+		StartOutputPump(reader, channel.Writer, PipeBufferSize);
+		try
+		{
+			while (true)
+			{
+				byte[] chunk;
+				try
+				{
+					if (!await channel.Reader.WaitToReadAsync(cancellationToken).ConfigureAwait(false)
+						|| !channel.Reader.TryRead(out chunk!))
+					{
+						yield break;
+					}
+				}
+				catch (OperationCanceledException)
+				{
+					yield break;
+				}
 
-			try
-			{
-				bytesRead = await reader.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken)
-					.ConfigureAwait(false);
+				yield return chunk;
 			}
-			catch (OperationCanceledException)
-			{
-				yield break;
-			}
-			catch (IOException)
-			{
-				yield break;
-			}
-			catch (ObjectDisposedException)
-			{
-				yield break;
-			}
+		}
+		finally
+		{
+			// The pump notices on its next chunk and stops; its blocked read ends when the pipe closes.
+			channel.Writer.TryComplete();
+		}
+	}
 
-			if (bytesRead == 0)
-			{
-				yield break;
-			}
+	/// <summary>
+	/// Starts a background thread that copies <paramref name="source"/> into
+	/// <paramref name="sink"/> until end of stream, an I/O failure, or a completed sink.
+	/// </summary>
+	/// <remarks>
+	/// The ConPTY output pipe is synchronous, so every read blocks until the agent writes. On a
+	/// thread-pool thread that block lasts for as long as the agent is quiet, and one such reader
+	/// per session starves the pool of the workers that async continuations need.
+	/// </remarks>
+	internal static Thread StartOutputPump(Stream source, ChannelWriter<byte[]> sink, int bufferSize)
+	{
+		ArgumentNullException.ThrowIfNull(source);
+		ArgumentNullException.ThrowIfNull(sink);
+		ArgumentOutOfRangeException.ThrowIfNegativeOrZero(bufferSize);
 
-			var chunk = new byte[bytesRead];
-			Buffer.BlockCopy(buffer, 0, chunk, 0, bytesRead);
-			yield return chunk;
+		Thread thread = new(() => PumpOutput(source, sink, bufferSize))
+		{
+			IsBackground = true,
+			Name = "ConPTY output reader"
+		};
+		thread.Start();
+		return thread;
+	}
+
+	private static void PumpOutput(Stream source, ChannelWriter<byte[]> sink, int bufferSize)
+	{
+		var buffer = new byte[bufferSize];
+		try
+		{
+			while (true)
+			{
+				int bytesRead;
+				try
+				{
+					bytesRead = source.Read(buffer, 0, buffer.Length);
+				}
+				catch (Exception exception) when (exception is IOException or ObjectDisposedException)
+				{
+					return;
+				}
+
+				if (bytesRead == 0)
+				{
+					return;
+				}
+
+				try
+				{
+					sink.WriteAsync(buffer.AsSpan(0, bytesRead).ToArray()).AsTask().GetAwaiter().GetResult();
+				}
+				catch (ChannelClosedException)
+				{
+					return;
+				}
+			}
+		}
+		finally
+		{
+			sink.TryComplete();
 		}
 	}
 
