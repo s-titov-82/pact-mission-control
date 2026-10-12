@@ -74,8 +74,9 @@ public sealed partial class ClaudeScreenProfile : AgentScreenProfileBase
 	private static partial Regex WorkingRx();
 
 	// "Worked for 2m 30s", "Cooked for 12s", "Sautéed for 3s" - a
-	// capitalized past-tense verb followed by a duration.
-	[GeneratedRegex(@"(?<descr>[A-Z][a-z\-é]{2,15}ed\sfor\s\d{1,2}[hms])", RegexOptions.RightToLeft)]
+	// capitalized past-tense verb followed by a duration. Claude's own idle compaction
+	// animates a spinner but completes with "Compacted while idle" instead of a summary.
+	[GeneratedRegex(@"(?<descr>[A-Z][a-z\-é]{2,15}ed\sfor\s\d{1,2}[hms]|Compacted while idle)", RegexOptions.RightToLeft)]
 	private static partial Regex WorkedForRx();
 
 	[GeneratedRegex(@"(?:[⎿✻]\s*(?<descr>Interrupted|529 Overloaded|API Error|Unable to connect to API)|●\s*(?<descr>API Error:\s*529 Overloaded))", RegexOptions.RightToLeft)]

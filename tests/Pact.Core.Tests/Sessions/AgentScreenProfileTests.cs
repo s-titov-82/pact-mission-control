@@ -33,6 +33,7 @@ public sealed class AgentScreenProfileTests
 	[TestCase("Cooked for 12s", "Cooked for 12s")]
 	[TestCase("Sautéed for 3s", "Sautéed for 3s")]
 	[TestCase("Brewed for 45s", "Brewed for 45s")]
+	[TestCase("● Compacted while idle, before the prompt cache expired", "Compacted while idle")]
 	public void Claude_completion_summary_above_prompt_is_done(string marker, string descr)
 	{
 		var screen = $"● Done. Updated 3 files.\n✻ {marker}\n╭──╮\n│ > │\n╰──╯";
