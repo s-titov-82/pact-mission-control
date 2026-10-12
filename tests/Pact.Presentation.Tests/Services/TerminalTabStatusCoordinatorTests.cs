@@ -17,13 +17,13 @@ public sealed class TerminalTabStatusCoordinatorTests
 		coordinator.RegisterSession(session);
 		coordinator.OnUserInput("session-1", "run\r", T0);
 		coordinator.OnScreenSnapshot("session-1", TerminalScreenSnapshot.FromRows([
-			new("› hint", false, [new(2, 4)]), new("gpt-6 · 100% context left", false, [])], 80, true), T0.AddSeconds(1));
+			new("› hint", false, [new(2, 4)]), new("GPT-6.1-Sol medium · main · Context 30% used", false, [])], 80, true), T0.AddSeconds(1));
 		var diagnostics = coordinator.GetDiagnosticsSnapshot()["session-1"];
 		diagnostics.PromptIsEmpty.ShouldBe(true);
 		diagnostics.ActivityEpoch.ShouldBe(1);
 		session.Indicator.ShouldBe(TerminalTabIndicator.Busy);
 		coordinator.OnScreenSnapshot("session-1", TerminalScreenSnapshot.FromRows([
-			new("› hint", false, []), new("gpt-6 · 100% context left", false, [])], 80, true), T0.AddSeconds(2));
+			new("› hint", false, []), new("GPT-6.1-Sol medium · main · Context 30% used", false, [])], 80, true), T0.AddSeconds(2));
 		coordinator.GetDiagnosticsSnapshot()["session-1"].PromptIsEmpty.ShouldBe(false);
 		session.Indicator.ShouldBe(TerminalTabIndicator.Busy);
 	}

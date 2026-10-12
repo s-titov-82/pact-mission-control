@@ -68,19 +68,27 @@ public sealed class StyledAgentScreenProfileTests
 		rows.Add(new("draft · text", false, []));
 		if (hasFooter)
 		{
-			rows.Add(new("model · 100% context left", false, []));
+			rows.Add(new("GPT-6.1-Sol medium · main · Context 30% used", false, []));
 		}
 		var verdict = CodexScreenProfile.Instance.Classify(TerminalScreenSnapshot.FromRows(rows.ToImmutable(), 80, true));
 		verdict.PromptIsEmpty.ShouldBe(hasFooter ? false : null);
 	}
 
-	[Test]
-	public void Codex_prompt_glyph_in_multiline_draft_cannot_hide_the_draft()
+	[TestCase(true, true)]
+	[TestCase(false, false)]
+	public void Codex_composer_after_short_exchange_reads_current_prompt(bool dim, bool expected)
 	{
+		const string placeholder = "Ask Codex to do anything";
 		var screen = TerminalScreenSnapshot.FromRows([
-			new("Worked for 1s", false, []), new("› actual draft", false, []),
-			new("  › ", false, []), new("model · 100% context left", false, [])], 80, true);
-		CodexScreenProfile.Instance.Classify(screen).PromptIsEmpty.ShouldBeNull();
+			new("› previous request", false, []), new("", false, []),
+			new("• Done.", false, []), new("", false, []),
+			new("Worked for 12m 40s • 13:06", false, []), new("", false, []),
+			new($"› {placeholder}", false, dim ? [new(2, placeholder.Length)] : []), new("", false, []),
+			new("GPT-6.1-Sol medium · D:/repo · main · Context 30% used · weekly 84% left", false, []),
+			new("? for shortcuts", false, [])], 120, true);
+		var verdict = CodexScreenProfile.Instance.Classify(screen);
+		verdict.State.ShouldBe(TerminalScreenVerdictState.Done);
+		verdict.PromptIsEmpty.ShouldBe(expected);
 	}
 
 	[TestCase(AgentKind.Claude, true)]
@@ -114,7 +122,7 @@ public sealed class StyledAgentScreenProfileTests
 		{
 			rows.Add(new(Rule, false, []));
 		}
-		rows.Add(new("  gpt-6 · 100% context left", false, []));
+		rows.Add(new("  GPT-6.1-Sol medium · main · Context 30% used", false, []));
 		return TerminalScreenSnapshot.FromRows(rows.ToImmutable(), 80, true);
 	}
 }

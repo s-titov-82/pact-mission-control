@@ -9,7 +9,7 @@ public sealed class AgentComposerInspectorTests
 	public void Unknown_styling_in_empty_row_is_not_empty_evidence()
 	{
 		var screen = TerminalScreenSnapshot.FromRows([
-			new("› ", false, null), new("gpt-6 · 100% context left", false, [])], 80, true);
+			new("› ", false, null), new("GPT-6.1-Sol medium · main · Context 30% used", false, [])], 80, true);
 		AgentComposerInspector.Inspect(screen, '›', false, []).ShouldNotBeNull().IsEmpty.ShouldBeNull();
 	}
 

@@ -25,7 +25,7 @@ public sealed class SessionRuntimeCoordinatorTests
 		await using var _ = controller;
 		var snapshot = TerminalScreenSnapshot.FromRows([
 			new("Worked for 1s", false, []), new("› hint", false, dim is null ? null : dim == true ? [new(2, 4)] : []),
-			new("gpt-6 · 100% context left", false, [])], 80, true);
+			new("GPT-6.1-Sol medium · main · Context 30% used", false, [])], 80, true);
 		var verdict = CodexScreenProfile.Instance.Classify(snapshot);
 		var state = Idle() with { PromptIsEmpty = verdict.PromptIsEmpty };
 		var result = await coordinator.WriteScenarioPromptAndSubmitAsync("session-1", "task-path", isCodex: false,

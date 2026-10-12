@@ -87,40 +87,32 @@ public static class AgentComposerInspector
 				}
 				return (-1, -1);
 			}
-			var footer = screen.Rows.Length - 1;
-			while (footer > index && string.IsNullOrWhiteSpace(screen.Rows[footer].Text))
+			// The composer ends at Codex's status footer; hint rows such as
+			// "? for shortcuts" may follow it.
+			for (var footer = index + 1; footer < screen.Rows.Length; footer++)
 			{
-				footer--;
-			}
-			if (footer <= index || screen.Rows[footer].IsWrapped || !IsCodexFooter(screen.Rows[footer].Text))
-			{
-				return (-1, -1);
-			}
-			// A prompt-like continuation cannot be distinguished from the first line
-			// using text alone. Preserve Unknown rather than discard an earlier draft.
-			for (var preceding = Math.Max(0, index - 15); preceding < index; preceding++)
-			{
-				var previous = screen.Rows[preceding];
-				var value = previous.Text.TrimStart();
-				if (!previous.IsWrapped && value.StartsWith(marker) && !IsNumberedOption(value[1..]))
+				if (!screen.Rows[footer].IsWrapped && IsCodexFooter(screen.Rows[footer].Text))
 				{
-					return (-1, -1);
+					return (index, footer);
 				}
 			}
-			return (index, footer);
+			return (-1, -1);
 		}
 		return (-1, -1);
 	}
 
+	private static readonly string[] CodexReasoningEfforts = ["default", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"];
+
+	/// <summary>
+	/// Codex's status footer always names the model with its reasoning effort,
+	/// e.g. "GPT-6.1-Sol medium · D:\repo · main · Context 30% used".
+	/// </summary>
 	private static bool IsCodexFooter(string text)
 	{
-		foreach (var segment in text.Split(" · ").Skip(1))
+		foreach (var segment in text.Split(" · "))
 		{
-			var value = segment.Trim();
-			const string suffix = "% context left";
-			if (value.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)
-				&& int.TryParse(value.AsSpan(0, value.Length - suffix.Length), out var percentage)
-				&& percentage is >= 0 and <= 100)
+			var words = segment.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+			if (words.Length >= 2 && CodexReasoningEfforts.Contains(words[^1], StringComparer.OrdinalIgnoreCase))
 			{
 				return true;
 			}

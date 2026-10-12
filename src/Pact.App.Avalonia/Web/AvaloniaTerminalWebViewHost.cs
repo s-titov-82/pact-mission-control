@@ -334,7 +334,10 @@ internal sealed class AvaloniaTerminalWebViewHost : ITerminalWebViewHost, IAsync
 				ResizeReceived?.Invoke(this, (resize.SessionId, resize.Columns, resize.Rows));
 				break;
 			case TerminalWebMessage.ScreenSnapshot snapshot:
-				RecordDiagnostic("snapshot-styling", snapshot.StylingFailure ?? "captured");
+				if (snapshot.StylingFailure is { } stylingFailure)
+				{
+					RecordDiagnostic("snapshot-styling", stylingFailure);
+				}
 				ScreenSnapshotReceived?.Invoke(
 					this, (snapshot.SessionId, snapshot.Snapshot));
 				break;
