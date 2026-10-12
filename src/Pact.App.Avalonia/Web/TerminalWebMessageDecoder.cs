@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Collections.Immutable;
+using Pact.Core.Sessions;
 
 namespace Pact.App.Avalonia.Web;
 
@@ -10,7 +12,7 @@ internal abstract record TerminalWebMessage
 
 	internal sealed record Resize(string SessionId, int Columns, int Rows) : TerminalWebMessage;
 
-	internal sealed record ScreenSnapshot(string SessionId, string Text, bool Stable) : TerminalWebMessage;
+	internal sealed record ScreenSnapshot(string SessionId, TerminalScreenSnapshot Snapshot, string? StylingFailure = null) : TerminalWebMessage;
 
 	internal sealed record SelectionChanged(string SessionId, bool HasSelection) : TerminalWebMessage;
 
@@ -121,7 +123,68 @@ internal static class TerminalWebMessageDecoder
 			stable = stableElement.GetBoolean();
 		}
 
-		return new TerminalWebMessage.ScreenSnapshot(sessionId, text, stable);
+		var snapshot = TerminalScreenSnapshot.FromText(text, stable);
+		string? stylingFailure = "missing-metadata";
+		if (root.TryGetProperty("columns", out var columnsElement)
+			&& columnsElement.ValueKind == JsonValueKind.Number && columnsElement.TryGetInt32(out var columns) && columns > 0
+			&& root.TryGetProperty("rows", out var rowsElement) && rowsElement.ValueKind == JsonValueKind.Array)
+		{
+			try
+			{
+				var rows = ImmutableArray.CreateBuilder<TerminalScreenRow>();
+				foreach (var row in rowsElement.EnumerateArray())
+				{
+					if (row.ValueKind != JsonValueKind.Object || !TryGetString(row, "text", out var rowText)
+						|| !row.TryGetProperty("isWrapped", out var wrapped)
+						|| wrapped.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+					{
+						throw new ArgumentException("Invalid screen row.");
+					}
+					ImmutableArray<TerminalTextRange>? ranges = null;
+					if (row.TryGetProperty("dim", out var dim))
+					{
+						if (dim.ValueKind != JsonValueKind.Array)
+						{
+							throw new ArgumentException("Invalid dim ranges.");
+						}
+						var builder = ImmutableArray.CreateBuilder<TerminalTextRange>();
+						foreach (var range in dim.EnumerateArray())
+						{
+							if (range.ValueKind != JsonValueKind.Array || range.GetArrayLength() != 2
+								|| range[0].ValueKind != JsonValueKind.Number || range[1].ValueKind != JsonValueKind.Number
+								|| !range[0].TryGetInt32(out var start) || !range[1].TryGetInt32(out var length))
+							{
+								throw new ArgumentException("Invalid dim interval.");
+							}
+							builder.Add(new(start, length));
+						}
+						ranges = builder.ToImmutable();
+					}
+					rows.Add(new(rowText, wrapped.GetBoolean(), ranges));
+				}
+				var candidate = TerminalScreenSnapshot.FromRows(rows.ToImmutable(), columns, stable);
+				if (string.Equals(candidate.Text, text, StringComparison.Ordinal))
+				{
+					snapshot = candidate;
+					stylingFailure = null;
+				}
+				else
+				{
+					var firstDifference = 0;
+					while (firstDifference < candidate.Text.Length && firstDifference < text.Length && candidate.Text[firstDifference] == text[firstDifference])
+					{
+						firstDifference++;
+					}
+					stylingFailure = $"text-projection-mismatch:text={text.Length},projected={candidate.Text.Length},firstDifference={firstDifference}";
+				}
+			}
+			catch (ArgumentException)
+			{
+				// Text remains usable even when style/row evidence is malformed.
+				stylingFailure = "invalid-row-or-range";
+			}
+		}
+		return new TerminalWebMessage.ScreenSnapshot(sessionId, snapshot, stylingFailure);
 	}
 
 	private static TerminalWebMessage.SelectionChanged? DecodeSelectionChanged(JsonElement root)

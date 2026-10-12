@@ -82,7 +82,67 @@ namespace Pact.Core.ScreenVerdictProfiles
 		public const string TrustPromptDescription = "Folder trust request";
 
 		/// <inheritdoc />
-		public TerminalScreenVerdict Classify(string screen)
+		public virtual TerminalScreenVerdict Classify(TerminalScreenSnapshot screen)
+		{
+			ArgumentNullException.ThrowIfNull(screen);
+			var marker = ComposerPromptCharacter;
+			if (marker == '\0' || screen.Columns == 0)
+			{
+				return Classify(screen.Text);
+			}
+			var (prompt, end) = AgentComposerInspector.FindFrame(screen, marker, ComposerIsBordered);
+			var workText = screen.Text;
+			if (prompt >= 0)
+			{
+				// Exclude editable content from work regexes, including quoted markers.
+				workText = TerminalScreenSnapshot.FromRows(screen.Rows[..prompt], screen.Columns, screen.Stable).Text + "\n" + marker;
+			}
+			var verdict = Classify(workText, currentComposer: prompt >= 0);
+			if (AgentComposerInspector.HasCurrentSelection(screen, marker))
+			{
+				return verdict with
+				{
+					State = TerminalScreenVerdictState.InputRequested,
+					Description = verdict.State == TerminalScreenVerdictState.InputRequested ? verdict.Description : "Awaiting selection",
+					PromptIsEmpty = null,
+					PromptEvidence = null
+				};
+			}
+			if (prompt >= 0)
+			{
+				var status = prompt - 1;
+				if (status >= 0 && AgentComposerInspector.IsRule(screen.Rows[status].Text))
+				{
+					status--;
+				}
+				if (status >= 0)
+				{
+					var statusText = screen.Rows[status].Text.Trim();
+					var spinner = statusText.Length > 0 && "•*✢✳✶✻✽".Contains(statusText[0], StringComparison.Ordinal);
+					var hint = statusText.Contains("esc to interrupt", StringComparison.OrdinalIgnoreCase)
+						|| screen.Rows.Skip(end + 1).Any(row => row.Text.Contains("esc to interrupt", StringComparison.OrdinalIgnoreCase));
+					if (spinner && hint)
+					{
+						verdict = verdict with { State = TerminalScreenVerdictState.Busy, Description = statusText };
+					}
+				}
+			}
+			var evidence = verdict.State == TerminalScreenVerdictState.InputRequested
+				? null : AgentComposerInspector.Inspect(screen, marker, ComposerIsBordered, ComposerChromeLabels);
+			return verdict with { PromptIsEmpty = evidence?.IsEmpty, PromptEvidence = evidence };
+		}
+
+		/// <summary>Current provider composer glyph; zero disables styled composer inspection.</summary>
+		protected virtual char ComposerPromptCharacter => '\0';
+		/// <summary>Whether matching horizontal rules enclose the composer.</summary>
+		protected virtual bool ComposerIsBordered => false;
+		/// <summary>Provider-owned labels excluded from editable input by exact match.</summary>
+		protected virtual IReadOnlyList<string> ComposerChromeLabels => [];
+
+		/// <inheritdoc />
+		public TerminalScreenVerdict Classify(string screen) => Classify(screen, currentComposer: false);
+
+		private TerminalScreenVerdict Classify(string screen, bool currentComposer)
 		{
 			ArgumentNullException.ThrowIfNull(screen);
 
@@ -91,13 +151,13 @@ namespace Pact.Core.ScreenVerdictProfiles
 				return new(TerminalScreenVerdictState.Unknown, "Scrolled");
 			}
 
-			if (!string.IsNullOrWhiteSpace(TrustRequestMarker) && screen.Contains(TrustRequestMarker, StringComparison.Ordinal))
+			if (!currentComposer && !string.IsNullOrWhiteSpace(TrustRequestMarker) && screen.Contains(TrustRequestMarker, StringComparison.Ordinal))
 			{
 				return new(
 					TerminalScreenVerdictState.InputRequested, TrustPromptDescription);
 			}
 
-			if (ResumeSessionMarkers.Length > 0 && ResumeSessionMarkers.Any(marker => screen.Contains(marker, StringComparison.Ordinal)))
+			if (!currentComposer && ResumeSessionMarkers.Length > 0 && ResumeSessionMarkers.Any(marker => screen.Contains(marker, StringComparison.Ordinal)))
 			{
 				return new(TerminalScreenVerdictState.InputRequested, "Resuming selector");
 			}

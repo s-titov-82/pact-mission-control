@@ -195,11 +195,15 @@ public sealed class TerminalTabStatusCoordinator
 	/// screen was still repainting carry <paramref name="stable"/> = false.
 	/// </summary>
 	public void OnScreenSnapshot(string sessionId, string screenText, DateTimeOffset occurredAt, bool stable = true)
+		=> OnScreenSnapshot(sessionId, TerminalScreenSnapshot.FromText(screenText, stable), occurredAt);
+
+	/// <summary>Routes immutable styled evidence to the registered session's status owner.</summary>
+	public void OnScreenSnapshot(string sessionId, TerminalScreenSnapshot snapshot, DateTimeOffset occurredAt)
 	{
-		ArgumentNullException.ThrowIfNull(screenText);
+		ArgumentNullException.ThrowIfNull(snapshot);
 		if (TryGetEngine(sessionId, out var engine))
 		{
-			engine.OnScreenSnapshot(screenText, occurredAt, stable);
+			engine.OnScreenSnapshot(snapshot, occurredAt);
 		}
 	}
 

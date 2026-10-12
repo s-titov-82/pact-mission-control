@@ -10,6 +10,25 @@ public sealed class TerminalTabStatusCoordinatorTests
 	private static readonly DateTimeOffset T0 = new(2026, 7, 18, 10, 0, 0, TimeSpan.Zero);
 
 	[Test]
+	public void Styled_composer_evidence_reaches_engine_without_finishing_activity()
+	{
+		TerminalTabStatusCoordinator coordinator = new(action => action());
+		var session = CreateSession(kind: AgentKind.Codex);
+		coordinator.RegisterSession(session);
+		coordinator.OnUserInput("session-1", "run\r", T0);
+		coordinator.OnScreenSnapshot("session-1", TerminalScreenSnapshot.FromRows([
+			new("› hint", false, [new(2, 4)]), new("gpt-6 · 100% context left", false, [])], 80, true), T0.AddSeconds(1));
+		var diagnostics = coordinator.GetDiagnosticsSnapshot()["session-1"];
+		diagnostics.PromptIsEmpty.ShouldBe(true);
+		diagnostics.ActivityEpoch.ShouldBe(1);
+		session.Indicator.ShouldBe(TerminalTabIndicator.Busy);
+		coordinator.OnScreenSnapshot("session-1", TerminalScreenSnapshot.FromRows([
+			new("› hint", false, []), new("gpt-6 · 100% context left", false, [])], 80, true), T0.AddSeconds(2));
+		coordinator.GetDiagnosticsSnapshot()["session-1"].PromptIsEmpty.ShouldBe(false);
+		session.Indicator.ShouldBe(TerminalTabIndicator.Busy);
+	}
+
+	[Test]
 	public void Diagnostics_snapshot_is_a_stable_copy_of_all_registered_engines()
 	{
 		TerminalTabStatusCoordinator coordinator = new(action => action());

@@ -51,9 +51,21 @@ global.setTimeout = (callback, delay) => {
 };
 global.clearTimeout = id => timers.delete(id);
 class FakeBufferLine {
-  constructor(text, isWrapped = false) {
+  constructor(text, isWrapped = false, dim = [], cells = null) {
     this.text = text;
     this.isWrapped = isWrapped;
+    this.dim = dim;
+    this.cells = cells;
+    this.cellReads = 0;
+  }
+
+  getCell(index, reused = {}) {
+    this.cellReads++;
+    const cell = this.cells?.[index] ?? { text: this.text[index] ?? '', width: 1, dim: this.dim.includes(index) };
+    reused.getChars = () => cell.text;
+    reused.getWidth = () => cell.width;
+    reused.isDim = () => cell.dim;
+    return reused;
   }
 
   translateToString(trimRight) {
@@ -74,6 +86,7 @@ class FakeTerminal {
     this.buffer = {
       active: {
         baseY: 0,
+        getNullCell: () => ({}),
         getLine: index => this.lines[index]
       }
     };
@@ -239,6 +252,12 @@ function runWrappedPwshPromptBehavior() {
     type: 'screenSnapshot',
     sessionId: 'session-1',
     text: 'command output\nPS C:\\very\\long\\path>',
+    columns: terminal.cols,
+    rows: [
+      { text: 'command output', isWrapped: false, dim: [] },
+      { text: 'PS C:\\very\\long', isWrapped: false, dim: [] },
+      { text: '\\path>', isWrapped: true, dim: [] }
+    ],
     stable: true
   }]);
 }
@@ -675,7 +694,83 @@ function runHiddenTerminalsLeaveLayoutBehavior() {
   assert.equal(second.style.display, '');
 }
 
-if (behavior === 'same-final-screen') {
+function runStyledSnapshotBehavior() {
+  window.agentTerminal.createTerminal('session-1', { snapshotDebounceMs: 1 });
+  const terminal = terminalInstances[0];
+  terminal.rows = behavior === 'styled-bottom-rows-only' ? 20 : 2;
+  terminal.cols = 80;
+  terminal.lines = Array.from({ length: terminal.rows }, () => new FakeBufferLine('history'));
+  terminal.lines[terminal.rows - 2] = new FakeBufferLine('› hint', false, [2, 3, 4, 5]);
+  terminal.lines[terminal.rows - 1] = new FakeBufferLine('  ');
+  if (behavior === 'styled-wide-cells') {
+    terminal.lines[0] = new FakeBufferLine('› 界e\u0301', false, [], [
+      { text: '›', width: 1, dim: false }, { text: ' ', width: 1, dim: false },
+      { text: '界', width: 2, dim: true }, { text: '', width: 0, dim: true },
+      { text: 'e\u0301', width: 1, dim: true }
+    ]);
+  } else if (behavior === 'styled-wrapped-snapshot') {
+    terminal.lines[0] = new FakeBufferLine('› hi', false, [2, 3]);
+    terminal.lines[1] = new FakeBufferLine('nt', true, [0, 1]);
+  }
+  window.agentTerminal.write('session-1', 'capture');
+  flushTimers();
+  const first = snapshots()[0];
+  assert.ok(first.rows, 'snapshot must carry physical rows');
+  assert.equal(first.columns, 80);
+  if (behavior === 'styled-wide-cells') {
+    assert.equal(first.rows[0].text, '› 界e\u0301');
+    assert.deepEqual(first.rows[0].dim, [[2, 3]]);
+  } else if (behavior === 'styled-wrapped-snapshot') {
+    assert.equal(first.text, '› hint');
+    assert.equal(first.rows[1].isWrapped, true);
+    assert.deepEqual(first.rows[1].dim, [[0, 2]]);
+  } else {
+    assert.deepEqual(first.rows[terminal.rows - 2].dim, [[2, 4]]);
+    assert.deepEqual(first.rows[terminal.rows - 1].dim, []);
+  }
+  if (behavior === 'styled-bottom-rows-only') {
+    assert.equal(terminal.lines[4].cellReads, 0, 'higher rows must not walk cells');
+    assert.equal(first.rows[4].dim, undefined);
+    assert.deepEqual(first.rows[5].dim, []);
+  }
+  if (behavior === 'style-only-snapshot') {
+    terminal.lines[0].dim = [];
+    window.agentTerminal.write('session-1', 'style changed');
+    flushTimers();
+    assert.equal(snapshots().length, 2);
+    assert.equal(snapshots()[1].text, first.text);
+    assert.deepEqual(snapshots()[1].rows[0].dim, []);
+  }
+}
+
+function runRealStyledCellsBehavior() {
+  const path = require('node:path');
+  const { Terminal: RealTerminal } = require(path.resolve(path.dirname(terminalHostPath), 'vendor/xterm/xterm.js'));
+  const real = new RealTerminal({ cols: 200, rows: 50, allowProposedApi: true });
+  const marker = 'PACT_DIM_😀e\u0301界';
+  real.write('\x1b[?1049h\x1b[2J\x1b[999;1H\x1b[2m' + marker + '\x1b[0m');
+  flushTimers();
+  window.agentTerminal.createTerminal('session-1', { snapshotDebounceMs: 1 });
+  const terminal = terminalInstances[0];
+  terminal.buffer = real.buffer;
+  terminal.cols = 200;
+  terminal.rows = 50;
+  window.agentTerminal.write('session-1', 'capture');
+  flushTimers();
+  const snapshot = snapshots()[0];
+  assert.equal(snapshot.rows[49].text, marker);
+  assert.deepEqual(snapshot.rows[49].dim, [[0, marker.length]]);
+  assert.equal(snapshot.text, '\n'.repeat(49) + marker);
+  for (const row of snapshot.rows) {
+    for (const range of row.dim ?? []) assert.ok(range[0] + range[1] <= row.text.length);
+  }
+}
+
+if (behavior === 'real-styled-cells') {
+  runRealStyledCellsBehavior();
+} else if (behavior.startsWith('styled-') || behavior === 'style-only-snapshot') {
+  runStyledSnapshotBehavior();
+} else if (behavior === 'same-final-screen') {
   runSameFinalScreenBehavior();
 } else if (behavior === 'wrapped-pwsh-prompt') {
   runWrappedPwshPromptBehavior();

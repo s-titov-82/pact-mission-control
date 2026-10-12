@@ -47,7 +47,12 @@ background terminal output and web monitoring must continue while another tab
 is selected. The tradeoff is higher CPU, memory, and power use than allowing
 Chromium to suspend hidden content.
 
-Terminal screen and viewport facts cross into C# as immutable snapshots.
+Terminal screen and viewport facts cross into C# as immutable snapshots. Screen
+snapshots retain physical rows/wrapping and UTF-16 Dim ranges from the bottom 15
+xterm rows, alongside the existing logical-text projection. The browser captures
+agent-neutral cell metadata; Core profiles recognize composer boundaries and
+distinguish dim suggestions from ordinary drafts. Uncaptured or invalid styling
+remains unknown. Work state and composer contents stay independent.
 Runtime coordinators serialize mutable session ownership, and UI-facing
 projections cross an explicit UI dispatcher. Terminal output is batched before
 the WebView boundary; resize requests are serialized and only the newest
@@ -198,9 +203,9 @@ one immutable task file below
 `.pact-reviews/<run>/pass-NNN-<role>-task.md`. The terminal receives only the
 short task-path instruction as one bracketed-paste write and then a separate
 Enter. A run never writes while the session is busy, holding a question, or
-known to contain unsent composer text. Codex and Claude do not expose a reliable
-composer-content reading, so only an explicit non-empty verdict from another
-profile refuses delivery. A freshly launched
+known to contain unsent composer text. Codex and Claude now distinguish composer
+suggestions and drafts using captured Dim metadata and structural boundaries;
+text-only or incomplete observations remain unknown. A freshly launched
 reviewer reaches readiness through one bounded budget covering its first output,
 a settle delay, and the folder-trust dialog, which Pact answers with Enter
 exactly once. Readiness requires the stable classifier verdict `Done`; composer

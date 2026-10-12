@@ -1,3 +1,4 @@
+using Pact.Core.Sessions;
 using System.Diagnostics;
 using System.Text.Json;
 using Avalonia.Controls;
@@ -72,7 +73,7 @@ internal sealed class AvaloniaTerminalWebViewHost : ITerminalWebViewHost, IAsync
 	/// <summary>
 	/// Reports debounced visible-screen text received from the matching xterm instance.
 	/// </summary>
-	public event EventHandler<(string SessionId, string Text, bool Stable)>? ScreenSnapshotReceived;
+	public event EventHandler<(string SessionId, TerminalScreenSnapshot Snapshot)>? ScreenSnapshotReceived;
 
 	public event EventHandler<(string SessionId, bool HasSelection)>? SelectionChanged;
 	public event EventHandler<TerminalSelectionCompleted>? SelectionCompleted;
@@ -201,6 +202,17 @@ internal sealed class AvaloniaTerminalWebViewHost : ITerminalWebViewHost, IAsync
 
 	public Task FitAsync() => ExecuteScriptWhenReadyAsync("window.agentTerminal.fit();");
 
+	/// <summary>Measures bounded cell capture on the real renderer at a diagnostic 200x50 viewport.</summary>
+	internal async Task<string?> MeasureSnapshotCaptureAsync(string sessionId)
+	{
+		await WaitUntilReadyAsync();
+		return await Dispatcher.UIThread.InvokeAsync(() => _webView.InvokeScript(
+			"(() => { const term = terminals.get(" + JsonSerializer.Serialize(sessionId) + ").term; "
+			+ "const cols = term.cols, rows = term.rows; try { term.resize(200, 50); "
+			+ "const start = performance.now(); captureScreenSnapshot(term); return performance.now() - start; "
+			+ "} finally { term.resize(cols, rows); } })()"));
+	}
+
 	/// <summary>
 	/// Enables terminal cursor animation only while the terminal surface is actually presented
 	/// in the active, non-minimized application window.
@@ -322,8 +334,9 @@ internal sealed class AvaloniaTerminalWebViewHost : ITerminalWebViewHost, IAsync
 				ResizeReceived?.Invoke(this, (resize.SessionId, resize.Columns, resize.Rows));
 				break;
 			case TerminalWebMessage.ScreenSnapshot snapshot:
+				RecordDiagnostic("snapshot-styling", snapshot.StylingFailure ?? "captured");
 				ScreenSnapshotReceived?.Invoke(
-					this, (snapshot.SessionId, snapshot.Text, snapshot.Stable));
+					this, (snapshot.SessionId, snapshot.Snapshot));
 				break;
 			case TerminalWebMessage.SelectionChanged selection:
 				SelectionChanged?.Invoke(this, (selection.SessionId, selection.HasSelection));

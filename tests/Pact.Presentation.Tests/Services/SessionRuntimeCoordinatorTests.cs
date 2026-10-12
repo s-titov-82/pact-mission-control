@@ -16,6 +16,23 @@ namespace Pact.Presentation.Tests.Services;
 	Justification = "Runtime and backend ownership is transferred to SessionRuntimeCoordinator and exercised by its stop/disposal tests.")]
 public sealed class SessionRuntimeCoordinatorTests
 {
+	[TestCase(false, PromptDeliveryOutcome.BlockedByPendingInput)]
+	[TestCase(true, PromptDeliveryOutcome.Written)]
+	[TestCase(null, PromptDeliveryOutcome.Written)]
+	public async Task Styled_composer_uses_existing_delivery_gate(bool? dim, PromptDeliveryOutcome expected)
+	{
+		var (coordinator, backend, controller) = await CreateAttachedSessionAsync();
+		await using var _ = controller;
+		var snapshot = TerminalScreenSnapshot.FromRows([
+			new("Worked for 1s", false, []), new("› hint", false, dim is null ? null : dim == true ? [new(2, 4)] : []),
+			new("gpt-6 · 100% context left", false, [])], 80, true);
+		var verdict = CodexScreenProfile.Instance.Classify(snapshot);
+		var state = Idle() with { PromptIsEmpty = verdict.PromptIsEmpty };
+		var result = await coordinator.WriteScenarioPromptAndSubmitAsync("session-1", "task-path", isCodex: false,
+			confirmDelivery: false, () => state, TestContext.CurrentContext.CancellationToken);
+		result.Outcome.ShouldBe(expected);
+		backend.InputWrites.Count.ShouldBe(expected == PromptDeliveryOutcome.Written ? 2 : 0);
+	}
 	private const string PastedTrigger = "\u001b[200~task-path\u001b[201~";
 	private const string PlainEnter = "\r";
 
@@ -844,7 +861,7 @@ public sealed class SessionRuntimeCoordinatorTests
 		public List<string> Shown { get; } = [];
 		public event EventHandler<(string SessionId, string Data)>? InputReceived { add { } remove { } }
 		public event EventHandler<(string SessionId, int Columns, int Rows)>? ResizeReceived { add { } remove { } }
-		public event EventHandler<(string SessionId, string Text, bool Stable)>? ScreenSnapshotReceived { add { } remove { } }
+		public event EventHandler<(string SessionId, TerminalScreenSnapshot Snapshot)>? ScreenSnapshotReceived { add { } remove { } }
 		public event EventHandler<(string SessionId, bool HasSelection)>? SelectionChanged { add { } remove { } }
 		public event EventHandler<TerminalSelectionCompleted>? SelectionCompleted { add { } remove { } }
 		public event EventHandler<string>? SelectionDismissed { add { } remove { } }

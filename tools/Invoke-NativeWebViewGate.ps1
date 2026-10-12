@@ -449,6 +449,9 @@ try {
     }
 
     Write-Output "PASS: native WebView DOM monitoring verified for version $Version."
+    if ($rawResult.domEvidence.'styled-screen' -eq 'passed') {
+        Write-Output "PASS: styled snapshot round-trip; 200x50 capture $($rawResult.domEvidence.'styled-capture-ms-200x50') ms."
+    }
 }
 finally {
     if ($null -ne $process) {

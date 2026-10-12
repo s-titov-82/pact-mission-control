@@ -9,16 +9,20 @@ namespace Pact.Core.Sessions;
 /// <param name="SeparatorSharesLogicalLine">
 /// Whether xterm reconstructed the separator onto the same logical line as the prompt.
 /// </param>
+/// <param name="ContentIsReliable">Whether non-whitespace content can be distinguished from suggestions.</param>
+/// <param name="DraftCharacterCount">Non-dim input count, or null for legacy structural evidence.</param>
 public sealed record TerminalPromptEvidence(
 	bool PromptFound,
 	bool BoundaryFound,
 	int NonWhitespaceCharacterCount,
-	bool SeparatorSharesLogicalLine)
+	bool SeparatorSharesLogicalLine,
+	bool ContentIsReliable = true,
+	int? DraftCharacterCount = null)
 {
 	/// <summary>
 	/// Returns whether the recognized composer is empty, or null when its boundary was not found.
 	/// </summary>
-	public bool? IsEmpty => BoundaryFound ? NonWhitespaceCharacterCount == 0 : null;
+	public bool? IsEmpty => BoundaryFound && ContentIsReliable ? (DraftCharacterCount ?? NonWhitespaceCharacterCount) == 0 : null;
 }
 
 /// <summary>Result of classifying the latest stable terminal screen.</summary>

@@ -1,3 +1,4 @@
+using Pact.Core.Sessions;
 using Pact.Core.Presentation;
 
 namespace Pact.App.Avalonia.Tests.Fakes;
@@ -19,7 +20,7 @@ internal sealed class FakeTerminalWebViewHost : ITerminalWebViewHost
 	public Dictionary<string, TaskCompletionSource> ShowStarted { get; } = new(StringComparer.Ordinal);
 	public event EventHandler<(string SessionId, string Data)>? InputReceived;
 	public event EventHandler<(string SessionId, int Columns, int Rows)>? ResizeReceived;
-	public event EventHandler<(string SessionId, string Text, bool Stable)>? ScreenSnapshotReceived;
+	public event EventHandler<(string SessionId, TerminalScreenSnapshot Snapshot)>? ScreenSnapshotReceived;
 	public event EventHandler<(string SessionId, bool HasSelection)>? SelectionChanged;
 	public event EventHandler<TerminalSelectionCompleted>? SelectionCompleted;
 	public event EventHandler<string>? SelectionDismissed;
@@ -91,7 +92,7 @@ internal sealed class FakeTerminalWebViewHost : ITerminalWebViewHost
 	public void RaiseInputReceived(string sessionId, string data) =>
 		InputReceived?.Invoke(this, (sessionId, data));
 	public void RaiseScreenSnapshotReceived(string sessionId, string text, bool stable = true) =>
-		ScreenSnapshotReceived?.Invoke(this, (sessionId, text, stable));
+		ScreenSnapshotReceived?.Invoke(this, (sessionId, TerminalScreenSnapshot.FromText(text, stable)));
 	public void RaiseSelectionChanged(string sessionId, bool hasSelection) =>
 		SelectionChanged?.Invoke(this, (sessionId, hasSelection));
 	public void RaiseSelectionCompleted(TerminalSelectionCompleted completion) =>

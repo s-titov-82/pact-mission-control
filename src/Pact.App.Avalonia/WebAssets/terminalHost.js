@@ -115,15 +115,37 @@ const dynamicSnapshotChurnThreshold = 4;
 // Live screen, not the scrolled viewport: baseY-anchored rows are what the
 // terminal currently shows at the bottom, so user scrollback never affects
 // classification and scrolling itself never produces snapshots.
-function captureScreenText(term) {
+function captureScreenSnapshot(term) {
   const buffer = term.buffer.active;
   const lines = [];
+  const rows = [];
+  const reusedCell = buffer.getNullCell?.();
   for (let i = 0; i < term.rows; i++) {
     const line = buffer.getLine(buffer.baseY + i);
     const nextLine = i + 1 < term.rows
       ? buffer.getLine(buffer.baseY + i + 1)
       : null;
     const text = line ? line.translateToString(!nextLine?.isWrapped) : '';
+    const row = { text, isWrapped: !!line?.isWrapped };
+    if (i >= term.rows - 15 && (!line || (reusedCell && line.getCell))) {
+      const dim = [];
+      let offset = 0;
+      let complete = true;
+      for (let column = 0; line && column < term.cols && offset < text.length; column++) {
+        const cell = line.getCell(column, reusedCell);
+        if (!cell) { complete = false; break; }
+        if (cell.getWidth() === 0) continue;
+        const length = Math.min((cell.getChars() || ' ').length, text.length - offset);
+        if (cell.isDim()) {
+          const previous = dim.at(-1);
+          if (previous && previous[0] + previous[1] === offset) previous[1] += length;
+          else dim.push([offset, length]);
+        }
+        offset += length;
+      }
+      if (complete && (!line || offset === text.length)) row.dim = dim;
+    }
+    rows.push(row);
     if (line?.isWrapped && lines.length > 0) {
       lines[lines.length - 1] += text;
     } else {
@@ -133,7 +155,7 @@ function captureScreenText(term) {
   while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
     lines.pop();
   }
-  return lines.join('\n');
+  return { text: lines.join('\n'), columns: term.cols, rows };
 }
 
 function resetSnapshotBaseline(instance) {
@@ -141,7 +163,7 @@ function resetSnapshotBaseline(instance) {
     clearTimeout(instance.snapshotTimer);
     instance.snapshotTimer = null;
   }
-  instance.lastSnapshotText = null;
+  instance.lastSnapshotKey = null;
   instance.churnResets = 0;
   instance.dynamicSnapshotSent = false;
 }
@@ -155,7 +177,7 @@ function scheduleSnapshot(sessionId, instance) {
       postHostMessage({
         type: 'screenSnapshot',
         sessionId,
-        text: captureScreenText(instance.term),
+        ...captureScreenSnapshot(instance.term),
         stable: false
       });
     }
@@ -164,12 +186,13 @@ function scheduleSnapshot(sessionId, instance) {
     instance.snapshotTimer = null;
     instance.churnResets = 0;
     instance.dynamicSnapshotSent = false;
-    const text = captureScreenText(instance.term);
-    if (text === instance.lastSnapshotText) {
+    const snapshot = captureScreenSnapshot(instance.term);
+    const key = JSON.stringify(snapshot);
+    if (key === instance.lastSnapshotKey) {
       return;
     }
-    instance.lastSnapshotText = text;
-    postHostMessage({ type: 'screenSnapshot', sessionId, text, stable: true });
+    instance.lastSnapshotKey = key;
+    postHostMessage({ type: 'screenSnapshot', sessionId, ...snapshot, stable: true });
   }, instance.snapshotDebounceMs);
 }
 
@@ -336,7 +359,7 @@ function createInstance(sessionId, options) {
     outputTimer: null,
     writeInProgress: false,
     snapshotTimer: null,
-    lastSnapshotText: null,
+    lastSnapshotKey: null,
     churnResets: 0,
     dynamicSnapshotSent: false,
     snapshotDebounceMs: options?.snapshotDebounceMs ?? defaultSnapshotDebounceMs

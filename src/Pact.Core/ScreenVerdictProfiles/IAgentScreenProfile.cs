@@ -14,4 +14,11 @@ public interface IAgentScreenProfile
 	/// <param name="screen">The visible terminal screen text to inspect.</param>
 	/// <returns>The activity evidence found in the screen.</returns>
 	TerminalScreenVerdict Classify(string screen);
+
+	/// <summary>Classifies rendered viewport evidence, falling back to text for profiles without style rules.</summary>
+	TerminalScreenVerdict Classify(TerminalScreenSnapshot screen)
+	{
+		ArgumentNullException.ThrowIfNull(screen);
+		return Classify(screen.Text);
+	}
 }

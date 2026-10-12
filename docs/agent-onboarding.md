@@ -72,7 +72,11 @@ unread.
 The browser-side terminal host waits for a one-shot 500 ms quiescence debounce
 after xterm writes, captures the live screen from `buffer.active.baseY` rather
 than the user's scrolled viewport, reconstructs wrapped physical rows into
-logical lines, and posts only changed stable snapshots. Snapshot dedupe is
+logical lines, and posts only changed stable snapshots. It also preserves physical
+rows and compact UTF-16 Dim ranges for the bottom 15 rows. Null ranges mean
+uncaptured styling; an empty range list means the row was inspected and has no
+dim text. Snapshot dedupe includes wrapping and Dim ranges, so an identical
+suggestion becoming ordinary input produces another observation. Snapshot dedupe is
 reset before each submitted activity, so a command returning to the same final
 screen still reports completion while repeated redraws within that activity
 remain deduplicated. The coordinator selects an `IAgentScreenProfile` per `AgentKind`:
@@ -87,9 +91,15 @@ reports `InputRequested` with the pending question as its status line; folder
 trust uses the shared `AgentScreenProfileBase.TrustPromptDescription` constant
 across agents. It also reports `PromptIsEmpty`: `true` means delivery may treat
 the composer as empty, `false` means it contains reliably detected unsent text,
-and `null` means the screen cannot answer. Claude and Codex return `null`
-because terminal text cannot distinguish their placeholder and staged hints
-reliably from user input. Pwsh reports Done when the last non-empty line
+and `null` means the screen cannot answer. Claude and Codex inspect Dim only
+inside a recognized current composer, excluding its boundaries and footer:
+dim suggestions are empty input and ordinary styled text is a draft. Missing
+styling, cropped boundaries and selected question-menu rows remain unknown.
+Codex requires its context footer; ambiguous prompt-like draft continuations
+also remain unknown. A recognized current composer supersedes historical
+folder-trust and session-picker text above it.
+Text-only observations keep the conservative fallback. Work-state regexes remain
+text-based; composer evidence never starts or ends activity. Pwsh reports Done when the last non-empty line
 matches `PS …>`; otherwise these profiles report Unknown. Hermes and Custom use the
 quiescence fallback: a stable snapshot reports Done during active work, while
 the engine ignores Done when idle. Raw PTY/display output is not status

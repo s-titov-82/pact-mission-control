@@ -1,3 +1,4 @@
+using Pact.Core.Sessions;
 namespace Pact.Core.Presentation;
 
 /// <summary>
@@ -16,12 +17,12 @@ public interface ITerminalWebViewHost
 	event EventHandler<(string SessionId, int Columns, int Rows)>? ResizeReceived;
 
 	/// <summary>
-	/// Reports the visible xterm viewport text. Stable snapshots arrive after the
+	/// Reports physical xterm rows, logical text and bounded Dim metadata. Stable snapshots arrive after the
 	/// browser-side debounce interval; a snapshot with Stable=false is posted once
 	/// per churn episode while the screen keeps repainting and is only trustworthy
 	/// as busy evidence.
 	/// </summary>
-	event EventHandler<(string SessionId, string Text, bool Stable)>? ScreenSnapshotReceived;
+	event EventHandler<(string SessionId, TerminalScreenSnapshot Snapshot)>? ScreenSnapshotReceived;
 
 	/// <summary>
 	/// Raised when a terminal's selection appears or clears. Agents that own their own

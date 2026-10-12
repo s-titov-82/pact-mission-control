@@ -3604,11 +3604,11 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			"Terminal output failed");
 	}
 
-	private void OnScreenSnapshotReceived(object? sender, (string SessionId, string Text, bool Stable) e)
+	private void OnScreenSnapshotReceived(object? sender, (string SessionId, TerminalScreenSnapshot Snapshot) e)
 	{
 		RefreshWindowFacts?.Invoke();
-		ViewModel.TerminalTabStatuses.OnScreenSnapshot(e.SessionId, e.Text, DateTimeOffset.UtcNow, e.Stable);
-		if (e.Stable && !string.IsNullOrWhiteSpace(e.Text))
+		ViewModel.TerminalTabStatuses.OnScreenSnapshot(e.SessionId, e.Snapshot, DateTimeOffset.UtcNow);
+		if (e.Snapshot.Stable && !string.IsNullOrWhiteSpace(e.Snapshot.Text))
 		{
 			SetTerminalLoading(e.SessionId, false);
 		}

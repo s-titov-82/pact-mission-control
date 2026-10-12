@@ -321,9 +321,15 @@ public sealed class TerminalTabStatusEngine
 	/// (<paramref name="stable"/> = false) may be a half-drawn frame, so only
 	/// its busy verdict is trusted and done verdicts are ignored.
 	/// </summary>
-	public void OnScreenSnapshot(string screenText, DateTimeOffset occurredAt, bool stable = true)
+	public void OnScreenSnapshot(string screenText, DateTimeOffset occurredAt, bool stable = true) =>
+		OnScreenSnapshot(TerminalScreenSnapshot.FromText(screenText, stable), occurredAt);
+
+	/// <summary>Classifies typed viewport evidence without deriving activity from composer contents.</summary>
+	public void OnScreenSnapshot(TerminalScreenSnapshot snapshot, DateTimeOffset occurredAt)
 	{
-		ArgumentNullException.ThrowIfNull(screenText);
+		ArgumentNullException.ThrowIfNull(snapshot);
+		var screenText = snapshot.Text;
+		var stable = snapshot.Stable;
 		Process(TerminalTabEventKind.ScreenSnapshot, occurredAt, () =>
 		{
 			LastScreenSnapshot = screenText;
@@ -332,7 +338,7 @@ public sealed class TerminalTabStatusEngine
 				return;
 			}
 
-			var verdict = _profile.Classify(screenText);
+			var verdict = _profile.Classify(snapshot);
 			if (stable)
 			{
 				LastStableScreen = screenText;

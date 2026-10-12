@@ -18,7 +18,7 @@ public sealed class TerminalWebMessageDecoderTests
 			.ShouldBe(new TerminalWebMessage.Resize("s1", 120, 36));
 		TerminalWebMessageDecoder.TryDecode(
 				"""{"type":"screenSnapshot","sessionId":"s1","text":"screen","stable":false}""")
-			.ShouldBe(new TerminalWebMessage.ScreenSnapshot("s1", "screen", false));
+			.ShouldBeOfType<TerminalWebMessage.ScreenSnapshot>().Snapshot.Stable.ShouldBeFalse();
 		TerminalWebMessageDecoder.TryDecode(
 				"""{"type":"selectionChanged","sessionId":"s1","hasSelection":true}""")
 			.ShouldBe(new TerminalWebMessage.SelectionChanged("s1", true));
@@ -61,7 +61,34 @@ public sealed class TerminalWebMessageDecoderTests
 	{
 		TerminalWebMessageDecoder.TryDecode(
 				"""{"type":"screenSnapshot","sessionId":"s1","text":"screen"}""")
-			.ShouldBe(new TerminalWebMessage.ScreenSnapshot("s1", "screen", true));
+			.ShouldBeOfType<TerminalWebMessage.ScreenSnapshot>().Snapshot.Stable.ShouldBeTrue();
+	}
+
+	[Test]
+	public void Styled_rows_preserve_wraps_and_dim_utf16_ranges()
+	{
+		var message = TerminalWebMessageDecoder.TryDecode("""
+			{"type":"screenSnapshot","sessionId":"s1","text":"› hint","columns":80,"rows":[
+			 {"text":"› hi","isWrapped":false,"dim":[[2,2]]},
+			 {"text":"nt","isWrapped":true,"dim":[[0,2]]}]}
+			""").ShouldBeOfType<TerminalWebMessage.ScreenSnapshot>();
+		message.Snapshot.Text.ShouldBe("› hint");
+		message.Snapshot.Rows[1].IsWrapped.ShouldBeTrue();
+		message.Snapshot.Rows[0].DimRanges!.Value[0].Start.ShouldBe(2);
+		message.Snapshot.Rows[1].DimRanges!.Value[0].Length.ShouldBe(2);
+	}
+
+	[TestCase("[[0,99]]")]
+	[TestCase("[[0,2],[1,1]]")]
+	[TestCase("[[\"bad\",2]]")]
+	[TestCase("false")]
+	public void Malformed_styling_falls_back_to_text_without_draft_evidence(string dim)
+	{
+		var message = TerminalWebMessageDecoder.TryDecode(
+			"{\"type\":\"screenSnapshot\",\"sessionId\":\"s1\",\"text\":\"› hi\",\"columns\":80,\"rows\":[{\"text\":\"› hi\",\"isWrapped\":false,\"dim\":" + dim + "}]}")
+			.ShouldBeOfType<TerminalWebMessage.ScreenSnapshot>();
+		message.Snapshot.Text.ShouldBe("› hi");
+		message.Snapshot.Rows[0].DimRanges.ShouldBeNull();
 	}
 
 	[TestCase("""{"type":"resize","sessionId":"s1","cols":0,"rows":20}""")]

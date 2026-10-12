@@ -12,6 +12,13 @@ public sealed partial class TerminalHostAssetTests
 
 	[Test]
 	[TestCase("same-final-screen")]
+	[TestCase("styled-snapshot")]
+	[TestCase("real-styled-cells")]
+	[TestCase("style-only-snapshot")]
+	[TestCase("styled-wrapped-snapshot")]
+	[TestCase("styled-wide-cells")]
+	[TestCase("styled-hidden-session")]
+	[TestCase("styled-bottom-rows-only")]
 	[TestCase("wrapped-pwsh-prompt")]
 	[TestCase("wrapped-busy-marker")]
 	[TestCase("wrapped-claude-composer")]

@@ -17,6 +17,11 @@ public sealed partial class ClaudeScreenProfile : AgentScreenProfileBase
 	}
 
 	/// <inheritdoc />
+	protected override char ComposerPromptCharacter => '❯';
+	/// <inheritdoc />
+	protected override bool ComposerIsBordered => true;
+
+	/// <inheritdoc />
 	protected override string[] ScrollMarkers => ["Jump to bottom (ctrl+End)"];
 
 	/// <inheritdoc />

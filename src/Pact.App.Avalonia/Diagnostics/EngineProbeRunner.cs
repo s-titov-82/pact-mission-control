@@ -4,6 +4,7 @@ using Avalonia.Threading;
 using Pact.App.Avalonia.Views;
 using Pact.App.Avalonia.Web;
 using Pact.Core.Agents;
+using Pact.Core.Sessions;
 using Pact.Core.Web.Monitoring;
 using Pact.Infrastructure.Storage;
 using Pact.Presentation.ViewModels;
@@ -182,6 +183,8 @@ internal sealed class EngineProbeRunner
 		}
 
 		var recentOutput = runtime?.GetRecentOutput() ?? string.Empty;
+		await VerifyStyledSnapshotsAsync(terminalHost, session.Record.Id);
+		var captureMilliseconds = await terminalHost.MeasureSnapshotCaptureAsync(session.Record.Id);
 		var workspace = controller.ViewModel.SelectedWorkspace
 			?? controller.ViewModel.Workspaces.FirstOrDefault()
 			?? throw new InvalidOperationException("The production probe requires a project in the temporary profile.");
@@ -225,6 +228,11 @@ internal sealed class EngineProbeRunner
 			}
 
 			domEvidence = await CollectDomEvidenceAsync(browserHost);
+			domEvidence = new Dictionary<string, string?>(domEvidence, StringComparer.Ordinal)
+			{
+				["styled-screen"] = "passed",
+				["styled-capture-ms-200x50"] = captureMilliseconds
+			};
 			webProcessAttribution = await browserHost.ReadProcessAttributionAsync(
 				CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(10));
 			await controller.SelectSessionAsync(
@@ -257,6 +265,67 @@ internal sealed class EngineProbeRunner
 			controller.DiagnosticSnapshot,
 			domEvidence,
 			webProcessAttribution);
+	}
+
+	private static async Task VerifyStyledSnapshotsAsync(AvaloniaTerminalWebViewHost host, string sessionId)
+	{
+		const string marker = "PACT_DIM_😀e\u0301界";
+		try
+		{
+			await host.WriteOutputAsync(sessionId, "\u001b[?1049h\u001b[2J");
+			foreach (var dim in new[] { true, false })
+			{
+				TaskCompletionSource<TerminalScreenSnapshot> received = new(TaskCreationOptions.RunContinuationsAsynchronously);
+				var observations = 0;
+				var matchedRows = 0;
+				var capturedRows = 0;
+				void OnSnapshot(object? sender, (string SessionId, TerminalScreenSnapshot Snapshot) observation)
+				{
+					if (observation.SessionId != sessionId || !observation.Snapshot.Stable)
+					{
+						return;
+					}
+					observations++;
+					capturedRows = observation.Snapshot.Rows.Count(row => row.DimRanges is not null);
+					foreach (var row in observation.Snapshot.Rows)
+					{
+						var offset = row.Text.IndexOf(marker, StringComparison.Ordinal);
+						if (offset >= 0)
+						{
+							matchedRows++;
+						}
+						if (offset < 0 || row.DimRanges is not { } ranges)
+						{
+							continue;
+						}
+						var markerDim = ranges.Any(range => range.Start <= offset && range.Start + range.Length >= offset + marker.Length);
+						if (markerDim == dim)
+						{
+							received.TrySetResult(observation.Snapshot);
+						}
+					}
+				}
+				host.ScreenSnapshotReceived += OnSnapshot;
+				try
+				{
+					await host.WriteOutputAsync(sessionId, "\u001b[999;1H\u001b[2K" + (dim ? "\u001b[2m" : "\u001b[22m") + marker + "\u001b[0m");
+					await received.Task.WaitAsync(TimeSpan.FromSeconds(10));
+				}
+				catch (TimeoutException exception)
+				{
+					var styling = host.DiagnosticSnapshot.LastOrDefault(entry => entry.Phase == "snapshot-styling")?.Detail;
+					throw new TimeoutException($"Styled snapshot dim={dim}: observations={observations}, markerRows={matchedRows}, capturedRows={capturedRows}, styling={styling}.", exception);
+				}
+				finally
+				{
+					host.ScreenSnapshotReceived -= OnSnapshot;
+				}
+			}
+		}
+		finally
+		{
+			await host.WriteOutputAsync(sessionId, "\u001b[?1049l");
+		}
 	}
 
 	private async Task<SessionViewModel> EnsureProbeSessionAsync(MainWindowViewModel viewModel)
