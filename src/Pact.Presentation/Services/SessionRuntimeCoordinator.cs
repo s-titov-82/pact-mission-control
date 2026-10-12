@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using Pact.Core.Agents;
+using Pact.Core.Platform;
 using Pact.Core.Presentation;
 using Pact.Core.ScreenVerdictProfiles;
 using Pact.Core.Sessions;
@@ -25,6 +26,11 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 	private static readonly TimeSpan DefaultQuietComposerPeriod = TimeSpan.FromSeconds(2);
 	private static readonly TimeSpan DefaultStatePollInterval = TimeSpan.FromMilliseconds(250);
 	private static readonly TimeSpan DefaultSessionReadyTimeout = TimeSpan.FromSeconds(30);
+	private static readonly TimeSpan ClientPasteLandingTimeout = TimeSpan.FromSeconds(5);
+
+	// Right button press and release at the top-left cell, SGR-encoded. A client tracking the
+	// mouse pastes the clipboard on it; only the button matters, not the cell.
+	private const string ClientPasteClick = "\u001b[<2;1;1M\u001b[<2;1;1m";
 	private readonly ITerminalWebViewHost _terminalHost;
 	private readonly Func<TerminalController> _controllerFactory;
 	private readonly TimeSpan _scenarioSubmitSettleDelay;
@@ -150,6 +156,13 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 		_statePollInterval = statePollInterval;
 		_sessionReadyTimeout = resolvedReadyTimeout;
 	}
+
+	/// <summary>
+	/// Clipboard through which prompts are handed to a client that captures the mouse, which
+	/// then pastes them itself on a right click. When <see langword="null"/>, every prompt is
+	/// written as a bracketed paste.
+	/// </summary>
+	public IClipboardService? ClientPasteClipboard { get; set; }
 
 	/// <summary>
 	/// Creates, attaches, and starts a controller as the current lifecycle identity for a
@@ -548,10 +561,8 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 			throw new InvalidOperationException("Target session is not running.");
 		}
 
-		if (!await controller.WriteInputAsync(BuildPastedInput(prompt)).ConfigureAwait(false))
-		{
-			throw new InvalidOperationException("Target session input write failed.");
-		}
+		await WritePasteAsync(runtime, controller, prompt, awaitLanding: submit, CancellationToken.None)
+			.ConfigureAwait(false);
 
 		if (!submit)
 		{
@@ -565,7 +576,7 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 			await Task.Delay(_scenarioSubmitSettleDelay).ConfigureAwait(false);
 		}
 
-		var submitInput = runtime.Win32InputMode.IsActive && targetSession.Record.Kind == AgentKind.Codex
+		var submitInput = runtime.InputModes.IsWin32InputActive && targetSession.Record.Kind == AgentKind.Codex
 			? Win32InputEncoder.EnterKey
 			: "\r";
 		if (!await controller.WriteInputAsync(submitInput).ConfigureAwait(false))
@@ -665,7 +676,7 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 						return NotReady();
 					}
 
-					var submitInput = runtime.Win32InputMode.IsActive && isCodex
+					var submitInput = runtime.InputModes.IsWin32InputActive && isCodex
 						? Win32InputEncoder.EnterKey
 						: "\r";
 					cancellationToken.ThrowIfCancellationRequested();
@@ -728,7 +739,7 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 			throw new InvalidOperationException("Target scenario session is not running.");
 		}
 
-		var submitInput = runtime.Win32InputMode.IsActive && isCodex
+		var submitInput = runtime.InputModes.IsWin32InputActive && isCodex
 			? Win32InputEncoder.EnterKey
 			: "\r";
 
@@ -779,7 +790,7 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 		if (observation.HoldsText)
 		{
 			EnsureScenarioControllerIsCurrent(sessionId, runtime, controller);
-			await WriteAsync(submitInput).ConfigureAwait(false);
+			await WriteRequiredInputAsync(controller, submitInput).ConfigureAwait(false);
 		}
 		else if (observation.QuietAndEmpty)
 		{
@@ -806,7 +817,8 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 
 		async Task SendAsync()
 		{
-			await WriteAsync(BuildPastedInput(trigger)).ConfigureAwait(false);
+			await WritePasteAsync(runtime, controller, trigger, awaitLanding: true, cancellationToken)
+				.ConfigureAwait(false);
 			cancellationToken.ThrowIfCancellationRequested();
 			if (_scenarioSubmitSettleDelay > TimeSpan.Zero)
 			{
@@ -815,7 +827,7 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 
 			cancellationToken.ThrowIfCancellationRequested();
 			EnsureScenarioControllerIsCurrent(sessionId, runtime, controller);
-			await WriteAsync(submitInput).ConfigureAwait(false);
+			await WriteRequiredInputAsync(controller, submitInput).ConfigureAwait(false);
 		}
 
 		async Task<Observation> ObserveAsync(long epoch)
@@ -873,14 +885,6 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 					cancellationToken).ConfigureAwait(false);
 			}
 		}
-
-		async Task WriteAsync(string input)
-		{
-			if (!await controller.WriteInputAsync(input).ConfigureAwait(false))
-			{
-				throw new InvalidOperationException("Target session input write failed.");
-			}
-		}
 	}
 
 	private readonly record struct Observation(
@@ -932,7 +936,7 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 			RaiseStatusMessage("Terminal is locked by a running scenario");
 			return;
 		}
-		input = RewriteInput(input, runtime.Win32InputMode.IsActive, isCodex(sessionId));
+		input = RewriteInput(input, runtime.InputModes.IsWin32InputActive, isCodex(sessionId));
 		if (!await controller.WriteInputAsync(input).ConfigureAwait(false))
 		{
 			await showIgnoredAsync(sessionId, "Input write failed; session may have exited.").ConfigureAwait(false);
@@ -968,10 +972,79 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 		return input;
 	}
 
+	/// <summary>
+	/// Pastes <paramref name="text"/> into a session. A client that captures the mouse is handed
+	/// the text through the clipboard and asked to paste it with a right click, so it receives
+	/// the whole text as one paste: a client reading console key records otherwise gets a typed
+	/// paste one key at a time, and on Windows Codex splits long text that way. Every other
+	/// client gets a bracketed paste. A clipboard paste lands asynchronously and a key press that
+	/// arrives first can cancel it, so before a submit this waits until the session shows it.
+	/// </summary>
+	private async Task WritePasteAsync(
+		SessionRuntime runtime,
+		TerminalController controller,
+		string text,
+		bool awaitLanding,
+		CancellationToken cancellationToken)
+	{
+		if (ClientPasteClipboard is not { } clipboard
+			|| !runtime.InputModes.IsSgrMouseActive
+			|| !await OfferOnClipboardAsync(clipboard, text).ConfigureAwait(false))
+		{
+			await WriteRequiredInputAsync(controller, BuildPastedInput(text)).ConfigureAwait(false);
+			return;
+		}
+
+		// The wait starts before the click, so output from a fast paste cannot be missed.
+		using var stopWaiting = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+		var landed = awaitLanding
+			? runtime.WaitForClientPasteAsync(text, ClientPasteLandingTimeout, stopWaiting.Token)
+			: Task.CompletedTask;
+		try
+		{
+			await WriteRequiredInputAsync(controller, ClientPasteClick).ConfigureAwait(false);
+		}
+		catch
+		{
+			await stopWaiting.CancelAsync().ConfigureAwait(false);
+			await landed.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+			throw;
+		}
+
+		try
+		{
+			await landed.ConfigureAwait(false);
+		}
+		catch (TimeoutException exception)
+		{
+			throw new InvalidOperationException(
+				"The session did not show the pasted text, so it was not submitted.",
+				exception);
+		}
+	}
+
+	private static async Task WriteRequiredInputAsync(TerminalController controller, string input)
+	{
+		if (!await controller.WriteInputAsync(input).ConfigureAwait(false))
+		{
+			throw new InvalidOperationException("Target session input write failed.");
+		}
+	}
+
+	// Text already on the clipboard, such as an agent's own copy of a selection, is not rewritten.
+	private static async Task<bool> OfferOnClipboardAsync(IClipboardService clipboard, string text)
+	{
+		var current = await clipboard.GetTextAsync().ConfigureAwait(false);
+		return string.Equals(NormalizeLineEndings(current), NormalizeLineEndings(text), StringComparison.Ordinal)
+			|| await clipboard.TrySetTextAsync(text).ConfigureAwait(false);
+	}
+
+	private static string NormalizeLineEndings(string text) =>
+		text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace("\r", "\n", StringComparison.Ordinal);
+
 	private static string BuildPastedInput(string text)
 	{
-		var normalized = text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace("\r", "\n", StringComparison.Ordinal);
-		return $"\u001b[200~{normalized}\u001b[201~";
+		return $"\u001b[200~{NormalizeLineEndings(text)}\u001b[201~";
 	}
 
 	/// <summary>

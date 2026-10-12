@@ -13,6 +13,7 @@ public sealed class SessionRuntime(string sessionId)
 	private const int RecentOutputMaxChars = 32_768;
 	private readonly Lock _gate = new();
 	private readonly StringBuilder _recentOutput = new();
+	private readonly List<PendingClientPaste> _pendingClientPastes = [];
 	private TaskCompletionSource<bool>? _initialOutputCompletionSource;
 	private TerminalController? _controller;
 	private EventHandler<string>? _outputHandler;
@@ -107,10 +108,11 @@ public sealed class SessionRuntime(string sessionId)
 	public TerminalDisplayOutputFilter DisplayOutputFilter { get; } = new();
 
 	/// <summary>
-	/// Tracks whether this session's client enabled win32-input-mode, which changes how Enter
-	/// and Esc must be encoded.
+	/// Tracks the input modes this session's client requested: win32-input-mode changes how
+	/// Enter and Esc must be encoded, and SGR mouse reporting lets a right click make the client
+	/// paste from the clipboard itself.
 	/// </summary>
-	public Win32InputModeTracker Win32InputMode { get; } = new();
+	public ClientInputModeTracker InputModes { get; } = new();
 
 	/// <summary>
 	/// Completes once the session's first output has been rendered, letting startup wait for a
@@ -167,6 +169,14 @@ public sealed class SessionRuntime(string sessionId)
 
 		lock (_gate)
 		{
+			foreach (var pending in _pendingClientPastes)
+			{
+				if (pending.Confirmation.Observe(text))
+				{
+					pending.Landed.TrySetResult();
+				}
+			}
+
 			_recentOutput.Append(text);
 			if (_recentOutput.Length > RecentOutputMaxChars)
 			{
@@ -190,6 +200,41 @@ public sealed class SessionRuntime(string sessionId)
 		lock (_gate)
 		{
 			_recentOutput.Clear();
+		}
+	}
+
+	/// <summary>
+	/// Waits until output appended after this call shows that the client pasted
+	/// <paramref name="text"/>. The wait is registered before this method first yields, so a
+	/// caller can start it, write the input that triggers the paste, and then await it.
+	/// </summary>
+	/// <exception cref="TimeoutException">The paste did not show within the timeout.</exception>
+	public async Task WaitForClientPasteAsync(
+		string text,
+		TimeSpan timeout,
+		CancellationToken cancellationToken)
+	{
+		PendingClientPaste pending = new(new ClientPasteConfirmation(text));
+		if (pending.Confirmation.IsTriviallyConfirmed)
+		{
+			return;
+		}
+
+		lock (_gate)
+		{
+			_pendingClientPastes.Add(pending);
+		}
+
+		try
+		{
+			await pending.Landed.Task.WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
+		}
+		finally
+		{
+			lock (_gate)
+			{
+				_pendingClientPastes.Remove(pending);
+			}
 		}
 	}
 
@@ -223,5 +268,11 @@ public sealed class SessionRuntime(string sessionId)
 		_inputWritingHandler = null;
 		_inputWrittenHandler = null;
 		_viewportChangedHandler = null;
+	}
+
+	private sealed record PendingClientPaste(ClientPasteConfirmation Confirmation)
+	{
+		public TaskCompletionSource Landed { get; } =
+			new(TaskCreationOptions.RunContinuationsAsynchronously);
 	}
 }

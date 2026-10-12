@@ -118,8 +118,13 @@ Each review-loop step atomically writes its complete immutable prompt to
 `.pact-reviews/<shortRunId>/pass-NNN-<role>-task.md` before terminal submission.
 The terminal receives one short task-path trigger as one bracketed-paste backend
 write followed by a separate Enter; the full prompt is never pasted or typed
-into the composer. All other programmatic prompt bodies use the same one-write
-bracketed-paste mechanism. A newly launched reviewer becomes ready on one
+into the composer. All other programmatic prompt bodies use the same mechanism.
+When the client captures the mouse (Codex and Claude in their fullscreen modes),
+the text goes through the clipboard instead: it is written there unless already
+present, and an SGR right click makes the client paste it itself, because Codex
+on Windows reads console key records and gets a bracketed paste one key at a
+time. Enter follows only once the session output shows the paste (a `[Pasted`
+placeholder or the end of the text); otherwise the send fails unsubmitted. A newly launched reviewer becomes ready on one
 bounded budget covering its first output, settle delay, and at most one Enter
 for the folder-trust dialog. Delivery is confirmed by the new activity cycle
 after submit. Pact repairs a dropped submit with Enter alone when the composer
@@ -510,9 +515,9 @@ an empty completion closes it.
 - Usage-limit rows preserve their last successfully parsed limits across refresh failures. `?` shows the latest raw source response from the current attempt and is hidden when that response is empty, while `!` independently shows the latest execution or parse error; both can appear together. A resolvable Claude command is authoritative for that profile and never falls back to shared statusline data after a failed or unparseable attempt.
 - Terminal tab status is event-driven; stable snapshots use the browser host's one-shot quiescence debounce described above. Do not add a second status timer or mutate UI glyph flags from terminal callbacks.
 - Terminal output is batched before crossing the C#-to-WebView bridge: 33 ms for the active session and 100 ms for background sessions, with immediate flush on activation. The browser receives these prebatched writes without a second delay, retains xterm callback backpressure, and exposes passive C#/JS performance snapshots. Cursor blinking is enabled only while the selected terminal pane is visible in the active, non-minimized window. All sessions share one terminal page and its main thread, so non-selected xterm instances are removed from layout with `display: none`; xterm pauses rendering only through an IntersectionObserver, which ignores `visibility: hidden`, and background output would otherwise delay typing echo and session switches.
-- Right-click inside xterm is handled by `terminalHost.js`: with selection it copies, without selection it requests paste from the application host. Browser context menus are disabled.
-- Clipboard paste is written by the C# session runtime as bracketed paste without
-  Enter. CRLF and standalone CR are normalized to LF before the backend write;
+- Right-click inside xterm is handled by `terminalHost.js`: with selection it copies. Without selection, an application tracking the mouse receives the click and pastes from the clipboard itself (Codex reads console key records on Windows, so a host paste reaches it one key per character and its paste detection splits long text); otherwise it requests paste from the application host. The rule depends only on xterm mouse-tracking state, not on the agent. Browser context menus are disabled.
+- Clipboard paste is written by the C# session runtime without Enter: a right
+  click for a client that captures the mouse, otherwise a bracketed paste. CRLF and standalone CR are normalized to LF before the backend write;
   do not route clipboard text through browser-side `term.paste()`.
 - xterm HTTP(S) links publish the source session id to the application host.
   The shell opens a saved native browser tab under the same project or ROOT;

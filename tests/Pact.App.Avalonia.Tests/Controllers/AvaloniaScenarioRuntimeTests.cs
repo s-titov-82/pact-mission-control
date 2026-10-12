@@ -40,7 +40,7 @@ public sealed class AvaloniaScenarioRuntimeTests
 			cancellationToken: TestContext.CurrentContext.CancellationToken);
 		var reviewerBackend = fixture.Backends[1];
 		reviewerBackend.EmitOutput("\u001b[?9001h");
-		await WaitUntilAsync(() => fixture.Controller.Runtimes[reviewer.Record.Id].Win32InputMode.IsActive);
+		await WaitUntilAsync(() => fixture.Controller.Runtimes[reviewer.Record.Id].InputModes.IsWin32InputActive);
 		reviewerBackend.InputWritten = input =>
 		{
 			if (input == Win32InputEncoder.EnterKey)

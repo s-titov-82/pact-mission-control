@@ -214,8 +214,10 @@ neither lifecycle.
 Scenario journals are in memory. Each review-loop step atomically publishes
 one immutable task file below
 `.pact-reviews/<run>/pass-NNN-<role>-task.md`. The terminal receives only the
-short task-path instruction as one bracketed-paste write and then a separate
-Enter. A run never writes while the session is busy, holding a question, or
+short task-path instruction as one paste and then a separate Enter. The paste is
+bracketed, or, for a client that captures the mouse, a clipboard paste the
+client makes itself on a right click; Enter then waits until the output shows
+it. A run never writes while the session is busy, holding a question, or
 known to contain unsent composer text. Codex and Claude now distinguish composer
 suggestions and drafts using captured Dim metadata and structural boundaries;
 text-only or incomplete observations remain unknown. A freshly launched

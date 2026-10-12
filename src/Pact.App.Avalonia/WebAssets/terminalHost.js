@@ -594,22 +594,44 @@ window.addEventListener('resize', () => {
   }, 100);
 });
 
-// The host owns right-click copy/paste. Stop the button press in capture phase
-// so a mouse-tracking TUI (notably Claude) cannot also handle the same gesture.
+// Right-click copies a terminal selection. Without one, an application tracking the mouse
+// receives the click and handles paste itself, as in other terminals: an application that
+// reads console key records gets a host paste one key per character, so its own clipboard
+// read is the only way it sees a paste whole. Otherwise the host pastes. The press is
+// stopped in capture phase whenever the host handles the gesture, so the application
+// cannot handle it as well.
+let rightClickForwardedSessionId = null;
+
 document.addEventListener('mousedown', event => {
-  if (event.button === 2) {
-    event.stopPropagation();
+  if (event.button !== 2) {
+    return;
   }
+
+  const instance = getActiveInstance();
+  if (instance
+    && !instance.term.hasSelection()
+    && instance.term.modes.mouseTrackingMode !== 'none') {
+    rightClickForwardedSessionId = instance.sessionId;
+    return;
+  }
+
+  rightClickForwardedSessionId = null;
+  event.stopPropagation();
 }, true);
 
 document.addEventListener('contextmenu', event => {
   event.preventDefault();
 
+  const forwardedSessionId = rightClickForwardedSessionId;
+  rightClickForwardedSessionId = null;
   const instance = getActiveInstance();
   if (!instance) {
     return;
   }
   instance.lastPointerAnchor = null;
+  if (forwardedSessionId === instance.sessionId) {
+    return;
+  }
 
   if (instance.term.hasSelection()) {
     postHostMessage({

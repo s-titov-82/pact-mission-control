@@ -43,7 +43,7 @@ public sealed class SessionRuntimeTests
 			{
 				for (var index = 0; index < 10_000; index++)
 				{
-					runtime.Win32InputMode.Scan(index % 2 == 0 ? enable : disable);
+					runtime.InputModes.Scan(index % 2 == 0 ? enable : disable);
 				}
 			}),
 			Task.Run(() =>
@@ -51,7 +51,7 @@ public sealed class SessionRuntimeTests
 				for (var index = 0; index < 10_000; index++)
 				{
 					_ = runtime.GetRecentOutput();
-					_ = runtime.Win32InputMode.IsActive;
+					_ = runtime.InputModes.IsWin32InputActive;
 				}
 			})
 		];
@@ -59,7 +59,7 @@ public sealed class SessionRuntimeTests
 		await Task.WhenAll(operations);
 
 		runtime.GetRecentOutput().Length.ShouldBeLessThanOrEqualTo(32_768);
-		runtime.Win32InputMode.IsActive.ShouldBeFalse();
+		runtime.InputModes.IsWin32InputActive.ShouldBeFalse();
 	}
 
 	private static TerminalController CreateController() => new(new IdleTerminalBackend());

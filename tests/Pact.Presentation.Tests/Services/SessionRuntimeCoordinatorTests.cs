@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using Pact.Core.Agents;
+using Pact.Core.Platform;
 using Pact.Core.Presentation;
 using Pact.Core.ScreenVerdictProfiles;
 using Pact.Core.Sessions;
@@ -35,6 +36,8 @@ public sealed class SessionRuntimeCoordinatorTests
 	}
 	private const string PastedTrigger = "\u001b[200~task-path\u001b[201~";
 	private const string PlainEnter = "\r";
+	private const string MouseTrackingOn = "\u001b[?1003;1006h";
+	private const string RightClick = "\u001b[<2;1;1M\u001b[<2;1;1m";
 
 	[Test]
 	public void Active_session_snapshot_includes_only_runtimes_with_attached_controllers()
@@ -212,6 +215,118 @@ public sealed class SessionRuntimeCoordinatorTests
 
 		backend.InputWrites.ShouldBe(["\u001b[200~review this\u001b[201~", Win32InputEncoder.EnterKey]);
 	}
+
+	[Test]
+	public async Task A_mouse_tracking_client_pastes_from_the_clipboard_and_is_entered_once_it_shows()
+	{
+		var (coordinator, backend, controller, clipboard) = await CreateClipboardPasteSessionAsync(
+			"older text",
+			clickOutput: "\u001b[37;3H\u001b[38;5;6m[Pasted Content 1200 chars]\u001b[0m");
+		await using var _ = controller;
+
+		await SendPromptAsync(coordinator, "review this\r\nplease", submit: true);
+
+		clipboard.Writes.ShouldBe(["review this\r\nplease"]);
+		backend.InputWrites.ShouldBe([RightClick, PlainEnter]);
+	}
+
+	[Test]
+	public async Task A_clipboard_paste_is_entered_when_the_pasted_text_shows_wrapped()
+	{
+		var (coordinator, backend, controller, _) = await CreateClipboardPasteSessionAsync(
+			string.Empty,
+			clickOutput: "\u001b[38;3H> check the parser e\u001b[39;3Hdge cases");
+		await using var _ = controller;
+
+		await SendPromptAsync(coordinator, "check the parser edge cases", submit: true);
+
+		backend.InputWrites.ShouldBe([RightClick, PlainEnter]);
+	}
+
+	[Test]
+	public async Task Text_already_on_the_clipboard_is_not_written_again()
+	{
+		var (coordinator, backend, controller, clipboard) =
+			await CreateClipboardPasteSessionAsync("selected\r\ntext");
+		await using var _ = controller;
+
+		await SendPromptAsync(coordinator, "selected\ntext", submit: false);
+
+		clipboard.Writes.ShouldBeEmpty();
+		backend.InputWrites.ShouldBe([RightClick]);
+	}
+
+	[Test]
+	public async Task A_client_without_mouse_tracking_gets_a_bracketed_paste_and_the_clipboard_is_untouched()
+	{
+		var (coordinator, backend, controller, clipboard) =
+			await CreateClipboardPasteSessionAsync("older text", mouseTracking: false);
+		await using var _ = controller;
+
+		await SendPromptAsync(coordinator, "review this", submit: false);
+
+		clipboard.Writes.ShouldBeEmpty();
+		backend.InputWrites.ShouldBe(["\u001b[200~review this\u001b[201~"]);
+	}
+
+	[Test]
+	public async Task A_scenario_trigger_to_a_mouse_tracking_client_is_entered_after_its_paste_shows()
+	{
+		var (coordinator, backend, controller, _) =
+			await CreateClipboardPasteSessionAsync(string.Empty, clickOutput: "> task-path");
+		await using var _ = controller;
+
+		var result = await coordinator.WriteScenarioPromptAndSubmitAsync(
+			"session-1",
+			"task-path",
+			isCodex: false,
+			confirmDelivery: false,
+			static () => Idle(),
+			TestContext.CurrentContext.CancellationToken);
+
+		result.Outcome.ShouldBe(PromptDeliveryOutcome.Written);
+		backend.InputWrites.ShouldBe([RightClick, PlainEnter]);
+	}
+
+	// A session whose client reports the mouse in SGR encoding when mouseTracking is set, and
+	// prints clickOutput, its pasted text, when it receives a right click.
+	private static async Task<(
+		SessionRuntimeCoordinator Coordinator,
+		RecordingBackend Backend,
+		TerminalController Controller,
+		RecordingClipboard Clipboard)> CreateClipboardPasteSessionAsync(
+		string clipboardText,
+		string? clickOutput = null,
+		bool mouseTracking = true)
+	{
+		var (coordinator, backend, controller) = await CreateAttachedSessionAsync();
+		var runtime = coordinator.GetOrCreateRuntime("session-1");
+		if (mouseTracking)
+		{
+			runtime.InputModes.Scan(MouseTrackingOn);
+		}
+
+		RecordingClipboard clipboard = new(clipboardText);
+		coordinator.ClientPasteClipboard = clipboard;
+		backend.InputWritten = input =>
+		{
+			if (input == RightClick && clickOutput is not null)
+			{
+				runtime.AppendRecentOutput(clickOutput);
+			}
+		};
+		return (coordinator, backend, controller, clipboard);
+	}
+
+	private static Task SendPromptAsync(SessionRuntimeCoordinator coordinator, string prompt, bool submit) =>
+		coordinator.SendPromptAsync(
+			CreateSession("session-1"),
+			prompt,
+			submit,
+			startIfNeeded: false,
+			enforceScenarioLock: false,
+			static (_, _) => Task.CompletedTask,
+			static _ => Task.CompletedTask);
 
 	[TestCase('\u0015', 85, 22)]
 	[TestCase('\u000b', 75, 37)]
@@ -794,7 +909,7 @@ public sealed class SessionRuntimeCoordinatorTests
 		runtime.AttachController(controller);
 		if (win32InputMode)
 		{
-			runtime.Win32InputMode.Scan($"{(char)0x1b}[?9001h");
+			runtime.InputModes.Scan($"{(char)0x1b}[?9001h");
 		}
 
 		return (coordinator, backend, controller);
@@ -881,6 +996,24 @@ public sealed class SessionRuntimeCoordinatorTests
 		public Task FitAsync() => Task.CompletedTask;
 		public Task FocusAsync() => Task.CompletedTask;
 		public Task SetBusyOverlayAsync(string message, bool isVisible, bool dimBackground, string? actionLabel = null) => Task.CompletedTask;
+	}
+
+	private sealed class RecordingClipboard(string text) : IClipboardService
+	{
+		private string _text = text;
+
+		public List<string> Writes { get; } = [];
+
+		public uint ChangeSequence => (uint)Writes.Count;
+
+		public Task<string> GetTextAsync() => Task.FromResult(_text);
+
+		public Task<bool> TrySetTextAsync(string text)
+		{
+			Writes.Add(text);
+			_text = text;
+			return Task.FromResult(true);
+		}
 	}
 
 	private sealed class RecordingBackend : ITerminalBackend

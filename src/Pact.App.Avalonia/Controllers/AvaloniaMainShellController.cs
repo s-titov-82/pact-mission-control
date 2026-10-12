@@ -232,6 +232,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		ViewModel.TerminalTabStatuses.DiagnosticsChanged += OnTerminalDiagnosticsChanged;
 		RebindSelectedDetailsSource();
 		Clipboard = clipboard ?? throw new ArgumentNullException(nameof(clipboard));
+		_runtimeCoordinator.ClientPasteClipboard = Clipboard;
 		UpdateController = updateController;
 		_launchOptions = launchOptions;
 		_softRestartTicketStore = softRestartTicketStore;
@@ -2947,7 +2948,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			isCodex = ViewModel.FindSession(sessionId)?.Record.Kind == AgentKind.Codex;
 		});
 
-		var input = runtime!.Win32InputMode.IsActive && isCodex
+		var input = runtime!.InputModes.IsWin32InputActive && isCodex
 			? Win32InputEncoder.EscapeKey
 			: "\u001b";
 		if (!await controller!.WriteInputAsync(input))
@@ -3596,7 +3597,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			return;
 		}
 
-		runtime.Win32InputMode.Scan(displayText);
+		runtime.InputModes.Scan(displayText);
 		runtime.AppendRecentOutput(displayText);
 		RunEventOperation(
 			"terminal-output",
@@ -3731,7 +3732,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 				TimeSpan.FromMilliseconds(75),
 				_timeProvider,
 				cancellationToken);
-			var enterInput = runtime.Win32InputMode.IsActive
+			var enterInput = runtime.InputModes.IsWin32InputActive
 				&& session.Record.Kind == AgentKind.Codex
 					? Win32InputEncoder.EnterKey
 					: "\r";

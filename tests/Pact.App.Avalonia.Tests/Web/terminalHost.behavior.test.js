@@ -329,8 +329,38 @@ function runRightClickOwnedByHostBehavior() {
   window.agentTerminal.showTerminal('session-1', { snapshotDebounceMs: 500 });
   const terminal = terminalInstances[0];
   terminal.container.listeners.get('pointerup')({ clientX: 110, clientY: 70 });
+  stopped = false;
+  mouseDown.handler({ button: 2, stopPropagation: () => { stopped = true; } });
+  assert.equal(stopped, true, 'without mouse tracking the host owns the right click');
   contextMenu.handler({ preventDefault() {} });
   assert.deepEqual(lastHostMessage(), { type: 'pasteRequested', sessionId: 'session-1' });
+
+  hostMessages.length = 0;
+  terminal.modes.mouseTrackingMode = 'any';
+  stopped = false;
+  mouseDown.handler({ button: 2, stopPropagation: () => { stopped = true; } });
+  assert.equal(stopped, false, 'a mouse-tracking application must receive the right click');
+  contextMenu.handler({ preventDefault() {} });
+  assert.equal(hostMessages.length, 0, 'the host must not paste a right click the application received');
+
+  contextMenu.handler({ preventDefault() {} });
+  assert.deepEqual(
+    lastHostMessage(),
+    { type: 'pasteRequested', sessionId: 'session-1' },
+    'a context menu without a forwarded press still pastes');
+
+  hostMessages.length = 0;
+  terminal.selectedText = 'selected';
+  stopped = false;
+  mouseDown.handler({ button: 2, stopPropagation: () => { stopped = true; } });
+  assert.equal(stopped, true, 'a right click on a selection stays with the host');
+  contextMenu.handler({ preventDefault() {} });
+  assert.deepEqual(lastHostMessage(), {
+    type: 'copySelection',
+    sessionId: 'session-1',
+    data: 'selected'
+  });
+  terminal.modes.mouseTrackingMode = 'none';
 
   hostMessages.length = 0;
   const osc52 = terminal.oscHandlers.get(52);

@@ -39,15 +39,20 @@ its content can contain external or untrusted text.
 Completing a non-empty selection in a terminal or Notes opens a contextual
 popover. You can paste the raw selection, run a selection-aware prompt
 template, send it to another eligible live terminal, or append it to project
-Notes. Terminal insertion does not press Enter.
+Notes. Terminal insertion does not press Enter. When the target agent captures
+the mouse, Pact places the text on the clipboard (unless it is already there)
+and right-clicks the agent so it pastes the text in one piece; the clipboard is
+left holding that text.
 
 The compact target list stays within the current project or ROOT owner. Use
 `More targets…` to choose another running project. Paused, web, and
 scenario-locked targets are excluded.
 
-Inside xterm, right-click copies an existing selection. With no selection it
-requests clipboard paste from the application. Pasted text is bracketed and is
-not submitted automatically.
+Inside xterm, right-click copies an existing selection. With no selection, an
+agent that captures the mouse (Codex and Claude in their fullscreen modes)
+receives the click and pastes from the clipboard itself, as in Windows Terminal;
+otherwise Pact pastes the clipboard as bracketed text. Neither submits
+automatically.
 
 ## Status and links
 
