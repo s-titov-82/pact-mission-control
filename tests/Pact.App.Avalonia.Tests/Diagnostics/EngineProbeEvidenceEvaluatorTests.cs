@@ -71,6 +71,8 @@ public sealed class EngineProbeEvidenceEvaluatorTests
 		result.Passed.ShouldContain("dom-regex");
 		result.Passed.ShouldContain("dom-missing");
 		result.Passed.ShouldContain("background-timer");
+		result.Passed.ShouldContain("background-visibility");
+		result.Passed.ShouldContain("background-frames");
 	}
 
 	[Test]
@@ -101,6 +103,8 @@ public sealed class EngineProbeEvidenceEvaluatorTests
 	[TestCase("dom-regex", "124")]
 	[TestCase("dom-missing", "unexpected")]
 	[TestCase("background-timer", "inactive")]
+	[TestCase("background-visibility", "inactive:1->1")]
+	[TestCase("background-frames", "inactive:7->8")]
 	public void Incorrect_DOM_contract_evidence_cannot_pass(string key, string actual)
 	{
 		var evidence = DomEvidence();
@@ -173,6 +177,8 @@ public sealed class EngineProbeEvidenceEvaluatorTests
 			["dom-regex"] = "123",
 			["dom-missing"] = null,
 			["background-timer"] = "active",
+			["background-visibility"] = "active",
+			["background-frames"] = "active",
 		};
 
 	private static WebViewDiagnosticEntry Entry(

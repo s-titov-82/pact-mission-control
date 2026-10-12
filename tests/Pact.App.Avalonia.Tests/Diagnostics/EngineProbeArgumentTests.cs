@@ -20,6 +20,8 @@ public sealed class EngineProbeArgumentTests
 	[TestCase("dom-regex")]
 	[TestCase("dom-missing")]
 	[TestCase("background-timer")]
+	[TestCase("background-visibility")]
+	[TestCase("background-frames")]
 	public void RequiredProbesIncludeProductionPathEvidence(string phase) => EngineProbeRunner.RequiredProbes.ShouldContain(phase);
 
 	[Test]

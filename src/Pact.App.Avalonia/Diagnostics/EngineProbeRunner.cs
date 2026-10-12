@@ -30,12 +30,25 @@ internal sealed class EngineProbeRunner
 		    <span id="status">Running</span>
 		    <span id="build">Build #123 complete</span>
 		    <span id="background-tick">0</span>
+		    <span id="visible-tick">0</span>
+		    <span id="frame-tick">0</span>
 		  </main>
 		  <script>
 		    let backgroundTick = 0;
+		    let visibleTick = 0;
+		    let frameTick = 0;
+		    const countFrame = () => {
+		      document.querySelector("#frame-tick").textContent = String(++frameTick);
+		      requestAnimationFrame(countFrame);
+		    };
+		    requestAnimationFrame(countFrame);
 		    setInterval(() => {
 		      document.querySelector("#background-tick").textContent =
 		        String(++backgroundTick);
+		      if (!document.hidden) {
+		        document.querySelector("#visible-tick").textContent =
+		          String(++visibleTick);
+		      }
 		    }, 100);
 		  </script>
 		</body>
@@ -396,24 +409,51 @@ internal sealed class EngineProbeRunner
 					CaptureGroup: null)),
 		};
 
-		var timerExtractor = new WebMonitorExtractor(
-			"#background-tick",
-			WebMonitorValueSource.Text,
-			AttributeName: null,
-			MatchPattern: null,
-			CaptureGroup: null);
-		var firstTimerValue = await EvaluateRevisionAsync(browserHost, timerExtractor);
+		// A hidden monitored tab must keep running timers, keep reporting itself visible, and keep
+		// getting animation frames, or pages that pause live updates while hidden never change for
+		// the monitor to see. Monitoring turns this on for tabs that match a rule; the probe page
+		// matches none, so it is turned on directly.
+		await browserHost.SetKeepsRunningWhileHiddenAsync(true, CancellationToken.None);
+		(string Probe, string Selector, int MinimumAdvance)[] counters =
+		[
+			("background-timer", "#background-tick", 10),
+			("background-visibility", "#visible-tick", 10),
+			("background-frames", "#frame-tick", 5),
+		];
+		var before = new int?[counters.Length];
+		for (var index = 0; index < counters.Length; index++)
+		{
+			before[index] = await ReadCounterAsync(browserHost, counters[index].Selector);
+		}
+
 		await browserHost.HideAsync(CancellationToken.None);
 		await Task.Delay(TimeSpan.FromSeconds(3));
-		var secondTimerValue = await EvaluateRevisionAsync(browserHost, timerExtractor);
-		if (int.TryParse(firstTimerValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var first)
-			&& int.TryParse(secondTimerValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var second)
-			&& second - first >= 10)
+		for (var index = 0; index < counters.Length; index++)
 		{
-			evidence["background-timer"] = "active";
+			var after = await ReadCounterAsync(browserHost, counters[index].Selector);
+			evidence[counters[index].Probe] = before[index] is int first
+				&& after is int second
+				&& second - first >= counters[index].MinimumAdvance
+					? "active"
+					: $"inactive:{before[index]}->{after}";
 		}
 
 		return evidence;
+	}
+
+	private static async Task<int?> ReadCounterAsync(AvaloniaWebPageHost browserHost, string selector)
+	{
+		var value = await EvaluateRevisionAsync(
+			browserHost,
+			new WebMonitorExtractor(
+				selector,
+				WebMonitorValueSource.Text,
+				AttributeName: null,
+				MatchPattern: null,
+				CaptureGroup: null));
+		return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var counter)
+			? counter
+			: null;
 	}
 
 	private static async Task<string?> EvaluateRevisionAsync(

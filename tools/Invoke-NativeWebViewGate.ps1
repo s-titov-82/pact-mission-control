@@ -26,6 +26,8 @@ $pactExpectedProbes = @(
     'dom-regex'
     'dom-missing'
     'background-timer'
+    'background-visibility'
+    'background-frames'
     'web-process-attribution'
 )
 
@@ -127,6 +129,8 @@ function Get-PactRawProbeFailures {
         'dom-regex' = '123'
         'dom-missing' = $null
         'background-timer' = 'active'
+        'background-visibility' = 'active'
+        'background-frames' = 'active'
     }
     foreach ($entry in $expectedDomEvidence.GetEnumerator()) {
         $property = $domEvidence.PSObject.Properties[$entry.Key]
@@ -253,6 +257,8 @@ function New-PactPassingRawResult {
         'dom-regex' = '123'
         'dom-missing' = $null
         'background-timer' = 'active'
+        'background-visibility' = 'active'
+        'background-frames' = 'active'
     }
     return [pscustomobject]@{
         required = @($pactExpectedProbes)
@@ -291,6 +297,12 @@ function Invoke-PactGateSelfTest {
     $inactiveTimer.domEvidence.'background-timer' = 'inactive'
     if ((Get-PactRawProbeFailures $inactiveTimer 0 $false) -cnotcontains 'dom-value:background-timer') {
         throw 'Self-test did not classify insufficient background-timer evidence.'
+    }
+
+    $hiddenPage = Copy-PactJsonObject $passing
+    $hiddenPage.domEvidence.'background-visibility' = 'inactive:1->1'
+    if ((Get-PactRawProbeFailures $hiddenPage 0 $false) -cnotcontains 'dom-value:background-visibility') {
+        throw 'Self-test did not classify a hidden tab that reports itself hidden.'
     }
 
     $reportedError = Copy-PactJsonObject $passing

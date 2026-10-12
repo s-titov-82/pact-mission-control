@@ -59,6 +59,14 @@ public interface IWebPageHost : IAsyncDisposable
 	Task FocusAsync(CancellationToken cancellationToken);
 
 	/// <summary>
+	/// Sets whether the page is told it is visible while its view is hidden, so a page that
+	/// pauses live updates in the background keeps updating for monitoring. Turning it off
+	/// applies from the next document; the current one keeps updating until it is replaced.
+	/// </summary>
+	Task SetKeepsRunningWhileHiddenAsync(bool enabled, CancellationToken cancellationToken) =>
+		Task.CompletedTask;
+
+	/// <summary>
 	/// Reads one bounded UTF-16 slice of the current document's outer HTML.
 	/// </summary>
 	Task<WebPageDocumentFragment> ReadDocumentHtmlAsync(

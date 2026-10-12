@@ -242,7 +242,14 @@ public sealed class WebMonitorCoordinator : IAsyncDisposable
 					await ClearForNoMatchAsync(registration).ConfigureAwait(false);
 				}
 
-				if (compiled.Length > 0)
+				bool keepsRunningWhileHidden;
+				lock (registration.SyncRoot)
+				{
+					keepsRunningWhileHidden = registration.KeepsRunningWhileHidden;
+				}
+
+				// With monitoring off, a loop is still needed to retry a failed switch-off.
+				if (compiled.Length > 0 || keepsRunningWhileHidden)
 				{
 					StartLoop(registration);
 				}
@@ -728,7 +735,13 @@ public sealed class WebMonitorCoordinator : IAsyncDisposable
 				var rules = GetCompiledRules();
 				if (rules.Length == 0)
 				{
-					return;
+					if (!await RetrySwitchOffWhileHiddenAsync(registration, cancellationToken)
+						.ConfigureAwait(false))
+					{
+						return;
+					}
+
+					continue;
 				}
 
 				TimeSpan delay;
@@ -742,6 +755,7 @@ public sealed class WebMonitorCoordinator : IAsyncDisposable
 				// The pulse must be captured with the state it belongs to. A pulse raised after
 				// this lock releases replaces the source, so a later read would wait on a pulse
 				// that nothing has signalled yet while acting on already-stale state.
+				bool hasConfirmedUrl;
 				Task pulse;
 				lock (registration.SyncRoot)
 				{
@@ -755,6 +769,7 @@ public sealed class WebMonitorCoordinator : IAsyncDisposable
 					pendingInvocation =
 						registration.PendingInvocation is { IsCompleted: false };
 					matchedRule = FindFirstMatch(rules, registration.ConfirmedUrl);
+					hasConfirmedUrl = registration.ConfirmedUrl is not null;
 					cleanup = !navigating
 						&& !registration.AwaitingPostNavigationConfirmation
 						&& registration.HasConfirmedStableUrl
@@ -763,6 +778,15 @@ public sealed class WebMonitorCoordinator : IAsyncDisposable
 					delay = registration.NextAttemptAt - _timeProvider.GetUtcNow();
 					evaluationGeneration = registration.NavigationGeneration;
 					pulse = registration.PulseSource.Task;
+				}
+
+				if (!navigating && hasConfirmedUrl)
+				{
+					await SyncKeepsRunningWhileHiddenAsync(
+							registration,
+							keepRunning: matchedRule is not null,
+							cancellationToken)
+						.ConfigureAwait(false);
 				}
 
 				if (navigating || pendingInvocation || delay > TimeSpan.Zero)
@@ -858,6 +882,72 @@ public sealed class WebMonitorCoordinator : IAsyncDisposable
 		{
 			// Registration lifecycle cancellation is the normal loop exit.
 		}
+	}
+
+	// A page that matches a rule must keep updating while its tab is hidden; many pages pause live
+	// updates in the background, and monitoring would then read a frozen page.
+	private async Task SyncKeepsRunningWhileHiddenAsync(
+		Registration registration,
+		bool keepRunning,
+		CancellationToken cancellationToken)
+	{
+		lock (registration.SyncRoot)
+		{
+			if (registration.KeepsRunningWhileHidden == keepRunning)
+			{
+				return;
+			}
+
+			registration.KeepsRunningWhileHidden = keepRunning;
+		}
+
+		try
+		{
+			await registration.Host.SetKeepsRunningWhileHiddenAsync(keepRunning, cancellationToken)
+				.ConfigureAwait(false);
+		}
+		catch (Exception exception) when (exception is not OperationCanceledException)
+		{
+			// Forget the failed change so the next monitor pass retries it.
+			lock (registration.SyncRoot)
+			{
+				if (registration.KeepsRunningWhileHidden == keepRunning)
+				{
+					registration.KeepsRunningWhileHidden = !keepRunning;
+				}
+			}
+
+			PublishDiagnostic(
+				registration.WebPageId,
+				ruleId: null,
+				"BackgroundVisibility",
+				registration.Attempt,
+				exception.Message);
+		}
+	}
+
+	// With no rules the loop only lives until a failed switch-off of the hidden-tab override
+	// succeeds; returns false once nothing is left to switch off.
+	private async Task<bool> RetrySwitchOffWhileHiddenAsync(
+		Registration registration,
+		CancellationToken cancellationToken)
+	{
+		Task pulse;
+		lock (registration.SyncRoot)
+		{
+			if (!registration.KeepsRunningWhileHidden || registration.Stopping || registration.Removed)
+			{
+				return false;
+			}
+
+			pulse = registration.PulseSource.Task;
+		}
+
+		await WaitForDelayOrPulseAsync(pulse, UnmatchedProbeInterval, cancellationToken)
+			.ConfigureAwait(false);
+		await SyncKeepsRunningWhileHiddenAsync(registration, keepRunning: false, cancellationToken)
+			.ConfigureAwait(false);
+		return true;
 	}
 
 	private async Task ProcessEvaluationAsync(
@@ -1405,6 +1495,8 @@ public sealed class WebMonitorCoordinator : IAsyncDisposable
 			registration.NextAttemptAt = _timeProvider.GetUtcNow() + UnmatchedProbeInterval;
 		}
 
+		await SyncKeepsRunningWhileHiddenAsync(registration, keepRunning: false, CancellationToken.None)
+			.ConfigureAwait(false);
 		await QueueSnapshotDelete(registration).ConfigureAwait(false);
 		PublishStatus(registration, transition.Status);
 	}
@@ -1797,6 +1889,7 @@ public sealed class WebMonitorCoordinator : IAsyncDisposable
 		public bool AwaitingPostNavigationConfirmation { get; set; }
 		public bool NeedsFreshBaseline { get; set; }
 		public bool CleanedForNoMatch { get; set; }
+		public bool KeepsRunningWhileHidden { get; set; }
 		public bool Selected { get; set; }
 		public bool WindowVisible { get; set; }
 		public bool WindowActive { get; set; }

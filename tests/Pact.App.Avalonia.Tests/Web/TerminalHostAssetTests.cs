@@ -39,7 +39,22 @@ public sealed partial class TerminalHostAssetTests
 	[TestCase("agent-mouse-release")]
 	[TestCase("osc52")]
 	[TestCase("selected-text-request")]
-	public async Task Terminal_host_snapshot_behaviors_execute_in_node(string behavior)
+	public Task Terminal_host_snapshot_behaviors_execute_in_node(string behavior) =>
+		RunNodeBehaviorAsync("terminalHost.behavior.test.js", "terminalHost.js", behavior);
+
+	[Test]
+	[TestCase("reports-visible-while-hidden")]
+	[TestCase("withholds-only-hide-transitions")]
+	[TestCase("hidden-frames-run-on-a-timer-once")]
+	[TestCase("pending-frame-runs-after-the-tab-is-hidden")]
+	[TestCase("visible-frames-use-native-frames-and-cancel")]
+	[TestCase("deactivation-gives-a-hidden-page-its-real-visibility")]
+	[TestCase("reinjection-reactivates-a-deactivated-page")]
+	[TestCase("repeated-injection-is-idempotent")]
+	public Task Browser_background_visibility_behaviors_execute_in_node(string behavior) =>
+		RunNodeBehaviorAsync("backgroundVisibility.behavior.test.js", "backgroundVisibility.js", behavior);
+
+	private static async Task RunNodeBehaviorAsync(string testScript, string asset, string behavior)
 	{
 		EnsureNodePrerequisite();
 		var repositoryRoot = FindRepositoryRoot();
@@ -55,17 +70,17 @@ public sealed partial class TerminalHostAssetTests
 			"tests",
 			"Pact.App.Avalonia.Tests",
 			"Web",
-			"terminalHost.behavior.test.js"));
+			testScript));
 		startInfo.ArgumentList.Add(Path.Combine(
 			repositoryRoot,
 			"src",
 			"Pact.App.Avalonia",
 			"WebAssets",
-			"terminalHost.js"));
+			asset));
 		startInfo.ArgumentList.Add(behavior);
 
 		using var process = Process.Start(startInfo)
-			?? throw new InvalidOperationException("Could not start Node.js for terminal host behavior tests.");
+			?? throw new InvalidOperationException("Could not start Node.js for web asset behavior tests.");
 		var output = await process.StandardOutput.ReadToEndAsync(TestContext.CurrentContext.CancellationToken);
 		var error = await process.StandardError.ReadToEndAsync(TestContext.CurrentContext.CancellationToken);
 		await process.WaitForExitAsync(TestContext.CurrentContext.CancellationToken);

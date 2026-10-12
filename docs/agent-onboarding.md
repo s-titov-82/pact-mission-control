@@ -556,8 +556,11 @@ saving.
 
 Web monitoring rules are evaluated only for web tabs whose WebView host has
 actually been loaded. Restored or paused pages have no host and no polling;
-their retained unread state can still project from the snapshot. A loaded page
-uses the first matching enabled rule in file order, rebaselines after navigation
+their retained unread state can still project from the snapshot. A loaded but
+hidden page keeps updating because a tab matching a rule is told it is visible (see
+`WebAssets/backgroundVisibility.js` in [Architecture](architecture.md)); do not
+remove it, or pages that pause while hidden never change for the monitor. A
+loaded page uses the first matching enabled rule in file order, rebaselines after navigation
 or a rule-fingerprint change, and projects `Activity -> Unread -> Paused ->
 None` (the existing loading glyph temporarily hides that projection). The two
 seeded TeamCity and GitLab examples are disabled and contain `CHANGE-ME-`

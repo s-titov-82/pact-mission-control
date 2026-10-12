@@ -23,6 +23,8 @@ internal static partial class EngineProbeEvidenceEvaluator
 		"dom-regex",
 		"dom-missing",
 		"background-timer",
+		"background-visibility",
+		"background-frames",
 		"web-process-attribution",
 	];
 
@@ -93,6 +95,8 @@ internal static partial class EngineProbeEvidenceEvaluator
 		}
 
 		AddMatchingDomEvidence(passed, domEvidence, "background-timer", "active");
+		AddMatchingDomEvidence(passed, domEvidence, "background-visibility", "active");
+		AddMatchingDomEvidence(passed, domEvidence, "background-frames", "active");
 		if (processAttributionSucceeded)
 		{
 			passed.Add("web-process-attribution");

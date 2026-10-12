@@ -74,6 +74,79 @@ public sealed class WebMonitorCoordinatorTests
 	}
 
 	[Test]
+	public async Task A_tab_matching_a_rule_keeps_running_while_hidden_until_no_rule_matches()
+	{
+		await using CoordinatorContext context = new();
+		FakeWebPageHost host = new("web-1", MatchingUrl);
+		host.Enqueue(MatchingUrl, activity: true, revision: "42");
+		host.Enqueue(MatchingUrl, activity: true, revision: "42");
+		await context.Coordinator.SetRulesAsync([CreateRule()], CancellationToken.None);
+
+		await context.Coordinator.RegisterAsync("web-1", host, CancellationToken.None);
+		await context.WaitForSnapshotAsync("web-1", snapshot => snapshot.Revision == "42");
+		await CoordinatorContext.PumpAsync();
+
+		host.KeepsRunningWhileHiddenChanges.ShouldBe([true]);
+
+		await context.Coordinator.SetRulesAsync([], CancellationToken.None);
+
+		host.KeepsRunningWhileHiddenChanges.ShouldBe([true, false]);
+	}
+
+	[Test]
+	public async Task A_failed_keep_running_change_is_retried_by_the_next_pass()
+	{
+		await using CoordinatorContext context = new();
+		FakeWebPageHost host = new("web-1", MatchingUrl) { FailingKeepsRunningWhileHiddenCalls = 1 };
+		host.Enqueue(MatchingUrl, activity: true, revision: "42");
+		host.Enqueue(MatchingUrl, activity: true, revision: "42");
+		await context.Coordinator.SetRulesAsync([CreateRule()], CancellationToken.None);
+
+		await context.Coordinator.RegisterAsync("web-1", host, CancellationToken.None);
+		await context.WaitForSnapshotAsync("web-1", snapshot => snapshot.Revision == "42");
+		await CoordinatorContext.PumpAsync();
+
+		host.KeepsRunningWhileHiddenChanges.ShouldBe([true, true]);
+	}
+
+	[Test]
+	public async Task A_failed_switch_off_after_all_rules_are_removed_is_retried()
+	{
+		await using CoordinatorContext context = new();
+		FakeWebPageHost host = new("web-1", MatchingUrl);
+		host.Enqueue(MatchingUrl, activity: true, revision: "42");
+		host.Enqueue(MatchingUrl, activity: true, revision: "42");
+		await context.Coordinator.SetRulesAsync([CreateRule()], CancellationToken.None);
+		await context.Coordinator.RegisterAsync("web-1", host, CancellationToken.None);
+		await context.WaitForSnapshotAsync("web-1", snapshot => snapshot.Revision == "42");
+		await CoordinatorContext.PumpAsync();
+		host.FailingKeepsRunningWhileHiddenCalls = 1;
+
+		await context.Coordinator.SetRulesAsync([], CancellationToken.None);
+		host.KeepsRunningWhileHiddenChanges.ShouldBe([true, false]);
+		await context.AdvanceAsync(TimeSpan.FromSeconds(30));
+		await context.AdvanceAsync(TimeSpan.FromSeconds(30));
+
+		host.KeepsRunningWhileHiddenChanges.ShouldBe([true, false, false]);
+	}
+
+	[Test]
+	public async Task A_tab_matching_no_rule_is_never_kept_running_while_hidden()
+	{
+		await using CoordinatorContext context = new();
+		FakeWebPageHost host = new("web-1", UnmatchedUrl);
+		host.EnqueueProbe(UnmatchedUrl);
+		host.EnqueueProbe(UnmatchedUrl);
+		await context.Coordinator.SetRulesAsync([CreateRule()], CancellationToken.None);
+
+		await context.Coordinator.RegisterAsync("web-1", host, CancellationToken.None);
+		await CoordinatorContext.PumpAsync();
+
+		host.EvaluationCount.ShouldBeGreaterThan(0);
+		host.KeepsRunningWhileHiddenChanges.ShouldNotContain(true);
+	}
+
+	[Test]
 	public async Task SetRulesAsync_without_registration_never_polls()
 	{
 		await using CoordinatorContext context = new();
@@ -1634,6 +1707,8 @@ public sealed class WebMonitorCoordinatorTests
 		public string Id { get; }
 		public Uri? Source { get; private set; }
 		public List<WebMonitorDomQuery?> Queries { get; } = [];
+		public List<bool> KeepsRunningWhileHiddenChanges { get; } = [];
+		public int FailingKeepsRunningWhileHiddenCalls { get; set; }
 		public int EvaluationCount => Queries.Count;
 		public int MaximumConcurrentEvaluations { get; private set; }
 		public event EventHandler<Uri>? SourceChanged;
@@ -1658,6 +1733,21 @@ public sealed class WebMonitorCoordinatorTests
 
 		public void EnqueueException(Exception exception) =>
 			_evaluations.Enqueue(() => Task.FromException<WebMonitorEvaluation>(exception));
+
+		public Task SetKeepsRunningWhileHiddenAsync(bool enabled, CancellationToken cancellationToken)
+		{
+			lock (KeepsRunningWhileHiddenChanges)
+			{
+				KeepsRunningWhileHiddenChanges.Add(enabled);
+				if (FailingKeepsRunningWhileHiddenCalls > 0)
+				{
+					FailingKeepsRunningWhileHiddenCalls--;
+					return Task.FromException(new InvalidOperationException("The page is not ready."));
+				}
+			}
+
+			return Task.CompletedTask;
+		}
 
 		public void SetSource(Uri source)
 		{

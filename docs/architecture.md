@@ -47,6 +47,19 @@ background terminal output and web monitoring must continue while another tab
 is selected. The tradeoff is higher CPU, memory, and power use than allowing
 Chromium to suspend hidden content.
 
+Those arguments do not change what a page is told: a hidden browser tab's
+WebView2 controller is invisible, so the page sees `document.hidden` and gets no
+animation frames, and pages such as TeamCity then pause their live updates.
+A tab whose address matches an enabled monitoring rule therefore runs
+`WebAssets/backgroundVisibility.js` at document creation: `WebMonitorCoordinator`
+turns it on through `IWebPageHost.SetKeepsRunningWhileHiddenAsync` when the
+confirmed address matches and off when no rule matches, which also gives the
+already loaded page its real visibility back. A failed change is retried by the
+next monitor pass. Other tabs pause normally while hidden. It reports the document as visible, withholds only the transition to
+hidden (the transition back still reaches the page), and runs a pending
+animation-frame callback on a timer while the tab is actually hidden. The engine
+probe's `background-visibility` and `background-frames` checks cover it.
+
 Terminal screen and viewport facts cross into C# as immutable snapshots. Screen
 snapshots retain physical rows/wrapping and UTF-16 Dim ranges from the bottom 15
 xterm rows, alongside the existing logical-text projection. The browser captures

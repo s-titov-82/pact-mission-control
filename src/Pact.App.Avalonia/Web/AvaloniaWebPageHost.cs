@@ -24,6 +24,8 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 	private readonly IWebView2ProcessInfoReader _processInfoReader;
 	private readonly Func<NativeWebView, nint?> _captureHolderWindow;
 	private readonly Action<nint> _destroyHolderWindow;
+	private bool _keepsRunningWhileHidden;
+	private string? _backgroundVisibilityScriptId;
 	private INativeWebViewVisibilityController? _visibilityController;
 	private bool _isPresented;
 	private bool _isNavigationLoading;
@@ -125,6 +127,43 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 	{
 		cancellationToken.ThrowIfCancellationRequested();
 		await Dispatcher.UIThread.InvokeAsync(() => _webView.Focus());
+	}
+
+	public async Task SetKeepsRunningWhileHiddenAsync(bool enabled, CancellationToken cancellationToken)
+	{
+		cancellationToken.ThrowIfCancellationRequested();
+		await Dispatcher.UIThread.InvokeAsync(() =>
+		{
+			if (_keepsRunningWhileHidden != enabled)
+			{
+				_keepsRunningWhileHidden = enabled;
+				RecordDiagnostic(enabled ? "background-visibility-on" : "background-visibility-off");
+			}
+
+			// Applied even when the state did not change, so a repeated call retries a failed one.
+			return ApplyBackgroundVisibilityAsync();
+		});
+	}
+
+	// Runs on the UI thread. Before the adapter exists the state is only recorded, and adapter
+	// creation applies it. The registration id is kept until the current document is switched
+	// off too, so a failure at either step is retried by the next call.
+	private async Task ApplyBackgroundVisibilityAsync()
+	{
+		if (_keepsRunningWhileHidden)
+		{
+			_backgroundVisibilityScriptId ??= await WindowsWebView2BackgroundVisibility.RegisterAsync(_webView);
+			if (_backgroundVisibilityScriptId is not null)
+			{
+				await WindowsWebView2BackgroundVisibility.SetActiveInCurrentDocumentAsync(_webView, active: true);
+			}
+		}
+		else if (_backgroundVisibilityScriptId is { } scriptId)
+		{
+			WindowsWebView2BackgroundVisibility.Unregister(_webView, scriptId);
+			await WindowsWebView2BackgroundVisibility.SetActiveInCurrentDocumentAsync(_webView, active: false);
+			_backgroundVisibilityScriptId = null;
+		}
 	}
 
 	/// <summary>
@@ -357,12 +396,24 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 					return Task.CompletedTask;
 				});
 		}
+		_backgroundVisibilityScriptId = null;
+		_eventTasks.TryRun(
+			"browser-background-visibility",
+			ApplyBackgroundVisibilityAsync,
+			exception =>
+			{
+				RecordDiagnostic(
+					"background-visibility-failed",
+					exception.GetType().Name);
+				return Task.CompletedTask;
+			});
 		ApplyNativeVisibility();
 		RecordDiagnostic("adapter-created");
 	}
 
 	private void OnAdapterDestroyed(object? sender, EventArgs args)
 	{
+		_backgroundVisibilityScriptId = null;
 		_visibilityController = null;
 		_isNativelyVisible = false;
 		RecordDiagnostic("adapter-destroyed");
