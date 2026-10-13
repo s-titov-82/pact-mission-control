@@ -1395,6 +1395,10 @@ internal sealed partial class MainWindow : Window, IDisposable
 			TerminalPane.IsVisible = EngineProbeController.IsTerminalVisible && !isLoading;
 			TerminalLoadingSurface.IsVisible = isLoading;
 			UpdateTerminalPresentationVisibility();
+			if (!isLoading)
+			{
+				RunUiEvent("focus-loaded-terminal", EngineProbeController.FocusTerminalAfterLoadingAsync);
+			}
 		});
 
 	public void Dispose()

@@ -87,6 +87,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 	private int _selectionCaptureVersion;
 	private int _rightClickPasteInProgress;
 	private string? _loadingTerminalSessionId;
+	private string? _pendingTerminalFocusSessionId;
 	private bool _webMonitorStartupRulesApplied;
 	private bool _webMonitorWindowVisible;
 	private bool _webMonitorWindowActive;
@@ -1121,6 +1122,14 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			},
 			async _ =>
 			{
+				// A starting terminal is hidden behind the loading surface and cannot take
+				// focus yet; it is focused when that surface clears.
+				_pendingTerminalFocusSessionId = string.Equals(
+					_loadingTerminalSessionId,
+					session.Record.Id,
+					StringComparison.Ordinal)
+					? session.Record.Id
+					: null;
 				await _terminalHost.FocusAsync();
 				timing.Mark("focus");
 			},
@@ -3875,6 +3884,24 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		AppendDiagnosticLog(
 			$"Slow session switch to {session.Record.Kind} {session.Record.Id}: total={elapsed.TotalMilliseconds:F0} ms "
 			+ $"{timing.Describe()}{show} startedRuntime={startedRuntime}");
+	}
+
+	/// <summary>
+	/// Focuses a terminal whose activation asked for focus while it was still hidden behind
+	/// the loading surface, provided it is still the visible active terminal.
+	/// </summary>
+	internal async Task FocusTerminalAfterLoadingAsync()
+	{
+		var sessionId = _pendingTerminalFocusSessionId;
+		_pendingTerminalFocusSessionId = null;
+		if (sessionId is null
+			|| !IsTerminalVisible
+			|| !string.Equals(_runtimeCoordinator.ActiveSessionId, sessionId, StringComparison.Ordinal))
+		{
+			return;
+		}
+
+		await _terminalHost.FocusAsync();
 	}
 
 	private void AppendDiagnosticLog(string message) =>
