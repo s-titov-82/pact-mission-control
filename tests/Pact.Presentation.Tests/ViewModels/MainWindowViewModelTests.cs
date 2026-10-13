@@ -349,6 +349,33 @@ public sealed class MainWindowViewModelTests
 	}
 
 	[Test]
+	public async Task A_web_page_opened_in_the_background_leaves_the_selection_alone()
+	{
+		var project = CreateProjectRecord("project-1", "Project") with
+		{
+			Sessions = [CreateSessionRecord("session-1", DateTimeOffset.UtcNow.AddMinutes(-10))],
+			ActiveItemId = "session-1"
+		};
+		InMemoryProjectStore store = new(ProjectsDocument.CreateDefault() with { Projects = [project] });
+		var viewModel = MainWindowViewModelTestFactory.Create(store);
+		await viewModel.LoadAsync(CancellationToken.None);
+		var workspace = viewModel.Workspaces.ShouldHaveSingleItem();
+		var selectedBefore = viewModel.SelectedWebPage;
+
+		var webPage = await viewModel.CreateWebPageAsync(
+			workspace.Id,
+			"Report",
+			"https://example.test/report",
+			CancellationToken.None,
+			select: false);
+
+		workspace.WebPages.ShouldHaveSingleItem().ShouldBeSameAs(webPage);
+		webPage.IsCurrentBrowser.ShouldBeFalse();
+		viewModel.SelectedWebPage.ShouldBeSameAs(selectedBefore);
+		store.Document.Projects.ShouldHaveSingleItem().ActiveItemId.ShouldBe("session-1");
+	}
+
+	[Test]
 	public async Task UpdateWebPageResumeUrlAsync_persists_url_title_and_last_active_time()
 	{
 		var createdAt = DateTimeOffset.UtcNow.AddMinutes(-10);

@@ -26,11 +26,12 @@ internal sealed class RootTabsPersistenceCoordinator(IRootTabsStore store)
 
 	public Task<RootTabsRecord> AddWebPageAsync(
 		WebPageRecord webPage,
-		CancellationToken cancellationToken) =>
+		CancellationToken cancellationToken,
+		bool select = true) =>
 		_store.UpdateAsync(
 			record => record with
 			{
-				ActiveItemId = webPage.Id,
+				ActiveItemId = select ? webPage.Id : record.ActiveItemId,
 				WebPages = record.WebPages.Concat([webPage]).ToArray()
 			},
 			cancellationToken);

@@ -113,7 +113,8 @@ internal sealed class AgentControlHost : IAgentControlHost
 				await _viewModel.CreateRootWebPageAsync(
 					title ?? "Web page",
 					url,
-					cancellationToken);
+					cancellationToken,
+					select: false);
 				return;
 			}
 
@@ -121,7 +122,8 @@ internal sealed class AgentControlHost : IAgentControlHost
 				owner.ProjectId!,
 				title ?? "Web page",
 				url,
-				cancellationToken);
+				cancellationToken,
+				select: false);
 		});
 
 	public async Task<ReviewStartOutcome> StartReviewIfIdleAsync(

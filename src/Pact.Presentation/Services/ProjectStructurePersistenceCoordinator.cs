@@ -43,13 +43,14 @@ internal sealed class ProjectStructurePersistenceCoordinator(IProjectStore proje
 	public Task<ProjectRecord?> AddWebPageAsync(
 		string projectId,
 		WebPageRecord webPage,
-		CancellationToken cancellationToken) =>
+		CancellationToken cancellationToken,
+		bool select = true) =>
 		UpdateProjectAsync(
 			projectId,
 			project => project with
 			{
 				LastActiveAt = webPage.LastActiveAt,
-				ActiveItemId = webPage.Id,
+				ActiveItemId = select ? webPage.Id : project.ActiveItemId,
 				WebPages = project.WebPages.Concat([webPage]).ToArray()
 			},
 			cancellationToken);

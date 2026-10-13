@@ -1062,25 +1062,34 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 			cancellationToken);
 	}
 
-	/// <summary>Creates a web page with a generated id, persists it, and selects it.</summary>
+	/// <summary>
+	/// Creates a web page with a generated id and persists it. It becomes the selected item
+	/// unless <paramref name="select"/> is false, for a page opened without the user switching to it.
+	/// </summary>
 	public async Task<WebPageViewModel> CreateWebPageAsync(
 		string workspaceId,
 		string title,
 		string startUrl,
-		CancellationToken cancellationToken) => await CreateWebPageAsync(
+		CancellationToken cancellationToken,
+		bool select = true) => await CreateWebPageAsync(
 			Guid.NewGuid().ToString("N"),
 			workspaceId,
 			title,
 			startUrl,
-			cancellationToken);
+			cancellationToken,
+			select);
 
-	/// <summary>Creates a web page with an explicit id, persists it, and selects it.</summary>
+	/// <summary>
+	/// Creates a web page with an explicit id and persists it. It becomes the selected item
+	/// unless <paramref name="select"/> is false.
+	/// </summary>
 	public async Task<WebPageViewModel> CreateWebPageAsync(
 		string webPageId,
 		string workspaceId,
 		string title,
 		string startUrl,
-		CancellationToken cancellationToken)
+		CancellationToken cancellationToken,
+		bool select = true)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(webPageId);
 		ArgumentException.ThrowIfNullOrWhiteSpace(workspaceId);
@@ -1101,7 +1110,8 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 		var updatedProject = await _structurePersistence.AddWebPageAsync(
 			workspaceId,
 			webPage,
-			cancellationToken)
+			cancellationToken,
+			select)
 			?? throw new InvalidOperationException($"Project '{workspaceId}' was not found.");
 
 		var workspace = FindWorkspaceViewModel(workspaceId);
@@ -1113,16 +1123,24 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 			WebPages.Add(viewModel);
 		}
 
-		SelectedWorkspace = workspace;
-		SelectedWebPage = viewModel;
+		if (select)
+		{
+			SelectedWorkspace = workspace;
+			SelectedWebPage = viewModel;
+		}
+
 		return viewModel;
 	}
 
-	/// <summary>Creates and selects a project-independent ROOT browser page.</summary>
+	/// <summary>
+	/// Creates a project-independent ROOT browser page. It becomes the selected item unless
+	/// <paramref name="select"/> is false.
+	/// </summary>
 	public async Task<WebPageViewModel> CreateRootWebPageAsync(
 		string title,
 		string startUrl,
-		CancellationToken cancellationToken)
+		CancellationToken cancellationToken,
+		bool select = true)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(startUrl);
 		var now = DateTimeOffset.UtcNow;
@@ -1134,13 +1152,17 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 			now,
 			now);
 
-		var record = await _rootPersistence.AddWebPageAsync(webPage, cancellationToken);
+		var record = await _rootPersistence.AddWebPageAsync(webPage, cancellationToken, select);
 		RootTabs.UpdateRecord(record);
 		var viewModel = RootTabs.WebPages.Single(item =>
 			string.Equals(item.Record.Id, webPage.Id, StringComparison.Ordinal));
 		WebPages.Add(viewModel);
-		SelectedWorkspace = null;
-		SelectedWebPage = viewModel;
+		if (select)
+		{
+			SelectedWorkspace = null;
+			SelectedWebPage = viewModel;
+		}
+
 		return viewModel;
 	}
 
