@@ -50,6 +50,30 @@ public sealed class StyledAgentScreenProfileTests
 		ClaudeScreenProfile.Instance.Classify(snapshot).PromptIsEmpty.ShouldBe(false);
 	}
 
+	[TestCase("", true)]
+	[TestCase(" actual draft", false)]
+	public void Claude_ascii_prompt_composer_is_recognized(string input, bool expected)
+	{
+		var rule = new string('─', 120);
+		var snapshot = TerminalScreenSnapshot.FromRows([
+			new("✻ Worked for 5m 0s · done 8:23", false, []), new("", false, []), new(rule, false, []),
+			new(">" + input, false, []), new(rule, false, []),
+			new("  Opus 5.5 (1M context) medium · Context 81% left · 5h 96% (→12:50) · weekly 95% (→18.10 06:00)", false, [])], 120, true);
+		var verdict = ClaudeScreenProfile.Instance.Classify(snapshot);
+		verdict.State.ShouldBe(TerminalScreenVerdictState.Done);
+		verdict.PromptIsEmpty.ShouldBe(expected);
+	}
+
+	[Test]
+	public void Claude_labeled_border_still_frames_the_composer()
+	{
+		var snapshot = TerminalScreenSnapshot.FromRows([
+			new("✻ Worked for 5m 0s", false, []), new(new string('─', 90) + " claude-personal ──", false, []),
+			new("❯ hint", false, [new(2, 4)]), new(new string('─', 110), false, []),
+			new("  ? for shortcuts", false, [])], 120, true);
+		ClaudeScreenProfile.Instance.Classify(snapshot).PromptIsEmpty.ShouldBe(true);
+	}
+
 	[Test]
 	public void Cropped_claude_border_does_not_claim_empty_composer()
 	{

@@ -17,7 +17,7 @@ public sealed partial class CodexScreenProfile : AgentScreenProfileBase
 	}
 
 	/// <inheritdoc />
-	protected override char ComposerPromptCharacter => '›';
+	protected override string ComposerPromptCharacters => "›";
 
 	/// <inheritdoc />
 	protected override string[] ScrollMarkers => ["Jump to bottom (ctrl+End)"];

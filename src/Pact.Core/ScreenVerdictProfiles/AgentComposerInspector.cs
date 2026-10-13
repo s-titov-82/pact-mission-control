@@ -6,11 +6,12 @@ namespace Pact.Core.ScreenVerdictProfiles;
 public static class AgentComposerInspector
 {
 	/// <summary>Returns content-free composer evidence, or null when its current frame is incomplete.</summary>
-	public static TerminalPromptEvidence? Inspect(TerminalScreenSnapshot screen, char promptCharacter, bool bordered, IReadOnlyList<string> chromeLabels)
+	public static TerminalPromptEvidence? Inspect(TerminalScreenSnapshot screen, string promptCharacters, bool bordered, IReadOnlyList<string> chromeLabels)
 	{
 		ArgumentNullException.ThrowIfNull(screen);
+		ArgumentNullException.ThrowIfNull(promptCharacters);
 		ArgumentNullException.ThrowIfNull(chromeLabels);
-		var (prompt, end) = FindFrame(screen, promptCharacter, bordered);
+		var (prompt, end) = FindFrame(screen, promptCharacters, bordered);
 		if (prompt < 0 || end < 0)
 		{
 			return null;
@@ -22,7 +23,7 @@ public static class AgentComposerInspector
 		{
 			var row = screen.Rows[index];
 			reliable &= row.DimRanges is not null;
-			var start = index == prompt ? row.Text.IndexOf(promptCharacter, StringComparison.Ordinal) + 1 : 0;
+			var start = index == prompt ? row.Text.IndexOfAny(promptCharacters.ToCharArray()) + 1 : 0;
 			if (chromeLabels.Contains(row.Text[start..].Trim(), StringComparer.Ordinal))
 			{
 				continue;
@@ -53,13 +54,13 @@ public static class AgentComposerInspector
 		return new(true, true, count, false, reliable, draftCount);
 	}
 
-	internal static (int Prompt, int End) FindFrame(TerminalScreenSnapshot screen, char marker, bool bordered)
+	internal static (int Prompt, int End) FindFrame(TerminalScreenSnapshot screen, string markers, bool bordered)
 	{
 		for (var index = screen.Rows.Length - 1; index >= 0; index--)
 		{
 			var row = screen.Rows[index];
 			var trimmed = row.Text.TrimStart();
-			if (row.IsWrapped || !trimmed.StartsWith(marker))
+			if (row.IsWrapped || !StartsWithMarker(trimmed, markers))
 			{
 				continue;
 			}
@@ -80,7 +81,7 @@ public static class AgentComposerInspector
 				}
 				for (var end = index + 1; end < screen.Rows.Length; end++)
 				{
-					if (!screen.Rows[end].IsWrapped && IsRule(screen.Rows[end].Text) && screen.Rows[end].Text.Trim().Length == screen.Rows[upper].Text.Trim().Length)
+					if (!screen.Rows[end].IsWrapped && IsRule(screen.Rows[end].Text))
 					{
 						return (index, end);
 					}
@@ -120,18 +121,26 @@ public static class AgentComposerInspector
 		return false;
 	}
 
+	/// <summary>
+	/// A composer border: mostly '─', so a rule carrying a short label (and therefore a
+	/// different width than its pair) still counts.
+	/// </summary>
 	internal static bool IsRule(string text)
 	{
 		var value = text.Trim();
-		return value.Length >= 16 && value.All(character => character == '─');
+		var lines = value.Count(character => character == '─');
+		return lines >= 16 && lines * 2 >= value.Length;
 	}
 
-	internal static bool HasCurrentSelection(TerminalScreenSnapshot screen, char marker)
+	private static bool StartsWithMarker(string text, string markers) =>
+		text.Length > 0 && markers.Contains(text[0], StringComparison.Ordinal);
+
+	internal static bool HasCurrentSelection(TerminalScreenSnapshot screen, string markers)
 	{
 		for (var index = screen.Rows.Length - 1; index >= 0; index--)
 		{
 			var text = screen.Rows[index].Text.TrimStart();
-			if (screen.Rows[index].IsWrapped || !text.StartsWith(marker))
+			if (screen.Rows[index].IsWrapped || !StartsWithMarker(text, markers))
 			{
 				continue;
 			}

@@ -85,20 +85,20 @@ namespace Pact.Core.ScreenVerdictProfiles
 		public virtual TerminalScreenVerdict Classify(TerminalScreenSnapshot screen)
 		{
 			ArgumentNullException.ThrowIfNull(screen);
-			var marker = ComposerPromptCharacter;
-			if (marker == '\0' || screen.Columns == 0)
+			var markers = ComposerPromptCharacters;
+			if (markers.Length == 0 || screen.Columns == 0)
 			{
 				return Classify(screen.Text);
 			}
-			var (prompt, end) = AgentComposerInspector.FindFrame(screen, marker, ComposerIsBordered);
+			var (prompt, end) = AgentComposerInspector.FindFrame(screen, markers, ComposerIsBordered);
 			var workText = screen.Text;
 			if (prompt >= 0)
 			{
 				// Exclude editable content from work regexes, including quoted markers.
-				workText = TerminalScreenSnapshot.FromRows(screen.Rows[..prompt], screen.Columns, screen.Stable).Text + "\n" + marker;
+				workText = TerminalScreenSnapshot.FromRows(screen.Rows[..prompt], screen.Columns, screen.Stable).Text + "\n" + screen.Rows[prompt].Text.TrimStart()[0];
 			}
 			var verdict = Classify(workText, currentComposer: prompt >= 0);
-			if (AgentComposerInspector.HasCurrentSelection(screen, marker))
+			if (AgentComposerInspector.HasCurrentSelection(screen, markers))
 			{
 				return verdict with
 				{
@@ -128,12 +128,12 @@ namespace Pact.Core.ScreenVerdictProfiles
 				}
 			}
 			var evidence = verdict.State == TerminalScreenVerdictState.InputRequested
-				? null : AgentComposerInspector.Inspect(screen, marker, ComposerIsBordered, ComposerChromeLabels);
+				? null : AgentComposerInspector.Inspect(screen, markers, ComposerIsBordered, ComposerChromeLabels);
 			return verdict with { PromptIsEmpty = evidence?.IsEmpty, PromptEvidence = evidence };
 		}
 
-		/// <summary>Current provider composer glyph; zero disables styled composer inspection.</summary>
-		protected virtual char ComposerPromptCharacter => '\0';
+		/// <summary>Glyphs that can start the provider's current composer row; empty disables styled composer inspection.</summary>
+		protected virtual string ComposerPromptCharacters => string.Empty;
 		/// <summary>Whether matching horizontal rules enclose the composer.</summary>
 		protected virtual bool ComposerIsBordered => false;
 		/// <summary>Provider-owned labels excluded from editable input by exact match.</summary>

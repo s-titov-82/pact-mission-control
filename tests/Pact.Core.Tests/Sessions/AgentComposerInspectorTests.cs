@@ -10,7 +10,7 @@ public sealed class AgentComposerInspectorTests
 	{
 		var screen = TerminalScreenSnapshot.FromRows([
 			new("› ", false, null), new("GPT-6.1-Sol medium · main · Context 30% used", false, [])], 80, true);
-		AgentComposerInspector.Inspect(screen, '›', false, []).ShouldNotBeNull().IsEmpty.ShouldBeNull();
+		AgentComposerInspector.Inspect(screen, "›", false, []).ShouldNotBeNull().IsEmpty.ShouldBeNull();
 	}
 
 	[TestCase('❯')]

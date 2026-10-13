@@ -17,7 +17,7 @@ public sealed partial class ClaudeScreenProfile : AgentScreenProfileBase
 	}
 
 	/// <inheritdoc />
-	protected override char ComposerPromptCharacter => '❯';
+	protected override string ComposerPromptCharacters => "❯>";
 	/// <inheritdoc />
 	protected override bool ComposerIsBordered => true;
 
