@@ -259,6 +259,52 @@ public sealed class TerminalTabStatusEngineTests
 	}
 
 	[Test]
+	public void Submitting_forgets_the_draft_seen_before_enter()
+	{
+		ScriptedProfile profile = new()
+		{
+			Verdict = new TerminalScreenVerdict(
+				TerminalScreenVerdictState.Unknown,
+				string.Empty,
+				string.Empty,
+				PromptIsEmpty: false)
+		};
+		var engine = CreateEngine(profile: profile);
+		engine.OnScreenSnapshot("composer with a draft", T0);
+		engine.CurrentStatus.PromptIsEmpty.ShouldBe(false);
+
+		engine.OnUserInput("draft", T0.AddSeconds(1));
+		engine.CurrentStatus.PromptIsEmpty.ShouldBe(false);
+
+		engine.OnUserInput("\r", T0.AddSeconds(2));
+		engine.CurrentStatus.PromptIsEmpty.ShouldBeNull();
+		engine.CurrentDiagnostics.PromptEvidence.ShouldBeNull();
+	}
+
+	[Test]
+	public void Repainting_frames_update_the_composer_only_when_it_was_recognized()
+	{
+		var evidence = new TerminalPromptEvidence(true, true, 5, false, true, 5);
+		ScriptedProfile profile = new()
+		{
+			Verdict = new TerminalScreenVerdict(TerminalScreenVerdictState.Busy, "Cogitating")
+		};
+		var engine = CreateEngine(profile: profile);
+		engine.OnUserInput("\r", T0);
+		engine.OnScreenSnapshot("spinner without a composer", T0.AddSeconds(1), stable: false);
+		engine.CurrentStatus.PromptIsEmpty.ShouldBeNull();
+
+		profile.Verdict = profile.Verdict with { PromptIsEmpty = false, PromptEvidence = evidence };
+		engine.OnScreenSnapshot("spinner and a typed draft", T0.AddSeconds(2), stable: false);
+		engine.CurrentStatus.PromptIsEmpty.ShouldBe(false);
+
+		profile.Verdict = profile.Verdict with { PromptIsEmpty = null, PromptEvidence = null };
+		engine.OnScreenSnapshot("half-drawn frame", T0.AddSeconds(3), stable: false);
+		engine.CurrentStatus.PromptIsEmpty.ShouldBe(false);
+		engine.CurrentIndicator.ShouldBe(TerminalTabIndicator.Busy);
+	}
+
+	[Test]
 	public void Claude_busy_verdict_with_a_visible_prompt_keeps_the_busy_indicator()
 	{
 		var engine = CreateEngine(profile: ClaudeScreenProfile.Instance);

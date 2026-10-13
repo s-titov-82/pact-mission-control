@@ -18,9 +18,9 @@ public interface ITerminalWebViewHost
 
 	/// <summary>
 	/// Reports physical xterm rows, logical text and bounded Dim metadata. Stable snapshots arrive after the
-	/// browser-side debounce interval; a snapshot with Stable=false is posted once
-	/// per churn episode while the screen keeps repainting and is only trustworthy
-	/// as busy evidence.
+	/// browser-side debounce interval; while the screen keeps repainting, a snapshot
+	/// with Stable=false is posted at most once a second and is trustworthy only as
+	/// busy evidence and as a completely recognized composer frame.
 	/// </summary>
 	event EventHandler<(string SessionId, TerminalScreenSnapshot Snapshot)>? ScreenSnapshotReceived;
 

@@ -309,6 +309,11 @@ public sealed class TerminalTabStatusEngine
 			LastUserCharacter = input[^1];
 			if (input.Contains('\r', StringComparison.Ordinal))
 			{
+				// The submitted text has left the composer, and a working agent repaints too
+				// often to settle a new screen until its turn ends. Until then, what the
+				// composer holds is unknown rather than the draft seen before Enter.
+				_promptIsEmpty = null;
+				_promptEvidence = null;
 				StartActivity(occurredAt, restart: true);
 			}
 		});
@@ -372,6 +377,14 @@ public sealed class TerminalTabStatusEngine
 				{
 					LastMessage = verdict.LastMessage;
 				}
+			}
+			else if (verdict.PromptEvidence is not null)
+			{
+				// A working agent never settles its screen, so the composer is read from
+				// repainting frames too, but only when its whole frame was recognized: a
+				// half-drawn frame yields no evidence and keeps the previous value.
+				_promptIsEmpty = verdict.PromptIsEmpty;
+				_promptEvidence = verdict.PromptEvidence;
 			}
 
 			switch (verdict.State)

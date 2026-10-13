@@ -108,9 +108,12 @@ const maximumOutputChunkLength = 64 * 1024;
 
 // While an agent animates its screen (spinner), the debounce timer keeps
 // resetting and the stable snapshot never fires. After this many consecutive
-// resets one early snapshot is posted with stable:false so busy markers reach
-// the host mid-activity; the host only trusts Busy verdicts from it.
+// resets a snapshot is posted with stable:false, and again at most once per
+// dynamicSnapshotIntervalMs while the churn lasts, so busy markers and the
+// composer reach the host mid-activity; the host trusts only Busy verdicts and
+// complete composer frames from it.
 const dynamicSnapshotChurnThreshold = 4;
+const dynamicSnapshotIntervalMs = 1000;
 
 // Live screen, not the scrolled viewport: baseY-anchored rows are what the
 // terminal currently shows at the bottom, so user scrollback never affects
@@ -165,15 +168,18 @@ function resetSnapshotBaseline(instance) {
   }
   instance.lastSnapshotKey = null;
   instance.churnResets = 0;
-  instance.dynamicSnapshotSent = false;
+  instance.lastDynamicSnapshotAt = null;
 }
 
 function scheduleSnapshot(sessionId, instance) {
   if (instance.snapshotTimer !== null) {
     clearTimeout(instance.snapshotTimer);
     instance.churnResets++;
-    if (instance.churnResets >= dynamicSnapshotChurnThreshold && !instance.dynamicSnapshotSent) {
-      instance.dynamicSnapshotSent = true;
+    const now = Date.now();
+    if (instance.churnResets >= dynamicSnapshotChurnThreshold
+      && (instance.lastDynamicSnapshotAt === null
+        || now - instance.lastDynamicSnapshotAt >= dynamicSnapshotIntervalMs)) {
+      instance.lastDynamicSnapshotAt = now;
       postHostMessage({
         type: 'screenSnapshot',
         sessionId,
@@ -185,7 +191,7 @@ function scheduleSnapshot(sessionId, instance) {
   instance.snapshotTimer = setTimeout(() => {
     instance.snapshotTimer = null;
     instance.churnResets = 0;
-    instance.dynamicSnapshotSent = false;
+    instance.lastDynamicSnapshotAt = null;
     const snapshot = captureScreenSnapshot(instance.term);
     const key = JSON.stringify(snapshot);
     if (key === instance.lastSnapshotKey) {
@@ -361,7 +367,7 @@ function createInstance(sessionId, options) {
     snapshotTimer: null,
     lastSnapshotKey: null,
     churnResets: 0,
-    dynamicSnapshotSent: false,
+    lastDynamicSnapshotAt: null,
     snapshotDebounceMs: options?.snapshotDebounceMs ?? defaultSnapshotDebounceMs
   };
   term.options.cursorBlink = false;

@@ -280,18 +280,30 @@ function runDynamicChurnSnapshotBehavior() {
     window.agentTerminal.write('session-1', 'more spinner frames');
     flushNextTimerWithDelay(33);
   }
-  assert.equal(snapshots().length, 1, 'a churn episode posts at most one dynamic snapshot');
+  assert.equal(snapshots().length, 1, 'dynamic snapshots are posted at most once per interval');
+
+  const realNow = Date.now;
+  const later = realNow() + 1000;
+  Date.now = () => later;
+  try {
+    window.agentTerminal.write('session-1', 'frame a second later');
+    flushNextTimerWithDelay(33);
+  } finally {
+    Date.now = realNow;
+  }
+  assert.equal(snapshots().length, 2, 'lasting churn posts another dynamic snapshot each interval');
+  assert.equal(snapshots()[1].stable, false);
 
   flushTimers();
-  assert.equal(snapshots().length, 2, 'screen settling must post the stable snapshot');
-  assert.equal(snapshots()[1].stable, true);
+  assert.equal(snapshots().length, 3, 'screen settling must post the stable snapshot');
+  assert.equal(snapshots()[2].stable, true);
 
   for (let i = 0; i < 5; i++) {
     window.agentTerminal.write('session-1', 'next activity frames');
     flushNextTimerWithDelay(33);
   }
-  assert.equal(snapshots().length, 3, 'a stable snapshot must open a new churn episode');
-  assert.equal(snapshots()[2].stable, false);
+  assert.equal(snapshots().length, 4, 'a stable snapshot must open a new churn episode');
+  assert.equal(snapshots()[3].stable, false);
 }
 
 function runTypingProducesNoDynamicSnapshotBehavior() {

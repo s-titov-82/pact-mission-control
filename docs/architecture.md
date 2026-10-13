@@ -65,7 +65,12 @@ snapshots retain physical rows/wrapping and UTF-16 Dim ranges from the bottom 15
 xterm rows, alongside the existing logical-text projection. The browser captures
 agent-neutral cell metadata; Core profiles recognize composer boundaries and
 distinguish dim suggestions from ordinary drafts. Uncaptured or invalid styling
-remains unknown. Work state and composer contents stay independent.
+remains unknown. Work state and composer contents stay independent. A working
+agent repaints too often for the screen to settle, so while it repaints the
+browser also posts an unsettled snapshot at most once a second: it may show the
+agent busy and, when the whole composer frame is recognized, what the composer
+holds, but never that work finished. Enter clears the composer fact until a
+newer frame shows it.
 Runtime coordinators serialize mutable session ownership, and UI-facing
 projections cross an explicit UI dispatcher. Terminal output is batched before
 the WebView boundary; resize requests are serialized and only the newest
