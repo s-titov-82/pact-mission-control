@@ -565,25 +565,38 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 			throw new InvalidOperationException("Target session is not running.");
 		}
 
-		await WritePasteAsync(runtime, controller, prompt, awaitLanding: submit, CancellationToken.None)
-			.ConfigureAwait(false);
+		await runtime.RunInputExclusiveAsync(
+			async () =>
+			{
+				await WritePasteAsync(runtime, controller, prompt, awaitLanding: submit, CancellationToken.None)
+					.ConfigureAwait(false);
+				if (submit)
+				{
+					await WriteSubmitAfterPasteAsync(runtime, controller, CancellationToken.None)
+						.ConfigureAwait(false);
+				}
 
-		if (!submit)
-		{
-			return;
-		}
+				return true;
+			},
+			CancellationToken.None).ConfigureAwait(false);
+	}
 
-		// An Enter glued to the paste can be taken as part of it, and under win32-input-mode a
-		// raw carriage return reaches Codex as text, so the submit is a separate key press.
+	// An Enter glued to the paste can be taken as part of it, and under win32-input-mode a raw
+	// carriage return reaches Codex as text, so the submit is a separate key press.
+	private async Task WriteSubmitAfterPasteAsync(
+		SessionRuntime runtime,
+		TerminalController controller,
+		CancellationToken cancellationToken,
+		Action? beforeSubmit = null)
+	{
 		if (_scenarioSubmitSettleDelay > TimeSpan.Zero)
 		{
-			await Task.Delay(_scenarioSubmitSettleDelay).ConfigureAwait(false);
+			await Task.Delay(_scenarioSubmitSettleDelay, cancellationToken).ConfigureAwait(false);
 		}
 
-		if (!await controller.WriteInputAsync(runtime.EncodeEnter()).ConfigureAwait(false))
-		{
-			throw new InvalidOperationException("Target session submit failed.");
-		}
+		cancellationToken.ThrowIfCancellationRequested();
+		beforeSubmit?.Invoke();
+		await WriteRequiredInputAsync(controller, runtime.EncodeEnter()).ConfigureAwait(false);
 	}
 
 	/// <summary>
@@ -676,8 +689,10 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 						return NotReady();
 					}
 
-					cancellationToken.ThrowIfCancellationRequested();
-					if (!await controller.WriteInputAsync(runtime.EncodeEnter()).ConfigureAwait(false))
+					var trustRuntime = runtime;
+					if (!await trustRuntime.RunInputExclusiveAsync(
+							() => controller.WriteInputAsync(trustRuntime.EncodeEnter()),
+							cancellationToken).ConfigureAwait(false))
 					{
 						return NotReady();
 					}
@@ -735,28 +750,40 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 			throw new InvalidOperationException("Target scenario session is not running.");
 		}
 
-		var submitInput = runtime.EncodeEnter();
+		// Admission is checked once this unit has its turn, so a writer queued ahead of it cannot
+		// change the screen between the check and the paste.
+		var epochBefore = 0L;
+		var refusal = await runtime.RunInputExclusiveAsync<PromptDeliveryResult?>(
+			async () =>
+			{
+				var gate = readScreenState();
+				if (gate?.IsBusy == true)
+				{
+					return new PromptDeliveryResult(PromptDeliveryOutcome.BlockedByBusy);
+				}
 
-		var gate = readScreenState();
-		if (gate?.IsBusy == true)
+				if (gate?.InputRequested == true)
+				{
+					return new PromptDeliveryResult(
+						PromptDeliveryOutcome.BlockedByInputRequest,
+						gate.StatusLine);
+				}
+
+				if (gate?.PromptIsEmpty is false)
+				{
+					return new PromptDeliveryResult(PromptDeliveryOutcome.BlockedByPendingInput);
+				}
+
+				epochBefore = gate?.ActivityEpoch ?? 0;
+				await WriteTriggerAsync().ConfigureAwait(false);
+				return null;
+			},
+			cancellationToken).ConfigureAwait(false);
+		if (refusal is { } refused)
 		{
-			return new PromptDeliveryResult(PromptDeliveryOutcome.BlockedByBusy);
+			return refused;
 		}
 
-		if (gate?.InputRequested == true)
-		{
-			return new PromptDeliveryResult(
-				PromptDeliveryOutcome.BlockedByInputRequest,
-				gate.StatusLine);
-		}
-
-		if (gate?.PromptIsEmpty is false)
-		{
-			return new PromptDeliveryResult(PromptDeliveryOutcome.BlockedByPendingInput);
-		}
-
-		var epochBefore = gate?.ActivityEpoch ?? 0;
-		await SendAsync().ConfigureAwait(false);
 		if (!confirmDelivery)
 		{
 			return new PromptDeliveryResult(
@@ -783,13 +810,25 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 
 		if (observation.HoldsText)
 		{
-			EnsureScenarioControllerIsCurrent(sessionId, runtime, controller);
-			await WriteRequiredInputAsync(controller, submitInput).ConfigureAwait(false);
+			await runtime.RunInputExclusiveAsync(
+				async () =>
+				{
+					EnsureScenarioControllerIsCurrent(sessionId, runtime, controller);
+					await WriteRequiredInputAsync(controller, runtime.EncodeEnter()).ConfigureAwait(false);
+					return true;
+				},
+				cancellationToken).ConfigureAwait(false);
 		}
 		else if (observation.QuietAndEmpty)
 		{
-			EnsureScenarioControllerIsCurrent(sessionId, runtime, controller);
-			await SendAsync().ConfigureAwait(false);
+			await runtime.RunInputExclusiveAsync(
+				async () =>
+				{
+					EnsureScenarioControllerIsCurrent(sessionId, runtime, controller);
+					await WriteTriggerAsync().ConfigureAwait(false);
+					return true;
+				},
+				cancellationToken).ConfigureAwait(false);
 		}
 		else
 		{
@@ -809,19 +848,16 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 				WriteAttempted: true,
 				SubmitAttempted: true);
 
-		async Task SendAsync()
+		// Runs inside an exclusive input unit.
+		async Task WriteTriggerAsync()
 		{
 			await WritePasteAsync(runtime, controller, trigger, awaitLanding: true, cancellationToken)
 				.ConfigureAwait(false);
-			cancellationToken.ThrowIfCancellationRequested();
-			if (_scenarioSubmitSettleDelay > TimeSpan.Zero)
-			{
-				await Task.Delay(_scenarioSubmitSettleDelay, cancellationToken).ConfigureAwait(false);
-			}
-
-			cancellationToken.ThrowIfCancellationRequested();
-			EnsureScenarioControllerIsCurrent(sessionId, runtime, controller);
-			await WriteRequiredInputAsync(controller, submitInput).ConfigureAwait(false);
+			await WriteSubmitAfterPasteAsync(
+				runtime,
+				controller,
+				cancellationToken,
+				() => EnsureScenarioControllerIsCurrent(sessionId, runtime, controller)).ConfigureAwait(false);
 		}
 
 		async Task<Observation> ObserveAsync(long epoch)
@@ -928,11 +964,63 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 			RaiseStatusMessage("Terminal is locked by a running scenario");
 			return;
 		}
-		input = runtime.RewriteTypedInput(input);
-		if (!await controller.WriteInputAsync(input).ConfigureAwait(false))
+		var written = await runtime.RunInputExclusiveAsync(
+			() => controller.WriteInputAsync(runtime.RewriteTypedInput(input)),
+			CancellationToken.None).ConfigureAwait(false);
+		if (!written)
 		{
 			await showIgnoredAsync(sessionId, "Input write failed; session may have exited.").ConfigureAwait(false);
 		}
+	}
+
+	/// <summary>Presses Esc in a live session.</summary>
+	/// <exception cref="InvalidOperationException">The session is not running or refused the key.</exception>
+	public async Task SendEscapeAsync(string sessionId)
+	{
+		if (!TryGetActiveController(sessionId, out var runtime, out var controller))
+		{
+			throw new InvalidOperationException($"Session '{sessionId}' is not running.");
+		}
+
+		await runtime.RunInputExclusiveAsync(
+			async () =>
+			{
+				await WriteRequiredInputAsync(controller, runtime.EncodeEscape()).ConfigureAwait(false);
+				return true;
+			},
+			CancellationToken.None).ConfigureAwait(false);
+	}
+
+	/// <summary>
+	/// Types a slash command into a live session's composer and presses Enter.
+	/// </summary>
+	/// <returns><see langword="false"/> when the session is not running or refused the input.</returns>
+	public async Task<bool> SubmitCommandAsync(
+		string sessionId,
+		string command,
+		TimeSpan delayBeforeEnter,
+		TimeProvider timeProvider,
+		CancellationToken cancellationToken)
+	{
+		ArgumentNullException.ThrowIfNull(command);
+		ArgumentNullException.ThrowIfNull(timeProvider);
+		if (!TryGetActiveController(sessionId, out var runtime, out var controller))
+		{
+			return false;
+		}
+
+		return await runtime.RunInputExclusiveAsync(
+			async () =>
+			{
+				if (!await controller.WriteInputAsync(command).ConfigureAwait(false))
+				{
+					return false;
+				}
+
+				await Task.Delay(delayBeforeEnter, timeProvider, cancellationToken).ConfigureAwait(false);
+				return await controller.WriteInputAsync(runtime.EncodeEnter()).ConfigureAwait(false);
+			},
+			cancellationToken).ConfigureAwait(false);
 	}
 
 	/// <summary>

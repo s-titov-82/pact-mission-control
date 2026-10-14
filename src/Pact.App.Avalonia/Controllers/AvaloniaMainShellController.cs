@@ -2932,21 +2932,8 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 	private SessionScreenState? ReadScreenState(string sessionId) =>
 		ViewModel.TerminalTabStatuses.TryGetScreenState(sessionId, out var state) ? state : null;
 
-	private async Task SendScenarioEscapeAsync(string sessionId)
-	{
-		if (!_runtimeCoordinator.TryGetActiveController(
-			sessionId,
-			out var runtime,
-			out var controller))
-		{
-			throw new InvalidOperationException($"Session '{sessionId}' is not running.");
-		}
-
-		if (!await controller.WriteInputAsync(runtime.EncodeEscape()))
-		{
-			throw new InvalidOperationException("Target session escape write failed.");
-		}
-	}
+	private Task SendScenarioEscapeAsync(string sessionId) =>
+		_runtimeCoordinator.SendEscapeAsync(sessionId);
 
 	private bool IsScenarioSessionActive(string sessionId)
 	{
@@ -3698,7 +3685,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			if (!_runtimeCoordinator.TryGetActiveController(
 					session.Record.Id,
 					out var runtime,
-					out var controller))
+					out _))
 			{
 				return null;
 			}
@@ -3710,16 +3697,15 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			}
 
 			await ReportStatusAsync($"Capturing resume session id: {session.Title}");
-			if (!await controller.WriteInputAsync("/exit"))
+			if (!await _runtimeCoordinator.SubmitCommandAsync(
+					session.Record.Id,
+					"/exit",
+					TimeSpan.FromMilliseconds(75),
+					_timeProvider,
+					cancellationToken))
 			{
 				return null;
 			}
-
-			await Task.Delay(
-				TimeSpan.FromMilliseconds(75),
-				_timeProvider,
-				cancellationToken);
-			await controller.WriteInputAsync(runtime.EncodeEnter());
 
 			while (true)
 			{

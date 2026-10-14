@@ -72,7 +72,12 @@ agent busy and, when the whole composer frame is recognized, what the composer
 holds, but never that work finished. Enter clears the composer fact until a
 newer frame shows it.
 Runtime coordinators serialize mutable session ownership, and UI-facing
-projections cross an explicit UI dispatcher. Terminal output is batched before
+projections cross an explicit UI dispatcher. Every write to a session's
+terminal goes through `SessionRuntimeCoordinator` as one exclusive input unit
+per session, run in queue order, so a paste and its Enter are never split by
+another writer. Enter and Esc are encoded once, by `AgentKeyEncoder`, from the
+session's agent kind and win32-input-mode state; the status engine uses the
+same encoder to recognize a submit. Terminal output is batched before
 the WebView boundary; resize requests are serialized and only the newest
 request may publish a viewport.
 

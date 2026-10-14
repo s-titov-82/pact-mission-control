@@ -24,6 +24,67 @@ public sealed class SessionRuntimeTests
 	}
 
 	[Test]
+	public async Task Input_units_run_one_at_a_time_in_queue_order()
+	{
+		SessionRuntime runtime = new("session-1");
+		TaskCompletionSource releaseFirst = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		List<string> events = [];
+		var first = runtime.RunInputExclusiveAsync(
+			async () =>
+			{
+				events.Add("first started");
+				await releaseFirst.Task;
+				events.Add("first finished");
+				return true;
+			},
+			CancellationToken.None);
+		var second = runtime.RunInputExclusiveAsync(
+			() =>
+			{
+				events.Add("second started");
+				return Task.FromResult(true);
+			},
+			CancellationToken.None);
+
+		events.ShouldBe(["first started"]);
+		releaseFirst.SetResult();
+		await Task.WhenAll(first, second);
+		events.ShouldBe(["first started", "first finished", "second started"]);
+	}
+
+	[Test]
+	public async Task A_cancelled_waiting_unit_does_not_let_the_next_one_overtake_the_running_one()
+	{
+		SessionRuntime runtime = new("session-1");
+		TaskCompletionSource releaseFirst = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		using CancellationTokenSource cancelSecond = new();
+		var thirdStarted = false;
+		var first = runtime.RunInputExclusiveAsync(
+			async () =>
+			{
+				await releaseFirst.Task;
+				return true;
+			},
+			CancellationToken.None);
+		var second = runtime.RunInputExclusiveAsync(() => Task.FromResult(true), cancelSecond.Token);
+		var third = runtime.RunInputExclusiveAsync(
+			() =>
+			{
+				thirdStarted = true;
+				return Task.FromResult(true);
+			},
+			CancellationToken.None);
+
+		await cancelSecond.CancelAsync();
+		await Should.ThrowAsync<OperationCanceledException>(second);
+		thirdStarted.ShouldBeFalse();
+
+		releaseFirst.SetResult();
+		await Task.WhenAll(first, third);
+		thirdStarted.ShouldBeTrue();
+	}
+
+	[Test]
 	public async Task Concurrent_output_and_mode_access_remains_consistent_and_bounded()
 	{
 		SessionRuntime runtime = new("session-1");

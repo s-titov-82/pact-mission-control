@@ -314,6 +314,29 @@ public sealed class SessionRuntimeCoordinatorTests
 		return (coordinator, backend, controller, clipboard);
 	}
 
+	[Test]
+	public async Task Typed_input_waits_until_a_paste_and_its_enter_are_written()
+	{
+		var (coordinator, backend, _) = await CreateAttachedSessionAsync();
+		Task? typed = null;
+		backend.InputWritten = input =>
+		{
+			if (typed is null && input.StartsWith("\u001b[200~", StringComparison.Ordinal))
+			{
+				typed = coordinator.WriteInputAsync(
+					"session-1",
+					"x",
+					static _ => false,
+					static (_, _) => Task.CompletedTask);
+			}
+		};
+
+		await SendPromptAsync(coordinator, "review this", submit: true);
+		await typed.ShouldNotBeNull();
+
+		backend.InputWrites.ShouldBe(["\u001b[200~review this\u001b[201~", PlainEnter, "x"]);
+	}
+
 	private static Task SendPromptAsync(SessionRuntimeCoordinator coordinator, string prompt, bool submit) =>
 		coordinator.SendPromptAsync(
 			CreateSession("session-1"),

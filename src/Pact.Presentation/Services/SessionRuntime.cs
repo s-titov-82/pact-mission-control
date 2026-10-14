@@ -17,6 +17,7 @@ public sealed class SessionRuntime(string sessionId)
 	private readonly StringBuilder _recentOutput = new();
 	private readonly List<PendingClientPaste> _pendingClientPastes = [];
 	private TaskCompletionSource<bool>? _initialOutputCompletionSource;
+	private Task _inputTail = Task.CompletedTask;
 	private TerminalController? _controller;
 	private EventHandler<string>? _outputHandler;
 	private EventHandler? _exitedHandler;
@@ -131,6 +132,47 @@ public sealed class SessionRuntime(string sessionId)
 	/// <summary>Rewrites one typed terminal input for this session's client.</summary>
 	public string RewriteTypedInput(string input) =>
 		AgentKeyEncoder.RewriteTyped(input, Kind, InputModes.IsWin32InputActive);
+
+	/// <summary>
+	/// Runs one unit of terminal input after every unit queued before it has finished, so a
+	/// paste and its Enter cannot be split by another writer. Units run in the order they were
+	/// queued. Cancelling a unit still waiting for its turn leaves the order of the others intact.
+	/// </summary>
+	internal async Task<T> RunInputExclusiveAsync<T>(Func<Task<T>> unit, CancellationToken cancellationToken)
+	{
+		ArgumentNullException.ThrowIfNull(unit);
+		TaskCompletionSource finished = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		Task previous;
+		lock (_gate)
+		{
+			previous = _inputTail;
+			_inputTail = finished.Task;
+		}
+
+		try
+		{
+			await previous.WaitAsync(cancellationToken).ConfigureAwait(false);
+		}
+		catch (OperationCanceledException)
+		{
+			_ = previous.ContinueWith(
+				static (_, state) => ((TaskCompletionSource)state!).TrySetResult(),
+				finished,
+				CancellationToken.None,
+				TaskContinuationOptions.ExecuteSynchronously,
+				TaskScheduler.Default);
+			throw;
+		}
+
+		try
+		{
+			return await unit().ConfigureAwait(false);
+		}
+		finally
+		{
+			finished.TrySetResult();
+		}
+	}
 
 	/// <summary>
 	/// Completes once the session's first output has been rendered, letting startup wait for a
