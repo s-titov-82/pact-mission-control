@@ -17,7 +17,9 @@ public sealed class SessionRuntime(string sessionId)
 	private readonly StringBuilder _recentOutput = new();
 	private readonly List<PendingClientPaste> _pendingClientPastes = [];
 	private TaskCompletionSource<bool>? _initialOutputCompletionSource;
-	private Task _inputTail = Task.CompletedTask;
+	private readonly ExclusiveQueue _inputQueue = new();
+	private readonly ExclusiveQueue _deliveryQueue = new();
+	private long _keyboardInputCount;
 	private TerminalController? _controller;
 	private EventHandler<string>? _outputHandler;
 	private EventHandler? _exitedHandler;
@@ -138,41 +140,21 @@ public sealed class SessionRuntime(string sessionId)
 	/// paste and its Enter cannot be split by another writer. Units run in the order they were
 	/// queued. Cancelling a unit still waiting for its turn leaves the order of the others intact.
 	/// </summary>
-	internal async Task<T> RunInputExclusiveAsync<T>(Func<Task<T>> unit, CancellationToken cancellationToken)
-	{
-		ArgumentNullException.ThrowIfNull(unit);
-		TaskCompletionSource finished = new(TaskCreationOptions.RunContinuationsAsynchronously);
-		Task previous;
-		lock (_gate)
-		{
-			previous = _inputTail;
-			_inputTail = finished.Task;
-		}
+	internal Task<T> RunInputExclusiveAsync<T>(Func<Task<T>> unit, CancellationToken cancellationToken) =>
+		_inputQueue.RunAsync(unit, cancellationToken);
 
-		try
-		{
-			await previous.WaitAsync(cancellationToken).ConfigureAwait(false);
-		}
-		catch (OperationCanceledException)
-		{
-			_ = previous.ContinueWith(
-				static (_, state) => ((TaskCompletionSource)state!).TrySetResult(),
-				finished,
-				CancellationToken.None,
-				TaskContinuationOptions.ExecuteSynchronously,
-				TaskScheduler.Default);
-			throw;
-		}
+	/// <summary>
+	/// Runs one whole prompt delivery after every delivery queued before it has finished, so
+	/// two programmatic senders cannot interleave between a paste, its Enter, the confirmation
+	/// and the repair. Keyboard input does not use this queue and is never held by it.
+	/// </summary>
+	internal Task<T> RunDeliveryExclusiveAsync<T>(Func<Task<T>> delivery, CancellationToken cancellationToken) =>
+		_deliveryQueue.RunAsync(delivery, cancellationToken);
 
-		try
-		{
-			return await unit().ConfigureAwait(false);
-		}
-		finally
-		{
-			finished.TrySetResult();
-		}
-	}
+	/// <summary>Keyboard writes seen so far; a delivery compares it to notice the user typing.</summary>
+	public long KeyboardInputCount => Interlocked.Read(ref _keyboardInputCount);
+
+	internal void NoteKeyboardInput() => Interlocked.Increment(ref _keyboardInputCount);
 
 	/// <summary>
 	/// Completes once the session's first output has been rendered, letting startup wait for a
@@ -328,6 +310,51 @@ public sealed class SessionRuntime(string sessionId)
 		_inputWritingHandler = null;
 		_inputWrittenHandler = null;
 		_viewportChangedHandler = null;
+	}
+
+	// Runs units one at a time in the order they were queued. A unit cancelled while waiting
+	// for its turn completes its own slot only after the unit before it, so it cannot let a
+	// later unit overtake one that is still running.
+	private sealed class ExclusiveQueue
+	{
+		private readonly Lock _gate = new();
+		private Task _tail = Task.CompletedTask;
+
+		public async Task<T> RunAsync<T>(Func<Task<T>> unit, CancellationToken cancellationToken)
+		{
+			ArgumentNullException.ThrowIfNull(unit);
+			TaskCompletionSource finished = new(TaskCreationOptions.RunContinuationsAsynchronously);
+			Task previous;
+			lock (_gate)
+			{
+				previous = _tail;
+				_tail = finished.Task;
+			}
+
+			try
+			{
+				await previous.WaitAsync(cancellationToken).ConfigureAwait(false);
+			}
+			catch (OperationCanceledException)
+			{
+				_ = previous.ContinueWith(
+					static (_, state) => ((TaskCompletionSource)state!).TrySetResult(),
+					finished,
+					CancellationToken.None,
+					TaskContinuationOptions.ExecuteSynchronously,
+					TaskScheduler.Default);
+				throw;
+			}
+
+			try
+			{
+				return await unit().ConfigureAwait(false);
+			}
+			finally
+			{
+				finished.TrySetResult();
+			}
+		}
 	}
 
 	private sealed record PendingClientPaste(ClientPasteConfirmation Confirmation)

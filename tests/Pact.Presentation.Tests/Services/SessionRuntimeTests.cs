@@ -85,6 +85,63 @@ public sealed class SessionRuntimeTests
 	}
 
 	[Test]
+	public async Task Input_units_still_run_while_a_delivery_holds_its_gate()
+	{
+		SessionRuntime runtime = new("session-1");
+		TaskCompletionSource releaseDelivery = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		var delivery = runtime.RunDeliveryExclusiveAsync(
+			async () =>
+			{
+				await releaseDelivery.Task;
+				return true;
+			},
+			CancellationToken.None);
+
+		var typed = await runtime.RunInputExclusiveAsync(() => Task.FromResult(true), CancellationToken.None);
+
+		typed.ShouldBeTrue();
+		delivery.IsCompleted.ShouldBeFalse();
+		releaseDelivery.SetResult();
+		await delivery;
+	}
+
+	[Test]
+	public async Task Deliveries_run_one_at_a_time()
+	{
+		SessionRuntime runtime = new("session-1");
+		TaskCompletionSource releaseFirst = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		var secondStarted = false;
+		var first = runtime.RunDeliveryExclusiveAsync(
+			async () =>
+			{
+				await releaseFirst.Task;
+				return true;
+			},
+			CancellationToken.None);
+		var second = runtime.RunDeliveryExclusiveAsync(
+			() =>
+			{
+				secondStarted = true;
+				return Task.FromResult(true);
+			},
+			CancellationToken.None);
+
+		secondStarted.ShouldBeFalse();
+		releaseFirst.SetResult();
+		await Task.WhenAll(first, second);
+		secondStarted.ShouldBeTrue();
+	}
+
+	[Test]
+	public void Keyboard_input_is_counted()
+	{
+		SessionRuntime runtime = new("session-1");
+		runtime.NoteKeyboardInput();
+		runtime.NoteKeyboardInput();
+		runtime.KeyboardInputCount.ShouldBe(2);
+	}
+
+	[Test]
 	public async Task Concurrent_output_and_mode_access_remains_consistent_and_bounded()
 	{
 		SessionRuntime runtime = new("session-1");
