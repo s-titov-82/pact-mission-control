@@ -46,6 +46,15 @@ public static class OrchestratorToolCatalog
 				"sessionId",
 				"message"),
 			Tool(
+				"pact_start_session",
+				"Start a session that is not running, the same way opening its tab would, and wait "
+					+ "until it can take a prompt. pact_send_message refuses sessions that are not running.",
+				new JsonObject
+				{
+					["sessionId"] = StringProperty("Session to start.")
+				},
+				"sessionId"),
+			Tool(
 				"pact_get_subscription_usage",
 				"Remaining subscription budget per agent. Use it to decide when to act rather "
 					+ "than acting immediately.",

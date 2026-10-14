@@ -6,7 +6,7 @@ namespace Pact.Infrastructure.Tests.AgentControl;
 public sealed class OrchestratorToolCatalogTests
 {
 	[Test]
-	public void Catalog_lists_all_fourteen_orchestrator_tools()
+	public void Catalog_lists_all_fifteen_orchestrator_tools()
 	{
 		var result = OrchestratorToolCatalog.BuildToolsListResult();
 
@@ -15,6 +15,7 @@ public sealed class OrchestratorToolCatalogTests
 				"pact_list_workspaces",
 				"pact_get_session",
 				"pact_send_message",
+				"pact_start_session",
 				"pact_get_subscription_usage",
 				"pact_list_active_runs",
 				"pact_get_review_run",
@@ -62,6 +63,16 @@ public sealed class OrchestratorToolCatalogTests
 		tool["inputSchema"]!["required"]!.AsArray()
 			.Select(value => (string?)value)
 			.ShouldBe(["pageId"]);
+	}
+
+	[Test]
+	public void Start_session_requires_a_session_id()
+	{
+		var tool = FindTool("pact_start_session");
+
+		tool["inputSchema"]!["required"]!.AsArray()
+			.Select(value => (string?)value)
+			.ShouldBe(["sessionId"]);
 	}
 
 	[Test]

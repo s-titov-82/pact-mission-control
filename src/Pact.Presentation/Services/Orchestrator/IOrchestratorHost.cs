@@ -138,6 +138,27 @@ public sealed record WebTabSummary(
 	string State,
 	bool IsSelected);
 
+/// <summary>How a request to start a stopped session ended.</summary>
+public enum SessionStartStatus
+{
+	/// <summary>The session started and can take a prompt.</summary>
+	Ready,
+
+	/// <summary>The session was already running; nothing was started.</summary>
+	AlreadyRunning,
+
+	/// <summary>No session has that id.</summary>
+	NotFound,
+
+	/// <summary>The session started but did not become ready to take a prompt.</summary>
+	NotReady
+}
+
+/// <summary>Result of starting a stopped session, with the reason it is not ready.</summary>
+/// <param name="Status">What happened.</param>
+/// <param name="Reason">The pending question, or why readiness was not reached; empty otherwise.</param>
+public readonly record struct SessionStartOutcome(SessionStartStatus Status, string Reason = "");
+
 /// <summary>
 /// Supplies deliberately bounded shell projections and actions to the orchestrator dispatcher.
 /// Live view models never cross this boundary, keeping the dispatcher UI-independent and
@@ -220,6 +241,12 @@ public interface IOrchestratorHost
 
 	/// <summary>Reports whether the session has a live terminal controller.</summary>
 	bool IsSessionAlive(string sessionId);
+
+	/// <summary>
+	/// Starts a stopped session in the background, the same way opening its tab would, and waits
+	/// until it can take a prompt.
+	/// </summary>
+	Task<SessionStartOutcome> StartSessionAsync(string sessionId, CancellationToken cancellationToken);
 
 	/// <summary>Gets the orchestrator's own session id, when it is running.</summary>
 	string? OrchestratorSessionId { get; }

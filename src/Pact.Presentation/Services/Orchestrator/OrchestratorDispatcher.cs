@@ -327,6 +327,32 @@ public sealed class OrchestratorDispatcher
 		};
 	}
 
+	/// <summary>Starts a stopped session and waits until it can receive a prompt.</summary>
+	public async Task<AgentControlResult> StartSessionAsync(string sessionId, CancellationToken cancellationToken)
+	{
+		if (string.Equals(sessionId, _host.OrchestratorSessionId, StringComparison.Ordinal))
+		{
+			return AgentControlResult.Refused(
+				"self-target",
+				"The orchestrator cannot start its own session.");
+		}
+
+		var outcome = await _host.StartSessionAsync(sessionId, cancellationToken).ConfigureAwait(false);
+		return outcome.Status switch
+		{
+			SessionStartStatus.Ready => AgentControlResult.Ok(),
+			SessionStartStatus.AlreadyRunning => AgentControlResult.Refused(
+				"already-running",
+				$"Session '{sessionId}' is already running."),
+			SessionStartStatus.NotFound => AgentControlResult.Refused(
+				"session-not-found",
+				$"Session '{sessionId}' does not exist."),
+			_ => AgentControlResult.Refused(
+				"not-ready",
+				$"Session '{sessionId}' started but is not ready to take a prompt: {outcome.Reason}.")
+		};
+	}
+
 	private static string Serialize<T>(T value) =>
 		JsonSerializer.Serialize(value, JsonOptions);
 

@@ -15,6 +15,7 @@ internal static class HermesTemplates
 		- `pact_list_workspaces`: list projects, ROOT, and their sessions.
 		- `pact_get_session`: read a session's last agent message or stable screen.
 		- `pact_send_message`: submit a prompt to another live, unlocked session.
+		- `pact_start_session`: start a stopped session and wait until it can take a prompt.
 		- `pact_get_subscription_usage`: report configured agent usage budgets.
 		- `pact_list_active_runs`: list active automated review runs.
 		- `pact_get_review_run`: inspect one run's step, pause state, expected file, and journal.

@@ -379,6 +379,43 @@ public sealed class OrchestratorDispatcherTests
 		}
 	}
 
+	[TestCase(SessionStartStatus.Ready, null)]
+	[TestCase(SessionStartStatus.AlreadyRunning, "already-running")]
+	[TestCase(SessionStartStatus.NotFound, "session-not-found")]
+	[TestCase(SessionStartStatus.NotReady, "not-ready")]
+	public async Task Start_session_maps_the_host_outcome(SessionStartStatus status, string? code)
+	{
+		FakeOrchestratorHost host = new() { StartOutcome = new(status, "Pick a model") };
+		OrchestratorDispatcher dispatcher = new(host);
+
+		var result = await dispatcher.StartSessionAsync("session-a", CancellationToken.None);
+
+		host.Started.ShouldBe(["session-a"]);
+		if (code is null)
+		{
+			result.Succeeded.ShouldBeTrue();
+			return;
+		}
+
+		result.Failure.ShouldNotBeNull().Code.ShouldBe(code);
+		if (status == SessionStartStatus.NotReady)
+		{
+			result.Failure.Message.ShouldContain("Pick a model");
+		}
+	}
+
+	[Test]
+	public async Task Start_session_refuses_the_orchestrator_itself()
+	{
+		FakeOrchestratorHost host = new();
+		OrchestratorDispatcher dispatcher = new(host);
+
+		var result = await dispatcher.StartSessionAsync(host.OrchestratorSessionId!, CancellationToken.None);
+
+		result.Failure!.Code.ShouldBe("self-target");
+		host.Started.ShouldBeEmpty();
+	}
+
 	[Test]
 	public async Task Send_message_to_a_busy_session_is_sent()
 	{
@@ -674,6 +711,16 @@ public sealed class OrchestratorDispatcherTests
 					"5h 80%",
 					"Weekly 60%")
 			];
+
+		public SessionStartOutcome StartOutcome { get; set; } = new(SessionStartStatus.Ready);
+
+		public List<string> Started { get; } = [];
+
+		public Task<SessionStartOutcome> StartSessionAsync(string sessionId, CancellationToken cancellationToken)
+		{
+			Started.Add(sessionId);
+			return Task.FromResult(StartOutcome);
+		}
 
 		public PromptDeliveryResult Delivery { get; set; } = new(
 			PromptDeliveryOutcome.Confirmed,

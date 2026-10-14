@@ -22,6 +22,7 @@ internal sealed class OrchestratorHost : IOrchestratorHost
 		CancellationToken,
 		Task<WebPageDocumentFragment?>> _readWebTabHtmlAsync;
 	private readonly Func<string?> _orchestratorSessionId;
+	private readonly Func<string, CancellationToken, Task<SessionReadiness>> _startAndWaitReadyAsync;
 
 	public OrchestratorHost(
 		MainWindowViewModel viewModel,
@@ -34,7 +35,8 @@ internal sealed class OrchestratorHost : IOrchestratorHost
 			WebPageDocumentRange,
 			CancellationToken,
 			Task<WebPageDocumentFragment?>> readWebTabHtmlAsync,
-		Func<string?> orchestratorSessionId)
+		Func<string?> orchestratorSessionId,
+		Func<string, CancellationToken, Task<SessionReadiness>> startAndWaitReadyAsync)
 	{
 		_viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
 		_uiTaskDispatcher = uiTaskDispatcher
@@ -49,6 +51,8 @@ internal sealed class OrchestratorHost : IOrchestratorHost
 			?? throw new ArgumentNullException(nameof(readWebTabHtmlAsync));
 		_orchestratorSessionId = orchestratorSessionId
 			?? throw new ArgumentNullException(nameof(orchestratorSessionId));
+		_startAndWaitReadyAsync = startAndWaitReadyAsync
+			?? throw new ArgumentNullException(nameof(startAndWaitReadyAsync));
 	}
 
 	public string? OrchestratorSessionId => _orchestratorSessionId();
@@ -376,6 +380,26 @@ internal sealed class OrchestratorHost : IOrchestratorHost
 	}
 
 	public bool IsSessionAlive(string sessionId) => _isSessionAlive(sessionId);
+
+	public async Task<SessionStartOutcome> StartSessionAsync(string sessionId, CancellationToken cancellationToken)
+	{
+		SessionViewModel? session = null;
+		_uiTaskDispatcher.Post(() => session = FindSession(sessionId));
+		if (session is null)
+		{
+			return new(SessionStartStatus.NotFound);
+		}
+
+		if (_isSessionAlive(sessionId))
+		{
+			return new(SessionStartStatus.AlreadyRunning);
+		}
+
+		var readiness = await _startAndWaitReadyAsync(sessionId, cancellationToken).ConfigureAwait(false);
+		return readiness.IsReady
+			? new(SessionStartStatus.Ready)
+			: new(SessionStartStatus.NotReady, readiness.StatusLine);
+	}
 
 	private WorkspaceViewModel? FindRunningWorkspace(string workspaceId) =>
 		_viewModel.Workspaces.FirstOrDefault(workspace => string.Equals(

@@ -209,7 +209,8 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			SendOrchestratorMessageAsync,
 			_webPageCoordinator.ResumeInBackgroundAsync,
 			_webPageCoordinator.ReadDocumentHtmlAsync,
-			() => _orchestratorSession is null ? null : OrchestratorSessionId);
+			() => _orchestratorSession is null ? null : OrchestratorSessionId,
+			_runtimeCoordinator.StartAndWaitReadyAsync);
 		_orchestratorDispatcher = new OrchestratorDispatcher(orchestratorHost);
 		AgentControlJsonRpc agentControlRpc = new(
 			caller => caller.IsOrchestrator
@@ -656,6 +657,20 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 				result = await _orchestratorDispatcher.SendMessageAsync(
 					targetSessionId,
 					text,
+					cancellationToken);
+				break;
+			case "pact_start_session":
+				if (!TryGetRequiredString(
+						call.Arguments,
+						"sessionId",
+						out var startSessionId,
+						out var startError))
+				{
+					return startError;
+				}
+
+				result = await _orchestratorDispatcher.StartSessionAsync(
+					startSessionId,
 					cancellationToken);
 				break;
 			case "pact_get_subscription_usage":
