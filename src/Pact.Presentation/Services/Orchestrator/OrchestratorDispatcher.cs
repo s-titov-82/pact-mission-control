@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Pact.Core.AgentControl;
 using Pact.Core.Presentation;
+using Pact.Core.Sessions;
 using Pact.Presentation.Services.AgentControl;
 
 namespace Pact.Presentation.Services.Orchestrator;
@@ -295,24 +296,35 @@ public sealed class OrchestratorDispatcher
 				$"Session '{sessionId}' has no live terminal.");
 		}
 
-		if (_host.IsScenarioLocked(sessionId, out var runId))
-		{
-			return AgentControlResult.Refused(
-				"session-scenario-locked",
-				$"Session '{sessionId}' is controlled by review run '{runId}'.");
-		}
-
-		if (_host.TryGetScreen(sessionId, out var screen) && screen.InputRequested)
-		{
-			return AgentControlResult.Refused(
-				"input-requested",
-				$"Session '{sessionId}' is waiting for a human answer ({screen.StatusLine}); "
-					+ "nothing was sent.");
-		}
-
-		await _host.SendMessageAsync(sessionId, text, cancellationToken)
+		// The question and the lock are checked by the sender itself, in the write turn.
+		var delivery = await _host.SendMessageAsync(sessionId, text, cancellationToken)
 			.ConfigureAwait(false);
-		return AgentControlResult.Ok();
+		return delivery.Outcome switch
+		{
+			PromptDeliveryOutcome.Confirmed or PromptDeliveryOutcome.Submitted => AgentControlResult.Ok(),
+			PromptDeliveryOutcome.RefusedQuestion => AgentControlResult.Refused(
+				"input-requested",
+				delivery.WriteAttempted
+					? $"Session '{sessionId}' opened a question ({delivery.StatusLine}) after the text "
+						+ "was pasted; it was not submitted."
+					: $"Session '{sessionId}' is waiting for a human answer ({delivery.StatusLine}); "
+						+ "nothing was sent."),
+			PromptDeliveryOutcome.RefusedLocked => AgentControlResult.Refused(
+				"session-scenario-locked",
+				_host.IsScenarioLocked(sessionId, out var runId)
+					? $"Session '{sessionId}' is controlled by review run '{runId}'."
+					: $"Session '{sessionId}' is controlled by a review run."),
+			PromptDeliveryOutcome.NotRunning => AgentControlResult.Refused(
+				"session-not-alive",
+				$"Session '{sessionId}' has no live terminal; start it with pact_start_session."),
+			PromptDeliveryOutcome.PasteNotShown => AgentControlResult.Refused(
+				"paste-not-shown",
+				$"The text never showed in session '{sessionId}', so it was not submitted."),
+			_ => AgentControlResult.Refused(
+				"not-confirmed",
+				$"The prompt was submitted to session '{sessionId}' but the agent was not seen taking "
+					+ "it; check the session with pact_get_session before sending again.")
+		};
 	}
 
 	private static string Serialize<T>(T value) =>

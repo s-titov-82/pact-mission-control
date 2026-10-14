@@ -14,7 +14,7 @@ internal sealed class OrchestratorHost : IOrchestratorHost
 	private readonly MainWindowViewModel _viewModel;
 	private readonly IUiTaskDispatcher _uiTaskDispatcher;
 	private readonly Func<string, bool> _isSessionAlive;
-	private readonly Func<SessionViewModel, string, CancellationToken, Task> _sendMessageAsync;
+	private readonly Func<SessionViewModel, string, CancellationToken, Task<PromptDeliveryResult>> _sendMessageAsync;
 	private readonly Func<WebPageViewModel, CancellationToken, Task> _resumeWebTabAsync;
 	private readonly Func<
 		string,
@@ -27,7 +27,7 @@ internal sealed class OrchestratorHost : IOrchestratorHost
 		MainWindowViewModel viewModel,
 		IUiTaskDispatcher uiTaskDispatcher,
 		Func<string, bool> isSessionAlive,
-		Func<SessionViewModel, string, CancellationToken, Task> sendMessageAsync,
+		Func<SessionViewModel, string, CancellationToken, Task<PromptDeliveryResult>> sendMessageAsync,
 		Func<WebPageViewModel, CancellationToken, Task> resumeWebTabAsync,
 		Func<
 			string,
@@ -349,7 +349,7 @@ internal sealed class OrchestratorHost : IOrchestratorHost
 		return result;
 	}
 
-	public async Task SendMessageAsync(
+	public async Task<PromptDeliveryResult> SendMessageAsync(
 		string sessionId,
 		string text,
 		CancellationToken cancellationToken)
@@ -361,8 +361,10 @@ internal sealed class OrchestratorHost : IOrchestratorHost
 			throw new InvalidOperationException($"Session '{sessionId}' is not registered.");
 		}
 
+		var result = default(PromptDeliveryResult);
 		await _uiTaskDispatcher.InvokeAsync(
-			() => _sendMessageAsync(session, text, cancellationToken));
+			async () => result = await _sendMessageAsync(session, text, cancellationToken));
+		return result;
 	}
 
 	public bool IsScenarioLocked(string sessionId, out string runId)

@@ -1702,6 +1702,24 @@ public sealed class AvaloniaMainShellControllerTests
 	}
 
 	[Test]
+	public async Task A_template_sent_to_a_session_with_a_question_writes_nothing_and_says_why()
+	{
+		await using ControllerFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		fixture.Host.RaiseScreenSnapshotReceived(
+			"session-1",
+			"Question 1/1 (1 unanswered)\n  Approve this edit?\n\n  › 1. Yes\n    2. No\n\n  tab to add notes | enter to submit answer | esc to interrupt");
+		var inputsBefore = fixture.Backends[0].Inputs.Count;
+
+		await fixture.Controller.RunQuickActionAsync(
+			new PromptTemplateRecord("submit", "Submit", "go", true),
+			TestContext.CurrentContext.CancellationToken);
+
+		fixture.Backends[0].Inputs.Count.ShouldBe(inputsBefore);
+		fixture.Controller.StatusText.ShouldNotBeNull().ShouldContain("waiting for an answer (Approve this edit?)");
+	}
+
+	[Test]
 	public async Task BusyOverlayMirrorsToTerminalAndForwardsForceCloseAction()
 	{
 		await using ControllerFixture fixture = new();

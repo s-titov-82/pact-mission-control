@@ -162,14 +162,7 @@ public sealed partial class SessionRuntimeCoordinatorTests
 		var (coordinator, backend, controller) = await CreateAttachedSessionAsync();
 		await using var _ = controller;
 
-		await coordinator.SendPromptAsync(
-			CreateSession("session-1"),
-			"first line\nsecond line",
-			submit: false,
-			startIfNeeded: false,
-			enforceScenarioLock: false,
-			static (_, _) => Task.CompletedTask,
-			static _ => Task.CompletedTask);
+		await SendPromptAsync(coordinator, "first line\nsecond line", submit: false);
 
 		backend.InputWrites.ShouldBe(
 		[
@@ -183,14 +176,7 @@ public sealed partial class SessionRuntimeCoordinatorTests
 		var (coordinator, backend, controller) = await CreateAttachedSessionAsync();
 		await using var _ = controller;
 
-		await coordinator.SendPromptAsync(
-			CreateSession("session-1"),
-			"review this",
-			submit: true,
-			startIfNeeded: false,
-			enforceScenarioLock: false,
-			static (_, _) => Task.CompletedTask,
-			static _ => Task.CompletedTask);
+		await SendPromptAsync(coordinator, "review this", submit: true);
 
 		backend.InputWrites.ShouldBe(["\u001b[200~review this\u001b[201~", "\r"]);
 	}
@@ -198,18 +184,14 @@ public sealed partial class SessionRuntimeCoordinatorTests
 	[Test]
 	public async Task A_submitted_prompt_to_codex_in_win32_mode_uses_the_encoded_enter()
 	{
-		var (coordinator, backend, controller) = await CreateAttachedSessionAsync(win32InputMode: true, kind: AgentKind.Codex);
+		var (coordinator, backend, host, _, controller) = await CreateDeliverySessionAsync();
 		await using var _ = controller;
+		coordinator.GetOrCreateRuntime("session-1").InputModes.Scan($"{(char)0x1b}[?9001h");
+		host.CaptureScreen = _ => ComposerScreen(empty: backend.InputWrites.Contains(Win32InputEncoder.EnterKey));
 
-		await coordinator.SendPromptAsync(
-			CreateSession("session-1", AgentKind.Codex),
-			"review this",
-			submit: true,
-			startIfNeeded: false,
-			enforceScenarioLock: false,
-			static (_, _) => Task.CompletedTask,
-			static _ => Task.CompletedTask);
+		var result = await SendPromptAsync(coordinator, "review this", submit: true);
 
+		result.Outcome.ShouldBe(PromptDeliveryOutcome.Confirmed);
 		backend.InputWrites.ShouldBe(["\u001b[200~review this\u001b[201~", Win32InputEncoder.EnterKey]);
 	}
 
@@ -260,7 +242,7 @@ public sealed partial class SessionRuntimeCoordinatorTests
 			await CreateClipboardPasteSessionAsync("older text", mouseTracking: false);
 		await using var _ = controller;
 
-		await SendPromptAsync(coordinator, "review this", submit: false);
+		(await SendPromptAsync(coordinator, "review this", submit: false)).Outcome.ShouldBe(PromptDeliveryOutcome.Confirmed);
 
 		clipboard.Writes.ShouldBeEmpty();
 		backend.InputWrites.ShouldBe(["\u001b[200~review this\u001b[201~"]);
@@ -306,6 +288,7 @@ public sealed partial class SessionRuntimeCoordinatorTests
 		coordinator.ClientPasteClipboard = clipboard;
 		backend.InputWritten = input =>
 		{
+			EchoBracketedPaste(runtime, input);
 			if (input == RightClick && clickOutput is not null)
 			{
 				runtime.AppendRecentOutput(clickOutput);
@@ -321,6 +304,7 @@ public sealed partial class SessionRuntimeCoordinatorTests
 		Task? typed = null;
 		backend.InputWritten = input =>
 		{
+			EchoBracketedPaste(coordinator.GetOrCreateRuntime("session-1"), input);
 			if (typed is null && input.StartsWith("\u001b[200~", StringComparison.Ordinal))
 			{
 				typed = coordinator.WriteInputAsync(
@@ -337,15 +321,26 @@ public sealed partial class SessionRuntimeCoordinatorTests
 		backend.InputWrites.ShouldBe(["\u001b[200~review this\u001b[201~", PlainEnter, "x"]);
 	}
 
-	private static Task SendPromptAsync(SessionRuntimeCoordinator coordinator, string prompt, bool submit) =>
-		coordinator.SendPromptAsync(
-			CreateSession("session-1"),
+	private static Task<PromptDeliveryResult> SendPromptAsync(SessionRuntimeCoordinator coordinator, string prompt, bool submit)
+	{
+		coordinator.SessionFacts ??= new FakeFacts();
+		return coordinator.DeliverPromptAsync(
+			"session-1",
 			prompt,
 			submit,
-			startIfNeeded: false,
-			enforceScenarioLock: false,
-			static (_, _) => Task.CompletedTask,
-			static _ => Task.CompletedTask);
+			PromptSender.Outsider,
+			startIfNotRunning: false,
+			CancellationToken.None);
+	}
+
+	// Like a TUI, shows a bracketed paste's text in the output once it arrives.
+	private static void EchoBracketedPaste(SessionRuntime runtime, string input)
+	{
+		if (input.StartsWith("\u001b[200~", StringComparison.Ordinal))
+		{
+			runtime.AppendRecentOutput(input[6..^6]);
+		}
+	}
 
 	[TestCase('\u0015', 85, 22)]
 	[TestCase('\u000b', 75, 37)]
@@ -923,6 +918,8 @@ public sealed partial class SessionRuntimeCoordinatorTests
 		{
 			runtime.InputModes.Scan($"{(char)0x1b}[?9001h");
 		}
+
+		backend.InputWritten = input => EchoBracketedPaste(runtime, input);
 
 		return (coordinator, backend, controller);
 	}

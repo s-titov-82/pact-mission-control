@@ -206,8 +206,11 @@ public interface IOrchestratorHost
 		WebPageDocumentRange range,
 		CancellationToken cancellationToken);
 
-	/// <summary>Submits text to a live terminal through the normal human prompt path.</summary>
-	Task SendMessageAsync(
+	/// <summary>
+	/// Submits text to a live terminal through the one prompt sender and reports how the delivery
+	/// ended; a question or another run's lock refuses it there, in the write turn.
+	/// </summary>
+	Task<PromptDeliveryResult> SendMessageAsync(
 		string sessionId,
 		string text,
 		CancellationToken cancellationToken);

@@ -61,7 +61,17 @@ internal sealed class FakeTerminalWebViewHost : ITerminalWebViewHost
 		WrittenOutput.Add((sessionId, text));
 		return Task.CompletedTask;
 	}
-	public Func<string, TerminalScreenSnapshot?> CaptureScreen { get; set; } = static _ => null;
+	// By default the capture shows an empty Codex composer, as after a submitted prompt.
+	public Func<string, TerminalScreenSnapshot?> CaptureScreen { get; set; } = static _ => EmptyComposer;
+
+	public static TerminalScreenSnapshot EmptyComposer { get; } = TerminalScreenSnapshot.FromRows(
+		[
+			new("Worked for 1s", false, []),
+			new("› ", false, []),
+			new("  GPT-6.1-Sol medium · main · Context 30% used", false, [])
+		],
+		80,
+		true);
 
 	public Task<TerminalScreenSnapshot?> CaptureScreenAsync(string sessionId, CancellationToken cancellationToken) =>
 		Task.FromResult(CaptureScreen(sessionId));

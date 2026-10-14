@@ -528,66 +528,6 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 		}
 	}
 
-	/// <summary>
-	/// Delivers prompt text to a session, optionally submitting it. Delivery targets the visible
-	/// TUI through its terminal, never a headless API path.
-	/// </summary>
-	public async Task SendPromptAsync(
-		SessionViewModel targetSession,
-		string prompt,
-		bool submit,
-		bool startIfNeeded,
-		bool enforceScenarioLock,
-		Func<SessionViewModel, SessionRuntime, Task> startRuntimeAsync,
-		Func<SessionRuntime, Task> waitForInitialOutputAsync)
-	{
-		ArgumentNullException.ThrowIfNull(targetSession);
-		ArgumentNullException.ThrowIfNull(prompt);
-		ArgumentNullException.ThrowIfNull(startRuntimeAsync);
-		ArgumentNullException.ThrowIfNull(waitForInitialOutputAsync);
-
-		if (enforceScenarioLock && targetSession.IsLockedByScenario)
-		{
-			throw new InvalidOperationException("Target session is locked by a running scenario.");
-		}
-
-		var runtime = GetOrCreateRuntime(targetSession.Record.Id);
-		if (!runtime.TryGetController(out var controller) || !controller.IsActive)
-		{
-			if (!startIfNeeded)
-			{
-				throw new InvalidOperationException("Target session is not running.");
-			}
-
-			runtime.PrepareForControllerStart();
-			await startRuntimeAsync(targetSession, runtime).ConfigureAwait(false);
-			await waitForInitialOutputAsync(runtime).ConfigureAwait(false);
-			if (_startupSettleDelay > TimeSpan.Zero)
-			{
-				await Task.Delay(_startupSettleDelay).ConfigureAwait(false);
-			}
-		}
-		if (!runtime.TryGetController(out controller) || !controller.IsActive)
-		{
-			throw new InvalidOperationException("Target session is not running.");
-		}
-
-		await runtime.RunInputExclusiveAsync(
-			async () =>
-			{
-				await WritePasteAsync(runtime, controller, prompt, awaitLanding: submit, CancellationToken.None)
-					.ConfigureAwait(false);
-				if (submit)
-				{
-					await WriteSubmitAfterPasteAsync(runtime, controller, CancellationToken.None)
-						.ConfigureAwait(false);
-				}
-
-				return true;
-			},
-			CancellationToken.None).ConfigureAwait(false);
-	}
-
 	// An Enter glued to the paste can be taken as part of it, and under win32-input-mode a raw
 	// carriage return reaches Codex as text, so the submit is a separate key press.
 	private async Task WriteSubmitAfterPasteAsync(

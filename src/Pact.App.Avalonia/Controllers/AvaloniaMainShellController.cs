@@ -144,6 +144,11 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		_executableLocator = executableLocator ?? throw new ArgumentNullException(nameof(executableLocator));
 		_uiTaskDispatcher = uiTaskDispatcher ?? throw new ArgumentNullException(nameof(uiTaskDispatcher));
 		_timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+		_runtimeCoordinator.SessionFacts = new ShellSessionFacts(
+			ReadScreenState,
+			IsSessionLockedByScenario,
+			StartSessionByIdAsync);
+		_runtimeCoordinator.DeliveryTrace = AppendDiagnosticLog;
 		var effectiveProcessTreeSnapshotReader =
 			processTreeSnapshotReader ?? new ProcessTreeSnapshotReader();
 		_processMetricsMonitor = new SelectedProcessMetricsMonitor(
@@ -2110,42 +2115,37 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			return;
 		}
 
-		var screen = ReadScreenState(_orchestratorSession.Record.Id);
-		if (screen?.InputRequested == true)
+		var result = await _runtimeCoordinator.DeliverPromptAsync(
+			_orchestratorSession.Record.Id,
+			prompt,
+			submit: true,
+			PromptSender.Outsider,
+			startIfNotRunning: false,
+			CancellationToken.None);
+		if (DescribeUndelivered(result) is { } reason)
 		{
 			ViewModel.OrchestratorSlot.Apply(
 				isProvisioned: _orchestratorRecord.IsProvisioned,
 				isEnabled: _orchestratorRecord.Enabled,
 				isRunning: true,
-				stateText: $"Waiting for an answer ({screen.StatusLine}) — prompt not delivered");
-			return;
+				stateText: $"{(locked ? "Lock" : "Unlock")} prompt: {reason}");
 		}
-
-		await _runtimeCoordinator.SendPromptAsync(
-			_orchestratorSession,
-			prompt,
-			submit: true,
-			startIfNeeded: false,
-			enforceScenarioLock: false,
-			static (_, _) => Task.CompletedTask,
-			static _ => Task.CompletedTask);
 	}
 
 	private bool IsLiveSession(string sessionId) =>
 		_runtimeCoordinator.TryGetActiveController(sessionId, out _, out _);
 
-	private Task SendOrchestratorMessageAsync(
+	private Task<PromptDeliveryResult> SendOrchestratorMessageAsync(
 		SessionViewModel target,
 		string text,
 		CancellationToken cancellationToken) =>
-		_runtimeCoordinator.SendPromptAsync(
-			target,
+		_runtimeCoordinator.DeliverPromptAsync(
+			target.Record.Id,
 			text,
 			submit: true,
-			startIfNeeded: false,
-			enforceScenarioLock: true,
-			static (_, _) => Task.CompletedTask,
-			static _ => Task.CompletedTask);
+			PromptSender.Outsider,
+			startIfNotRunning: false,
+			cancellationToken);
 
 	public async Task PauseWorkspaceAsync(WorkspaceViewModel workspace, CancellationToken cancellationToken = default)
 	{
@@ -2365,7 +2365,6 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 				cancellationToken);
 			var readiness = await _runtimeCoordinator.WaitForSessionReadyAsync(
 				reviewerSessionId,
-				() => ReadScreenState(reviewerSessionId),
 				cancellationToken);
 			if (!readiness.IsReady)
 			{
@@ -3017,14 +3016,12 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		var selectedSession = ViewModel.SelectedSession;
 		if (!string.IsNullOrEmpty(text) && selectedSession is not null)
 		{
-			await _runtimeCoordinator.SendPromptAsync(
-				selectedSession,
-				text,
-				submit: false,
-				startIfNeeded: false,
-				enforceScenarioLock: true,
-				static (_, _) => Task.CompletedTask,
-				static _ => Task.CompletedTask);
+			if (selectedSession.IsLockedByScenario)
+			{
+				throw new InvalidOperationException("Target session is locked by a running scenario.");
+			}
+
+			await _runtimeCoordinator.PasteAsKeyboardAsync(selectedSession.Record.Id, text);
 		}
 	}
 
@@ -3396,15 +3393,52 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		}
 	}
 
-	private Task SendTextToSessionAsync(SessionViewModel target, string text, bool submit, CancellationToken cancellationToken) =>
-		_runtimeCoordinator.SendPromptAsync(
-			target,
+	private async Task SendTextToSessionAsync(SessionViewModel target, string text, bool submit, CancellationToken cancellationToken)
+	{
+		var result = await _runtimeCoordinator.DeliverPromptAsync(
+			target.Record.Id,
 			text,
 			submit,
-			startIfNeeded: true,
-			enforceScenarioLock: true,
-			(session, _) => StartPromptRuntimeAsync(session, cancellationToken),
-			static _ => Task.CompletedTask);
+			PromptSender.Outsider,
+			startIfNotRunning: true,
+			cancellationToken);
+		if (DescribeUndelivered(result) is { } reason)
+		{
+			await ReportStatusAsync($"{target.Title}: {reason}");
+		}
+	}
+
+	private static string? DescribeUndelivered(PromptDeliveryResult result) => result.Outcome switch
+	{
+		PromptDeliveryOutcome.Confirmed or PromptDeliveryOutcome.Submitted => null,
+		PromptDeliveryOutcome.RefusedQuestion when result.WriteAttempted =>
+			$"a question opened after the text was pasted ({result.StatusLine}); it was not submitted",
+		PromptDeliveryOutcome.RefusedQuestion => $"waiting for an answer ({result.StatusLine}); nothing was sent",
+		PromptDeliveryOutcome.RefusedLocked => "locked by a running scenario; nothing was sent",
+		PromptDeliveryOutcome.NotRunning => $"not running ({result.StatusLine}); nothing was sent",
+		PromptDeliveryOutcome.PasteNotShown => "the pasted text never showed, so it was not submitted",
+		PromptDeliveryOutcome.Unconfirmed => "sent, but the agent was not seen taking it",
+		_ => $"delivery ended as {result.Outcome}"
+	};
+
+	private bool IsSessionLockedByScenario(string sessionId)
+	{
+		var locked = false;
+		_uiTaskDispatcher.Post(() => locked = ViewModel.FindSession(sessionId)?.IsLockedByScenario == true);
+		return locked;
+	}
+
+	private async Task StartSessionByIdAsync(string sessionId, CancellationToken cancellationToken)
+	{
+		SessionViewModel? session = null;
+		_uiTaskDispatcher.Post(() => session = ViewModel.FindSession(sessionId));
+		if (session is null)
+		{
+			throw new InvalidOperationException($"Session '{sessionId}' is not registered.");
+		}
+
+		await StartPromptRuntimeAsync(session, cancellationToken);
+	}
 
 	private async Task StartPromptRuntimeAsync(SessionViewModel session, CancellationToken cancellationToken)
 	{

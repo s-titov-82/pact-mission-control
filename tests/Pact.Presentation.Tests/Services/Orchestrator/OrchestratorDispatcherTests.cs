@@ -343,10 +343,16 @@ public sealed class OrchestratorDispatcherTests
 		host.Sent.ShouldBeEmpty();
 	}
 
-	[Test]
-	public async Task Send_message_refuses_a_scenario_locked_session()
+	[TestCase(PromptDeliveryOutcome.Confirmed, null)]
+	[TestCase(PromptDeliveryOutcome.Submitted, null)]
+	[TestCase(PromptDeliveryOutcome.RefusedQuestion, "input-requested")]
+	[TestCase(PromptDeliveryOutcome.RefusedLocked, "session-scenario-locked")]
+	[TestCase(PromptDeliveryOutcome.NotRunning, "session-not-alive")]
+	[TestCase(PromptDeliveryOutcome.Unconfirmed, "not-confirmed")]
+	[TestCase(PromptDeliveryOutcome.PasteNotShown, "paste-not-shown")]
+	public async Task Send_message_maps_the_delivery_outcome(PromptDeliveryOutcome outcome, string? code)
 	{
-		FakeOrchestratorHost host = new();
+		FakeOrchestratorHost host = new() { Delivery = new(outcome, "Approve this edit?") };
 		host.SetScenarioLocked("session-a", "run-1");
 		OrchestratorDispatcher dispatcher = new(host);
 
@@ -355,23 +361,31 @@ public sealed class OrchestratorDispatcherTests
 			"hello",
 			CancellationToken.None);
 
-		result.Failure!.Code.ShouldBe("session-scenario-locked");
-		result.Failure.Message.ShouldContain("run-1");
-		host.Sent.ShouldBeEmpty();
+		host.Sent.ShouldHaveSingleItem();
+		if (code is null)
+		{
+			result.Succeeded.ShouldBeTrue();
+			return;
+		}
+
+		result.Failure.ShouldNotBeNull().Code.ShouldBe(code);
+		if (outcome == PromptDeliveryOutcome.RefusedQuestion)
+		{
+			result.Failure.Message.ShouldContain("Approve this edit?");
+		}
+		else if (outcome == PromptDeliveryOutcome.RefusedLocked)
+		{
+			result.Failure.Message.ShouldContain("run-1");
+		}
 	}
 
 	[Test]
-	public async Task Send_message_refuses_a_session_waiting_for_a_human_answer()
+	public async Task Send_message_to_a_busy_session_is_sent()
 	{
 		FakeOrchestratorHost host = new();
 		host.SetScreen(
 			"session-a",
-			new SessionScreenState(
-				"question screen",
-				string.Empty,
-				LastMessageIsCurrent: false,
-				InputRequested: true,
-				StatusLine: "Approve this edit?"));
+			new SessionScreenState("busy screen", string.Empty, LastMessageIsCurrent: false, IsBusy: true));
 		OrchestratorDispatcher dispatcher = new(host);
 
 		var result = await dispatcher.SendMessageAsync(
@@ -379,10 +393,8 @@ public sealed class OrchestratorDispatcherTests
 			"hello",
 			CancellationToken.None);
 
-		result.Succeeded.ShouldBeFalse();
-		result.Failure.ShouldNotBeNull().Code.ShouldBe("input-requested");
-		result.Failure.Message.ShouldContain("Approve this edit?");
-		host.Sent.ShouldBeEmpty();
+		result.Succeeded.ShouldBeTrue();
+		host.Sent.ShouldHaveSingleItem();
 	}
 
 	[Test]
@@ -663,13 +675,18 @@ public sealed class OrchestratorDispatcherTests
 					"Weekly 60%")
 			];
 
-		public Task SendMessageAsync(
+		public PromptDeliveryResult Delivery { get; set; } = new(
+			PromptDeliveryOutcome.Confirmed,
+			WriteAttempted: true,
+			SubmitAttempted: true);
+
+		public Task<PromptDeliveryResult> SendMessageAsync(
 			string sessionId,
 			string text,
 			CancellationToken cancellationToken)
 		{
 			Sent.Add((sessionId, text));
-			return Task.CompletedTask;
+			return Task.FromResult(Delivery);
 		}
 
 		public bool IsScenarioLocked(string sessionId, out string runId)

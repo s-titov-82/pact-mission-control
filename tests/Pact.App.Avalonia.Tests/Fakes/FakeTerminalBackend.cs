@@ -9,6 +9,7 @@ internal sealed class FakeTerminalBackend : ITerminalBackend
 	public int StartCount { get; private set; }
 	public TerminalStartOptions? LastStartOptions { get; private set; }
 	public List<string> Inputs { get; } = [];
+	public bool EchoPastes { get; set; } = true;
 	public List<(int Columns, int Rows)> ResizeRequests { get; } = [];
 	public Func<int, int, Task>? ResizeHandler { get; set; }
 	public Action<string>? InputWritten { get; set; }
@@ -54,6 +55,14 @@ internal sealed class FakeTerminalBackend : ITerminalBackend
 	{
 		var text = System.Text.Encoding.UTF8.GetString(input);
 		Inputs.Add(text);
+		if (EchoPastes
+			&& text.StartsWith("\u001b[200~", StringComparison.Ordinal)
+			&& text.EndsWith("\u001b[201~", StringComparison.Ordinal))
+		{
+			// A TUI shows pasted text; prompt delivery waits for it before Enter.
+			EmitOutput(text[6..^6]);
+		}
+
 		InputWritten?.Invoke(text);
 		InputWriteStarted.TrySetResult();
 		if (InputWriteBlocker is not null)
