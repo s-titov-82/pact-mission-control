@@ -23,7 +23,6 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 	private static readonly TimeSpan DefaultStartupSettleDelay = TimeSpan.FromMilliseconds(600);
 	private static readonly TimeSpan DefaultScenarioSubmitSettleDelay = TimeSpan.FromMilliseconds(250);
 	private static readonly TimeSpan DefaultConfirmationTimeout = TimeSpan.FromSeconds(10);
-	private static readonly TimeSpan DefaultQuietComposerPeriod = TimeSpan.FromSeconds(2);
 	private static readonly TimeSpan DefaultStatePollInterval = TimeSpan.FromMilliseconds(250);
 	private static readonly TimeSpan DefaultSessionReadyTimeout = TimeSpan.FromSeconds(30);
 	private static readonly TimeSpan ClientPasteLandingTimeout = TimeSpan.FromSeconds(5);
@@ -37,7 +36,6 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 	private readonly TimeSpan _scenarioSubmitSettleDelay;
 	private readonly TimeSpan _startupSettleDelay;
 	private readonly TimeSpan _confirmationTimeout;
-	private readonly TimeSpan _quietComposerPeriod;
 	private readonly TimeSpan _statePollInterval;
 	private readonly TimeSpan _sessionReadyTimeout;
 	private readonly TimeSpan _pasteLandingTimeout;
@@ -118,7 +116,6 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 			scenarioSubmitSettleDelay,
 			DefaultStartupSettleDelay,
 			confirmationTimeout,
-			DefaultQuietComposerPeriod,
 			statePollInterval,
 			sessionReadyTimeout)
 	{
@@ -130,7 +127,6 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 		TimeSpan scenarioSubmitSettleDelay,
 		TimeSpan startupSettleDelay,
 		TimeSpan confirmationTimeout,
-		TimeSpan quietComposerPeriod,
 		TimeSpan statePollInterval,
 		TimeSpan? sessionReadyTimeout = null,
 		TimeSpan? pasteLandingTimeout = null,
@@ -145,7 +141,6 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 		ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(
 			confirmationTimeout,
 			TimeSpan.Zero);
-		ArgumentOutOfRangeException.ThrowIfLessThan(quietComposerPeriod, TimeSpan.Zero);
 		ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(
 			statePollInterval,
 			TimeSpan.Zero);
@@ -157,7 +152,6 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 		_scenarioSubmitSettleDelay = scenarioSubmitSettleDelay;
 		_startupSettleDelay = startupSettleDelay;
 		_confirmationTimeout = confirmationTimeout;
-		_quietComposerPeriod = quietComposerPeriod;
 		_statePollInterval = statePollInterval;
 		_sessionReadyTimeout = resolvedReadyTimeout;
 		_pasteLandingTimeout = pasteLandingTimeout ?? ClientPasteLandingTimeout;
@@ -528,24 +522,6 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 		}
 	}
 
-	// An Enter glued to the paste can be taken as part of it, and under win32-input-mode a raw
-	// carriage return reaches Codex as text, so the submit is a separate key press.
-	private async Task WriteSubmitAfterPasteAsync(
-		SessionRuntime runtime,
-		TerminalController controller,
-		CancellationToken cancellationToken,
-		Action? beforeSubmit = null)
-	{
-		if (_scenarioSubmitSettleDelay > TimeSpan.Zero)
-		{
-			await Task.Delay(_scenarioSubmitSettleDelay, cancellationToken).ConfigureAwait(false);
-		}
-
-		cancellationToken.ThrowIfCancellationRequested();
-		beforeSubmit?.Invoke();
-		await WriteRequiredInputAsync(controller, runtime.EncodeEnter()).ConfigureAwait(false);
-	}
-
 	/// <summary>
 	/// Waits until a launched session can receive a prompt: its retained stable classifier
 	/// verdict is done, with no question or activity. The folder-trust dialog is answered with
@@ -670,205 +646,6 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 					: lastStatusLine);
 		}
 	}
-
-	/// <summary>
-	/// Pastes a scenario trigger and submits it, refusing a session that is holding a question or
-	/// unsent text, and confirming from a new activity cycle.
-	/// </summary>
-	/// <remarks>
-	/// A composer still holding the trigger proves that only the submit was dropped, so Enter
-	/// alone is safe. An empty, idle composer is weaker evidence that the paste was discarded;
-	/// one bounded repaste is preferred to leaving the run stalled.
-	/// </remarks>
-	public async Task<PromptDeliveryResult> WriteScenarioPromptAndSubmitAsync(
-		string sessionId,
-		string trigger,
-		bool confirmDelivery,
-		Func<SessionScreenState?> readScreenState,
-		CancellationToken cancellationToken)
-	{
-		ArgumentNullException.ThrowIfNull(trigger);
-		ArgumentNullException.ThrowIfNull(readScreenState);
-
-		if (!TryGetRuntime(sessionId, out var runtime)
-			|| !runtime.TryGetController(out var controller)
-			|| !controller.IsActive)
-		{
-			throw new InvalidOperationException("Target scenario session is not running.");
-		}
-
-		// Admission is checked once this unit has its turn, so a writer queued ahead of it cannot
-		// change the screen between the check and the paste.
-		var epochBefore = 0L;
-		var refusal = await runtime.RunInputExclusiveAsync<PromptDeliveryResult?>(
-			async () =>
-			{
-				var gate = readScreenState();
-				if (gate?.IsBusy == true)
-				{
-					return new PromptDeliveryResult(PromptDeliveryOutcome.BlockedByBusy);
-				}
-
-				if (gate?.InputRequested == true)
-				{
-					return new PromptDeliveryResult(
-						PromptDeliveryOutcome.BlockedByInputRequest,
-						gate.StatusLine);
-				}
-
-				if (gate?.PromptIsEmpty is false)
-				{
-					return new PromptDeliveryResult(PromptDeliveryOutcome.BlockedByPendingInput);
-				}
-
-				epochBefore = gate?.ActivityEpoch ?? 0;
-				await WriteTriggerAsync().ConfigureAwait(false);
-				return null;
-			},
-			cancellationToken).ConfigureAwait(false);
-		if (refusal is { } refused)
-		{
-			return refused;
-		}
-
-		if (!confirmDelivery)
-		{
-			return new PromptDeliveryResult(
-				PromptDeliveryOutcome.Written,
-				string.Empty,
-				WriteAttempted: true,
-				SubmitAttempted: true);
-		}
-
-		var observation = await ObserveAsync(epochBefore).ConfigureAwait(false);
-		if (observation.Blocked is { } blocked)
-		{
-			return blocked with { WriteAttempted = true, SubmitAttempted = true };
-		}
-
-		if (observation.Confirmed)
-		{
-			return new PromptDeliveryResult(
-				PromptDeliveryOutcome.Confirmed,
-				string.Empty,
-				WriteAttempted: true,
-				SubmitAttempted: true);
-		}
-
-		if (observation.HoldsText)
-		{
-			await runtime.RunInputExclusiveAsync(
-				async () =>
-				{
-					EnsureScenarioControllerIsCurrent(sessionId, runtime, controller);
-					await WriteRequiredInputAsync(controller, runtime.EncodeEnter()).ConfigureAwait(false);
-					return true;
-				},
-				cancellationToken).ConfigureAwait(false);
-		}
-		else if (observation.QuietAndEmpty)
-		{
-			await runtime.RunInputExclusiveAsync(
-				async () =>
-				{
-					EnsureScenarioControllerIsCurrent(sessionId, runtime, controller);
-					await WriteTriggerAsync().ConfigureAwait(false);
-					return true;
-				},
-				cancellationToken).ConfigureAwait(false);
-		}
-		else
-		{
-			return new PromptDeliveryResult(
-				PromptDeliveryOutcome.Written,
-				string.Empty,
-				WriteAttempted: true,
-				SubmitAttempted: true);
-		}
-
-		var repaired = await ObserveAsync(epochBefore).ConfigureAwait(false);
-		return repaired.Blocked is { } blockedAfterRepair
-			? blockedAfterRepair with { WriteAttempted = true, SubmitAttempted = true }
-			: new PromptDeliveryResult(
-				repaired.Confirmed ? PromptDeliveryOutcome.Confirmed : PromptDeliveryOutcome.Written,
-				string.Empty,
-				WriteAttempted: true,
-				SubmitAttempted: true);
-
-		// Runs inside an exclusive input unit.
-		async Task WriteTriggerAsync()
-		{
-			await WritePasteAsync(runtime, controller, trigger, awaitLanding: true, cancellationToken)
-				.ConfigureAwait(false);
-			await WriteSubmitAfterPasteAsync(
-				runtime,
-				controller,
-				cancellationToken,
-				() => EnsureScenarioControllerIsCurrent(sessionId, runtime, controller)).ConfigureAwait(false);
-		}
-
-		async Task<Observation> ObserveAsync(long epoch)
-		{
-			var startedAt = Stopwatch.GetTimestamp();
-			var quietSince = default(long?);
-			while (true)
-			{
-				cancellationToken.ThrowIfCancellationRequested();
-				if (readScreenState() is { } state)
-				{
-					if (state.InputRequested)
-					{
-						return new Observation(
-							false,
-							false,
-							false,
-							new PromptDeliveryResult(
-								PromptDeliveryOutcome.BlockedByInputRequest,
-								state.StatusLine));
-					}
-
-					if (state.ActivityEpoch > epoch)
-					{
-						return new Observation(true, false, false, null);
-					}
-
-					if (state.PromptIsEmpty is false)
-					{
-						return new Observation(false, true, false, null);
-					}
-
-					if (state.PromptIsEmpty is true && !state.IsBusy)
-					{
-						quietSince ??= Stopwatch.GetTimestamp();
-						if (Stopwatch.GetElapsedTime(quietSince.Value) >= _quietComposerPeriod)
-						{
-							return new Observation(false, false, true, null);
-						}
-					}
-					else
-					{
-						quietSince = null;
-					}
-				}
-
-				var remaining = _confirmationTimeout - Stopwatch.GetElapsedTime(startedAt);
-				if (remaining <= TimeSpan.Zero)
-				{
-					return new Observation(false, false, false, null);
-				}
-
-				await Task.Delay(
-					remaining < _statePollInterval ? remaining : _statePollInterval,
-					cancellationToken).ConfigureAwait(false);
-			}
-		}
-	}
-
-	private readonly record struct Observation(
-		bool Confirmed,
-		bool HoldsText,
-		bool QuietAndEmpty,
-		PromptDeliveryResult? Blocked);
 
 	private void EnsureScenarioControllerIsCurrent(
 		string sessionId,
@@ -1234,8 +1011,15 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 			CancellationToken.None).ConfigureAwait(false);
 	}
 
-	// Returns false when the paste did not show within the landing timeout. Both paths wait for
-	// the paste in the output before Enter, because an Enter before it lands submits nothing.
+	/// <summary>
+	/// Pastes <paramref name="text"/> into a session and waits until the session shows it. A client
+	/// that captures the mouse is handed the text through the clipboard and asked to paste it with
+	/// a right click, so it receives the whole text as one paste: a client reading console key
+	/// records otherwise gets a typed paste one key at a time, and on Windows Codex splits long
+	/// text that way. Every other client gets a bracketed paste. Either way an Enter written before
+	/// the paste shows submits nothing, and a key press can cancel a clipboard paste.
+	/// </summary>
+	/// <returns><see langword="false"/> when the paste did not show within the landing timeout.</returns>
 	private async Task<bool> WritePasteAsync(
 		SessionRuntime runtime,
 		TerminalController controller,
@@ -1360,57 +1144,6 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 				return await controller.WriteInputAsync(runtime.EncodeEnter()).ConfigureAwait(false);
 			},
 			cancellationToken).ConfigureAwait(false);
-	}
-
-	/// <summary>
-	/// Pastes <paramref name="text"/> into a session. A client that captures the mouse is handed
-	/// the text through the clipboard and asked to paste it with a right click, so it receives
-	/// the whole text as one paste: a client reading console key records otherwise gets a typed
-	/// paste one key at a time, and on Windows Codex splits long text that way. Every other
-	/// client gets a bracketed paste. A clipboard paste lands asynchronously and a key press that
-	/// arrives first can cancel it, so before a submit this waits until the session shows it.
-	/// </summary>
-	private async Task WritePasteAsync(
-		SessionRuntime runtime,
-		TerminalController controller,
-		string text,
-		bool awaitLanding,
-		CancellationToken cancellationToken)
-	{
-		if (ClientPasteClipboard is not { } clipboard
-			|| !runtime.InputModes.IsSgrMouseActive
-			|| !await OfferOnClipboardAsync(clipboard, text).ConfigureAwait(false))
-		{
-			await WriteRequiredInputAsync(controller, BuildPastedInput(text)).ConfigureAwait(false);
-			return;
-		}
-
-		// The wait starts before the click, so output from a fast paste cannot be missed.
-		using var stopWaiting = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-		var landed = awaitLanding
-			? runtime.WaitForClientPasteAsync(text, ClientPasteLandingTimeout, stopWaiting.Token)
-			: Task.CompletedTask;
-		try
-		{
-			await WriteRequiredInputAsync(controller, ClientPasteClick).ConfigureAwait(false);
-		}
-		catch
-		{
-			await stopWaiting.CancelAsync().ConfigureAwait(false);
-			await landed.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
-			throw;
-		}
-
-		try
-		{
-			await landed.ConfigureAwait(false);
-		}
-		catch (TimeoutException exception)
-		{
-			throw new InvalidOperationException(
-				"The session did not show the pasted text, so it was not submitted.",
-				exception);
-		}
 	}
 
 	private static async Task WriteRequiredInputAsync(TerminalController controller, string input)

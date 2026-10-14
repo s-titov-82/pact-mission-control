@@ -144,11 +144,11 @@ public sealed class ScenarioRunServiceTests : IDisposable
 	}
 
 	[Test]
-	public async Task SendAsync_WrittenDeliveryRetriesAutomatically()
+	public async Task SendAsync_unconfirmed_delivery_pauses_for_attention_without_resending()
 	{
 		FakeGateway gateway = new();
 		gateway.DeliveryResults.Enqueue(new(
-			PromptDeliveryOutcome.Written,
+			PromptDeliveryOutcome.Unconfirmed,
 			string.Empty,
 			WriteAttempted: true,
 			SubmitAttempted: true));
@@ -176,8 +176,61 @@ public sealed class ScenarioRunServiceTests : IDisposable
 		handle.State.ShouldBe(ScenarioRunState.Completed);
 		handle.Journal.ShouldContain(entry =>
 			entry.Message.StartsWith(
-				"the trigger was submitted but the agent never started working",
+				"the trigger was submitted but the agent was not seen taking it",
 				StringComparison.Ordinal));
+		gateway.Sent.Count.ShouldBe(1);
+	}
+
+	[TestCase(PromptDeliveryOutcome.PasteNotShown)]
+	[TestCase(PromptDeliveryOutcome.RefusedQuestion)]
+	public async Task SendAsync_written_but_unsubmitted_delivery_is_never_retried(PromptDeliveryOutcome outcome)
+	{
+		FakeGateway gateway = new();
+		gateway.DeliveryResults.Enqueue(new(outcome, "Approve this edit?", WriteAttempted: true));
+		var service = CreateService(gateway);
+		var handle = service.Start(
+			SingleRoleBlueprint,
+			new ScriptedProgram(async (context, ct) =>
+			{
+				await context.SendAsync("send", "reviewer", "read task file", ct);
+				return true;
+			}),
+			"project-1",
+			new Dictionary<string, string> { ["reviewer"] = "session-1" },
+			"start prompt",
+			maxIterations: 1);
+
+		await handle.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+		gateway.Sent.Count.ShouldBe(1);
+		handle.Journal.ShouldContain(entry => entry.Message.Contains("never resends", StringComparison.Ordinal));
+	}
+
+	[Test]
+	public async Task SendAsync_not_running_retries_after_the_session_returns()
+	{
+		FakeGateway gateway = new();
+		gateway.DeliveryResults.Enqueue(new(PromptDeliveryOutcome.NotRunning, "the session is not running"));
+		gateway.DeliveryResults.Enqueue(new(
+			PromptDeliveryOutcome.Confirmed,
+			WriteAttempted: true,
+			SubmitAttempted: true));
+		var service = CreateService(gateway);
+		var handle = service.Start(
+			SingleRoleBlueprint,
+			new ScriptedProgram(async (context, ct) =>
+			{
+				await context.SendAsync("send", "reviewer", "read task file", ct);
+				return true;
+			}),
+			"project-1",
+			new Dictionary<string, string> { ["reviewer"] = "session-1" },
+			"start prompt",
+			maxIterations: 1);
+
+		await handle.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+		handle.State.ShouldBe(ScenarioRunState.Completed);
 		gateway.Sent.Count.ShouldBe(2);
 	}
 
@@ -186,8 +239,8 @@ public sealed class ScenarioRunServiceTests : IDisposable
 	{
 		const string prompt = "read sensitive task file";
 		FakeGateway gateway = new();
-		gateway.DeliveryResults.Enqueue(new(PromptDeliveryOutcome.BlockedByPendingInput));
-		gateway.DeliveryResults.Enqueue(new(PromptDeliveryOutcome.BlockedByPendingInput));
+		gateway.DeliveryResults.Enqueue(new(PromptDeliveryOutcome.RefusedQuestion, "Approve?"));
+		gateway.DeliveryResults.Enqueue(new(PromptDeliveryOutcome.RefusedQuestion, "Approve?"));
 		gateway.DeliveryResults.Enqueue(new(
 			PromptDeliveryOutcome.Confirmed,
 			WriteAttempted: true,
@@ -224,7 +277,7 @@ public sealed class ScenarioRunServiceTests : IDisposable
 		diagnostics[0].Phase.ShouldContain("role=reviewer");
 		diagnostics[0].Phase.ShouldContain("session=session-1");
 		diagnostics[0].Phase.ShouldContain("attempt=1");
-		diagnostics[0].Phase.ShouldContain("outcome=BlockedByPendingInput");
+		diagnostics[0].Phase.ShouldContain("outcome=RefusedQuestion");
 		diagnostics[0].Phase.ShouldContain("writeAttempted=False");
 		diagnostics[0].Phase.ShouldContain("submitAttempted=False");
 		diagnostics[0].Phase.ShouldNotContain(prompt);
@@ -313,7 +366,7 @@ public sealed class ScenarioRunServiceTests : IDisposable
 	{
 		FakeGateway gateway = new();
 		gateway.DeliveryResults.Enqueue(new(
-			PromptDeliveryOutcome.BlockedByInputRequest,
+			PromptDeliveryOutcome.RefusedQuestion,
 			"Approve this edit?"));
 		gateway.DeliveryResults.Enqueue(new(
 			PromptDeliveryOutcome.Confirmed,
@@ -348,7 +401,7 @@ public sealed class ScenarioRunServiceTests : IDisposable
 	{
 		FakeGateway gateway = new();
 		gateway.DeliveryResults.Enqueue(new(
-			PromptDeliveryOutcome.BlockedByInputRequest,
+			PromptDeliveryOutcome.RefusedQuestion,
 			"Approve this edit?"));
 		gateway.DeliveryResults.Enqueue(new(
 			PromptDeliveryOutcome.Confirmed,
@@ -554,150 +607,7 @@ public sealed class ScenarioRunServiceTests : IDisposable
 	}
 
 	[Test]
-	public async Task RequestManualPause_escalates_attention_pause_and_blocks_recovery_write_until_resume()
-	{
-		TaskCompletionSource<(string SessionId, string Prompt)> sendStarted =
-			new(TaskCreationOptions.RunContinuationsAsynchronously);
-		FakeGateway gateway = new() { SendStarted = sendStarted };
-		TaskCompletionSource recoveryEntered = new(TaskCreationOptions.RunContinuationsAsynchronously);
-		TaskCompletionSource<string> responseReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
-		ScenarioRunHandle? handle = null;
-		var attempts = 0;
-		var service = CreateService(gateway);
-		handle = service.Start(
-			Blueprint,
-			new ScriptedProgram(async (context, ct) =>
-			{
-				var response = await context.WaitForResponseAsync(
-					"capture",
-					"reviewer",
-					(_, waitCancellationToken) =>
-					{
-						attempts++;
-						return attempts == 1
-							? Task.FromException<string>(new ScenarioStepTimeoutException())
-							: responseReady.Task.WaitAsync(waitCancellationToken);
-					},
-					ct,
-					async recoveryToken =>
-					{
-						recoveryEntered.TrySetResult();
-						await context.SendAsync(
-							"send",
-							"reviewer",
-							"read task file",
-							recoveryToken);
-					});
-				response.ShouldBe("file response");
-				return true;
-			}),
-			"project",
-			Bindings,
-			"target",
-			1);
-		handle.StateChanged += (_, _) =>
-		{
-			if (handle.State == ScenarioRunState.Paused
-				&& !handle.UnlockAllSessionsWhilePaused)
-			{
-				handle.RequestManualPause().ShouldBe(ScenarioPauseRequestStatus.Escalated);
-			}
-		};
-
-		await recoveryEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
-		handle.State.ShouldBe(ScenarioRunState.Paused);
-		handle.UnlockAllSessionsWhilePaused.ShouldBeTrue();
-		handle.StuckSessionId.ShouldBeNull();
-		gateway.Sent.ShouldBeEmpty();
-
-		handle.Resume();
-		await sendStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
-		responseReady.TrySetResult("file response");
-		await handle.Completion.WaitAsync(TimeSpan.FromSeconds(2));
-
-		handle.State.ShouldBe(ScenarioRunState.Completed);
-	}
-
-	[Test]
-	public async Task Manual_pause_escalated_during_recovery_send_survives_delivery_confirmation()
-	{
-		TaskCompletionSource recoverySendStarted =
-			new(TaskCreationOptions.RunContinuationsAsynchronously);
-		TaskCompletionSource releaseRecoverySend =
-			new(TaskCreationOptions.RunContinuationsAsynchronously);
-		TaskCompletionSource recoveryFinished =
-			new(TaskCreationOptions.RunContinuationsAsynchronously);
-		TaskCompletionSource<string> responseReady =
-			new(TaskCreationOptions.RunContinuationsAsynchronously);
-		FakeGateway gateway = new()
-		{
-			DeliveryResult = new(
-				PromptDeliveryOutcome.Confirmed,
-				WriteAttempted: true,
-				SubmitAttempted: true),
-			BeforeDeliveryResultAsync = async cancellationToken =>
-			{
-				recoverySendStarted.TrySetResult();
-				await releaseRecoverySend.Task.WaitAsync(cancellationToken);
-			}
-		};
-		var attempts = 0;
-		var service = CreateService(gateway);
-		var handle = service.Start(
-			Blueprint,
-			new ScriptedProgram(async (context, ct) =>
-			{
-				var response = await context.WaitForResponseAsync(
-					"capture",
-					"reviewer",
-					(_, waitCancellationToken) =>
-					{
-						attempts++;
-						return attempts == 1
-							? Task.FromException<string>(new ScenarioStepTimeoutException())
-							: responseReady.Task.WaitAsync(waitCancellationToken);
-					},
-					ct,
-					async recoveryToken =>
-					{
-						try
-						{
-							await context.SendAsync(
-								"send",
-								"reviewer",
-								"read task file",
-								recoveryToken);
-						}
-						finally
-						{
-							recoveryFinished.TrySetResult();
-						}
-					});
-				response.ShouldBe("file response");
-				return true;
-			}),
-			"project",
-			Bindings,
-			"target",
-			1);
-
-		await recoverySendStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
-		handle.RequestManualPause().ShouldBe(ScenarioPauseRequestStatus.Escalated);
-		releaseRecoverySend.SetResult();
-		await recoveryFinished.Task.WaitAsync(TimeSpan.FromSeconds(2));
-
-		handle.State.ShouldBe(ScenarioRunState.Paused);
-		handle.UnlockAllSessionsWhilePaused.ShouldBeTrue();
-		handle.Completion.IsCompleted.ShouldBeFalse();
-
-		responseReady.SetResult("file response");
-		await handle.Completion.WaitAsync(TimeSpan.FromSeconds(2));
-
-		handle.State.ShouldBe(ScenarioRunState.Completed);
-	}
-
-	[Test]
-	public async Task Manual_pause_suppresses_watchdog_delivery_recovery_until_response_arrives()
+	public async Task Manual_pause_and_watchdog_never_resend_and_the_response_completes()
 	{
 		FakeGateway gateway = new();
 		TaskCompletionSource firstWaitStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -732,12 +642,7 @@ public sealed class ScenarioRunServiceTests : IDisposable
 						replacementWaitStarted.TrySetResult();
 						return await responseReady.Task.WaitAsync(waitCancellationToken);
 					},
-					ct,
-					recoveryToken => context.SendAsync(
-						"send",
-						"reviewer",
-						"read task file",
-						recoveryToken));
+					ct);
 				response.ShouldBe("file response");
 				return true;
 			}),
@@ -836,7 +741,7 @@ public sealed class ScenarioRunServiceTests : IDisposable
 			}
 		};
 		gateway.DeliveryResults.Enqueue(new(
-			PromptDeliveryOutcome.Written,
+			PromptDeliveryOutcome.Unconfirmed,
 			string.Empty,
 			WriteAttempted: true,
 			SubmitAttempted: true));
@@ -881,12 +786,12 @@ public sealed class ScenarioRunServiceTests : IDisposable
 		await handle.Completion.WaitAsync(TimeSpan.FromSeconds(2));
 
 		pauseTransitions.ShouldBe(1);
-		gateway.Sent.Count.ShouldBe(2);
+		gateway.Sent.Count.ShouldBe(1);
 		handle.State.ShouldBe(ScenarioRunState.Completed);
 	}
 
 	[Test]
-	public async Task ReviewLoop_watchdog_keeps_observing_response_and_clears_pause_without_resume()
+	public async Task ReviewLoop_watchdog_pauses_without_resending_and_a_late_response_resumes()
 	{
 		FakeGateway gateway = new();
 		ScenarioRunService service = new(
@@ -943,7 +848,7 @@ public sealed class ScenarioRunServiceTests : IDisposable
 
 		handle.State.ShouldBe(ScenarioRunState.Completed);
 		handle.FinalResult.ShouldBe("review accepted\nDONE");
-		gateway.Sent.Count(sent => sent.SessionId == "reviewer-session").ShouldBe(2);
+		gateway.Sent.Count(sent => sent.SessionId == "reviewer-session").ShouldBe(1);
 		gateway.Sent.Count(sent => sent.SessionId == "author-session"
 			&& sent.Prompt.Contains("approved", StringComparison.Ordinal)).ShouldBe(1);
 		Directory.Exists(runDirectory).ShouldBeFalse();
@@ -957,7 +862,7 @@ public sealed class ScenarioRunServiceTests : IDisposable
 		FakeGateway gateway = new()
 		{
 			DeliveryResult = new(
-				PromptDeliveryOutcome.Written,
+				PromptDeliveryOutcome.Unconfirmed,
 				WriteAttempted: true,
 				SubmitAttempted: true),
 			BeforeDeliveryResultAsync = async cancellationToken =>
@@ -1023,175 +928,6 @@ public sealed class ScenarioRunServiceTests : IDisposable
 		handle.State.ShouldBe(ScenarioRunState.Completed);
 		handle.ExpectedResponse.ShouldBeNull();
 		gateway.Sent.Count(sent => sent.SessionId == "reviewer-session").ShouldBe(1);
-	}
-
-	[Test]
-	public async Task ReviewLoop_watchdog_retries_delivery_while_response_observation_stays_active()
-	{
-		TaskCompletionSource<(string SessionId, string Prompt)> secondSendStarted =
-			new(TaskCreationOptions.RunContinuationsAsynchronously);
-		FakeGateway gateway = new() { SecondSendStarted = secondSendStarted };
-		gateway.DeliveryResults.Enqueue(new(
-			PromptDeliveryOutcome.Confirmed,
-			WriteAttempted: true,
-			SubmitAttempted: true));
-		gateway.DeliveryResults.Enqueue(new(
-			PromptDeliveryOutcome.Confirmed,
-			WriteAttempted: true,
-			SubmitAttempted: true));
-		ScenarioRunService service = new(
-			gateway,
-			stepWatchdogTimeout: TimeSpan.FromMilliseconds(50));
-		ScenarioDefinition definition = new(
-			"review-loop",
-			ScenarioKind.ReviewLoop,
-			"Review loop",
-			1,
-			"DONE",
-			"target",
-			"Review {target}",
-			"Fix {reviewerOutput}",
-			"Recheck {authorOutput}",
-			"Fix {reviewerOutput}",
-			[new("strict", "Strict", "Review strictly")],
-			"strict");
-		ReviewLoopScenarioProgram program = new(
-			definition,
-			"Review strictly",
-			_directory,
-			filePollInterval: TimeSpan.FromMilliseconds(10));
-		var handle = service.Start(
-			ReviewLoopScenarioProgram.Blueprint,
-			program,
-			"project",
-			new Dictionary<string, string>
-			{
-				[ReviewLoopScenarioProgram.AuthorRole] = "author-session",
-				[ReviewLoopScenarioProgram.ReviewerRole] = "reviewer-session"
-			},
-			"target",
-			maxIterations: 1);
-
-		await secondSendStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
-		var firstPrompt = gateway.Sent.First(sent => sent.SessionId == "reviewer-session").Prompt;
-		var task = await File.ReadAllTextAsync(ExtractTaskPath(firstPrompt), CancellationToken.None);
-		var responsePath = ExtractProtocolValue(task, "Response file");
-		var completionFooter = ExtractProtocolValue(task, "Completion footer");
-		await File.WriteAllTextAsync(
-			responsePath,
-			$"review accepted\nDONE\n{completionFooter}",
-			CancellationToken.None);
-		await handle.Completion.WaitAsync(TimeSpan.FromSeconds(5));
-
-		handle.State.ShouldBe(ScenarioRunState.Completed);
-		gateway.Sent.Count(sent => sent.SessionId == "reviewer-session").ShouldBe(2);
-	}
-
-	[Test]
-	public async Task ReviewLoop_watchdog_never_overlaps_recovery_with_initial_delivery()
-	{
-		TaskCompletionSource firstDeliveryStarted =
-			new(TaskCreationOptions.RunContinuationsAsynchronously);
-		TaskCompletionSource releaseFirstDelivery =
-			new(TaskCreationOptions.RunContinuationsAsynchronously);
-		TaskCompletionSource<(string SessionId, string Prompt)> secondSendStarted =
-			new(TaskCreationOptions.RunContinuationsAsynchronously);
-		var deliverySync = new object();
-		var activeDeliveries = 0;
-		var maximumConcurrentDeliveries = 0;
-		var deliveryCalls = 0;
-		FakeGateway gateway = new()
-		{
-			SecondSendStarted = secondSendStarted,
-			BeforeDeliveryResultAsync = async cancellationToken =>
-			{
-				var active = Interlocked.Increment(ref activeDeliveries);
-				lock (deliverySync)
-				{
-					maximumConcurrentDeliveries = Math.Max(maximumConcurrentDeliveries, active);
-				}
-
-				try
-				{
-					if (Interlocked.Increment(ref deliveryCalls) == 1)
-					{
-						firstDeliveryStarted.TrySetResult();
-						await releaseFirstDelivery.Task.WaitAsync(cancellationToken);
-					}
-				}
-				finally
-				{
-					Interlocked.Decrement(ref activeDeliveries);
-				}
-			}
-		};
-		gateway.DeliveryResults.Enqueue(new(
-			PromptDeliveryOutcome.Confirmed,
-			WriteAttempted: true,
-			SubmitAttempted: true));
-		gateway.DeliveryResults.Enqueue(new(
-			PromptDeliveryOutcome.Confirmed,
-			WriteAttempted: true,
-			SubmitAttempted: true));
-		ScenarioRunService service = new(
-			gateway,
-			stepWatchdogTimeout: TimeSpan.FromMilliseconds(50));
-		ScenarioDefinition definition = new(
-			"review-loop",
-			ScenarioKind.ReviewLoop,
-			"Review loop",
-			1,
-			"DONE",
-			"target",
-			"Review {target}",
-			"Fix {reviewerOutput}",
-			"Recheck {authorOutput}",
-			"Fix {reviewerOutput}",
-			[new("strict", "Strict", "Review strictly")],
-			"strict");
-		ReviewLoopScenarioProgram program = new(
-			definition,
-			"Review strictly",
-			_directory,
-			filePollInterval: TimeSpan.FromMilliseconds(10));
-		var handle = service.Start(
-			ReviewLoopScenarioProgram.Blueprint,
-			program,
-			"project",
-			new Dictionary<string, string>
-			{
-				[ReviewLoopScenarioProgram.AuthorRole] = "author-session",
-				[ReviewLoopScenarioProgram.ReviewerRole] = "reviewer-session"
-			},
-			"target",
-			maxIterations: 1);
-		TaskCompletionSource watchdogAttention =
-			new(TaskCreationOptions.RunContinuationsAsynchronously);
-		handle.StateChanged += (_, _) =>
-		{
-			if (handle.State == ScenarioRunState.Paused)
-			{
-				watchdogAttention.TrySetResult();
-			}
-		};
-
-		await firstDeliveryStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
-		await watchdogAttention.Task.WaitAsync(TimeSpan.FromSeconds(2));
-		releaseFirstDelivery.TrySetResult();
-		await secondSendStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
-
-		var firstPrompt = gateway.Sent.First(sent => sent.SessionId == "reviewer-session").Prompt;
-		var task = await File.ReadAllTextAsync(ExtractTaskPath(firstPrompt), CancellationToken.None);
-		var responsePath = ExtractProtocolValue(task, "Response file");
-		var completionFooter = ExtractProtocolValue(task, "Completion footer");
-		await File.WriteAllTextAsync(
-			responsePath,
-			$"review accepted\nDONE\n{completionFooter}",
-			CancellationToken.None);
-		await handle.Completion.WaitAsync(TimeSpan.FromSeconds(5));
-
-		maximumConcurrentDeliveries.ShouldBe(1);
-		handle.State.ShouldBe(ScenarioRunState.Completed);
 	}
 
 	[Test]
@@ -1589,7 +1325,6 @@ public sealed class ScenarioRunServiceTests : IDisposable
 		public async Task<PromptDeliveryResult> SendPromptAsync(
 			string sessionId,
 			string prompt,
-			bool confirmDelivery,
 			CancellationToken cancellationToken)
 		{
 			cancellationToken.ThrowIfCancellationRequested();
@@ -1616,7 +1351,7 @@ public sealed class ScenarioRunServiceTests : IDisposable
 			}
 
 			return _rejectedSessions.Contains(sessionId)
-				? new PromptDeliveryResult(PromptDeliveryOutcome.BlockedByPendingInput)
+				? new PromptDeliveryResult(PromptDeliveryOutcome.RefusedQuestion, "pending")
 				: DeliveryResults.TryDequeue(out var queued) ? queued : DeliveryResult;
 		}
 

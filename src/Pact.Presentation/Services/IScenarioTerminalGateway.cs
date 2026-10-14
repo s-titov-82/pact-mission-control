@@ -6,24 +6,20 @@ namespace Pact.Presentation.Services;
 public interface IScenarioTerminalGateway
 {
 	/// <summary>
-	/// Submits one short, single-line scenario trigger to a live session.
+	/// Submits one short, single-line scenario trigger to a live session through the one prompt
+	/// sender, as the run that owns the session: only a pending question refuses it, and it is
+	/// never pasted twice.
 	/// </summary>
 	/// <param name="sessionId">Live session receiving the text.</param>
 	/// <param name="prompt">Single-line text to paste and submit.</param>
-	/// <param name="confirmDelivery">
-	/// Whether to observe the agent for a new busy cycle and recover a dropped submit or paste.
-	/// A step trigger must be confirmed; the best-effort terminal-state notice must not be, since
-	/// it expects no response and may not be retried.
-	/// </param>
 	/// <param name="cancellationToken">Cancels the delivery.</param>
 	/// <returns>
-	/// A structured result distinguishing confirmed activity, an unexplained write, a pending
-	/// question, and unsent composer text.
+	/// How the delivery ended: confirmed, submitted without a composer model, unconfirmed, a
+	/// paste that never showed, a pending question, or a session that is not running.
 	/// </returns>
 	Task<PromptDeliveryResult> SendPromptAsync(
 		string sessionId,
 		string prompt,
-		bool confirmDelivery,
 		CancellationToken cancellationToken);
 
 	/// <summary>Sends the agent-specific escape input used to abort active work.</summary>

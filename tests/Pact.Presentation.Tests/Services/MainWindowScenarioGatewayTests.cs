@@ -8,16 +8,13 @@ namespace Pact.Presentation.Tests.Services;
 public sealed class MainWindowScenarioGatewayTests
 {
 	[Test]
-	[TestCase(true)]
-	[TestCase(false)]
-	public async Task SendPromptAsync_delegates_exact_trigger_confirmation_and_cancellation_token(
-		bool confirmDelivery)
+	public async Task SendPromptAsync_delegates_exact_trigger_and_cancellation_token()
 	{
-		(string SessionId, string Prompt, bool ConfirmDelivery, CancellationToken CancellationToken)? sent = null;
+		(string SessionId, string Prompt, CancellationToken CancellationToken)? sent = null;
 		var gateway = CreateGateway(
-			send: (sessionId, prompt, confirm, cancellationToken) =>
+			send: (sessionId, prompt, cancellationToken) =>
 			{
-				sent = (sessionId, prompt, confirm, cancellationToken);
+				sent = (sessionId, prompt, cancellationToken);
 				return Task.FromResult(new PromptDeliveryResult(
 					PromptDeliveryOutcome.Confirmed,
 					string.Empty,
@@ -29,10 +26,9 @@ public sealed class MainWindowScenarioGatewayTests
 		var result = await gateway.SendPromptAsync(
 			"session-1",
 			"read task file",
-			confirmDelivery,
 			cancellation.Token);
 
-		sent.ShouldBe(("session-1", "read task file", confirmDelivery, cancellation.Token));
+		sent.ShouldBe(("session-1", "read task file", cancellation.Token));
 		result.IsConfirmed.ShouldBeTrue();
 	}
 
@@ -71,11 +67,11 @@ public sealed class MainWindowScenarioGatewayTests
 	}
 
 	private static MainWindowScenarioGateway CreateGateway(
-		Func<string, string, bool, CancellationToken, Task<PromptDeliveryResult>>? send = null,
+		Func<string, string, CancellationToken, Task<PromptDeliveryResult>>? send = null,
 		Func<string, SessionViewModel?>? findSession = null,
 		Func<string, Task>? sendEscape = null,
 		Func<string, bool>? active = null) => new MainWindowScenarioGateway(
-			send ?? ((_, _, _, _) => Task.FromResult(new PromptDeliveryResult(
+			send ?? ((_, _, _) => Task.FromResult(new PromptDeliveryResult(
 				PromptDeliveryOutcome.Confirmed,
 				string.Empty,
 				WriteAttempted: true,

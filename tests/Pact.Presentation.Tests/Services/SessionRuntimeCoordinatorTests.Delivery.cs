@@ -361,6 +361,31 @@ public sealed partial class SessionRuntimeCoordinatorTests
 	}
 
 	[Test]
+	public async Task A_controller_replaced_before_enter_gets_no_enter()
+	{
+		RecordingBackend firstBackend = new();
+		RecordingBackend replacementBackend = new();
+		await using TerminalController first = new(firstBackend);
+		await using TerminalController replacement = new(replacementBackend);
+		await first.StartAsync("fake", Environment.CurrentDirectory);
+		await replacement.StartAsync("fake", Environment.CurrentDirectory);
+		var coordinator = CreateFastCoordinator();
+		coordinator.SessionFacts = new FakeFacts();
+		var runtime = coordinator.GetOrCreateRuntime("session-1");
+		runtime.AttachController(first);
+		firstBackend.InputWritten = input =>
+		{
+			EchoBracketedPaste(runtime, input);
+			runtime.AttachController(replacement);
+		};
+
+		await Should.ThrowAsync<InvalidOperationException>(() => DeliverAsync(coordinator));
+
+		firstBackend.InputWrites.ShouldBe([Pasted]);
+		replacementBackend.InputWrites.ShouldBeEmpty();
+	}
+
+	[Test]
 	public async Task Every_delivery_writes_one_trace_line()
 	{
 		var (coordinator, backend, host, _, controller) = await CreateDeliverySessionAsync();

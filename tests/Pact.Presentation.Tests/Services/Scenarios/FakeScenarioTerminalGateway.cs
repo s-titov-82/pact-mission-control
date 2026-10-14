@@ -21,7 +21,6 @@ internal sealed class FakeScenarioTerminalGateway : IScenarioTerminalGateway
 	public async Task<PromptDeliveryResult> SendPromptAsync(
 		string sessionId,
 		string prompt,
-		bool confirmDelivery,
 		CancellationToken cancellationToken)
 	{
 		cancellationToken.ThrowIfCancellationRequested();

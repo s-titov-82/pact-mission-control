@@ -36,7 +36,7 @@ internal sealed class AvaloniaScenarioCoordinator
 		MainWindowViewModel viewModel,
 		AppPaths appPaths,
 		ScenarioDefinitionStore definitionStore,
-		Func<string, string, bool, CancellationToken, Task<PromptDeliveryResult>> sendPromptAndSubmitAsync,
+		Func<string, string, CancellationToken, Task<PromptDeliveryResult>> sendPromptAndSubmitAsync,
 		Func<string, SessionViewModel?> findSession,
 		Func<string, Task> sendEscapeAsync,
 		Func<string, bool> isSessionActive,

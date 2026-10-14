@@ -2908,23 +2908,22 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 	private Task<PromptDeliveryResult> SendScenarioPromptAndSubmitAsync(
 		string sessionId,
 		string prompt,
-		bool confirmDelivery,
 		CancellationToken cancellationToken)
 	{
 		_uiTaskDispatcher.Post(() =>
 		{
-			if (ViewModel.FindSession(sessionId) is null
-				|| !_runtimeCoordinator.TryGetActiveController(sessionId, out _, out _))
+			if (ViewModel.FindSession(sessionId) is null)
 			{
-				throw new InvalidOperationException("Target scenario session is not running.");
+				throw new InvalidOperationException("Target scenario session no longer exists.");
 			}
 		});
 
-		return _runtimeCoordinator.WriteScenarioPromptAndSubmitAsync(
+		return _runtimeCoordinator.DeliverPromptAsync(
 			sessionId,
 			prompt,
-			confirmDelivery,
-			() => ReadScreenState(sessionId),
+			submit: true,
+			PromptSender.ScenarioOwner,
+			startIfNotRunning: false,
 			cancellationToken);
 	}
 

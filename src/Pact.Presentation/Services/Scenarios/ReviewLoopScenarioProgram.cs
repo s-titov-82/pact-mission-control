@@ -250,8 +250,6 @@ public sealed class ReviewLoopScenarioProgram : IScenarioProgram, IScenarioRunAr
 				CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 			using var responseCancellation =
 				CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-			TaskCompletionSource<Task> initialDeliveryReady =
-				new(TaskCreationOptions.RunContinuationsAsynchronously);
 			var responseTask = context.WaitForResponseAsync(
 				captureStepId,
 				role,
@@ -273,24 +271,12 @@ public sealed class ReviewLoopScenarioProgram : IScenarioProgram, IScenarioRunAr
 								$"response file exists but is incomplete: {step.ResponsePath}");
 						},
 						waitCancellationToken),
-				responseCancellation.Token,
-				async recoveryToken =>
-				{
-					var initialDelivery = await initialDeliveryReady.Task
-						.WaitAsync(recoveryToken).ConfigureAwait(false);
-					await initialDelivery.WaitAsync(recoveryToken).ConfigureAwait(false);
-					await context.SendAsync(
-						sendStepId,
-						role,
-						trigger,
-						recoveryToken).ConfigureAwait(false);
-				});
+				responseCancellation.Token);
 			var deliveryTask = context.SendAsync(
 				sendStepId,
 				role,
 				trigger,
 				deliveryCancellation.Token);
-			initialDeliveryReady.TrySetResult(deliveryTask);
 
 			string response;
 			try

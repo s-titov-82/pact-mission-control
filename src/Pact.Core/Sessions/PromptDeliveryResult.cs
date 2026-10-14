@@ -3,20 +3,11 @@ namespace Pact.Core.Sessions;
 /// <summary>How an attempt to deliver a prompt into a terminal ended.</summary>
 public enum PromptDeliveryOutcome
 {
-	/// <summary>A new activity cycle began after the submit: the agent took it.</summary>
+	/// <summary>
+	/// A fresh screen capture after Enter showed an empty composer: the agent took the prompt. For
+	/// a paste without Enter, the paste showed.
+	/// </summary>
 	Confirmed,
-
-	/// <summary>Input was written, but no activity followed and the screen never explained why.</summary>
-	Written,
-
-	/// <summary>The agent is already working, so nothing was written.</summary>
-	BlockedByBusy,
-
-	/// <summary>A question stopped the send; see <see cref="PromptDeliveryResult.WriteAttempted"/>.</summary>
-	BlockedByInputRequest,
-
-	/// <summary>The composer already held unsent text, so nothing was written.</summary>
-	BlockedByPendingInput,
 
 	/// <summary>The session has no composer model; the paste showed and Enter was written.</summary>
 	Submitted,
@@ -63,7 +54,9 @@ public readonly record struct PromptDeliveryResult(
 	/// <summary>Whether the prompt was submitted with nothing refusing it.</summary>
 	public bool IsSent =>
 		SubmitAttempted
-		&& Outcome is PromptDeliveryOutcome.Confirmed or PromptDeliveryOutcome.Written;
+		&& Outcome is PromptDeliveryOutcome.Confirmed
+			or PromptDeliveryOutcome.Submitted
+			or PromptDeliveryOutcome.Unconfirmed;
 
 	/// <summary>Whether the agent was observed to take the prompt.</summary>
 	public bool IsConfirmed => Outcome == PromptDeliveryOutcome.Confirmed;

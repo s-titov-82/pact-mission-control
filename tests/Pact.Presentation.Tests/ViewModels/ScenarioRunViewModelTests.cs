@@ -278,7 +278,6 @@ public sealed class ScenarioRunViewModelTests : IDisposable
 		public Task<PromptDeliveryResult> SendPromptAsync(
 			string sessionId,
 			string prompt,
-			bool confirmDelivery,
 			CancellationToken cancellationToken) =>
 			Task.FromResult(new PromptDeliveryResult(
 				PromptDeliveryOutcome.Confirmed,

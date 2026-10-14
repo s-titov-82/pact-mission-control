@@ -222,7 +222,6 @@ public sealed class WorkspaceViewModelTests
 		public Task<PromptDeliveryResult> SendPromptAsync(
 			string sessionId,
 			string prompt,
-			bool confirmDelivery,
 			CancellationToken cancellationToken) =>
 			Task.FromResult(new PromptDeliveryResult(
 				PromptDeliveryOutcome.Confirmed,

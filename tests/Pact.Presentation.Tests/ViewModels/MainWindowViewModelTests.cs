@@ -2545,7 +2545,6 @@ public sealed class MainWindowViewModelTests
 		public Task<PromptDeliveryResult> SendPromptAsync(
 			string sessionId,
 			string prompt,
-			bool confirmDelivery,
 			CancellationToken cancellationToken) =>
 			Task.FromResult(new PromptDeliveryResult(
 				PromptDeliveryOutcome.Confirmed,
@@ -2652,7 +2651,6 @@ public sealed class MainWindowViewModelTests
 		public Task<PromptDeliveryResult> SendPromptAsync(
 			string sessionId,
 			string prompt,
-			bool confirmDelivery,
 			CancellationToken cancellationToken) =>
 			Task.FromResult(new PromptDeliveryResult(
 				PromptDeliveryOutcome.Confirmed,

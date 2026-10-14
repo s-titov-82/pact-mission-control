@@ -14,7 +14,7 @@ public sealed class ScenarioRunService
 	public static readonly TimeSpan DefaultStepWatchdogTimeout = TimeSpan.FromMinutes(15);
 
 	/// <summary>Default deadline for the best-effort terminal-state notice.</summary>
-	public static readonly TimeSpan DefaultCompletionNoticeTimeout = TimeSpan.FromSeconds(5);
+	public static readonly TimeSpan DefaultCompletionNoticeTimeout = TimeSpan.FromSeconds(30);
 
 	private readonly Lock _sync = new();
 	private readonly IScenarioTerminalGateway _gateway;
@@ -360,7 +360,6 @@ public sealed class ScenarioIterationContext
 				delivery = await _gateway.SendPromptAsync(
 					sessionId,
 					prompt,
-					confirmDelivery: true,
 					cancellationToken).ConfigureAwait(false);
 			}
 			catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -391,36 +390,43 @@ public sealed class ScenarioIterationContext
 			}
 
 			await _handle.PauseIfRequestedAsync(stepId, cancellationToken).ConfigureAwait(false);
-			if (delivery.IsConfirmed)
+			if (delivery.Outcome is PromptDeliveryOutcome.Confirmed or PromptDeliveryOutcome.Submitted)
 			{
 				_handle.ResumeAfterDelivery();
 				return;
 			}
 
-			if (delivery.Outcome == PromptDeliveryOutcome.BlockedByBusy)
-			{
-				await Task.Delay(DeliveryRetryDelay, cancellationToken).ConfigureAwait(false);
-				continue;
-			}
-
+			// Only a delivery that wrote nothing is retried. Once text reached the terminal it is
+			// never sent again: the response file decides whether the step finished.
+			var nothingWritten = delivery.Outcome == PromptDeliveryOutcome.NotRunning
+				|| (delivery.Outcome == PromptDeliveryOutcome.RefusedQuestion && !delivery.WriteAttempted);
 			var reason = delivery.Outcome switch
 			{
-				PromptDeliveryOutcome.BlockedByInputRequest when delivery.WriteAttempted =>
+				PromptDeliveryOutcome.RefusedQuestion when !delivery.WriteAttempted =>
 					$"the agent is waiting for an answer in its terminal ({delivery.StatusLine}) "
-						+ "and the trigger was already typed, so its input may still hold the task "
-						+ "path - answer the question or clear the input; Pact keeps watching the "
-						+ "response file and will retry automatically when safe",
-				PromptDeliveryOutcome.BlockedByInputRequest =>
-					$"the agent is waiting for an answer in its terminal ({delivery.StatusLine}) "
-						+ "- nothing was sent; Pact keeps watching the response file and will retry "
-						+ "automatically after the question is answered",
-				PromptDeliveryOutcome.BlockedByPendingInput =>
-					"the terminal's input field already held unsent text - nothing was sent; "
-						+ "Pact keeps watching the response file and will retry automatically after it is cleared",
+						+ "- nothing was sent; Pact keeps watching the response file and sends the "
+						+ "trigger once the question is answered",
+				PromptDeliveryOutcome.NotRunning =>
+					$"the session is not running ({delivery.StatusLine}) - nothing was sent; Pact "
+						+ "keeps watching the response file and sends the trigger once it runs again",
+				PromptDeliveryOutcome.RefusedQuestion =>
+					$"a question opened after the trigger was typed ({delivery.StatusLine}) - it may "
+						+ "still be in the input; answer the question and submit it yourself. Pact never "
+						+ "resends it and keeps watching the response file",
+				PromptDeliveryOutcome.PasteNotShown =>
+					"the trigger never showed in the terminal and was not submitted - type the task "
+						+ "path yourself; Pact never resends it and keeps watching the response file",
 				_ =>
-					"the trigger was submitted but the agent never started working - Pact keeps "
-						+ "watching the response file and will retry the same task-path trigger automatically"
+					"the trigger was submitted but the agent was not seen taking it - check the "
+						+ "terminal; Pact never resends it and keeps watching the response file"
 			};
+			if (!nothingWritten)
+			{
+				await _handle.PauseForUndeliveredAsync(stepId, sessionId, reason, cancellationToken)
+					.ConfigureAwait(false);
+				return;
+			}
+
 			await _handle.PauseForBlockedDeliveryAsync(
 				stepId,
 				sessionId,
@@ -430,134 +436,72 @@ public sealed class ScenarioIterationContext
 		}
 	}
 
-	/// <summary>Waits for one durable response while keeping observation active through pause and recovery.</summary>
+	/// <summary>
+	/// Waits for one durable response while keeping observation active through pause and the
+	/// step watchdog. When the watchdog elapses the run pauses for attention and keeps waiting;
+	/// it never resends the trigger. A footer-complete response resumes the run.
+	/// </summary>
 	/// <param name="stepId">Stable identifier of the scenario step awaiting the response.</param>
 	/// <param name="role">Scenario role whose terminal and response file are being observed.</param>
 	/// <param name="waitForResponseAsync">Creates one bounded wait for the expected response file.</param>
-	/// <param name="cancellationToken">Cancels the run wait and any active recovery.</param>
-	/// <param name="recoverAfterTimeoutAsync">
-	/// Starts automatic delivery recovery after watchdog attention without suspending response observation.
-	/// </param>
+	/// <param name="cancellationToken">Cancels the run wait.</param>
 	public async Task<string> WaitForResponseAsync(
 		string stepId,
 		string role,
 		Func<TimeSpan, CancellationToken, Task<string>> waitForResponseAsync,
-		CancellationToken cancellationToken,
-		Func<CancellationToken, Task>? recoverAfterTimeoutAsync = null)
+		CancellationToken cancellationToken)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(stepId);
 		ArgumentException.ThrowIfNullOrWhiteSpace(role);
 		ArgumentNullException.ThrowIfNull(waitForResponseAsync);
 		var sessionId = GetSessionId(role);
 		_handle.SetCurrentStepId(stepId);
-		Task? recoveryTask = null;
-		CancellationTokenSource? recoveryCancellation = null;
 
-		try
+		while (true)
 		{
-			while (true)
-			{
-				cancellationToken.ThrowIfCancellationRequested();
-				var interruptedForPause = false;
-				string? response = null;
-				using var waitCancellation =
-					CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-				_handle.RegisterPauseInterruption(waitCancellation);
-				try
-				{
-					response = await waitForResponseAsync(
-						_stepWatchdogTimeout,
-						waitCancellation.Token).ConfigureAwait(false);
-				}
-				catch (OperationCanceledException) when (
-					!cancellationToken.IsCancellationRequested
-					&& _handle.IsPauseRequested)
-				{
-					interruptedForPause = true;
-				}
-				catch (ScenarioStepTimeoutException)
-				{
-					await _handle.PauseForTimeoutAsync(
-						stepId,
-						sessionId,
-						cancellationToken).ConfigureAwait(false);
-					if (recoverAfterTimeoutAsync is not null
-						&& (recoveryTask is null || recoveryTask.IsCompleted))
-					{
-						await ObserveCompletedRecoveryAsync().ConfigureAwait(false);
-						recoveryCancellation?.Dispose();
-						recoveryCancellation =
-							CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-						recoveryTask = recoverAfterTimeoutAsync(recoveryCancellation.Token);
-					}
-
-					continue;
-				}
-				finally
-				{
-					_handle.UnregisterPauseInterruption(waitCancellation);
-				}
-
-				if (interruptedForPause)
-				{
-					await _handle.PauseIfRequestedAsync(
-						stepId,
-						cancellationToken,
-						waitForResume: false).ConfigureAwait(false);
-					continue;
-				}
-
-				await _handle.PauseIfRequestedAsync(
-					stepId,
-					cancellationToken,
-					waitForResume: false).ConfigureAwait(false);
-				await StopRecoveryAsync().ConfigureAwait(false);
-				_handle.ResumeAfterResponse();
-				_handle.ThrowIfSoftStopRequested();
-				return response!;
-			}
-		}
-		finally
-		{
-			await StopRecoveryAsync().ConfigureAwait(false);
-		}
-
-		async Task ObserveCompletedRecoveryAsync()
-		{
-			if (recoveryTask is null)
-			{
-				return;
-			}
-
-			await recoveryTask.ConfigureAwait(false);
-			recoveryTask = null;
-		}
-
-		async Task StopRecoveryAsync()
-		{
-			if (recoveryTask is null)
-			{
-				recoveryCancellation?.Dispose();
-				recoveryCancellation = null;
-				return;
-			}
-
-			recoveryCancellation?.Cancel();
+			cancellationToken.ThrowIfCancellationRequested();
+			var interruptedForPause = false;
+			string? response = null;
+			using var waitCancellation =
+				CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+			_handle.RegisterPauseInterruption(waitCancellation);
 			try
 			{
-				await recoveryTask.ConfigureAwait(false);
+				response = await waitForResponseAsync(
+					_stepWatchdogTimeout,
+					waitCancellation.Token).ConfigureAwait(false);
 			}
 			catch (OperationCanceledException) when (
-				recoveryCancellation?.IsCancellationRequested == true)
+				!cancellationToken.IsCancellationRequested
+				&& _handle.IsPauseRequested)
 			{
-				// A completed response supersedes any delivery recovery still in progress.
+				interruptedForPause = true;
+			}
+			catch (ScenarioStepTimeoutException)
+			{
+				await _handle.PauseForTimeoutAsync(
+					stepId,
+					sessionId,
+					cancellationToken).ConfigureAwait(false);
+				continue;
 			}
 			finally
 			{
-				recoveryTask = null;
-				recoveryCancellation?.Dispose();
-				recoveryCancellation = null;
+				_handle.UnregisterPauseInterruption(waitCancellation);
 			}
+
+			await _handle.PauseIfRequestedAsync(
+				stepId,
+				cancellationToken,
+				waitForResume: false).ConfigureAwait(false);
+			if (interruptedForPause)
+			{
+				continue;
+			}
+
+			_handle.ResumeAfterResponse();
+			_handle.ThrowIfSoftStopRequested();
+			return response!;
 		}
 	}
 
@@ -1201,6 +1145,15 @@ public sealed class ScenarioRunHandle : IDisposable
 			waitForResume: false,
 			cancellationToken).ConfigureAwait(false);
 
+	// Pauses for attention after a delivery that may have reached the terminal; the step goes on
+	// waiting for its response file, which resumes the run.
+	internal Task PauseForUndeliveredAsync(
+		string stepId,
+		string sessionId,
+		string reason,
+		CancellationToken cancellationToken) =>
+		PauseForAttentionAsync(stepId, sessionId, reason, waitForResume: false, cancellationToken);
+
 	internal async Task PauseForBlockedDeliveryAsync(
 		string stepId,
 		string sessionId,
@@ -1526,7 +1479,7 @@ public sealed class ScenarioRunHandle : IDisposable
 		{
 			using CancellationTokenSource timeout = new(_completionNoticeTimeout);
 			var delivered = await _gateway
-				.SendPromptAsync(sessionId, message, confirmDelivery: false, timeout.Token)
+				.SendPromptAsync(sessionId, message, timeout.Token)
 				.WaitAsync(timeout.Token)
 				.ConfigureAwait(false);
 			(outcome, level) = delivered.IsSent

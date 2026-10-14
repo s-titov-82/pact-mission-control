@@ -17,23 +17,6 @@ namespace Pact.Presentation.Tests.Services;
 	Justification = "Runtime and backend ownership is transferred to SessionRuntimeCoordinator and exercised by its stop/disposal tests.")]
 public sealed partial class SessionRuntimeCoordinatorTests
 {
-	[TestCase(false, PromptDeliveryOutcome.BlockedByPendingInput)]
-	[TestCase(true, PromptDeliveryOutcome.Written)]
-	[TestCase(null, PromptDeliveryOutcome.Written)]
-	public async Task Styled_composer_uses_existing_delivery_gate(bool? dim, PromptDeliveryOutcome expected)
-	{
-		var (coordinator, backend, controller) = await CreateAttachedSessionAsync();
-		await using var _ = controller;
-		var snapshot = TerminalScreenSnapshot.FromRows([
-			new("Worked for 1s", false, []), new("› hint", false, dim is null ? null : dim == true ? [new(2, 4)] : []),
-			new("GPT-6.1-Sol medium · main · Context 30% used", false, [])], 80, true);
-		var verdict = CodexScreenProfile.Instance.Classify(snapshot);
-		var state = Idle() with { PromptIsEmpty = verdict.PromptIsEmpty };
-		var result = await coordinator.WriteScenarioPromptAndSubmitAsync("session-1", "task-path", confirmDelivery: false, () => state, TestContext.CurrentContext.CancellationToken);
-		result.Outcome.ShouldBe(expected);
-		backend.InputWrites.Count.ShouldBe(expected == PromptDeliveryOutcome.Written ? 2 : 0);
-	}
-	private const string PastedTrigger = "\u001b[200~task-path\u001b[201~";
 	private const string PlainEnter = "\r";
 	private const string MouseTrackingOn = "\u001b[?1003;1006h";
 	private const string RightClick = "\u001b[<2;1;1M\u001b[<2;1;1m";
@@ -121,40 +104,6 @@ public sealed partial class SessionRuntimeCoordinatorTests
 
 	[Test]
 	public void RewriteInput_CodexWin32Mode_EncodesShiftEnter() => AgentKeyEncoder.RewriteTyped("\n", AgentKind.Codex, true).ShouldBe(Win32InputEncoder.ShiftEnter);
-
-	[Test]
-	public async Task A_new_busy_cycle_confirms_delivery()
-	{
-		var (coordinator, backend, controller) = await CreateAttachedSessionAsync();
-		await using var _ = controller;
-
-		var result = await coordinator.WriteScenarioPromptAndSubmitAsync(
-			"session-1",
-			"task-path",
-			confirmDelivery: true,
-			() => backend.InputWrites.Contains(PlainEnter) ? Busy(epoch: 2) : Idle(),
-			TestContext.CurrentContext.CancellationToken);
-
-		result.Outcome.ShouldBe(PromptDeliveryOutcome.Confirmed);
-		backend.InputWrites.ShouldBe([PastedTrigger, PlainEnter]);
-	}
-
-	[Test]
-	public async Task A_busy_session_refuses_delivery_without_writing()
-	{
-		var (coordinator, backend, controller) = await CreateAttachedSessionAsync(kind: AgentKind.Codex);
-		await using var _ = controller;
-
-		var result = await coordinator.WriteScenarioPromptAndSubmitAsync(
-			"session-1",
-			"task-path",
-			confirmDelivery: true,
-			static () => Busy(epoch: 1),
-			TestContext.CurrentContext.CancellationToken);
-
-		result.Outcome.ShouldBe(PromptDeliveryOutcome.BlockedByBusy);
-		backend.InputWrites.ShouldBeEmpty();
-	}
 
 	[Test]
 	public async Task A_programmatic_prompt_is_one_bulk_bracketed_paste()
@@ -246,24 +195,6 @@ public sealed partial class SessionRuntimeCoordinatorTests
 
 		clipboard.Writes.ShouldBeEmpty();
 		backend.InputWrites.ShouldBe(["\u001b[200~review this\u001b[201~"]);
-	}
-
-	[Test]
-	public async Task A_scenario_trigger_to_a_mouse_tracking_client_is_entered_after_its_paste_shows()
-	{
-		var (coordinator, backend, controller, _) =
-			await CreateClipboardPasteSessionAsync(string.Empty, clickOutput: "> task-path");
-		await using var _ = controller;
-
-		var result = await coordinator.WriteScenarioPromptAndSubmitAsync(
-			"session-1",
-			"task-path",
-			confirmDelivery: false,
-			static () => Idle(),
-			TestContext.CurrentContext.CancellationToken);
-
-		result.Outcome.ShouldBe(PromptDeliveryOutcome.Written);
-		backend.InputWrites.ShouldBe([RightClick, PlainEnter]);
 	}
 
 	// A session whose client reports the mouse in SGR encoding when mouseTracking is set, and
@@ -360,178 +291,6 @@ public sealed partial class SessionRuntimeCoordinatorTests
 	[TestCase("\b")]
 	public void RewriteInput_CodexWin32Mode_LeavesKeysWithTheirOwnMeaningAlone(string input) =>
 		AgentKeyEncoder.RewriteTyped(input, AgentKind.Codex, true).ShouldBe(input);
-
-	[Test]
-	public async Task Codex_win32_mode_uses_encoded_enter_and_confirms_delivery()
-	{
-		var (coordinator, backend, controller) = await CreateAttachedSessionAsync(win32InputMode: true, kind: AgentKind.Codex);
-		await using var _ = controller;
-
-		var result = await coordinator.WriteScenarioPromptAndSubmitAsync(
-			"session-1",
-			"task-path",
-			confirmDelivery: true,
-			() => backend.InputWrites.Count == 2 ? Busy(epoch: 2) : Idle(),
-			TestContext.CurrentContext.CancellationToken);
-
-		result.Outcome.ShouldBe(PromptDeliveryOutcome.Confirmed);
-		backend.InputWrites.ShouldBe([PastedTrigger, Win32InputEncoder.EnterKey]);
-	}
-
-	[Test]
-	public async Task A_dropped_submit_is_repaired_with_enter_alone()
-	{
-		var (coordinator, backend, controller) = await CreateAttachedSessionAsync();
-		await using var _ = controller;
-
-		var result = await coordinator.WriteScenarioPromptAndSubmitAsync(
-			"session-1",
-			"task-path",
-			confirmDelivery: true,
-			() =>
-			{
-				var enters = backend.InputWrites.Count(write => write == PlainEnter);
-				return backend.InputWrites.Count == 0 ? Idle()
-					: enters >= 2 ? Busy(epoch: 2)
-					: HoldingText();
-			},
-			TestContext.CurrentContext.CancellationToken);
-
-		result.Outcome.ShouldBe(PromptDeliveryOutcome.Confirmed);
-		backend.InputWrites.ShouldBe([PastedTrigger, PlainEnter, PlainEnter]);
-	}
-
-	[Test]
-	public async Task A_dropped_paste_is_repaired_after_the_composer_stays_empty_and_quiet()
-	{
-		var (coordinator, backend, controller) = await CreateAttachedSessionAsync();
-		await using var _ = controller;
-
-		var result = await coordinator.WriteScenarioPromptAndSubmitAsync(
-			"session-1",
-			"task-path",
-			confirmDelivery: true,
-			() => backend.InputWrites.Count(write => write == PastedTrigger) >= 2
-				? Busy(epoch: 2)
-				: Idle(),
-			TestContext.CurrentContext.CancellationToken);
-
-		result.Outcome.ShouldBe(PromptDeliveryOutcome.Confirmed);
-		backend.InputWrites.ShouldBe([PastedTrigger, PlainEnter, PastedTrigger, PlainEnter]);
-	}
-
-	[Test]
-	public async Task An_agent_that_never_reacts_ends_the_step_written()
-	{
-		var (coordinator, backend, controller) = await CreateAttachedSessionAsync();
-		await using var _ = controller;
-
-		var result = await coordinator.WriteScenarioPromptAndSubmitAsync(
-			"session-1",
-			"task-path",
-			confirmDelivery: true,
-			() => backend.InputWrites.Count == 0 ? Idle() : Busy(epoch: 1),
-			TestContext.CurrentContext.CancellationToken);
-
-		result.Outcome.ShouldBe(PromptDeliveryOutcome.Written);
-		result.SubmitAttempted.ShouldBeTrue();
-		backend.InputWrites.ShouldBe([PastedTrigger, PlainEnter]);
-	}
-
-	[Test]
-	public async Task A_question_appearing_after_the_paste_blocks_the_repair()
-	{
-		var (coordinator, backend, controller) = await CreateAttachedSessionAsync();
-		await using var _ = controller;
-
-		var result = await coordinator.WriteScenarioPromptAndSubmitAsync(
-			"session-1",
-			"task-path",
-			confirmDelivery: true,
-			() => backend.InputWrites.Count == 0
-				? Idle()
-				: Question("Approve this edit?"),
-			TestContext.CurrentContext.CancellationToken);
-
-		result.Outcome.ShouldBe(PromptDeliveryOutcome.BlockedByInputRequest);
-		result.StatusLine.ShouldBe("Approve this edit?");
-		result.WriteAttempted.ShouldBeTrue();
-		backend.InputWrites.ShouldBe([PastedTrigger, PlainEnter]);
-	}
-
-	[Test]
-	[TestCase(true)]
-	[TestCase(false)]
-	public async Task A_composer_holding_text_is_refused_without_writing(bool confirmDelivery)
-	{
-		var (coordinator, backend, controller) = await CreateAttachedSessionAsync();
-		await using var _ = controller;
-
-		var result = await coordinator.WriteScenarioPromptAndSubmitAsync(
-			"session-1",
-			"task-path",
-			confirmDelivery,
-			static () => HoldingText(),
-			TestContext.CurrentContext.CancellationToken);
-
-		result.Outcome.ShouldBe(PromptDeliveryOutcome.BlockedByPendingInput);
-		result.WriteAttempted.ShouldBeFalse();
-		backend.InputWrites.ShouldBeEmpty();
-	}
-
-	[Test]
-	[TestCase(true)]
-	[TestCase(false)]
-	public async Task A_pending_question_is_refused_without_writing(bool confirmDelivery)
-	{
-		var (coordinator, backend, controller) = await CreateAttachedSessionAsync();
-		await using var _ = controller;
-
-		var result = await coordinator.WriteScenarioPromptAndSubmitAsync(
-			"session-1",
-			"task-path",
-			confirmDelivery,
-			static () => Question(AgentScreenProfileBase.TrustPromptDescription),
-			TestContext.CurrentContext.CancellationToken);
-
-		result.Outcome.ShouldBe(PromptDeliveryOutcome.BlockedByInputRequest);
-		backend.InputWrites.ShouldBeEmpty();
-	}
-
-	[Test]
-	public async Task An_unconfirmed_send_writes_exactly_once()
-	{
-		var (coordinator, backend, controller) = await CreateAttachedSessionAsync();
-		await using var _ = controller;
-
-		var result = await coordinator.WriteScenarioPromptAndSubmitAsync(
-			"session-1",
-			"notice",
-			confirmDelivery: false,
-			static () => Idle(),
-			TestContext.CurrentContext.CancellationToken);
-
-		result.Outcome.ShouldBe(PromptDeliveryOutcome.Written);
-		result.IsSent.ShouldBeTrue();
-		backend.InputWrites.Count.ShouldBe(2);
-	}
-
-	[Test]
-	public async Task An_unreadable_state_is_written_once_without_repair()
-	{
-		var (coordinator, backend, controller) = await CreateAttachedSessionAsync();
-		await using var _ = controller;
-
-		var result = await coordinator.WriteScenarioPromptAndSubmitAsync(
-			"session-1",
-			"task-path",
-			confirmDelivery: true,
-			static () => null,
-			TestContext.CurrentContext.CancellationToken);
-
-		result.Outcome.ShouldBe(PromptDeliveryOutcome.Written);
-		backend.InputWrites.ShouldBe([PastedTrigger, PlainEnter]);
-	}
 
 	[Test]
 	public async Task Readiness_waits_for_a_done_verdict()
@@ -654,32 +413,6 @@ public sealed partial class SessionRuntimeCoordinatorTests
 		Stopwatch.GetElapsedTime(startedAt).ShouldBeLessThan(TimeSpan.FromSeconds(1));
 		result.IsReady.ShouldBeFalse();
 		backend.InputWrites.ShouldBeEmpty();
-	}
-
-	[Test]
-	public async Task WriteScenarioPromptAndSubmitAsync_ControllerReplacedDuringSettle_DoesNotSubmitToEitherController()
-	{
-		RecordingBackend firstBackend = new();
-		RecordingBackend replacementBackend = new();
-		await using TerminalController first = new(firstBackend);
-		await using TerminalController replacement = new(replacementBackend);
-		await first.StartAsync("fake", Environment.CurrentDirectory);
-		await replacement.StartAsync("fake", Environment.CurrentDirectory);
-		SessionRuntimeCoordinator coordinator = new(new RecordingHost());
-		var runtime = coordinator.GetOrCreateRuntime("session-1");
-		runtime.AttachController(first);
-		firstBackend.InputWritten = _ => runtime.AttachController(replacement);
-
-		await Should.ThrowAsync<InvalidOperationException>(() =>
-			coordinator.WriteScenarioPromptAndSubmitAsync(
-				"session-1",
-				"task-path",
-				confirmDelivery: true,
-				static () => Idle(),
-				TestContext.CurrentContext.CancellationToken));
-
-		firstBackend.InputWrites.ShouldBe(["\u001b[200~task-path\u001b[201~"]);
-		replacementBackend.InputWrites.ShouldBeEmpty();
 	}
 
 	[Test]
@@ -894,7 +627,6 @@ public sealed partial class SessionRuntimeCoordinatorTests
 		TimeSpan.Zero,
 		TimeSpan.Zero,
 		TimeSpan.FromMilliseconds(50),
-		TimeSpan.FromMilliseconds(20),
 		TimeSpan.FromMilliseconds(1),
 		TimeSpan.FromMilliseconds(200),
 		pasteLandingTimeout: TimeSpan.FromMilliseconds(200),
@@ -932,18 +664,6 @@ public sealed partial class SessionRuntimeCoordinatorTests
 			false,
 			string.Empty,
 			true,
-			epoch,
-			false,
-			TerminalScreenVerdictState.Done);
-
-	private static SessionScreenState HoldingText(long epoch = 1) =>
-		new(
-			"screen",
-			string.Empty,
-			false,
-			false,
-			string.Empty,
-			false,
 			epoch,
 			false,
 			TerminalScreenVerdictState.Done);
