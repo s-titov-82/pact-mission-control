@@ -27,6 +27,7 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 	private static readonly TimeSpan DefaultStatePollInterval = TimeSpan.FromMilliseconds(250);
 	private static readonly TimeSpan DefaultSessionReadyTimeout = TimeSpan.FromSeconds(30);
 	private static readonly TimeSpan ClientPasteLandingTimeout = TimeSpan.FromSeconds(5);
+	private static readonly TimeSpan DefaultPreEnterCaptureTimeout = TimeSpan.FromSeconds(2);
 
 	// Right button press and release at the top-left cell, SGR-encoded. A client tracking the
 	// mouse pastes the clipboard on it; only the button matters, not the cell.
@@ -39,6 +40,8 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 	private readonly TimeSpan _quietComposerPeriod;
 	private readonly TimeSpan _statePollInterval;
 	private readonly TimeSpan _sessionReadyTimeout;
+	private readonly TimeSpan _pasteLandingTimeout;
+	private readonly TimeSpan _preEnterCaptureTimeout;
 	private readonly SemaphoreSlim _activationGate = new(1, 1);
 	private readonly Lock _lifecycleGate = new();
 	private readonly Dictionary<string, SessionRuntime> _runtimes = new(StringComparer.Ordinal);
@@ -129,7 +132,9 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 		TimeSpan confirmationTimeout,
 		TimeSpan quietComposerPeriod,
 		TimeSpan statePollInterval,
-		TimeSpan? sessionReadyTimeout = null)
+		TimeSpan? sessionReadyTimeout = null,
+		TimeSpan? pasteLandingTimeout = null,
+		TimeSpan? preEnterCaptureTimeout = null)
 	{
 		ArgumentNullException.ThrowIfNull(terminalHost);
 		ArgumentNullException.ThrowIfNull(controllerFactory);
@@ -155,6 +160,8 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 		_quietComposerPeriod = quietComposerPeriod;
 		_statePollInterval = statePollInterval;
 		_sessionReadyTimeout = resolvedReadyTimeout;
+		_pasteLandingTimeout = pasteLandingTimeout ?? ClientPasteLandingTimeout;
+		_preEnterCaptureTimeout = preEnterCaptureTimeout ?? DefaultPreEnterCaptureTimeout;
 	}
 
 	/// <summary>
@@ -938,6 +945,397 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 		}
 	}
 
+	/// <summary>Session facts that prompt delivery reads; set once by the shell.</summary>
+	public ISessionFacts? SessionFacts { get; set; }
+
+	/// <summary>Receives one metadata-only line per prompt delivery.</summary>
+	public Action<string>? DeliveryTrace { get; set; }
+
+	/// <summary>
+	/// Delivers <paramref name="text"/> to a session's visible TUI: admission, paste, a check
+	/// that the paste showed, Enter, and confirmation from a fresh screen capture. The whole
+	/// delivery holds the session against other programmatic senders. Text is never pasted
+	/// twice; Enter is repeated once only when a fresh capture shows the text still waiting.
+	/// </summary>
+	/// <param name="sessionId">Session receiving the prompt.</param>
+	/// <param name="text">Prompt text, pasted as one paste.</param>
+	/// <param name="submit">Whether to press Enter after the paste shows.</param>
+	/// <param name="sender">Who sends it, which decides whether a scenario lock refuses it.</param>
+	/// <param name="startIfNotRunning">
+	/// Whether a stopped session may be started and awaited until ready; otherwise it is
+	/// reported as <see cref="PromptDeliveryOutcome.NotRunning"/>.
+	/// </param>
+	/// <param name="cancellationToken">Cancels the delivery.</param>
+	public async Task<PromptDeliveryResult> DeliverPromptAsync(
+		string sessionId,
+		string text,
+		bool submit,
+		PromptSender sender,
+		bool startIfNotRunning,
+		CancellationToken cancellationToken)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+		ArgumentNullException.ThrowIfNull(text);
+		var facts = SessionFacts ?? throw new InvalidOperationException("Session facts are not configured.");
+		DeliveryTrace trace = new(sessionId, sender);
+		var runtime = GetOrCreateRuntime(sessionId);
+		var result = await runtime.RunDeliveryExclusiveAsync(
+			() =>
+			{
+				trace.GateWait = trace.Elapsed();
+				return DeliverUnderGateAsync(
+					sessionId,
+					text,
+					submit,
+					sender,
+					startIfNotRunning,
+					facts,
+					trace,
+					cancellationToken);
+			},
+			cancellationToken).ConfigureAwait(false);
+		DeliveryTrace?.Invoke(trace.Format(result));
+		return result;
+	}
+
+	private async Task<PromptDeliveryResult> DeliverUnderGateAsync(
+		string sessionId,
+		string text,
+		bool submit,
+		PromptSender sender,
+		bool startIfNotRunning,
+		ISessionFacts facts,
+		DeliveryTrace trace,
+		CancellationToken cancellationToken)
+	{
+		if (!TryGetActiveController(sessionId, out _, out _))
+		{
+			if (!startIfNotRunning)
+			{
+				return new(PromptDeliveryOutcome.NotRunning, "the session is not running");
+			}
+
+			var readiness = await StartAndWaitReadyCoreAsync(sessionId, facts, cancellationToken)
+				.ConfigureAwait(false);
+			trace.Start = readiness.IsReady ? "ok" : "not-ready";
+			if (!readiness.IsReady)
+			{
+				return new(PromptDeliveryOutcome.NotRunning, readiness.StatusLine);
+			}
+		}
+
+		if (!TryGetActiveController(sessionId, out var runtime, out var controller))
+		{
+			return new(PromptDeliveryOutcome.NotRunning, "the session is not running");
+		}
+
+		var screen = facts.ReadScreen(sessionId);
+		if (screen?.InputRequested == true)
+		{
+			trace.Admission = "question";
+			return new(PromptDeliveryOutcome.RefusedQuestion, screen.StatusLine);
+		}
+
+		if (sender == PromptSender.Outsider && facts.IsScenarioLocked(sessionId))
+		{
+			trace.Admission = "locked";
+			return new(PromptDeliveryOutcome.RefusedLocked);
+		}
+
+		trace.Admission = "ok";
+		var profile = AgentScreenProfileSelector.ForKind(runtime.Kind);
+		var keyboardAtEnter = 0L;
+		var first = await runtime.RunInputExclusiveAsync<PromptDeliveryResult?>(
+			async () =>
+			{
+				if (!await WritePasteAsync(runtime, controller, text, trace, cancellationToken).ConfigureAwait(false))
+				{
+					return new PromptDeliveryResult(PromptDeliveryOutcome.PasteNotShown, WriteAttempted: true);
+				}
+
+				if (!submit)
+				{
+					return new PromptDeliveryResult(PromptDeliveryOutcome.Confirmed, WriteAttempted: true);
+				}
+
+				if (_scenarioSubmitSettleDelay > TimeSpan.Zero)
+				{
+					await Task.Delay(_scenarioSubmitSettleDelay, cancellationToken).ConfigureAwait(false);
+				}
+
+				// The paste can take seconds to show, and an agent that was already working may
+				// open a question meanwhile; Enter would answer it instead of submitting.
+				if (profile.ReadsComposer)
+				{
+					var check = await CaptureAsync(sessionId, profile, _preEnterCaptureTimeout, cancellationToken)
+						.ConfigureAwait(false);
+					if (check is not { } beforeEnter)
+					{
+						trace.Enter = "no-capture";
+						return new PromptDeliveryResult(PromptDeliveryOutcome.Unconfirmed, WriteAttempted: true);
+					}
+
+					if (beforeEnter.Question is { } question)
+					{
+						return new PromptDeliveryResult(
+							PromptDeliveryOutcome.RefusedQuestion,
+							question,
+							WriteAttempted: true);
+					}
+				}
+
+				EnsureScenarioControllerIsCurrent(sessionId, runtime, controller);
+				keyboardAtEnter = runtime.KeyboardInputCount;
+				await WriteRequiredInputAsync(controller, runtime.EncodeEnter()).ConfigureAwait(false);
+				trace.Enter = trace.Elapsed();
+				return null;
+			},
+			cancellationToken).ConfigureAwait(false);
+		if (first is { } stopped)
+		{
+			return stopped;
+		}
+
+		if (!profile.ReadsComposer)
+		{
+			trace.Confirmed = "no-model";
+			return Sent(PromptDeliveryOutcome.Submitted);
+		}
+
+		var observed = await ConfirmAsync(sessionId, runtime, profile, keyboardAtEnter, trace, cancellationToken)
+			.ConfigureAwait(false);
+		if (observed is { } settled)
+		{
+			return settled;
+		}
+
+		// Timed out. Enter is repeated only on fresh evidence that the text is still waiting.
+		var repaired = await runtime.RunInputExclusiveAsync<PromptDeliveryResult?>(
+			async () =>
+			{
+				if (runtime.KeyboardInputCount != keyboardAtEnter)
+				{
+					trace.Keyboard = true;
+					return Sent(PromptDeliveryOutcome.Unconfirmed);
+				}
+
+				var fresh = await CaptureAsync(sessionId, profile, _preEnterCaptureTimeout, cancellationToken)
+					.ConfigureAwait(false);
+				if (fresh is { Question: { } question })
+				{
+					return Sent(PromptDeliveryOutcome.RefusedQuestion, question);
+				}
+
+				if (fresh is { PromptIsEmpty: true })
+				{
+					trace.Confirmed = trace.Elapsed();
+					return Sent(PromptDeliveryOutcome.Confirmed);
+				}
+
+				if (fresh is not { PromptIsEmpty: false })
+				{
+					return Sent(PromptDeliveryOutcome.Unconfirmed);
+				}
+
+				EnsureScenarioControllerIsCurrent(sessionId, runtime, controller);
+				await WriteRequiredInputAsync(controller, runtime.EncodeEnter()).ConfigureAwait(false);
+				trace.Repair = "enter";
+				return null;
+			},
+			cancellationToken).ConfigureAwait(false);
+		if (repaired is { } repairStopped)
+		{
+			return repairStopped;
+		}
+
+		return await ConfirmAsync(sessionId, runtime, profile, keyboardAtEnter, trace, cancellationToken)
+				.ConfigureAwait(false)
+			?? Sent(PromptDeliveryOutcome.Unconfirmed);
+	}
+
+	private static PromptDeliveryResult Sent(PromptDeliveryOutcome outcome, string statusLine = "") =>
+		new(outcome, statusLine, WriteAttempted: true, SubmitAttempted: true);
+
+	// Polls fresh captures until the composer is seen empty, a question opens, the user types,
+	// or a capture goes unanswered; null when the confirmation timeout passes first.
+	private async Task<PromptDeliveryResult?> ConfirmAsync(
+		string sessionId,
+		SessionRuntime runtime,
+		IAgentScreenProfile profile,
+		long keyboardAtEnter,
+		DeliveryTrace trace,
+		CancellationToken cancellationToken)
+	{
+		var startedAt = Stopwatch.GetTimestamp();
+		while (true)
+		{
+			var remaining = _confirmationTimeout - Stopwatch.GetElapsedTime(startedAt);
+			if (remaining <= TimeSpan.Zero)
+			{
+				trace.Confirmed = "timeout";
+				return null;
+			}
+
+			if (runtime.KeyboardInputCount != keyboardAtEnter)
+			{
+				trace.Keyboard = true;
+				return Sent(PromptDeliveryOutcome.Unconfirmed);
+			}
+
+			var reading = await CaptureAsync(sessionId, profile, remaining, cancellationToken).ConfigureAwait(false);
+			if (reading is not { } seen)
+			{
+				trace.Confirmed = "no-capture";
+				return Sent(PromptDeliveryOutcome.Unconfirmed);
+			}
+
+			if (seen.Question is { } question)
+			{
+				return Sent(PromptDeliveryOutcome.RefusedQuestion, question);
+			}
+
+			if (seen.PromptIsEmpty == true)
+			{
+				trace.Confirmed = trace.Elapsed();
+				return Sent(PromptDeliveryOutcome.Confirmed);
+			}
+
+			var wait = _confirmationTimeout - Stopwatch.GetElapsedTime(startedAt);
+			if (wait > TimeSpan.Zero)
+			{
+				await Task.Delay(wait < _statePollInterval ? wait : _statePollInterval, cancellationToken)
+					.ConfigureAwait(false);
+			}
+		}
+	}
+
+	private readonly record struct ScreenReading(string? Question, bool? PromptIsEmpty);
+
+	// One capture, bounded by its own budget; null when the web view did not answer in time or
+	// the session has no terminal. A late answer is dropped by the host.
+	private async Task<ScreenReading?> CaptureAsync(
+		string sessionId,
+		IAgentScreenProfile profile,
+		TimeSpan budget,
+		CancellationToken cancellationToken)
+	{
+		using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+		limit.CancelAfter(budget);
+		try
+		{
+			var snapshot = await _terminalHost.CaptureScreenAsync(sessionId, limit.Token).ConfigureAwait(false);
+			if (snapshot is null)
+			{
+				return null;
+			}
+
+			var verdict = profile.Classify(snapshot);
+			return new ScreenReading(
+				verdict.State == TerminalScreenVerdictState.InputRequested ? verdict.Description : null,
+				verdict.PromptIsEmpty);
+		}
+		catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+		{
+			return null;
+		}
+	}
+
+	/// <summary>
+	/// Starts a stopped session through <see cref="SessionFacts"/> and waits until it can
+	/// receive a prompt, as <see cref="WaitForSessionReadyAsync(string, CancellationToken)"/>
+	/// does. A running session is reported ready without waiting.
+	/// </summary>
+	public Task<SessionReadiness> StartAndWaitReadyAsync(string sessionId, CancellationToken cancellationToken)
+	{
+		var facts = SessionFacts ?? throw new InvalidOperationException("Session facts are not configured.");
+		return TryGetActiveController(sessionId, out _, out _)
+			? Task.FromResult(new SessionReadiness(true, string.Empty))
+			: StartAndWaitReadyCoreAsync(sessionId, facts, cancellationToken);
+	}
+
+	private async Task<SessionReadiness> StartAndWaitReadyCoreAsync(
+		string sessionId,
+		ISessionFacts facts,
+		CancellationToken cancellationToken)
+	{
+		GetOrCreateRuntime(sessionId).PrepareForControllerStart();
+		await facts.StartAsync(sessionId, cancellationToken).ConfigureAwait(false);
+		return await WaitForSessionReadyAsync(sessionId, () => facts.ReadScreen(sessionId), cancellationToken)
+			.ConfigureAwait(false);
+	}
+
+	/// <summary>Waits for readiness, reading the screen through <see cref="SessionFacts"/>.</summary>
+	public Task<SessionReadiness> WaitForSessionReadyAsync(string sessionId, CancellationToken cancellationToken)
+	{
+		var facts = SessionFacts ?? throw new InvalidOperationException("Session facts are not configured.");
+		return WaitForSessionReadyAsync(sessionId, () => facts.ReadScreen(sessionId), cancellationToken);
+	}
+
+	/// <summary>
+	/// Pastes text the way a keyboard paste would: no admission, no Enter, no confirmation. It
+	/// counts as keyboard input for a delivery in progress.
+	/// </summary>
+	/// <exception cref="InvalidOperationException">The session is not running or refused the input.</exception>
+	public async Task PasteAsKeyboardAsync(string sessionId, string text)
+	{
+		ArgumentNullException.ThrowIfNull(text);
+		if (!TryGetActiveController(sessionId, out var runtime, out var controller))
+		{
+			throw new InvalidOperationException("Target session is not running.");
+		}
+
+		runtime.NoteKeyboardInput();
+		await runtime.RunInputExclusiveAsync(
+			async () =>
+			{
+				await WriteRequiredInputAsync(controller, BuildPastedInput(text)).ConfigureAwait(false);
+				return true;
+			},
+			CancellationToken.None).ConfigureAwait(false);
+	}
+
+	// Returns false when the paste did not show within the landing timeout. Both paths wait for
+	// the paste in the output before Enter, because an Enter before it lands submits nothing.
+	private async Task<bool> WritePasteAsync(
+		SessionRuntime runtime,
+		TerminalController controller,
+		string text,
+		DeliveryTrace trace,
+		CancellationToken cancellationToken)
+	{
+		var viaClipboard = ClientPasteClipboard is { } clipboard
+			&& runtime.InputModes.IsSgrMouseActive
+			&& await OfferOnClipboardAsync(clipboard, text).ConfigureAwait(false);
+		trace.Paste = viaClipboard ? "clipboard" : "bracketed";
+
+		// The wait starts before the write, so output from a fast paste cannot be missed.
+		using var stopWaiting = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+		var landed = runtime.WaitForClientPasteAsync(text, _pasteLandingTimeout, stopWaiting.Token);
+		try
+		{
+			await WriteRequiredInputAsync(controller, viaClipboard ? ClientPasteClick : BuildPastedInput(text))
+				.ConfigureAwait(false);
+		}
+		catch
+		{
+			await stopWaiting.CancelAsync().ConfigureAwait(false);
+			await landed.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+			throw;
+		}
+
+		try
+		{
+			await landed.ConfigureAwait(false);
+			trace.Shown = trace.Elapsed();
+			return true;
+		}
+		catch (TimeoutException)
+		{
+			trace.Shown = "timeout";
+			return false;
+		}
+	}
+
 	/// <summary>
 	/// Writes raw input to a session, applying the agent-specific rewrites that depend on its
 	/// profile and current win32-input-mode state.
@@ -964,6 +1362,7 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 			RaiseStatusMessage("Terminal is locked by a running scenario");
 			return;
 		}
+		runtime.NoteKeyboardInput();
 		var written = await runtime.RunInputExclusiveAsync(
 			() => controller.WriteInputAsync(runtime.RewriteTypedInput(input)),
 			CancellationToken.None).ConfigureAwait(false);

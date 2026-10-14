@@ -15,7 +15,7 @@ namespace Pact.Presentation.Tests.Services;
 	"Reliability",
 	"CA2000:Dispose objects before losing scope",
 	Justification = "Runtime and backend ownership is transferred to SessionRuntimeCoordinator and exercised by its stop/disposal tests.")]
-public sealed class SessionRuntimeCoordinatorTests
+public sealed partial class SessionRuntimeCoordinatorTests
 {
 	[TestCase(false, PromptDeliveryOutcome.BlockedByPendingInput)]
 	[TestCase(true, PromptDeliveryOutcome.Written)]
@@ -893,15 +893,17 @@ public sealed class SessionRuntimeCoordinatorTests
 		coordinator.Runtimes.ShouldBeEmpty();
 	}
 
-	private static SessionRuntimeCoordinator CreateFastCoordinator() => new(
-		new RecordingHost(),
+	private static SessionRuntimeCoordinator CreateFastCoordinator(RecordingHost? host = null) => new(
+		host ?? new RecordingHost(),
 		static () => new TerminalController(),
 		TimeSpan.Zero,
 		TimeSpan.Zero,
 		TimeSpan.FromMilliseconds(50),
 		TimeSpan.FromMilliseconds(20),
 		TimeSpan.FromMilliseconds(1),
-		TimeSpan.FromMilliseconds(200));
+		TimeSpan.FromMilliseconds(200),
+		pasteLandingTimeout: TimeSpan.FromMilliseconds(200),
+		preEnterCaptureTimeout: TimeSpan.FromMilliseconds(100));
 
 	private static async Task<(
 		SessionRuntimeCoordinator Coordinator,
@@ -1002,7 +1004,9 @@ public sealed class SessionRuntimeCoordinatorTests
 		public Task WriteOutputAsync(string sessionId, string text) => Task.CompletedTask;
 		public Task ResetSnapshotBaselineAsync(string sessionId) => Task.CompletedTask;
 		public Func<string, TerminalScreenSnapshot?> CaptureScreen { get; set; } = static _ => null;
-		public Task<TerminalScreenSnapshot?> CaptureScreenAsync(string sessionId, CancellationToken cancellationToken) => Task.FromResult(CaptureScreen(sessionId));
+		public Func<string, CancellationToken, Task<TerminalScreenSnapshot?>>? CaptureScreenHandler { get; set; }
+		public Task<TerminalScreenSnapshot?> CaptureScreenAsync(string sessionId, CancellationToken cancellationToken) =>
+			CaptureScreenHandler?.Invoke(sessionId, cancellationToken) ?? Task.FromResult(CaptureScreen(sessionId));
 		public Task DisposeTerminalAsync(string sessionId) => Task.CompletedTask;
 		public Task<string> GetSelectedTextAsync() => Task.FromResult(string.Empty);
 		public Task FitAsync() => Task.CompletedTask;
