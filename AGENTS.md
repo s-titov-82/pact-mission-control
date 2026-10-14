@@ -97,16 +97,19 @@ different renderer.
 - Each step atomically publishes one immutable
   `.pact-reviews/<run>/pass-NNN-<role>-task.md`. Terminal input from a scenario
   step is only the short task-path instruction followed by a separate Enter.
-  A run writes only into a session that is idle, holding no question, with an
-  empty composer, which a freshly launched session reaches through one bounded
-  budget covering its first output, a settle delay, and the folder-trust dialog
-  — answered with a single Enter, once per launched session. Delivery is
-  confirmed by a new activity cycle, and a submitted prompt always starts one.
-  A dropped submit is repaired with Enter alone once the composer is seen still
-  holding the trigger; a paste is repeated only after the composer stays empty
-  while the agent is idle. A detected question or unsent text blocks a
-  programmatic send, and the run pauses naming what happened and whether
-  anything was typed.
+  A run writes into its session whenever no question is pending: a busy agent
+  queues the trigger, and text already in the composer does not block it. A
+  freshly launched session first reaches readiness through one bounded budget
+  covering its first output, a settle delay, and the folder-trust dialog —
+  answered with a single Enter, once per launched session. Every prompt Pact
+  sends, from any channel, goes through one sender that holds the session for
+  the whole delivery: the paste must show before Enter, a question seen just
+  before Enter stops it, and delivery is confirmed only by a fresh screen
+  capture showing an empty composer after Enter. Pact's own Enter is never
+  evidence. If the composer still holds the text, Enter alone is repeated once;
+  text is never pasted twice. Once anything reached the terminal, an
+  unconfirmed delivery pauses the run for attention, naming what happened, and
+  is never resent; only a delivery that wrote nothing is retried.
   The single exception is one final completion notice, delivered when a run
   reaches a terminal state: it carries no task, expects no response, and
   advances nothing, so routing it through a task file would force the run
@@ -114,11 +117,12 @@ different renderer.
   submission is journaled as a delivery failure, never reported as delivered.
 - The matching response must be non-empty and end with the exact supplied
   transport footer. Only a footer-complete file advances the run.
-- Terminal busy/idle is UI evidence and never scenario completion. Busy delays
-  safe prompt delivery without advancing or failing the step.
+- Terminal busy/idle is UI evidence and never scenario completion, and it
+  never blocks prompt delivery.
 - The response-file observer starts before prompt delivery and remains active
-  through delivery retries, watchdog attention, and manual pause. Automatic
-  attention retries delivery when the terminal becomes safe. Manual Pause
+  through delivery retries, watchdog attention, and manual pause. The step
+  watchdog (15 minutes without a response file) only pauses for attention and
+  keeps waiting; it never resends the trigger. Manual Pause
   blocks all new automatic terminal writes until Resume, but an already
   appearing valid response clears the pause, re-locks the involved sessions,
   and advances the run without requiring Resume.

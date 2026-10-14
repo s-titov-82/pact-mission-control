@@ -77,7 +77,13 @@ terminal goes through `SessionRuntimeCoordinator` as one exclusive input unit
 per session, run in queue order, so a paste and its Enter are never split by
 another writer. Enter and Esc are encoded once, by `AgentKeyEncoder`, from the
 session's agent kind and win32-input-mode state; the status engine uses the
-same encoder to recognize a submit. Terminal output is batched before
+same encoder to recognize a submit. A prompt delivery
+(`SessionRuntimeCoordinator.DeliverPromptAsync`, the one sender for manual
+actions, MCP, Pact notices, and scenarios) also holds a per-session delivery
+gate for its whole cycle, so two programmatic senders never interleave; typed
+input does not wait for it. The delivery confirms itself from
+`ITerminalWebViewHost.CaptureScreenAsync`, a capture taken after pending output
+has rendered and classified with the session's profile. Terminal output is batched before
 the WebView boundary; resize requests are serialized and only the newest
 request may publish a viewport.
 
@@ -227,18 +233,19 @@ one immutable task file below
 short task-path instruction as one paste and then a separate Enter. The paste is
 bracketed, or, for a client that captures the mouse, a clipboard paste the
 client makes itself on a right click; Enter then waits until the output shows
-it. A run never writes while the session is busy, holding a question, or
-known to contain unsent composer text. Codex and Claude now distinguish composer
-suggestions and drafts using captured Dim metadata and structural boundaries;
-text-only or incomplete observations remain unknown. A freshly launched
-reviewer reaches readiness through one bounded budget covering its first output,
-a settle delay, and the folder-trust dialog, which Pact answers with Enter
-exactly once. Readiness requires the stable classifier verdict `Done`; composer
-content does not determine activity. Delivery is confirmed by a new activity
-cycle, and every submit
-begins one. If the composer still holds the trigger, Pact repairs a dropped
-submit with Enter alone; it repeats the paste only after the composer remains
-empty while the agent is idle.
+it. Only a pending question refuses a run's write; a busy agent queues the
+trigger, and text already in the composer does not block it. Codex and Claude
+distinguish composer suggestions and drafts using captured Dim metadata and
+structural boundaries; text-only or incomplete observations remain unknown. A
+freshly launched reviewer reaches readiness through one bounded budget covering
+its first output, a settle delay, and the folder-trust dialog, which Pact
+answers with Enter exactly once. Readiness requires the stable classifier
+verdict `Done`; composer content does not determine activity. A fresh capture
+is checked for a question immediately before Enter. Delivery is confirmed only
+when a fresh capture after Enter shows an empty composer; Pact's own Enter is
+never evidence. If a capture still shows the text, Pact repeats Enter once; it
+never pastes twice. Sessions whose profile reads no composer (PowerShell,
+custom commands) end as submitted once the paste showed and Enter was written.
 
 Bounded application logs retain metadata-only scenario delivery decisions and
 transport exceptions so a later retry stall can be reconstructed. Entries name
@@ -247,17 +254,19 @@ submit was attempted; they never include prompt, response, status-line, or
 terminal-screen text. Identical consecutive delivery outcomes are coalesced.
 
 The response observer starts before delivery and remains active through every
-watchdog and pause state. Busy, a detected question, explicit pending input, or
-an unexplained write delays delivery; Pact keeps observing the response file and
-retries the same idempotent task-path trigger when the terminal becomes safe. A
-complete footer-valid response is authoritative: it cancels delivery recovery,
-clears either pause kind, re-locks the terminals, and advances the run.
+watchdog and pause state. A delivery that wrote nothing (a question was already
+pending, or the session was not running) is retried once the terminal is safe.
+Once anything reached the terminal, an unconfirmed delivery pauses for attention
+and is never resent; the response file decides. The step watchdog likewise only
+pauses for attention and keeps waiting. A complete footer-valid response is
+authoritative: it cancels any delivery still in progress, clears either pause
+kind, re-locks the terminals, and advances the run.
 
 Manual Pause releases every involved terminal and suppresses all new automatic
 writes until explicit Resume, but it does not stop response observation. A
 response completed during manual Pause therefore clears the pause and continues
 without Resume. Watchdog attention releases only the terminal that needs
-attention and recovers automatically. Paused runs retain their files; the run
+attention. Paused runs retain their files; the run
 state and journal remain in memory rather than introducing a second durable
 state file. The final result and journal are rendered as read-only Markdown
 views. Completion, maximum-iteration, abort, and failure states remove only that

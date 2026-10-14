@@ -124,19 +124,27 @@ the text goes through the clipboard instead: it is written there unless already
 present, and an SGR right click makes the client paste it itself, because Codex
 on Windows reads console key records and gets a bracketed paste one key at a
 time. Enter follows only once the session output shows the paste (a `[Pasted`
-placeholder or the end of the text); otherwise the send fails unsubmitted. A newly launched reviewer becomes ready on one
-bounded budget covering its first output, settle delay, and at most one Enter
-for the folder-trust dialog. Delivery is confirmed by the new activity cycle
-after submit. Pact repairs a dropped submit with Enter alone when the composer
-still holds the trigger, and repeats the paste only after the composer remains
-empty while the agent is idle.
+placeholder or the end of the text); a bracketed paste waits for the same echo.
+A paste that never shows is not submitted. Every channel (templates, selection
+actions, MCP `pact_send_message`, Pact's own notices, scenarios) uses the one
+sender, `SessionRuntimeCoordinator.DeliverPromptAsync`, which holds the session
+for the whole delivery and refuses only a pending question or, for anyone but
+the owning run, a scenario lock. A busy agent or text in the composer never
+refuses. Manual actions start a stopped session and wait for readiness; MCP
+callers start one with `pact_start_session`. A newly launched session becomes
+ready on one bounded budget covering its first output, settle delay, and at most
+one Enter for the folder-trust dialog. Right before Enter a fresh screen capture
+(`ITerminalWebViewHost.CaptureScreenAsync`) is checked for a question; after
+Enter, delivery is confirmed only by a fresh capture showing an empty composer.
+If a capture still shows the text, Pact repeats Enter once; it never pastes
+twice. Sessions whose profile reads no composer end as submitted.
 
 The expected response observer starts before delivery and never stops for
-watchdog or Pause. Pact writes nothing while the terminal is busy, asking a
-question, or explicitly holding pending input; Codex and Claude remain writable
-unless another gate blocks them. Automatic attention unlocks the
-affected terminal, keeps observing the response, and retries the idempotent
-task-path trigger when safe. Manual Pause unlocks every involved terminal and
+watchdog or Pause. Only a pending question stops a scenario's write. A delivery
+that wrote nothing is retried once the terminal is safe; once anything reached
+the terminal, an unconfirmed delivery pauses for attention, unlocks the affected
+terminal, and is never resent. The step watchdog also only pauses for attention
+and keeps observing the response. Manual Pause unlocks every involved terminal and
 forbids new automatic writes until Resume, but a footer-complete expected
 response clears Pause, re-locks the terminals, and advances immediately without
 Resume. The assigned agent writes the matching unique
@@ -172,7 +180,7 @@ It has four top-level directories with explicit ownership:
   appearance) plus `Settings/Notes/<key>.md`. Notes are keyed from the
   normalized project root and are never deleted by hiding the tab.
 - `WebView`: one shared WebView2 user-data folder. Browser pages use its default profile so cookies and login state survive. Terminal xterm uses the named `PactTerminal` profile. At startup browser cleanup removes only `DiskCache` older than 72 hours; cookies, Local Storage, IndexedDB, CacheStorage, Service Workers, passwords, autofill, and settings remain. The terminal profile is cleared completely.
-- `Logs`: disposable application logs, split by UTC day and 5 MiB segments; files older than 72 hours are removed by `LastWriteTimeUtc`. Browser-tab WebView lifecycle phases (`webview browser:<pageId> …`) are appended here so a tab that ends up in a bad native state stays diagnosable after its in-memory trace is gone. Scenario delivery also records metadata-only outcome changes and transport exceptions, including run, step, role, session, attempt, and write/submit flags. It never records prompt, response, status-line, or terminal-screen text, and consecutive identical delivery outcomes are coalesced.
+- `Logs`: disposable application logs, split by UTC day and 5 MiB segments; files older than 72 hours are removed by `LastWriteTimeUtc`. Browser-tab WebView lifecycle phases (`webview browser:<pageId> …`) are appended here so a tab that ends up in a bad native state stays diagnosable after its in-memory trace is gone. Scenario delivery also records metadata-only outcome changes and transport exceptions, including run, step, role, session, attempt, and write/submit flags. It never records prompt, response, status-line, or terminal-screen text, and consecutive identical delivery outcomes are coalesced. Every prompt delivery appends one metadata-only `delivery …` line naming the session, sender, start, admission, paste kind, stage timings, repair, keyboard interference, and outcome.
 - `Temp/Session`: disposable atomic-write staging and other run-local data; it
   is cleared best-effort at startup and shutdown.
 - `Temp/Retained`: disposable owner-managed caches and is not blanket-cleared.

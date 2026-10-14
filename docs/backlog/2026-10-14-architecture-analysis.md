@@ -280,7 +280,9 @@ App.Avalonia
    из A1, включая Esc сценария и `/exit`. Прямых вызовов
    `controller.WriteInputAsync` вне канала не остаётся.
 3. **Трассы доставки (шаг 1 бэклога), затем `PromptDelivery` с этапами и
-   политиками.** Внешний цикл повторов в `ScenarioIterationContext` уходит в
+   политиками.** *Сделано 2026-10-14: `DeliverPromptAsync`, подтверждение по
+   свежему снимку, повторов текста нет; спека
+   `docs/superpowers/specs/2026-10-14-prompt-delivery-design.md`.* Внешний цикл повторов в `ScenarioIterationContext` уходит в
    политику сценария. Решить судьбу повтора по сторожу шага.
 4. **Автомат паузы сценария в Core, `ScenarioRunService.cs` разделить по
    классам.** Шлюз сценария реализовать напрямую поверх `PromptDelivery`
