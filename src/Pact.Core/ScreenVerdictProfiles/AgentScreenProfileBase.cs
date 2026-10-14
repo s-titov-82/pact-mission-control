@@ -82,6 +82,9 @@ namespace Pact.Core.ScreenVerdictProfiles
 		public const string TrustPromptDescription = "Folder trust request";
 
 		/// <inheritdoc />
+		public bool ReadsComposer => true;
+
+		/// <inheritdoc />
 		public virtual TerminalScreenVerdict Classify(TerminalScreenSnapshot screen)
 		{
 			ArgumentNullException.ThrowIfNull(screen);

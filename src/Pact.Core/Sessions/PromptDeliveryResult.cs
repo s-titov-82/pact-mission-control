@@ -16,14 +16,38 @@ public enum PromptDeliveryOutcome
 	BlockedByInputRequest,
 
 	/// <summary>The composer already held unsent text, so nothing was written.</summary>
-	BlockedByPendingInput
+	BlockedByPendingInput,
+
+	/// <summary>The session has no composer model; the paste showed and Enter was written.</summary>
+	Submitted,
+
+	/// <summary>
+	/// The paste showed and Enter was written (and repeated once if the composer still held
+	/// text), but an empty composer was never seen afterwards.
+	/// </summary>
+	Unconfirmed,
+
+	/// <summary>The paste never appeared, so Enter was not written.</summary>
+	PasteNotShown,
+
+	/// <summary>A question is pending; see <see cref="PromptDeliveryResult.WriteAttempted"/>.</summary>
+	RefusedQuestion,
+
+	/// <summary>A scenario run owns the session; nothing was written.</summary>
+	RefusedLocked,
+
+	/// <summary>
+	/// The session has no live process, and starting it was not allowed or did not reach
+	/// readiness; <see cref="PromptDeliveryResult.StatusLine"/> gives the reason.
+	/// </summary>
+	NotRunning
 }
 
 /// <summary>Outcome of one prompt delivery, with the status line that explains a refusal.</summary>
 /// <param name="Outcome">What happened.</param>
 /// <param name="StatusLine">
-/// The pending question quoted from the screen when <paramref name="Outcome"/> is
-/// <see cref="PromptDeliveryOutcome.BlockedByInputRequest"/>; empty otherwise.
+/// The pending question quoted from the screen when <paramref name="Outcome"/> refuses on a
+/// question, or the reason for <see cref="PromptDeliveryOutcome.NotRunning"/>; empty otherwise.
 /// </param>
 /// <param name="WriteAttempted">
 /// Whether anything reached the terminal before the outcome was decided. This remains true

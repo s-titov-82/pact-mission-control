@@ -15,6 +15,12 @@ public interface IAgentScreenProfile
 	/// <returns>The activity evidence found in the screen.</returns>
 	TerminalScreenVerdict Classify(string screen);
 
+	/// <summary>
+	/// Whether this profile reports <see cref="TerminalScreenVerdict.PromptIsEmpty"/> and
+	/// questions. Prompt delivery can be confirmed only for such profiles.
+	/// </summary>
+	bool ReadsComposer => false;
+
 	/// <summary>Classifies rendered viewport evidence, falling back to text for profiles without style rules.</summary>
 	TerminalScreenVerdict Classify(TerminalScreenSnapshot screen)
 	{
