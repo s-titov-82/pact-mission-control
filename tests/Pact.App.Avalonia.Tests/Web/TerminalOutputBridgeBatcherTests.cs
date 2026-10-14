@@ -61,6 +61,26 @@ public sealed class TerminalOutputBridgeBatcherTests
 		writes.ShouldBe([("hidden", "pending")]);
 	}
 
+	[Test]
+	public async Task Flushing_one_session_sends_its_pending_output_now()
+	{
+		ControlledDelay delays = new();
+		List<(string SessionId, string Text)> writes = [];
+		await using TerminalOutputBridgeBatcher batcher = new(
+			(sessionId, text) =>
+			{
+				writes.Add((sessionId, text));
+				return Task.CompletedTask;
+			},
+			delays.WaitAsync);
+
+		var pending = batcher.EnqueueAsync("hidden", "pending output");
+		await batcher.FlushSessionAsync("hidden");
+		await pending;
+
+		writes.ShouldBe([("hidden", "pending output")]);
+	}
+
 	private sealed class ControlledDelay
 	{
 		private readonly Dictionary<TimeSpan, TaskCompletionSource> _pending = [];

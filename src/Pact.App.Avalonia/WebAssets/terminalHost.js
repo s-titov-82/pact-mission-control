@@ -551,6 +551,18 @@ function flushOutput(instance) {
   });
 }
 
+// Renders everything queued for the terminal, then calls done. xterm processes writes in
+// order, so a write issued now completes after any chunk already in flight.
+function drainOutputThen(instance, done) {
+  if (instance.outputTimer !== null) {
+    clearTimeout(instance.outputTimer);
+    instance.outputTimer = null;
+  }
+  const pending = instance.pendingOutput;
+  instance.pendingOutput = '';
+  instance.term.write(pending, done);
+}
+
 function updateCursorBlink() {
   for (const instance of terminals.values()) {
     instance.term.options.cursorBlink = hostVisible && instance.sessionId === activeSessionId;
@@ -682,6 +694,22 @@ window.agentTerminal = {
     if (instance) {
       enqueueOutput(instance, text, true);
     }
+  },
+  captureScreen: function (sessionId, requestId) {
+    const instance = terminals.get(sessionId);
+    if (!instance) {
+      postHostMessage({ type: 'screenCapture', sessionId, requestId, missing: true });
+      return;
+    }
+    drainOutputThen(instance, () => {
+      postHostMessage({
+        type: 'screenCapture',
+        sessionId,
+        requestId,
+        ...captureScreenSnapshot(instance.term),
+        stable: true
+      });
+    });
   },
   resetSnapshotBaseline: function (sessionId) {
     const instance = terminals.get(sessionId);

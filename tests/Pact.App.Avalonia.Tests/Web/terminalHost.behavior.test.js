@@ -685,6 +685,27 @@ function runOsc52Behavior() {
   assert.deepEqual(hostMessages, [], 'invalid base64 must not post clipboard data');
 }
 
+function runScreenCaptureBehavior() {
+  window.agentTerminal.showTerminal('session-1', { snapshotDebounceMs: 500 });
+  const terminal = terminalInstances[0];
+  window.agentTerminal.write('session-1', 'queued output');
+  hostMessages.length = 0;
+
+  window.agentTerminal.captureScreen('session-1', 5);
+
+  assert.ok(
+    terminal.writes.some(write => write.includes('queued output')),
+    'pending output is rendered before the capture');
+  const capture = hostMessages.find(message => message.type === 'screenCapture');
+  assert.equal(capture.requestId, 5);
+  assert.equal(capture.sessionId, 'session-1');
+  assert.equal(capture.stable, true);
+
+  hostMessages.length = 0;
+  window.agentTerminal.captureScreen('unknown', 6);
+  assert.deepEqual(hostMessages, [{ type: 'screenCapture', sessionId: 'unknown', requestId: 6, missing: true }]);
+}
+
 function runSelectedTextRequestBehavior() {
   window.agentTerminal.showTerminal('session-1', { snapshotDebounceMs: 500 });
   const terminal = terminalInstances[0];
@@ -852,6 +873,8 @@ if (behavior === 'real-styled-cells') {
   runAgentMouseReleaseBehavior();
 } else if (behavior === 'osc52') {
   runOsc52Behavior();
+} else if (behavior === 'screen-capture') {
+  runScreenCaptureBehavior();
 } else if (behavior === 'selected-text-request') {
   runSelectedTextRequestBehavior();
 } else {

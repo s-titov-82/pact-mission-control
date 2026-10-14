@@ -1001,6 +1001,8 @@ public sealed class SessionRuntimeCoordinatorTests
 		public Task ShowTerminalAsync(string sessionId) { Shown.Add(sessionId); return Task.CompletedTask; }
 		public Task WriteOutputAsync(string sessionId, string text) => Task.CompletedTask;
 		public Task ResetSnapshotBaselineAsync(string sessionId) => Task.CompletedTask;
+		public Func<string, TerminalScreenSnapshot?> CaptureScreen { get; set; } = static _ => null;
+		public Task<TerminalScreenSnapshot?> CaptureScreenAsync(string sessionId, CancellationToken cancellationToken) => Task.FromResult(CaptureScreen(sessionId));
 		public Task DisposeTerminalAsync(string sessionId) => Task.CompletedTask;
 		public Task<string> GetSelectedTextAsync() => Task.FromResult(string.Empty);
 		public Task FitAsync() => Task.CompletedTask;

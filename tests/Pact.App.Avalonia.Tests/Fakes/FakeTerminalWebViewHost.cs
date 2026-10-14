@@ -61,6 +61,11 @@ internal sealed class FakeTerminalWebViewHost : ITerminalWebViewHost
 		WrittenOutput.Add((sessionId, text));
 		return Task.CompletedTask;
 	}
+	public Func<string, TerminalScreenSnapshot?> CaptureScreen { get; set; } = static _ => null;
+
+	public Task<TerminalScreenSnapshot?> CaptureScreenAsync(string sessionId, CancellationToken cancellationToken) =>
+		Task.FromResult(CaptureScreen(sessionId));
+
 	public Task ResetSnapshotBaselineAsync(string sessionId)
 	{
 		SnapshotBaselineResetSessions.Add(sessionId);

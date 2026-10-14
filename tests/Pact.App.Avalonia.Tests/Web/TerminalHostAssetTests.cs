@@ -39,6 +39,7 @@ public sealed partial class TerminalHostAssetTests
 	[TestCase("agent-mouse-release")]
 	[TestCase("osc52")]
 	[TestCase("selected-text-request")]
+	[TestCase("screen-capture")]
 	public Task Terminal_host_snapshot_behaviors_execute_in_node(string behavior) =>
 		RunNodeBehaviorAsync("terminalHost.behavior.test.js", "terminalHost.js", behavior);
 

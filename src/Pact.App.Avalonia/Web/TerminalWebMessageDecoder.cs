@@ -14,6 +14,8 @@ internal abstract record TerminalWebMessage
 
 	internal sealed record ScreenSnapshot(string SessionId, TerminalScreenSnapshot Snapshot, string? StylingFailure = null) : TerminalWebMessage;
 
+	internal sealed record ScreenCapture(string SessionId, long RequestId, TerminalScreenSnapshot? Snapshot) : TerminalWebMessage;
+
 	internal sealed record SelectionChanged(string SessionId, bool HasSelection) : TerminalWebMessage;
 
 	internal sealed record SelectionCompleted(string SessionId, double X, double Y, long Revision) : TerminalWebMessage;
@@ -58,6 +60,7 @@ internal static class TerminalWebMessageDecoder
 				"input" => DecodeInput(root),
 				"resize" => DecodeResize(root),
 				"screenSnapshot" => DecodeScreenSnapshot(root),
+				"screenCapture" => DecodeScreenCapture(root),
 				"selectionChanged" => DecodeSelectionChanged(root),
 				"selectionCompleted" => DecodeSelectionCompleted(root),
 				"selectionDismissed" => DecodeSelectionDismissed(root),
@@ -103,6 +106,26 @@ internal static class TerminalWebMessageDecoder
 			&& TryGetString(root, "url", out var url)
 			? new TerminalWebMessage.LinkRequested(sessionId, url)
 			: null;
+
+	private static TerminalWebMessage.ScreenCapture? DecodeScreenCapture(JsonElement root)
+	{
+		if (!TryGetString(root, "sessionId", out var sessionId)
+			|| !root.TryGetProperty("requestId", out var idElement)
+			|| idElement.ValueKind != JsonValueKind.Number
+			|| !idElement.TryGetInt64(out var requestId))
+		{
+			return null;
+		}
+
+		if (root.TryGetProperty("missing", out var missing) && missing.ValueKind == JsonValueKind.True)
+		{
+			return new TerminalWebMessage.ScreenCapture(sessionId, requestId, null);
+		}
+
+		return DecodeScreenSnapshot(root) is { } snapshot
+			? new TerminalWebMessage.ScreenCapture(sessionId, requestId, snapshot.Snapshot)
+			: null;
+	}
 
 	private static TerminalWebMessage.ScreenSnapshot? DecodeScreenSnapshot(JsonElement root)
 	{

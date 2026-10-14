@@ -92,6 +92,14 @@ public interface ITerminalWebViewHost
 	/// scoped to that activity rather than the lifetime of the terminal.
 	/// </summary>
 	Task ResetSnapshotBaselineAsync(string sessionId);
+	/// <summary>
+	/// Captures the session's visible screen after every output chunk the host received before
+	/// this call has been rendered. Unlike <see cref="ScreenSnapshotReceived"/>, the capture is
+	/// never deduplicated or delayed, so it is fresh evidence for a decision just made.
+	/// </summary>
+	/// <returns>The screen, or <see langword="null"/> when the session has no terminal.</returns>
+	Task<TerminalScreenSnapshot?> CaptureScreenAsync(string sessionId, CancellationToken cancellationToken);
+
 	/// <summary>Destroys the session's terminal and releases its browser-side resources.</summary>
 	Task DisposeTerminalAsync(string sessionId);
 

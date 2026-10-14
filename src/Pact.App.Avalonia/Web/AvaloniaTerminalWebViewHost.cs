@@ -36,6 +36,7 @@ internal sealed class AvaloniaTerminalWebViewHost : ITerminalWebViewHost, IAsync
 	private int _disposed;
 	private int _eventProducersAttached = 1;
 	private bool _presentationVisible;
+	private readonly ScreenCaptureRequests _captures = new();
 
 	public AvaloniaTerminalWebViewHost(NativeWebView webView)
 	{
@@ -200,6 +201,26 @@ internal sealed class AvaloniaTerminalWebViewHost : ITerminalWebViewHost, IAsync
 		}
 	}
 
+	/// <inheritdoc />
+	public async Task<TerminalScreenSnapshot?> CaptureScreenAsync(
+		string sessionId,
+		CancellationToken cancellationToken)
+	{
+		await WaitUntilReadyAsync().WaitAsync(cancellationToken);
+		await _outputBatcher.FlushSessionAsync(sessionId).WaitAsync(cancellationToken);
+		var (id, answer) = _captures.Register();
+		try
+		{
+			await ExecuteScriptAsync(
+				$"window.agentTerminal.captureScreen({JsonSerializer.Serialize(sessionId)}, {id});");
+			return await answer.WaitAsync(cancellationToken);
+		}
+		finally
+		{
+			_captures.Remove(id);
+		}
+	}
+
 	public Task FitAsync() => ExecuteScriptWhenReadyAsync("window.agentTerminal.fit();");
 
 	/// <summary>Measures bounded cell capture on the real renderer at a diagnostic 200x50 viewport.</summary>
@@ -303,6 +324,7 @@ internal sealed class AvaloniaTerminalWebViewHost : ITerminalWebViewHost, IAsync
 			TerminalWebMessage.Input => "input",
 			TerminalWebMessage.Resize => "resize",
 			TerminalWebMessage.ScreenSnapshot => "screenSnapshot",
+			TerminalWebMessage.ScreenCapture => "screenCapture",
 			TerminalWebMessage.SelectionChanged => "selectionChanged",
 			TerminalWebMessage.SelectionCompleted => "selectionCompleted",
 			TerminalWebMessage.SelectionDismissed => "selectionDismissed",
@@ -332,6 +354,9 @@ internal sealed class AvaloniaTerminalWebViewHost : ITerminalWebViewHost, IAsync
 				}
 
 				ResizeReceived?.Invoke(this, (resize.SessionId, resize.Columns, resize.Rows));
+				break;
+			case TerminalWebMessage.ScreenCapture capture:
+				_captures.Complete(capture.RequestId, capture.Snapshot);
 				break;
 			case TerminalWebMessage.ScreenSnapshot snapshot:
 				if (snapshot.StylingFailure is { } stylingFailure)

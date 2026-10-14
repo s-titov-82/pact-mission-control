@@ -5,6 +5,23 @@ namespace Pact.App.Avalonia.Tests.Web;
 public sealed class TerminalWebMessageDecoderTests
 {
 	[Test]
+	public void TryDecode_reads_a_screen_capture_and_a_missing_terminal()
+	{
+		var capture = TerminalWebMessageDecoder.TryDecode(
+				"""{"type":"screenCapture","sessionId":"s1","requestId":7,"text":"screen","stable":true}""")
+			.ShouldBeOfType<TerminalWebMessage.ScreenCapture>();
+		capture.RequestId.ShouldBe(7);
+		capture.Snapshot.ShouldNotBeNull().Text.ShouldBe("screen");
+
+		TerminalWebMessageDecoder.TryDecode(
+				"""{"type":"screenCapture","sessionId":"s1","requestId":8,"missing":true}""")
+			.ShouldBe(new TerminalWebMessage.ScreenCapture("s1", 8, null));
+		TerminalWebMessageDecoder.TryDecode(
+				"""{"type":"screenCapture","sessionId":"s1","text":"screen"}""")
+			.ShouldBeNull();
+	}
+
+	[Test]
 	public void TryDecode_returns_typed_messages_for_every_supported_message()
 	{
 		TerminalWebMessageDecoder.TryDecode(

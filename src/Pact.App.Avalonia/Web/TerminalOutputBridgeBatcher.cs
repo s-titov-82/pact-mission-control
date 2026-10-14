@@ -93,6 +93,26 @@ internal sealed class TerminalOutputBridgeBatcher : IAsyncDisposable
 		return FlushAsync(state);
 	}
 
+	/// <summary>Sends one session's pending output now, without making it the active session.</summary>
+	public Task FlushSessionAsync(string sessionId)
+	{
+		ArgumentException.ThrowIfNullOrEmpty(sessionId);
+		SessionState? state;
+		lock (_sync)
+		{
+			ObjectDisposedException.ThrowIf(_disposed, this);
+			if (!_sessions.TryGetValue(sessionId, out state))
+			{
+				return Task.CompletedTask;
+			}
+
+			state.ScheduleVersion++;
+			state.FlushScheduled = false;
+		}
+
+		return FlushAsync(state);
+	}
+
 	public async Task RemoveSessionAsync(string sessionId)
 	{
 		SessionState? state;
