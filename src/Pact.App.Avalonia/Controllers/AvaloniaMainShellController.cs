@@ -1280,6 +1280,8 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		if (snapshot is not null && !IsSelectionSourceCurrent(snapshot.Source))
 		{
 			ClearSelectionActions(restoreTerminalFocus: false);
+			AppendDiagnosticLog($"selection-send target={target.Record.Id} reason=stale-source");
+			await ReportStatusAsync("Nothing sent: the selection's terminal is no longer the active one.");
 			return false;
 		}
 
@@ -1297,6 +1299,8 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 
 		if (string.IsNullOrEmpty(selectedText))
 		{
+			AppendDiagnosticLog($"selection-send target={target.Record.Id} reason=empty-selection");
+			await ReportStatusAsync("Nothing to send: no selected text.");
 			return false;
 		}
 

@@ -2118,6 +2118,39 @@ public sealed class AvaloniaMainShellControllerTests
 	}
 
 	[Test]
+	public async Task SendTo_with_nothing_selected_says_so()
+	{
+		await using ControllerFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+
+		var sent = await fixture.Controller.SendSelectionToSessionAsync(
+			fixture.ViewModel.Sessions[1],
+			TestContext.CurrentContext.CancellationToken);
+
+		sent.ShouldBeFalse();
+		fixture.Controller.StatusText.ShouldBe("Nothing to send: no selected text.");
+	}
+
+	[Test]
+	public async Task SendTo_after_switching_tabs_reports_that_nothing_is_selected()
+	{
+		await using ControllerFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		fixture.Controller.UpdateSelectionText("selected");
+		await fixture.Controller.SelectSessionAsync(
+			fixture.ViewModel.Sessions[1],
+			startIfNeeded: true,
+			cancellationToken: TestContext.CurrentContext.CancellationToken);
+
+		var sent = await fixture.Controller.SendSelectionToSessionAsync(
+			fixture.ViewModel.Sessions[1],
+			TestContext.CurrentContext.CancellationToken);
+
+		sent.ShouldBeFalse();
+		fixture.Controller.StatusText.ShouldBe("Nothing to send: no selected text.");
+	}
+
+	[Test]
 	public async Task Failed_session_route_keeps_the_current_snapshot_open()
 	{
 		await using ControllerFixture fixture = new();
