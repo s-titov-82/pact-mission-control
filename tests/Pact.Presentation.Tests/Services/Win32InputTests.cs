@@ -1,4 +1,4 @@
-using Pact.Presentation.Services;
+using Pact.Core.Terminal;
 
 namespace Pact.Presentation.Tests.Services;
 

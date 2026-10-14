@@ -29,8 +29,7 @@ public sealed class SessionRuntimeCoordinatorTests
 			new("GPT-6.1-Sol medium · main · Context 30% used", false, [])], 80, true);
 		var verdict = CodexScreenProfile.Instance.Classify(snapshot);
 		var state = Idle() with { PromptIsEmpty = verdict.PromptIsEmpty };
-		var result = await coordinator.WriteScenarioPromptAndSubmitAsync("session-1", "task-path", isCodex: false,
-			confirmDelivery: false, () => state, TestContext.CurrentContext.CancellationToken);
+		var result = await coordinator.WriteScenarioPromptAndSubmitAsync("session-1", "task-path", confirmDelivery: false, () => state, TestContext.CurrentContext.CancellationToken);
 		result.Outcome.ShouldBe(expected);
 		backend.InputWrites.Count.ShouldBe(expected == PromptDeliveryOutcome.Written ? 2 : 0);
 	}
@@ -118,10 +117,10 @@ public sealed class SessionRuntimeCoordinatorTests
 	[Test]
 	[TestCase(false, true, "\n")]
 	[TestCase(true, false, "\n")]
-	public void RewriteInput_NonCodexOrInactiveMode_LeavesNewlineUntouched(bool active, bool codex, string input) => SessionRuntimeCoordinator.RewriteInput(input, active, codex).ShouldBe(input);
+	public void RewriteInput_NonCodexOrInactiveMode_LeavesNewlineUntouched(bool active, bool codex, string input) => AgentKeyEncoder.RewriteTyped(input, codex ? AgentKind.Codex : AgentKind.Claude, active).ShouldBe(input);
 
 	[Test]
-	public void RewriteInput_CodexWin32Mode_EncodesShiftEnter() => SessionRuntimeCoordinator.RewriteInput("\n", true, true).ShouldBe(Win32InputEncoder.ShiftEnter);
+	public void RewriteInput_CodexWin32Mode_EncodesShiftEnter() => AgentKeyEncoder.RewriteTyped("\n", AgentKind.Codex, true).ShouldBe(Win32InputEncoder.ShiftEnter);
 
 	[Test]
 	public async Task A_new_busy_cycle_confirms_delivery()
@@ -132,7 +131,6 @@ public sealed class SessionRuntimeCoordinatorTests
 		var result = await coordinator.WriteScenarioPromptAndSubmitAsync(
 			"session-1",
 			"task-path",
-			isCodex: false,
 			confirmDelivery: true,
 			() => backend.InputWrites.Contains(PlainEnter) ? Busy(epoch: 2) : Idle(),
 			TestContext.CurrentContext.CancellationToken);
@@ -144,13 +142,12 @@ public sealed class SessionRuntimeCoordinatorTests
 	[Test]
 	public async Task A_busy_session_refuses_delivery_without_writing()
 	{
-		var (coordinator, backend, controller) = await CreateAttachedSessionAsync();
+		var (coordinator, backend, controller) = await CreateAttachedSessionAsync(kind: AgentKind.Codex);
 		await using var _ = controller;
 
 		var result = await coordinator.WriteScenarioPromptAndSubmitAsync(
 			"session-1",
 			"task-path",
-			isCodex: true,
 			confirmDelivery: true,
 			static () => Busy(epoch: 1),
 			TestContext.CurrentContext.CancellationToken);
@@ -201,7 +198,7 @@ public sealed class SessionRuntimeCoordinatorTests
 	[Test]
 	public async Task A_submitted_prompt_to_codex_in_win32_mode_uses_the_encoded_enter()
 	{
-		var (coordinator, backend, controller) = await CreateAttachedSessionAsync(win32InputMode: true);
+		var (coordinator, backend, controller) = await CreateAttachedSessionAsync(win32InputMode: true, kind: AgentKind.Codex);
 		await using var _ = controller;
 
 		await coordinator.SendPromptAsync(
@@ -279,7 +276,6 @@ public sealed class SessionRuntimeCoordinatorTests
 		var result = await coordinator.WriteScenarioPromptAndSubmitAsync(
 			"session-1",
 			"task-path",
-			isCodex: false,
 			confirmDelivery: false,
 			static () => Idle(),
 			TestContext.CurrentContext.CancellationToken);
@@ -337,7 +333,7 @@ public sealed class SessionRuntimeCoordinatorTests
 		var esc = (char)0x1b;
 		var code = (int)control;
 
-		SessionRuntimeCoordinator.RewriteInput(control.ToString(), true, true).ShouldBe(
+		AgentKeyEncoder.RewriteTyped(control.ToString(), AgentKind.Codex, true).ShouldBe(
 			$"{esc}[{virtualKey};{scanCode};{code};1;8;1_{esc}[{virtualKey};{scanCode};{code};0;8;1_");
 	}
 
@@ -345,18 +341,17 @@ public sealed class SessionRuntimeCoordinatorTests
 	[TestCase("\r")]
 	[TestCase("\b")]
 	public void RewriteInput_CodexWin32Mode_LeavesKeysWithTheirOwnMeaningAlone(string input) =>
-		SessionRuntimeCoordinator.RewriteInput(input, true, true).ShouldBe(input);
+		AgentKeyEncoder.RewriteTyped(input, AgentKind.Codex, true).ShouldBe(input);
 
 	[Test]
 	public async Task Codex_win32_mode_uses_encoded_enter_and_confirms_delivery()
 	{
-		var (coordinator, backend, controller) = await CreateAttachedSessionAsync(win32InputMode: true);
+		var (coordinator, backend, controller) = await CreateAttachedSessionAsync(win32InputMode: true, kind: AgentKind.Codex);
 		await using var _ = controller;
 
 		var result = await coordinator.WriteScenarioPromptAndSubmitAsync(
 			"session-1",
 			"task-path",
-			isCodex: true,
 			confirmDelivery: true,
 			() => backend.InputWrites.Count == 2 ? Busy(epoch: 2) : Idle(),
 			TestContext.CurrentContext.CancellationToken);
@@ -374,7 +369,6 @@ public sealed class SessionRuntimeCoordinatorTests
 		var result = await coordinator.WriteScenarioPromptAndSubmitAsync(
 			"session-1",
 			"task-path",
-			isCodex: false,
 			confirmDelivery: true,
 			() =>
 			{
@@ -398,7 +392,6 @@ public sealed class SessionRuntimeCoordinatorTests
 		var result = await coordinator.WriteScenarioPromptAndSubmitAsync(
 			"session-1",
 			"task-path",
-			isCodex: false,
 			confirmDelivery: true,
 			() => backend.InputWrites.Count(write => write == PastedTrigger) >= 2
 				? Busy(epoch: 2)
@@ -418,7 +411,6 @@ public sealed class SessionRuntimeCoordinatorTests
 		var result = await coordinator.WriteScenarioPromptAndSubmitAsync(
 			"session-1",
 			"task-path",
-			isCodex: false,
 			confirmDelivery: true,
 			() => backend.InputWrites.Count == 0 ? Idle() : Busy(epoch: 1),
 			TestContext.CurrentContext.CancellationToken);
@@ -437,7 +429,6 @@ public sealed class SessionRuntimeCoordinatorTests
 		var result = await coordinator.WriteScenarioPromptAndSubmitAsync(
 			"session-1",
 			"task-path",
-			isCodex: false,
 			confirmDelivery: true,
 			() => backend.InputWrites.Count == 0
 				? Idle()
@@ -461,7 +452,6 @@ public sealed class SessionRuntimeCoordinatorTests
 		var result = await coordinator.WriteScenarioPromptAndSubmitAsync(
 			"session-1",
 			"task-path",
-			isCodex: false,
 			confirmDelivery,
 			static () => HoldingText(),
 			TestContext.CurrentContext.CancellationToken);
@@ -482,7 +472,6 @@ public sealed class SessionRuntimeCoordinatorTests
 		var result = await coordinator.WriteScenarioPromptAndSubmitAsync(
 			"session-1",
 			"task-path",
-			isCodex: false,
 			confirmDelivery,
 			static () => Question(AgentScreenProfileBase.TrustPromptDescription),
 			TestContext.CurrentContext.CancellationToken);
@@ -500,7 +489,6 @@ public sealed class SessionRuntimeCoordinatorTests
 		var result = await coordinator.WriteScenarioPromptAndSubmitAsync(
 			"session-1",
 			"notice",
-			isCodex: false,
 			confirmDelivery: false,
 			static () => Idle(),
 			TestContext.CurrentContext.CancellationToken);
@@ -519,7 +507,6 @@ public sealed class SessionRuntimeCoordinatorTests
 		var result = await coordinator.WriteScenarioPromptAndSubmitAsync(
 			"session-1",
 			"task-path",
-			isCodex: false,
 			confirmDelivery: true,
 			static () => null,
 			TestContext.CurrentContext.CancellationToken);
@@ -537,7 +524,6 @@ public sealed class SessionRuntimeCoordinatorTests
 
 		var result = await coordinator.WaitForSessionReadyAsync(
 			"session-1",
-			isCodex: false,
 			() => ++polls < 3 ? Busy(epoch: 1) : Idle(),
 			TestContext.CurrentContext.CancellationToken);
 
@@ -553,7 +539,6 @@ public sealed class SessionRuntimeCoordinatorTests
 
 		var result = await coordinator.WaitForSessionReadyAsync(
 			"session-1",
-			isCodex: false,
 			static () => new SessionScreenState(
 				"screen",
 				string.Empty,
@@ -575,7 +560,6 @@ public sealed class SessionRuntimeCoordinatorTests
 
 		var result = await coordinator.WaitForSessionReadyAsync(
 			"session-1",
-			isCodex: false,
 			static () => new SessionScreenState(
 				"screen",
 				string.Empty,
@@ -597,7 +581,6 @@ public sealed class SessionRuntimeCoordinatorTests
 
 		var result = await coordinator.WaitForSessionReadyAsync(
 			"session-1",
-			isCodex: false,
 			() => backend.InputWrites.Contains(PlainEnter)
 				? Idle()
 				: Question(AgentScreenProfileBase.TrustPromptDescription),
@@ -615,7 +598,6 @@ public sealed class SessionRuntimeCoordinatorTests
 
 		var result = await coordinator.WaitForSessionReadyAsync(
 			"session-1",
-			isCodex: false,
 			static () => Question(AgentScreenProfileBase.TrustPromptDescription),
 			TestContext.CurrentContext.CancellationToken);
 
@@ -631,7 +613,6 @@ public sealed class SessionRuntimeCoordinatorTests
 
 		var result = await coordinator.WaitForSessionReadyAsync(
 			"session-1",
-			isCodex: false,
 			static () => Question("Approve this edit?"),
 			TestContext.CurrentContext.CancellationToken);
 
@@ -649,7 +630,6 @@ public sealed class SessionRuntimeCoordinatorTests
 
 		var result = await coordinator.WaitForSessionReadyAsync(
 			"session-1",
-			isCodex: false,
 			static () => null,
 			TestContext.CurrentContext.CancellationToken);
 
@@ -676,7 +656,6 @@ public sealed class SessionRuntimeCoordinatorTests
 			coordinator.WriteScenarioPromptAndSubmitAsync(
 				"session-1",
 				"task-path",
-				isCodex: false,
 				confirmDelivery: true,
 				static () => Idle(),
 				TestContext.CurrentContext.CancellationToken));
@@ -713,6 +692,7 @@ public sealed class SessionRuntimeCoordinatorTests
 			24);
 		var controller = await coordinator.StartAsync(
 			"session-1",
+			AgentKind.Pwsh,
 			options,
 			static (_, _) => { },
 			outputHandler: null,
@@ -746,6 +726,7 @@ public sealed class SessionRuntimeCoordinatorTests
 
 		await coordinator.StartAsync(
 			"session-1",
+			AgentKind.Pwsh,
 			options,
 			static (_, _) => { },
 			outputHandler: null,
@@ -774,6 +755,7 @@ public sealed class SessionRuntimeCoordinatorTests
 			24);
 		var oldController = await coordinator.StartAsync(
 			"session-1",
+			AgentKind.Pwsh,
 			options,
 			static (_, _) => { },
 			outputHandler: null,
@@ -783,6 +765,7 @@ public sealed class SessionRuntimeCoordinatorTests
 			CancellationToken.None);
 		var replacement = await coordinator.StartAsync(
 			"session-1",
+			AgentKind.Pwsh,
 			options,
 			static (_, _) => { },
 			outputHandler: null,
@@ -832,6 +815,7 @@ public sealed class SessionRuntimeCoordinatorTests
 				{
 					await coordinator.StartAsync(
 						"session-1",
+						AgentKind.Pwsh,
 						options,
 						static (_, _) => { },
 						outputHandler: null,
@@ -899,7 +883,9 @@ public sealed class SessionRuntimeCoordinatorTests
 	private static async Task<(
 		SessionRuntimeCoordinator Coordinator,
 		RecordingBackend Backend,
-		TerminalController Controller)> CreateAttachedSessionAsync(bool win32InputMode = false)
+		TerminalController Controller)> CreateAttachedSessionAsync(
+		bool win32InputMode = false,
+		AgentKind kind = AgentKind.Pwsh)
 	{
 		RecordingBackend backend = new();
 		TerminalController controller = new(backend);
@@ -907,6 +893,7 @@ public sealed class SessionRuntimeCoordinatorTests
 		var coordinator = CreateFastCoordinator();
 		var runtime = coordinator.GetOrCreateRuntime("session-1");
 		runtime.AttachController(controller);
+		runtime.Kind = kind;
 		if (win32InputMode)
 		{
 			runtime.InputModes.Scan($"{(char)0x1b}[?9001h");

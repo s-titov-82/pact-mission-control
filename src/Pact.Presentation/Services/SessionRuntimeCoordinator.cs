@@ -170,6 +170,7 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 	/// </summary>
 	public async Task<TerminalController> StartAsync(
 		string sessionId,
+		AgentKind kind,
 		TerminalStartOptions options,
 		Action<string, TerminalController> exited,
 		EventHandler<string>? outputHandler,
@@ -204,6 +205,7 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 			}
 
 			runtime.PrepareForControllerStart();
+			runtime.Kind = kind;
 			replacedController = runtime.AttachController(
 				controller,
 				outputHandler,
@@ -270,6 +272,7 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 	/// </summary>
 	public async Task<TerminalController> RestartAsync(
 		string sessionId,
+		AgentKind kind,
 		TerminalStartOptions options,
 		Action<string, TerminalController> exited,
 		EventHandler<string>? outputHandler,
@@ -281,6 +284,7 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 		await StopAsync(sessionId).ConfigureAwait(false);
 		return await StartAsync(
 			sessionId,
+			kind,
 			options,
 			exited,
 			outputHandler,
@@ -576,10 +580,7 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 			await Task.Delay(_scenarioSubmitSettleDelay).ConfigureAwait(false);
 		}
 
-		var submitInput = runtime.InputModes.IsWin32InputActive && targetSession.Record.Kind == AgentKind.Codex
-			? Win32InputEncoder.EnterKey
-			: "\r";
-		if (!await controller.WriteInputAsync(submitInput).ConfigureAwait(false))
+		if (!await controller.WriteInputAsync(runtime.EncodeEnter()).ConfigureAwait(false))
 		{
 			throw new InvalidOperationException("Target session submit failed.");
 		}
@@ -599,7 +600,6 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 	/// </remarks>
 	public async Task<SessionReadiness> WaitForSessionReadyAsync(
 		string sessionId,
-		bool isCodex,
 		Func<SessionScreenState?> readScreenState,
 		CancellationToken cancellationToken)
 	{
@@ -676,11 +676,8 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 						return NotReady();
 					}
 
-					var submitInput = runtime.InputModes.IsWin32InputActive && isCodex
-						? Win32InputEncoder.EnterKey
-						: "\r";
 					cancellationToken.ThrowIfCancellationRequested();
-					if (!await controller.WriteInputAsync(submitInput).ConfigureAwait(false))
+					if (!await controller.WriteInputAsync(runtime.EncodeEnter()).ConfigureAwait(false))
 					{
 						return NotReady();
 					}
@@ -724,7 +721,6 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 	public async Task<PromptDeliveryResult> WriteScenarioPromptAndSubmitAsync(
 		string sessionId,
 		string trigger,
-		bool isCodex,
 		bool confirmDelivery,
 		Func<SessionScreenState?> readScreenState,
 		CancellationToken cancellationToken)
@@ -739,9 +735,7 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 			throw new InvalidOperationException("Target scenario session is not running.");
 		}
 
-		var submitInput = runtime.InputModes.IsWin32InputActive && isCodex
-			? Win32InputEncoder.EnterKey
-			: "\r";
+		var submitInput = runtime.EncodeEnter();
 
 		var gate = readScreenState();
 		if (gate?.IsBusy == true)
@@ -916,12 +910,10 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 		string sessionId,
 		string input,
 		Func<string, bool> isLocked,
-		Func<string, bool> isCodex,
 		Func<string, string, Task> showIgnoredAsync)
 	{
 		ArgumentNullException.ThrowIfNull(input);
 		ArgumentNullException.ThrowIfNull(isLocked);
-		ArgumentNullException.ThrowIfNull(isCodex);
 		ArgumentNullException.ThrowIfNull(showIgnoredAsync);
 
 		if (!TryGetRuntime(sessionId, out var runtime)
@@ -936,40 +928,11 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 			RaiseStatusMessage("Terminal is locked by a running scenario");
 			return;
 		}
-		input = RewriteInput(input, runtime.InputModes.IsWin32InputActive, isCodex(sessionId));
+		input = runtime.RewriteTypedInput(input);
 		if (!await controller.WriteInputAsync(input).ConfigureAwait(false))
 		{
 			await showIgnoredAsync(sessionId, "Input write failed; session may have exited.").ConfigureAwait(false);
 		}
-	}
-
-	internal static string RewriteInput(string input, bool win32InputModeActive, bool isCodex)
-	{
-		if (!win32InputModeActive || !isCodex)
-		{
-			return input;
-		}
-
-		if (string.Equals(input, "\n", StringComparison.Ordinal))
-		{
-			return Win32InputEncoder.ShiftEnter;
-		}
-
-		if (input.Length == 1 && input[0] == (char)0x1b)
-		{
-			return Win32InputEncoder.EscapeKey;
-		}
-
-		// Tab, Enter and Backspace share bytes with Ctrl+I, Ctrl+M and Ctrl+H but mean their own
-		// keys, which the client already receives correctly.
-		if (input.Length == 1
-			&& input[0] is >= (char)0x01 and <= (char)0x1A
-			&& input[0] is not ('\t' or '\r' or '\b'))
-		{
-			return Win32InputEncoder.CtrlLetter(input[0]);
-		}
-
-		return input;
 	}
 
 	/// <summary>

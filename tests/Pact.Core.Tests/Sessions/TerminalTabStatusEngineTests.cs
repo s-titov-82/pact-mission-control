@@ -1,6 +1,7 @@
 using Pact.Core.Agents;
 using Pact.Core.ScreenVerdictProfiles;
 using Pact.Core.Sessions;
+using Pact.Core.Terminal;
 
 namespace Pact.Core.Tests.Sessions;
 
@@ -258,8 +259,9 @@ public sealed class TerminalTabStatusEngineTests
 		engine.CurrentStatus.PromptIsEmpty.ShouldBe(true);
 	}
 
-	[Test]
-	public void Submitting_forgets_the_draft_seen_before_enter()
+	[TestCase(false)]
+	[TestCase(true)]
+	public void Submitting_forgets_the_draft_seen_before_enter(bool encodedEnter)
 	{
 		ScriptedProfile profile = new()
 		{
@@ -276,9 +278,11 @@ public sealed class TerminalTabStatusEngineTests
 		engine.OnUserInput("draft", T0.AddSeconds(1));
 		engine.CurrentStatus.PromptIsEmpty.ShouldBe(false);
 
-		engine.OnUserInput("\r", T0.AddSeconds(2));
+		var epoch = engine.CurrentStatus.ActivityEpoch;
+		engine.OnUserInput(encodedEnter ? Win32InputEncoder.EnterKey : "\r", T0.AddSeconds(2));
 		engine.CurrentStatus.PromptIsEmpty.ShouldBeNull();
 		engine.CurrentDiagnostics.PromptEvidence.ShouldBeNull();
+		engine.CurrentStatus.ActivityEpoch.ShouldBeGreaterThan(epoch);
 	}
 
 	[Test]

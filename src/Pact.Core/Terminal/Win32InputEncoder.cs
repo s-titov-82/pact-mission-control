@@ -1,4 +1,4 @@
-namespace Pact.Presentation.Services;
+namespace Pact.Core.Terminal;
 
 /// <summary>
 /// Encodes keystrokes in ConPTY's win32-input-mode wire format

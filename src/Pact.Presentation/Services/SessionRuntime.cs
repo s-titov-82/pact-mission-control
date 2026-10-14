@@ -1,5 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
+using Pact.Core.Agents;
+using Pact.Core.Terminal;
 
 namespace Pact.Presentation.Services;
 
@@ -113,6 +115,22 @@ public sealed class SessionRuntime(string sessionId)
 	/// paste from the clipboard itself.
 	/// </summary>
 	public ClientInputModeTracker InputModes { get; } = new();
+
+	/// <summary>
+	/// Agent running in this session, set when its controller starts. Together with
+	/// <see cref="InputModes"/> it decides how keys are encoded.
+	/// </summary>
+	public AgentKind Kind { get; internal set; } = AgentKind.Custom;
+
+	/// <summary>The Enter key press that submits this session's composer.</summary>
+	public string EncodeEnter() => AgentKeyEncoder.Enter(Kind, InputModes.IsWin32InputActive);
+
+	/// <summary>The Esc key press for this session's client.</summary>
+	public string EncodeEscape() => AgentKeyEncoder.Escape(Kind, InputModes.IsWin32InputActive);
+
+	/// <summary>Rewrites one typed terminal input for this session's client.</summary>
+	public string RewriteTypedInput(string input) =>
+		AgentKeyEncoder.RewriteTyped(input, Kind, InputModes.IsWin32InputActive);
 
 	/// <summary>
 	/// Completes once the session's first output has been rendered, letting startup wait for a

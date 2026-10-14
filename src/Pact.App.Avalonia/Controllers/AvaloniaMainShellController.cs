@@ -1915,10 +1915,9 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 
 			Task InputWritingHandler(string input)
 			{
-				return input.Contains('\r', StringComparison.Ordinal)
-								|| input.Contains(Win32InputEncoder.EnterKey, StringComparison.Ordinal)
-								? ResetSnapshotBaselineSafeAsync(OrchestratorSessionId)
-								: Task.CompletedTask;
+				return AgentKeyEncoder.IsSubmit(input)
+					? ResetSnapshotBaselineSafeAsync(OrchestratorSessionId)
+					: Task.CompletedTask;
 			}
 
 			void InputWrittenHandler(object? _, string input)
@@ -1948,6 +1947,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			_orchestratorStartedAt = _timeProvider.GetUtcNow();
 			await _runtimeCoordinator.StartAsync(
 				OrchestratorSessionId,
+				record.Kind,
 				new TerminalStartOptions(
 					commandLine,
 					_orchestratorRecord.WorkingDirectory,
@@ -2365,7 +2365,6 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 				cancellationToken);
 			var readiness = await _runtimeCoordinator.WaitForSessionReadyAsync(
 				reviewerSessionId,
-				reviewer.Record.Kind == AgentKind.Codex,
 				() => ReadScreenState(reviewerSessionId),
 				cancellationToken);
 			if (!readiness.IsReady)
@@ -2913,24 +2912,18 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		bool confirmDelivery,
 		CancellationToken cancellationToken)
 	{
-		SessionViewModel? targetSession = null;
-		var isCodex = false;
 		_uiTaskDispatcher.Post(() =>
 		{
-			targetSession = ViewModel.FindSession(sessionId)
-				?? throw new InvalidOperationException("Target scenario session is not running.");
-			if (!_runtimeCoordinator.TryGetActiveController(sessionId, out _, out _))
+			if (ViewModel.FindSession(sessionId) is null
+				|| !_runtimeCoordinator.TryGetActiveController(sessionId, out _, out _))
 			{
 				throw new InvalidOperationException("Target scenario session is not running.");
 			}
-
-			isCodex = targetSession.Record.Kind == AgentKind.Codex;
 		});
 
 		return _runtimeCoordinator.WriteScenarioPromptAndSubmitAsync(
 			sessionId,
 			prompt,
-			isCodex,
 			confirmDelivery,
 			() => ReadScreenState(sessionId),
 			cancellationToken);
@@ -2941,26 +2934,15 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 
 	private async Task SendScenarioEscapeAsync(string sessionId)
 	{
-		SessionRuntime? runtime = null;
-		TerminalController? controller = null;
-		var isCodex = false;
-		_uiTaskDispatcher.Post(() =>
+		if (!_runtimeCoordinator.TryGetActiveController(
+			sessionId,
+			out var runtime,
+			out var controller))
 		{
-			if (!_runtimeCoordinator.TryGetActiveController(
-				sessionId,
-				out runtime,
-				out controller))
-			{
-				throw new InvalidOperationException($"Session '{sessionId}' is not running.");
-			}
+			throw new InvalidOperationException($"Session '{sessionId}' is not running.");
+		}
 
-			isCodex = ViewModel.FindSession(sessionId)?.Record.Kind == AgentKind.Codex;
-		});
-
-		var input = runtime!.InputModes.IsWin32InputActive && isCodex
-			? Win32InputEncoder.EscapeKey
-			: "\u001b";
-		if (!await controller!.WriteInputAsync(input))
+		if (!await controller.WriteInputAsync(runtime.EncodeEscape()))
 		{
 			throw new InvalidOperationException("Target session escape write failed.");
 		}
@@ -2981,7 +2963,6 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			sessionId,
 			input,
 			id => ViewModel.Sessions.FirstOrDefault(session => session.Record.Id == id)?.IsLockedByScenario == true,
-			id => ViewModel.Sessions.FirstOrDefault(session => session.Record.Id == id)?.Record.Kind == AgentKind.Codex,
 			(_, message) => ReportStatusAsync(message));
 	}
 
@@ -3336,13 +3317,9 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 
 		Task InputWritingHandler(string input)
 		{
-			if (input.Contains('\r', StringComparison.Ordinal)
-				|| input.Contains(Win32InputEncoder.EnterKey, StringComparison.Ordinal))
-			{
-				return ResetSnapshotBaselineSafeAsync(session.Record.Id);
-			}
-
-			return Task.CompletedTask;
+			return AgentKeyEncoder.IsSubmit(input)
+				? ResetSnapshotBaselineSafeAsync(session.Record.Id)
+				: Task.CompletedTask;
 		}
 
 		void InputWrittenHandler(object? _, string input)
@@ -3373,6 +3350,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		{
 			await _runtimeCoordinator.StartAsync(
 				session.Record.Id,
+				session.Record.Kind,
 				options,
 				OnControllerExited,
 				OutputHandler,
@@ -3741,15 +3719,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 				TimeSpan.FromMilliseconds(75),
 				_timeProvider,
 				cancellationToken);
-			var enterInput = runtime.InputModes.IsWin32InputActive
-				&& session.Record.Kind == AgentKind.Codex
-					? Win32InputEncoder.EnterKey
-					: "\r";
-			if (!await controller.WriteInputAsync(enterInput)
-				&& !string.Equals(enterInput, "\r", StringComparison.Ordinal))
-			{
-				await controller.WriteInputAsync("\r");
-			}
+			await controller.WriteInputAsync(runtime.EncodeEnter());
 
 			while (true)
 			{

@@ -1,5 +1,6 @@
 using Pact.Core.Agents;
 using Pact.Core.ScreenVerdictProfiles;
+using Pact.Core.Terminal;
 
 namespace Pact.Core.Sessions;
 
@@ -307,7 +308,7 @@ public sealed class TerminalTabStatusEngine
 
 			LastUserInputAt = occurredAt;
 			LastUserCharacter = input[^1];
-			if (input.Contains('\r', StringComparison.Ordinal))
+			if (AgentKeyEncoder.IsSubmit(input))
 			{
 				// The submitted text has left the composer, and a working agent repaints too
 				// often to settle a new screen until its turn ends. Until then, what the

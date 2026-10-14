@@ -3,8 +3,8 @@ using Pact.App.Avalonia.Tests.Fakes;
 using Pact.Core.Agents;
 using Pact.Core.Projects;
 using Pact.Core.Sessions;
+using Pact.Core.Terminal;
 using Pact.Infrastructure.Storage;
-using Pact.Presentation.Services;
 using Pact.Presentation.Services.WebMonitoring;
 using Pact.Presentation.ViewModels;
 
