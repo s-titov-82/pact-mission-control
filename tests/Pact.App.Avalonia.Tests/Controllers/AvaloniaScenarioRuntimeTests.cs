@@ -337,6 +337,7 @@ public sealed class AvaloniaScenarioRuntimeTests
 			ProjectStore = new InMemoryProjectStore(new ProjectsDocument(1, [project]));
 			ViewModel = new MainWindowViewModel(ProjectStore, new EmptyNotesStore());
 			Host = new FakeTerminalWebViewHost();
+			Host.KindOf = id => ViewModel.FindSession(id)?.Record.Kind;
 			Paths = new AppPaths(_root);
 			SettingsFileStore = new SettingsFileStore(Paths);
 			Definition = DefinitionRecord("review-loop", "initial target");

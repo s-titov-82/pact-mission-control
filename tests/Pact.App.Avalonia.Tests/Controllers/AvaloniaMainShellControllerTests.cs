@@ -2903,6 +2903,7 @@ public sealed class AvaloniaMainShellControllerTests
 				Statuses,
 				RootStore);
 			Host = new FakeTerminalWebViewHost();
+			Host.KindOf = id => ViewModel.FindSession(id)?.Record.Kind;
 			AppPaths paths = new(Root);
 			DataRootHousekeeping.Prepare(paths);
 			Paths = paths;

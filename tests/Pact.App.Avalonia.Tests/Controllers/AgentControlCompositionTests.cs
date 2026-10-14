@@ -659,6 +659,7 @@ public sealed class AgentControlCompositionTests
 				twoProjects ? [projectA, projectB] : [projectA]));
 			ViewModel = new MainWindowViewModel(projectStore, _notes);
 			Host = new FakeTerminalWebViewHost();
+			Host.KindOf = id => ViewModel.FindSession(id)?.Record.Kind;
 			Paths = new AppPaths(_temporaryDirectory.Path);
 			if (!agentControlEnabled)
 			{

@@ -1,3 +1,4 @@
+using Pact.Core.Agents;
 using Pact.Core.Sessions;
 using Pact.Core.Presentation;
 
@@ -61,8 +62,24 @@ internal sealed class FakeTerminalWebViewHost : ITerminalWebViewHost
 		WrittenOutput.Add((sessionId, text));
 		return Task.CompletedTask;
 	}
-	// By default the capture shows an empty Codex composer, as after a submitted prompt.
-	public Func<string, TerminalScreenSnapshot?> CaptureScreen { get; set; } = static _ => EmptyComposer;
+	// By default the capture shows the agent's empty composer, as after a submitted prompt.
+	public Func<string, TerminalScreenSnapshot?>? CaptureScreen { get; set; }
+
+	// Lets the default capture draw the right agent's composer; a fixture maps ids to kinds.
+	public Func<string, AgentKind?> KindOf { get; set; } = static _ => null;
+
+	public static TerminalScreenSnapshot ClaudeEmptyComposer { get; } = TerminalScreenSnapshot.FromRows(
+		[
+			new("Worked for 1s", false, []),
+			new(ClaudeRule, false, []),
+			new("❯ ", false, []),
+			new(ClaudeRule, false, []),
+			new("  GPT-6.1-Sol medium · main · Context 30% used", false, [])
+		],
+		80,
+		true);
+
+	private const string ClaudeRule = "────────────────────────────────────────────────";
 
 	public static TerminalScreenSnapshot EmptyComposer { get; } = TerminalScreenSnapshot.FromRows(
 		[
@@ -74,7 +91,9 @@ internal sealed class FakeTerminalWebViewHost : ITerminalWebViewHost
 		true);
 
 	public Task<TerminalScreenSnapshot?> CaptureScreenAsync(string sessionId, CancellationToken cancellationToken) =>
-		Task.FromResult(CaptureScreen(sessionId));
+		Task.FromResult(CaptureScreen is { } capture
+			? capture(sessionId)
+			: KindOf(sessionId) == AgentKind.Claude ? ClaudeEmptyComposer : EmptyComposer);
 
 	public Task ResetSnapshotBaselineAsync(string sessionId)
 	{

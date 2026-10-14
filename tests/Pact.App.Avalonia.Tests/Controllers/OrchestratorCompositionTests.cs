@@ -479,6 +479,7 @@ public sealed class OrchestratorCompositionTests
 			var paths = new AppPaths(_temporaryDirectory.Path);
 			SettingsFileStore settings = new(paths);
 			Host = new FakeTerminalWebViewHost();
+			Host.KindOf = id => viewModel.FindSession(id)?.Record.Kind;
 			_builder = new ShellControllerTestBuilder(
 				viewModel,
 				settings,
