@@ -560,7 +560,11 @@ function drainOutputThen(instance, done) {
   }
   const pending = instance.pendingOutput;
   instance.pendingOutput = '';
-  instance.term.write(pending, done);
+  instance.term.write(pending, () => {
+    // The drained output still owes the status engine its usual snapshot.
+    scheduleSnapshot(instance.sessionId, instance);
+    done();
+  });
 }
 
 function updateCursorBlink() {

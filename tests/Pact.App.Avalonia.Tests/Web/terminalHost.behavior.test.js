@@ -702,6 +702,12 @@ function runScreenCaptureBehavior() {
   assert.equal(capture.stable, true);
 
   hostMessages.length = 0;
+  flushTimers();
+  assert.ok(
+    hostMessages.some(message => message.type === 'screenSnapshot'),
+    'output drained by a capture still reaches the status snapshot');
+
+  hostMessages.length = 0;
   window.agentTerminal.captureScreen('unknown', 6);
   assert.deepEqual(hostMessages, [{ type: 'screenCapture', sessionId: 'unknown', requestId: 6, missing: true }]);
 }

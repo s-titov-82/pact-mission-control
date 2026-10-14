@@ -223,6 +223,50 @@ public sealed partial class SessionRuntimeCoordinatorTests
 	}
 
 	[Test]
+	public async Task Keys_typed_while_the_paste_lands_stop_the_repair()
+	{
+		var (coordinator, backend, host, _, controller) = await CreateDeliverySessionAsync();
+		await using var _ = controller;
+		var runtime = coordinator.GetOrCreateRuntime("session-1");
+		Task? typed = null;
+		backend.InputWritten = input =>
+		{
+			EchoBracketedPaste(runtime, input);
+			if (typed is null && input == Pasted)
+			{
+				typed = coordinator.WriteInputAsync(
+					"session-1",
+					"x",
+					static _ => false,
+					static (_, _) => Task.CompletedTask);
+			}
+		};
+		host.CaptureScreen = static _ => ComposerScreen(empty: false);
+
+		var result = await DeliverAsync(coordinator);
+		await typed.ShouldNotBeNull();
+
+		result.Outcome.ShouldBe(PromptDeliveryOutcome.Unconfirmed);
+		backend.InputWrites.ShouldBe([Pasted, PlainEnter, "x"]);
+	}
+
+	[Test]
+	public async Task A_capture_that_ignores_cancellation_still_ends_the_delivery()
+	{
+		var (coordinator, backend, host, _, controller) = await CreateDeliverySessionAsync();
+		await using var _ = controller;
+		TaskCompletionSource<TerminalScreenSnapshot?> never = new();
+		host.CaptureScreenHandler = (_, _) => never.Task;
+		var startedAt = Stopwatch.GetTimestamp();
+
+		var result = await DeliverAsync(coordinator);
+
+		Stopwatch.GetElapsedTime(startedAt).ShouldBeLessThan(TimeSpan.FromSeconds(2));
+		result.Outcome.ShouldBe(PromptDeliveryOutcome.Unconfirmed);
+		backend.InputWrites.ShouldBe([Pasted]);
+	}
+
+	[Test]
 	public async Task A_session_without_a_composer_model_is_submitted()
 	{
 		var (coordinator, backend, host, _, controller) = await CreateDeliverySessionAsync(kind: AgentKind.Pwsh);
@@ -303,6 +347,43 @@ public sealed partial class SessionRuntimeCoordinatorTests
 
 		result.Outcome.ShouldBe(PromptDeliveryOutcome.Confirmed);
 		backend.InputWrites.ShouldBe([PlainEnter, Pasted, PlainEnter]);
+	}
+
+	[Test]
+	public async Task A_start_request_during_a_delivery_start_does_not_start_twice()
+	{
+		RecordingHost host = new();
+		var coordinator = CreateFastCoordinator(host);
+		RecordingBackend backend = new();
+		TerminalController controller = new(backend);
+		TaskCompletionSource releaseStart = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		TaskCompletionSource startEntered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		var starts = 0;
+		FakeFacts facts = new();
+		facts.Start = async _ =>
+		{
+			Interlocked.Increment(ref starts);
+			startEntered.TrySetResult();
+			await releaseStart.Task;
+			await controller.StartAsync("fake", Environment.CurrentDirectory);
+			var runtime = coordinator.GetOrCreateRuntime("session-1");
+			runtime.AttachController(controller);
+			runtime.Kind = AgentKind.Codex;
+			EchoPastes(backend, runtime, facts);
+			runtime.NotifyOutputRendered();
+		};
+		coordinator.SessionFacts = facts;
+		host.CaptureScreen = _ => ComposerScreen(empty: backend.InputWrites.Contains(PlainEnter));
+
+		var delivery = DeliverAsync(coordinator, startIfNotRunning: true);
+		await startEntered.Task;
+		var start = coordinator.StartAndWaitReadyAsync("session-1", CancellationToken.None);
+		releaseStart.SetResult();
+
+		(await delivery).Outcome.ShouldBe(PromptDeliveryOutcome.Confirmed);
+		(await start).IsReady.ShouldBeTrue();
+		starts.ShouldBe(1);
+		await controller.DisposeAsync();
 	}
 
 	[Test]

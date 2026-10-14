@@ -940,7 +940,10 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 		limit.CancelAfter(budget);
 		try
 		{
-			var snapshot = await _terminalHost.CaptureScreenAsync(sessionId, limit.Token).ConfigureAwait(false);
+			// The host may not honour the token, so the wait itself is bounded too.
+			var snapshot = await _terminalHost.CaptureScreenAsync(sessionId, limit.Token)
+				.WaitAsync(limit.Token)
+				.ConfigureAwait(false);
 			if (snapshot is null)
 			{
 				return null;
@@ -965,9 +968,12 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 	public Task<SessionReadiness> StartAndWaitReadyAsync(string sessionId, CancellationToken cancellationToken)
 	{
 		var facts = SessionFacts ?? throw new InvalidOperationException("Session facts are not configured.");
-		return TryGetActiveController(sessionId, out _, out _)
-			? Task.FromResult(new SessionReadiness(true, string.Empty))
-			: StartAndWaitReadyCoreAsync(sessionId, facts, cancellationToken);
+		// Under the delivery gate, so it cannot race a delivery that is starting the same session.
+		return GetOrCreateRuntime(sessionId).RunDeliveryExclusiveAsync(
+			() => TryGetActiveController(sessionId, out _, out _)
+				? Task.FromResult(new SessionReadiness(true, string.Empty))
+				: StartAndWaitReadyCoreAsync(sessionId, facts, cancellationToken),
+			cancellationToken);
 	}
 
 	private async Task<SessionReadiness> StartAndWaitReadyCoreAsync(
@@ -1001,10 +1007,11 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 			throw new InvalidOperationException("Target session is not running.");
 		}
 
-		runtime.NoteKeyboardInput();
 		await runtime.RunInputExclusiveAsync(
 			async () =>
 			{
+				// Counted in its turn: a key that waited behind a delivery's Enter is seen as typed after it.
+				runtime.NoteKeyboardInput();
 				await WriteRequiredInputAsync(controller, BuildPastedInput(text)).ConfigureAwait(false);
 				return true;
 			},
@@ -1086,9 +1093,13 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 			RaiseStatusMessage("Terminal is locked by a running scenario");
 			return;
 		}
-		runtime.NoteKeyboardInput();
 		var written = await runtime.RunInputExclusiveAsync(
-			() => controller.WriteInputAsync(runtime.RewriteTypedInput(input)),
+			() =>
+			{
+				// Counted in its turn: a key that waited behind a delivery's Enter is seen as typed after it.
+				runtime.NoteKeyboardInput();
+				return controller.WriteInputAsync(runtime.RewriteTypedInput(input));
+			},
 			CancellationToken.None).ConfigureAwait(false);
 		if (!written)
 		{

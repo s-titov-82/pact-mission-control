@@ -211,8 +211,10 @@ internal sealed class AvaloniaTerminalWebViewHost : ITerminalWebViewHost, IAsync
 		var (id, answer) = _captures.Register();
 		try
 		{
+			// A stalled renderer may never return from the script, so the budget bounds that wait too.
 			await ExecuteScriptAsync(
-				$"window.agentTerminal.captureScreen({JsonSerializer.Serialize(sessionId)}, {id});");
+				$"window.agentTerminal.captureScreen({JsonSerializer.Serialize(sessionId)}, {id});")
+				.WaitAsync(cancellationToken);
 			return await answer.WaitAsync(cancellationToken);
 		}
 		finally

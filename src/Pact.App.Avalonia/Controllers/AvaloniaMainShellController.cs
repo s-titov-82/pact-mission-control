@@ -3455,7 +3455,9 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			throw new InvalidOperationException($"Session '{sessionId}' is not registered.");
 		}
 
-		await StartPromptRuntimeAsync(session, cancellationToken);
+		// A delivery or an MCP call can arrive here on a pool thread; starting a session updates view
+		// models, so it runs on the UI thread like activating a tab does.
+		await _uiTaskDispatcher.InvokeAsync(() => StartPromptRuntimeAsync(session, cancellationToken));
 	}
 
 	private async Task StartPromptRuntimeAsync(SessionViewModel session, CancellationToken cancellationToken)
