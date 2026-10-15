@@ -54,6 +54,45 @@ public static class AgentComposerInspector
 		return new(true, true, count, false, reliable, draftCount);
 	}
 
+	/// <summary>
+	/// The cell after the last draft character in the current composer, or after the prompt
+	/// when the composer holds only a dim placeholder; null without a complete composer frame.
+	/// </summary>
+	public static TerminalCellPosition? FindDraftEnd(TerminalScreenSnapshot screen, string promptCharacters, bool bordered, IReadOnlyList<string> chromeLabels)
+	{
+		ArgumentNullException.ThrowIfNull(screen);
+		ArgumentNullException.ThrowIfNull(promptCharacters);
+		ArgumentNullException.ThrowIfNull(chromeLabels);
+		var (prompt, end) = FindFrame(screen, promptCharacters, bordered);
+		if (prompt < 0 || end < 0)
+		{
+			return null;
+		}
+		var glyph = screen.Rows[prompt].Text.IndexOfAny(promptCharacters.ToCharArray());
+		TerminalCellPosition position = new(glyph + 3, prompt + 1);
+		for (var index = prompt; index < end; index++)
+		{
+			var row = screen.Rows[index];
+			var start = index == prompt ? glyph + 1 : 0;
+			if (chromeLabels.Contains(row.Text[start..].Trim(), StringComparer.Ordinal))
+			{
+				continue;
+			}
+			for (var offset = row.Text.Length - 1; offset >= start; offset--)
+			{
+				if (!char.IsWhiteSpace(row.Text[offset]) && !IsDim(row, offset))
+				{
+					position = new(offset + 2, index + 1);
+					break;
+				}
+			}
+		}
+		return position with { Column = Math.Min(position.Column, screen.Columns) };
+	}
+
+	private static bool IsDim(TerminalScreenRow row, int offset) =>
+		row.DimRanges is { } ranges && ranges.Any(range => offset >= range.Start && offset < range.Start + range.Length);
+
 	internal static (int Prompt, int End) FindFrame(TerminalScreenSnapshot screen, string markers, bool bordered)
 	{
 		for (var index = screen.Rows.Length - 1; index >= 0; index--)

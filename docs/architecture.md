@@ -232,7 +232,8 @@ one immutable task file below
 `.pact-reviews/<run>/pass-NNN-<role>-task.md`. The terminal receives only the
 short task-path instruction as one paste and then a separate Enter. The paste is
 bracketed, or, for a client that captures the mouse, a clipboard paste the
-client makes itself on a right click; Enter then waits until the output shows
+client makes itself on a right click, after a left click at the end of the
+composer draft that clears a history selection; Enter then waits until the output shows
 it. Only a pending question refuses a run's write; a busy agent queues the
 trigger, and text already in the composer does not block it. Codex and Claude
 distinguish composer suggestions and drafts using captured Dim metadata and

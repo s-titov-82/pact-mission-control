@@ -123,7 +123,11 @@ When the client captures the mouse (Codex and Claude in their fullscreen modes),
 the text goes through the clipboard instead: it is written there unless already
 present, and an SGR right click makes the client paste it itself, because Codex
 on Windows reads console key records and gets a bracketed paste one key at a
-time. Enter follows only once the session output shows the paste (a `[Pasted`
+time. The right click is preceded by a left click one cell after the composer's
+draft, found on a fresh capture: an agent with text selected in its history does
+not paste on a right click, and the left click clears that selection and puts the
+cursor at the end of the draft, so successive pastes add to it. Without a
+recognized composer the click goes to the top-left cell. Enter follows only once the session output shows the paste (a `[Pasted`
 placeholder or the end of the text); a bracketed paste waits for the same echo.
 A paste that never shows is not submitted. Every channel (templates, selection
 actions, MCP `pact_send_message`, Pact's own notices, scenarios) uses the one

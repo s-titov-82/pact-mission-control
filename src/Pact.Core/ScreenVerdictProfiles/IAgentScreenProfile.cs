@@ -21,6 +21,12 @@ public interface IAgentScreenProfile
 	/// </summary>
 	bool ReadsComposer => false;
 
+	/// <summary>
+	/// The cell right after the draft in the current composer, where a click puts the cursor at
+	/// the end of the draft; null when no composer is recognized.
+	/// </summary>
+	TerminalCellPosition? FindDraftEnd(TerminalScreenSnapshot screen) => null;
+
 	/// <summary>Classifies rendered viewport evidence, falling back to text for profiles without style rules.</summary>
 	TerminalScreenVerdict Classify(TerminalScreenSnapshot screen)
 	{

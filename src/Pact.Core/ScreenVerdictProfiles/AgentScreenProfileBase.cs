@@ -135,6 +135,15 @@ namespace Pact.Core.ScreenVerdictProfiles
 			return verdict with { PromptIsEmpty = evidence?.IsEmpty, PromptEvidence = evidence };
 		}
 
+		/// <inheritdoc />
+		public TerminalCellPosition? FindDraftEnd(TerminalScreenSnapshot screen)
+		{
+			ArgumentNullException.ThrowIfNull(screen);
+			return ComposerPromptCharacters.Length == 0 || screen.Columns == 0
+				? null
+				: AgentComposerInspector.FindDraftEnd(screen, ComposerPromptCharacters, ComposerIsBordered, ComposerChromeLabels);
+		}
+
 		/// <summary>Glyphs that can start the provider's current composer row; empty disables styled composer inspection.</summary>
 		protected virtual string ComposerPromptCharacters => string.Empty;
 		/// <summary>Whether matching horizontal rules enclose the composer.</summary>

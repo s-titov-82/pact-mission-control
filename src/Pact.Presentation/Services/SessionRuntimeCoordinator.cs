@@ -936,23 +936,31 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 		TimeSpan budget,
 		CancellationToken cancellationToken)
 	{
+		var snapshot = await CaptureSnapshotAsync(sessionId, budget, cancellationToken).ConfigureAwait(false);
+		if (snapshot is null)
+		{
+			return null;
+		}
+
+		var verdict = profile.Classify(snapshot);
+		return new ScreenReading(
+			verdict.State == TerminalScreenVerdictState.InputRequested ? verdict.Description : null,
+			verdict.PromptIsEmpty);
+	}
+
+	private async Task<TerminalScreenSnapshot?> CaptureSnapshotAsync(
+		string sessionId,
+		TimeSpan budget,
+		CancellationToken cancellationToken)
+	{
 		using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 		limit.CancelAfter(budget);
 		try
 		{
 			// The host may not honour the token, so the wait itself is bounded too.
-			var snapshot = await _terminalHost.CaptureScreenAsync(sessionId, limit.Token)
+			return await _terminalHost.CaptureScreenAsync(sessionId, limit.Token)
 				.WaitAsync(limit.Token)
 				.ConfigureAwait(false);
-			if (snapshot is null)
-			{
-				return null;
-			}
-
-			var verdict = profile.Classify(snapshot);
-			return new ScreenReading(
-				verdict.State == TerminalScreenVerdictState.InputRequested ? verdict.Description : null,
-				verdict.PromptIsEmpty);
 		}
 		catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
 		{
@@ -1038,14 +1046,16 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 			&& runtime.InputModes.IsSgrMouseActive
 			&& await OfferOnClipboardAsync(clipboard, text).ConfigureAwait(false);
 		trace.Paste = viaClipboard ? "clipboard" : "bracketed";
+		var input = viaClipboard
+			? await BuildClientPasteClicksAsync(runtime, cancellationToken).ConfigureAwait(false)
+			: BuildPastedInput(text);
 
 		// The wait starts before the write, so output from a fast paste cannot be missed.
 		using var stopWaiting = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 		var landed = runtime.WaitForClientPasteAsync(text, _pasteLandingTimeout, stopWaiting.Token);
 		try
 		{
-			await WriteRequiredInputAsync(controller, viaClipboard ? ClientPasteClick : BuildPastedInput(text))
-				.ConfigureAwait(false);
+			await WriteRequiredInputAsync(controller, input).ConfigureAwait(false);
 		}
 		catch
 		{
@@ -1065,6 +1075,28 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 			trace.Shown = "timeout";
 			return false;
 		}
+	}
+
+	/// <summary>
+	/// The clicks that paste the clipboard. While text is selected in its history, an agent
+	/// does not paste on a right click (Codex checks this, Claude behaves the same), so a left
+	/// click right after the draft first
+	/// clears the selection and puts the cursor at the end of the draft, where the paste then
+	/// adds to it. Without a recognized composer the right click goes to the corner.
+	/// </summary>
+	private async Task<string> BuildClientPasteClicksAsync(SessionRuntime runtime, CancellationToken cancellationToken)
+	{
+		var profile = AgentScreenProfileSelector.ForKind(runtime.Kind);
+		var screen = profile.ReadsComposer
+			? await CaptureSnapshotAsync(runtime.SessionId, _preEnterCaptureTimeout, cancellationToken).ConfigureAwait(false)
+			: null;
+		if (screen is null || profile.FindDraftEnd(screen) is not { } end)
+		{
+			return ClientPasteClick;
+		}
+
+		var at = FormattableString.Invariant($"{end.Column};{end.Row}");
+		return $"\u001b[<0;{at}M\u001b[<0;{at}m\u001b[<2;{at}M\u001b[<2;{at}m";
 	}
 
 	/// <summary>

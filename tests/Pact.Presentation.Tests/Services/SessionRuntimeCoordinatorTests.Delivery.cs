@@ -483,6 +483,64 @@ public sealed partial class SessionRuntimeCoordinatorTests
 		lines[0].ShouldNotContain("review this");
 	}
 
+	[Test]
+	public async Task A_clipboard_paste_clicks_after_the_draft_before_it_right_clicks_there()
+	{
+		var (coordinator, backend, host, _, controller) = await CreateDeliverySessionAsync();
+		await using var _ = controller;
+		var runtime = coordinator.GetOrCreateRuntime("session-1");
+		runtime.InputModes.Scan(MouseTrackingOn);
+		coordinator.ClientPasteClipboard = new RecordingClipboard(string.Empty);
+		const string clicks = "\u001b[<0;8;2M\u001b[<0;8;2m\u001b[<2;8;2M\u001b[<2;8;2m";
+		backend.InputWritten = input =>
+		{
+			if (input == clicks)
+			{
+				runtime.AppendRecentOutput("older review this");
+			}
+		};
+		host.CaptureScreen = _ => DraftScreen(backend.InputWrites.Contains(PlainEnter) ? string.Empty : "older");
+
+		var result = await DeliverAsync(coordinator);
+
+		result.Outcome.ShouldBe(PromptDeliveryOutcome.Confirmed);
+		backend.InputWrites.ShouldBe([clicks, PlainEnter]);
+	}
+
+	[Test]
+	public async Task A_clipboard_paste_without_a_visible_composer_right_clicks_the_corner()
+	{
+		var (coordinator, backend, host, _, controller) = await CreateDeliverySessionAsync();
+		await using var _ = controller;
+		var runtime = coordinator.GetOrCreateRuntime("session-1");
+		runtime.InputModes.Scan(MouseTrackingOn);
+		coordinator.ClientPasteClipboard = new RecordingClipboard(string.Empty);
+		backend.InputWritten = input =>
+		{
+			if (input == RightClick)
+			{
+				runtime.AppendRecentOutput("review this");
+			}
+		};
+		host.CaptureScreen = _ => backend.InputWrites.Count == 0
+			? null
+			: ComposerScreen(empty: backend.InputWrites.Contains(PlainEnter));
+
+		var result = await DeliverAsync(coordinator);
+
+		result.Outcome.ShouldBe(PromptDeliveryOutcome.Confirmed);
+		backend.InputWrites.ShouldBe([RightClick, PlainEnter]);
+	}
+
+	private static TerminalScreenSnapshot DraftScreen(string draft) =>
+		TerminalScreenSnapshot.FromRows(
+			[
+				new("Worked for 1s", false, []),
+				new($"› {draft}", false, []),
+				new("  GPT-6.1-Sol medium · main · Context 30% used", false, [])],
+			80,
+			true);
+
 	private static Task<PromptDeliveryResult> DeliverAsync(
 		SessionRuntimeCoordinator coordinator,
 		PromptSender sender = PromptSender.Outsider,
