@@ -40,6 +40,4 @@ internal sealed class FakeScenarioTerminalGateway : IScenarioTerminalGateway
 	}
 
 	public bool IsSessionAlive(string sessionId) => !DeadSessions.Contains(sessionId);
-
-	public string GetSessionLabel(string sessionId) => sessionId;
 }

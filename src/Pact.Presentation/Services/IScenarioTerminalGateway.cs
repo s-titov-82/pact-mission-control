@@ -27,7 +27,4 @@ public interface IScenarioTerminalGateway
 
 	/// <summary>Returns whether the bound terminal process is currently alive.</summary>
 	bool IsSessionAlive(string sessionId);
-
-	/// <summary>Returns a human-readable session title, falling back to its id.</summary>
-	string GetSessionLabel(string sessionId);
 }

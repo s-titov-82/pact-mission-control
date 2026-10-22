@@ -3,7 +3,6 @@ using Pact.App.Avalonia.Diagnostics;
 using Pact.App.Avalonia.Lifecycle;
 using Pact.Core.Prompting;
 using Pact.Core.Scenarios;
-using Pact.Core.Sessions;
 using Pact.Infrastructure.Storage;
 using Pact.Presentation.Services;
 using Pact.Presentation.Services.AgentControl;
@@ -36,10 +35,7 @@ internal sealed class AvaloniaScenarioCoordinator
 		MainWindowViewModel viewModel,
 		AppPaths appPaths,
 		ScenarioDefinitionStore definitionStore,
-		Func<string, string, CancellationToken, Task<PromptDeliveryResult>> sendPromptAndSubmitAsync,
-		Func<string, SessionViewModel?> findSession,
-		Func<string, Task> sendEscapeAsync,
-		Func<string, bool> isSessionActive,
+		SessionRuntimeCoordinator runtimeCoordinator,
 		IUiTaskDispatcher uiTaskDispatcher,
 		Func<ScenarioRunViewModel, Task> selectRunAsync,
 		Func<string, Task> reportStatusAsync,
@@ -53,13 +49,9 @@ internal sealed class AvaloniaScenarioCoordinator
 		_reportStatusAsync = reportStatusAsync ?? throw new ArgumentNullException(nameof(reportStatusAsync));
 		_eventTasks = eventTasks ?? throw new ArgumentNullException(nameof(eventTasks));
 
-		MainWindowScenarioGateway gateway = new(
-			sendPromptAndSubmitAsync,
-			findSession,
-			sendEscapeAsync,
-			isSessionActive);
+		ArgumentNullException.ThrowIfNull(runtimeCoordinator);
 		_runService = new ScenarioRunService(
-			gateway,
+			new RuntimeScenarioGateway(runtimeCoordinator),
 			exception => AppLog.AppendAsync(
 				_appPaths.RootDirectory,
 				"Scenario artifact cleanup failed",
@@ -227,7 +219,8 @@ internal sealed class AvaloniaScenarioCoordinator
 			workspace.Id,
 			roleBindings,
 			target,
-			maxIterations);
+			maxIterations,
+			SessionLabels(roleBindings.Values));
 		ScenarioRunViewModel run = new(handle, _uiTaskDispatcher.Post);
 		var sessionIds = roleBindings.Values.Distinct(StringComparer.Ordinal).ToArray();
 		_viewModel.SetScenarioLocks(run.RunId, sessionIds, locked: true);
@@ -364,6 +357,21 @@ internal sealed class AvaloniaScenarioCoordinator
 		}
 
 		run.PropertyChanged += handler;
+	}
+
+	// Titles the run journal shows, read once on the UI thread when the run starts.
+	private Dictionary<string, string> SessionLabels(IEnumerable<string> sessionIds)
+	{
+		Dictionary<string, string> labels = new(StringComparer.Ordinal);
+		foreach (var sessionId in sessionIds.Distinct(StringComparer.Ordinal))
+		{
+			if (_viewModel.FindSession(sessionId)?.Title is { Length: > 0 } title)
+			{
+				labels[sessionId] = title;
+			}
+		}
+
+		return labels;
 	}
 
 	private void ApplyRunLockState(ScenarioRunViewModel run, IReadOnlyList<string> sessionIds)

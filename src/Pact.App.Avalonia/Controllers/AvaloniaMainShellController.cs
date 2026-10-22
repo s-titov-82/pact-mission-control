@@ -190,10 +190,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			ViewModel,
 			_appPaths,
 			scenarioDefinitionStore,
-			SendScenarioPromptAndSubmitAsync,
-			FindScenarioSession,
-			SendScenarioEscapeAsync,
-			IsScenarioSessionActive,
+			_runtimeCoordinator,
 			_uiTaskDispatcher,
 			SelectScenarioRunAsync,
 			ReportStatusAsync,
@@ -2917,48 +2914,8 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		await RestoreSelectedHostAsync(cancellationToken);
 	}
 
-	private SessionViewModel? FindScenarioSession(string sessionId)
-	{
-		SessionViewModel? session = null;
-		_uiTaskDispatcher.Post(() => session = ViewModel.FindSession(sessionId));
-		return session;
-	}
-
-	private Task<PromptDeliveryResult> SendScenarioPromptAndSubmitAsync(
-		string sessionId,
-		string prompt,
-		CancellationToken cancellationToken)
-	{
-		_uiTaskDispatcher.Post(() =>
-		{
-			if (ViewModel.FindSession(sessionId) is null)
-			{
-				throw new InvalidOperationException("Target scenario session no longer exists.");
-			}
-		});
-
-		return _runtimeCoordinator.DeliverPromptAsync(
-			sessionId,
-			prompt,
-			submit: true,
-			PromptSender.ScenarioOwner,
-			startIfNotRunning: false,
-			cancellationToken);
-	}
-
 	private SessionScreenState? ReadScreenState(string sessionId) =>
 		ViewModel.TerminalTabStatuses.TryGetScreenState(sessionId, out var state) ? state : null;
-
-	private Task SendScenarioEscapeAsync(string sessionId) =>
-		_runtimeCoordinator.SendEscapeAsync(sessionId);
-
-	private bool IsScenarioSessionActive(string sessionId)
-	{
-		var active = false;
-		_uiTaskDispatcher.Post(() =>
-			active = _runtimeCoordinator.TryGetActiveController(sessionId, out _, out _));
-		return active;
-	}
 
 	public Task WriteInputAsync(string sessionId, string input)
 	{

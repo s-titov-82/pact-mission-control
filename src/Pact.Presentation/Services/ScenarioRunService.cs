@@ -74,6 +74,10 @@ public sealed class ScenarioRunService
 	/// <param name="roleBindings">Role name to session id, resolved during setup.</param>
 	/// <param name="startPrompt">Fully rendered brief for the first step.</param>
 	/// <param name="maxIterations">Review pass budget.</param>
+	/// <param name="sessionLabels">
+	/// Session id to the title the journal shows, captured when the run starts; a session without
+	/// one is named by its id.
+	/// </param>
 	/// <returns>
 	/// A handle for observing and controlling the run. Locked sessions stay visible and
 	/// scrollable; only their input is blocked.
@@ -87,7 +91,8 @@ public sealed class ScenarioRunService
 		string projectId,
 		IReadOnlyDictionary<string, string> roleBindings,
 		string startPrompt,
-		int maxIterations)
+		int maxIterations,
+		IReadOnlyDictionary<string, string>? sessionLabels = null)
 	{
 		ArgumentNullException.ThrowIfNull(blueprint);
 		ArgumentNullException.ThrowIfNull(program);
@@ -134,6 +139,7 @@ public sealed class ScenarioRunService
 				copiedBindings,
 				startPrompt,
 				maxIterations,
+				sessionLabels,
 				_gateway,
 				_reportCleanupFailureAsync,
 				_reportDiagnosticAsync,

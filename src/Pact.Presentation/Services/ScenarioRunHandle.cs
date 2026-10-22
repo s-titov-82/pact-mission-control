@@ -16,6 +16,7 @@ public sealed class ScenarioRunHandle : IDisposable
 	private readonly IScenarioProgram _program;
 	private readonly string _startPrompt;
 	private readonly IScenarioTerminalGateway _gateway;
+	private readonly Dictionary<string, string> _sessionLabels;
 	private readonly Func<Exception, Task>? _reportCleanupFailureAsync;
 	private readonly Func<string, Exception?, Task>? _reportDiagnosticAsync;
 	private readonly TimeSpan _stepWatchdogTimeout;
@@ -41,6 +42,7 @@ public sealed class ScenarioRunHandle : IDisposable
 		IReadOnlyDictionary<string, string> roleBindings,
 		string startPrompt,
 		int maxIterations,
+		IReadOnlyDictionary<string, string>? sessionLabels,
 		IScenarioTerminalGateway gateway,
 		Func<Exception, Task>? reportCleanupFailureAsync,
 		Func<string, Exception?, Task>? reportDiagnosticAsync,
@@ -54,6 +56,9 @@ public sealed class ScenarioRunHandle : IDisposable
 		_program = program;
 		_startPrompt = startPrompt;
 		MaxIterations = maxIterations;
+		_sessionLabels = sessionLabels is null
+			? new Dictionary<string, string>(StringComparer.Ordinal)
+			: new Dictionary<string, string>(sessionLabels, StringComparer.Ordinal);
 		_gateway = gateway;
 		_reportCleanupFailureAsync = reportCleanupFailureAsync;
 		_reportDiagnosticAsync = reportDiagnosticAsync;
@@ -386,6 +391,10 @@ public sealed class ScenarioRunHandle : IDisposable
 		TaskCompletionSource? Resumed,
 		CancellationTokenSource? Interrupt,
 		Task? ResumeTask);
+
+	/// <summary>The title the journal shows for a session, falling back to its id.</summary>
+	internal string GetSessionLabel(string sessionId) =>
+		_sessionLabels.TryGetValue(sessionId, out var label) && !string.IsNullOrWhiteSpace(label) ? label : sessionId;
 
 	internal void Start() => _ = Task.Run(RunLoopAsync);
 

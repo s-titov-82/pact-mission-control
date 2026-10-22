@@ -118,6 +118,5 @@ public sealed class ScenarioJournalHeadlessTests
 				SubmitAttempted: true));
 		public Task SendEscapeAsync(string sessionId, CancellationToken cancellationToken) => Task.CompletedTask;
 		public bool IsSessionAlive(string sessionId) => true;
-		public string GetSessionLabel(string sessionId) => sessionId;
 	}
 }

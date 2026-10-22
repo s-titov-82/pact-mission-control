@@ -2555,8 +2555,6 @@ public sealed class MainWindowViewModelTests
 		public Task SendEscapeAsync(string sessionId, CancellationToken cancellationToken) => Task.CompletedTask;
 
 		public bool IsSessionAlive(string sessionId) => true;
-
-		public string GetSessionLabel(string sessionId) => sessionId;
 	}
 
 	private sealed class WaitingProgram(TaskCompletionSource waitStarted) : IScenarioProgram
@@ -2662,8 +2660,6 @@ public sealed class MainWindowViewModelTests
 			Task.CompletedTask;
 
 		public bool IsSessionAlive(string sessionId) => true;
-
-		public string GetSessionLabel(string sessionId) => sessionId;
 	}
 
 	private sealed class ImmediateScenarioProgram : IScenarioProgram

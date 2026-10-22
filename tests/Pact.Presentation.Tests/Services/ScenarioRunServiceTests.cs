@@ -674,6 +674,30 @@ public sealed class ScenarioRunServiceTests : IDisposable
 		handle.State.ShouldBe(ScenarioRunState.Aborted);
 	}
 
+	[Test]
+	public async Task The_journal_names_a_session_by_its_label()
+	{
+		FakeGateway gateway = new();
+		var service = CreateService(gateway);
+		var handle = service.Start(
+			SingleRoleBlueprint,
+			new ScriptedProgram(async (context, ct) =>
+			{
+				await context.SendAsync("send", "reviewer", "read task file", ct);
+				return true;
+			}),
+			"project-1",
+			new Dictionary<string, string> { ["reviewer"] = "session-1" },
+			"start prompt",
+			maxIterations: 1,
+			sessionLabels: new Dictionary<string, string> { ["session-1"] = "Review" });
+
+		await handle.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+		handle.Journal.ShouldContain(entry =>
+			entry.Message.StartsWith("sending trigger to reviewer [Review]", StringComparison.Ordinal));
+	}
+
 	private const string HeldResponseLine = "response received; waiting for Resume";
 
 	// A two-step run paused by the user while it waits for the first response; the second step
@@ -1692,8 +1716,6 @@ public sealed class ScenarioRunServiceTests : IDisposable
 		}
 
 		public bool IsSessionAlive(string sessionId) => !DeadSessions.Contains(sessionId);
-
-		public string GetSessionLabel(string sessionId) => sessionId;
 
 		public void SetAlive(string sessionId, bool alive)
 		{

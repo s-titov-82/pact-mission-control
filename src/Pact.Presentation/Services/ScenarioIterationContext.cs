@@ -79,7 +79,7 @@ public sealed class ScenarioIterationContext
 		ArgumentException.ThrowIfNullOrWhiteSpace(role);
 		ArgumentNullException.ThrowIfNull(prompt);
 		var sessionId = GetSessionId(role);
-		var label = _gateway.GetSessionLabel(sessionId);
+		var label = _handle.GetSessionLabel(sessionId);
 		var firstAttempt = true;
 		var attempt = 0;
 		var lastReportedDelivery = default(PromptDeliveryResult?);

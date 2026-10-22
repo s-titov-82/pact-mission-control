@@ -285,8 +285,12 @@ App.Avalonia
    `docs/superpowers/specs/2026-10-14-prompt-delivery-design.md`.* Внешний цикл повторов в `ScenarioIterationContext` уходит в
    политику сценария. Решить судьбу повтора по сторожу шага.
 4. **Автомат паузы сценария в Core, `ScenarioRunService.cs` разделить по
-   классам.** Шлюз сценария реализовать напрямую поверх `PromptDelivery`
-   вместо цепочки делегатов.
+   классам.** *Сделано 2026-10-22: `ScenarioPauseMachine` (вид паузы и
+   причина внимания), классы в своих файлах, `RuntimeScenarioGateway` поверх
+   `SessionRuntimeCoordinator`; ответ во время ручной паузы ждёт Resume; спека
+   `docs/superpowers/specs/2026-10-22-scenario-pause-design.md`.* Шлюз
+   сценария реализовать напрямую поверх `PromptDelivery` вместо цепочки
+   делегатов.
 5. **Распил shell controller:** `AgentControlToolRouter`, `SessionLauncher`
    (снимает копию запуска оркестратора), `OrchestratorSupervisor`,
    `ReviewLaunchService`, `ResumeCaptureService`.

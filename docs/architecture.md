@@ -225,7 +225,13 @@ profile.
 The scenario coordinator owns the single active review slot per project,
 including reservations while an agent-requested reviewer terminal is starting.
 The shell owns creation and rollback of that terminal; the view model owns
-neither lifecycle.
+neither lifecycle. Runs reach terminals through `RuntimeScenarioGateway`, which
+calls `SessionRuntimeCoordinator` directly (delivery as the scenario owner,
+Esc, liveness from the runtime's controller) and never waits for the UI thread.
+A run's state is one `ScenarioPauseState` value with pure transitions in
+`Pact.Core.Scenarios.ScenarioPauseMachine`: the run state, the pause kind
+(manual or attention), the attention reason (nothing sent, unconfirmed,
+watchdog), the stuck session, and which bound sessions are unlocked.
 
 Scenario journals are in memory. Each review-loop step atomically publishes
 one immutable task file below
