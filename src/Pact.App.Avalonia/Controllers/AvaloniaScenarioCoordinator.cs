@@ -225,7 +225,7 @@ internal sealed class AvaloniaScenarioCoordinator
 		var sessionIds = roleBindings.Values.Distinct(StringComparer.Ordinal).ToArray();
 		_viewModel.SetScenarioLocks(run.RunId, sessionIds, locked: true);
 		AttachRunLifecycle(run, sessionIds);
-		ApplyRunLockState(run, sessionIds);
+		_ = ApplyRunLockState(run, sessionIds);
 		_viewModel.AddScenarioRun(workspace.Id, run, select: false);
 		return run;
 	}
@@ -348,8 +348,7 @@ internal sealed class AvaloniaScenarioCoordinator
 
 			_uiTaskDispatcher.Post(() =>
 			{
-				ApplyRunLockState(run, sessionIds);
-				if (run.IsTerminal)
+				if (ApplyRunLockState(run, sessionIds))
 				{
 					run.PropertyChanged -= handler;
 				}
@@ -374,29 +373,27 @@ internal sealed class AvaloniaScenarioCoordinator
 		return labels;
 	}
 
-	private void ApplyRunLockState(ScenarioRunViewModel run, IReadOnlyList<string> sessionIds)
+	// Applies the locks of one snapshot of the run, so a run finishing meanwhile can never leave
+	// its tabs re-locked; returns whether that snapshot is finished.
+	private bool ApplyRunLockState(ScenarioRunViewModel run, IReadOnlyList<string> sessionIds)
 	{
-		if (run.IsTerminal)
-		{
-			_viewModel.SetScenarioLocks(run.RunId, sessionIds, locked: false);
-			ReportStatus($"Scenario finished: {run.State}.");
-			return;
-		}
-
 		var pause = run.PauseState;
-		if (pause.IsPaused)
+		var unlocked = ScenarioPauseMachine.UnlockedSessions(pause, sessionIds);
+		var locked = sessionIds.Except(unlocked, StringComparer.Ordinal).ToArray();
+		_viewModel.SetScenarioLocks(run.RunId, locked, locked: true);
+		_viewModel.SetScenarioLocks(run.RunId, unlocked, locked: false);
+		if (pause.IsFinished)
 		{
-			var unlocked = ScenarioPauseMachine.UnlockedSessions(pause, sessionIds);
-			var stillLocked = sessionIds.Except(unlocked, StringComparer.Ordinal).ToArray();
-			_viewModel.SetScenarioLocks(run.RunId, stillLocked, locked: true);
-			_viewModel.SetScenarioLocks(run.RunId, unlocked, locked: false);
+			ReportStatus($"Scenario finished: {pause.State}.");
+		}
+		else if (pause.IsPaused)
+		{
 			ReportStatus(pause.PauseKind == ScenarioPauseKind.Manual
 				? "Scenario paused by user."
 				: "Scenario paused - agent needs attention.");
-			return;
 		}
 
-		_viewModel.SetScenarioLocks(run.RunId, sessionIds, locked: true);
+		return pause.IsFinished;
 	}
 
 	private async Task<bool> SaveTargetDefaultAsync(

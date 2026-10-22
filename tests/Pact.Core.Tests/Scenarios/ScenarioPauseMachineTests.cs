@@ -261,4 +261,15 @@ public sealed class ScenarioPauseMachineTests
 		ScenarioPauseMachine.UnlockedSessions(Attention with { StuckSessionId = null }, bound).ShouldBeEmpty();
 		ScenarioPauseMachine.UnlockedSessions(Running, bound).ShouldBeEmpty();
 	}
+
+	[TestCase(ScenarioRunState.Completed)]
+	[TestCase(ScenarioRunState.MaxIterationsReached)]
+	[TestCase(ScenarioRunState.Aborted)]
+	[TestCase(ScenarioRunState.Failed)]
+	public void A_finished_run_unlocks_every_session(ScenarioRunState terminal)
+	{
+		var finished = ScenarioPauseMachine.Finish(Attention, terminal).State;
+
+		ScenarioPauseMachine.UnlockedSessions(finished, ["a", "b"]).ShouldBe(["a", "b"]);
+	}
 }

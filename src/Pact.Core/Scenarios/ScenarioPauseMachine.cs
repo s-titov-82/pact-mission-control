@@ -47,6 +47,12 @@ public sealed record ScenarioPauseState(
 
 	/// <summary>Whether the run is paused.</summary>
 	public bool IsPaused => State == ScenarioRunState.Paused;
+
+	/// <summary>Whether the run reached a terminal state.</summary>
+	public bool IsFinished => State is ScenarioRunState.Completed
+		or ScenarioRunState.MaxIterationsReached
+		or ScenarioRunState.Aborted
+		or ScenarioRunState.Failed;
 }
 
 /// <summary>A pause transition: the new state, what to do, and the answer to a pause request.</summary>
@@ -168,7 +174,7 @@ public static class ScenarioPauseMachine
 	public static ScenarioPauseTransition Finish(ScenarioPauseState state, ScenarioRunState terminal)
 	{
 		ArgumentNullException.ThrowIfNull(state);
-		return IsTerminal(state.State)
+		return state.IsFinished
 			? new(state, ScenarioPauseEffects.None)
 			: new(
 				state with
@@ -183,8 +189,8 @@ public static class ScenarioPauseMachine
 	}
 
 	/// <summary>
-	/// Sessions open to manual input: every bound one in a manual pause, the stuck one in an
-	/// attention pause, none otherwise.
+	/// Sessions open to manual input: every bound one in a manual pause or once the run has
+	/// finished, the stuck one in an attention pause, none otherwise.
 	/// </summary>
 	public static IReadOnlyList<string> UnlockedSessions(ScenarioPauseState state, IEnumerable<string> boundSessionIds)
 	{
@@ -194,6 +200,7 @@ public static class ScenarioPauseMachine
 		{
 			{ State: ScenarioRunState.Paused, PauseKind: ScenarioPauseKind.Manual } =>
 				[.. boundSessionIds.Distinct(StringComparer.Ordinal)],
+			{ IsFinished: true } => [.. boundSessionIds.Distinct(StringComparer.Ordinal)],
 			{ State: ScenarioRunState.Paused, PauseKind: ScenarioPauseKind.Attention, StuckSessionId: { } stuck } =>
 				[.. boundSessionIds.Where(id => string.Equals(id, stuck, StringComparison.Ordinal)).Distinct(StringComparer.Ordinal)],
 			_ => []
@@ -224,10 +231,4 @@ public static class ScenarioPauseMachine
 		AttentionReason = null,
 		StuckSessionId = null
 	};
-
-	private static bool IsTerminal(ScenarioRunState state) =>
-		state is ScenarioRunState.Completed
-			or ScenarioRunState.MaxIterationsReached
-			or ScenarioRunState.Aborted
-			or ScenarioRunState.Failed;
 }

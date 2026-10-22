@@ -253,8 +253,9 @@ public sealed class ReviewLoopScenarioProgram : IScenarioProgram, IScenarioRunAr
 			var responseTask = context.WaitForResponseAsync(
 				captureStepId,
 				role,
-				(watchdogTimeout, waitCancellationToken) =>
-					ReviewExchangeDirectory.WaitForCompletedResponseAsync(
+				async (watchdogTimeout, waitCancellationToken) =>
+				{
+					var completed = await ReviewExchangeDirectory.WaitForCompletedResponseAsync(
 						step,
 						watchdogTimeout,
 						_filePollInterval,
@@ -270,7 +271,13 @@ public sealed class ReviewLoopScenarioProgram : IScenarioProgram, IScenarioRunAr
 								captureStepId,
 								$"response file exists but is incomplete: {step.ResponsePath}");
 						},
-						waitCancellationToken),
+						waitCancellationToken).ConfigureAwait(false);
+
+					// Stop the delivery the moment the response is read, before control returns
+					// through the context, so no retry can slip a trigger in between.
+					await deliveryCancellation.CancelAsync().ConfigureAwait(false);
+					return completed;
+				},
 				responseCancellation.Token);
 			var deliveryTask = context.SendAsync(
 				sendStepId,
@@ -281,7 +288,8 @@ public sealed class ReviewLoopScenarioProgram : IScenarioProgram, IScenarioRunAr
 			string response;
 			try
 			{
-				if (await Task.WhenAny(responseTask, deliveryTask).ConfigureAwait(false) == responseTask)
+				var first = await Task.WhenAny(responseTask, deliveryTask).ConfigureAwait(false);
+				if (first == responseTask || deliveryCancellation.IsCancellationRequested)
 				{
 					deliveryCancellation.Cancel();
 					response = await responseTask.ConfigureAwait(false);

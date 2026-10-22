@@ -42,4 +42,13 @@ public sealed class SettingsHelpContentTests
 
 		body.ShouldContain(expectedText);
 	}
+
+	[Test]
+	public void Scenario_help_says_a_response_during_manual_pause_waits_for_resume()
+	{
+		var (_, body) = SettingsHelpContent.Get(SettingsSection.Scenarios);
+
+		body.ShouldNotContain("without requiring Resume");
+		body.ShouldContain("the run continues with it after Resume");
+	}
 }
