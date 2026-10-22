@@ -60,8 +60,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 	private readonly ReviewProfileProvider _reviewProfileProvider;
 	private readonly AgentControlTokenRegistry _agentControlTokens;
 	private readonly AgentControlEndpoint _agentControlEndpoint;
-	private readonly bool _agentControlEnabled;
-	private PactSkillPublication _pactSkillPublication = PactSkillPublication.Empty;
+	private readonly SessionLauncher _launcher;
 	private readonly OrchestratorStore _orchestratorStore;
 	private readonly OrchestratorDispatcher _orchestratorDispatcher;
 	private const string OrchestratorSessionId = "pact-orchestrator";
@@ -196,6 +195,21 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			_eventTasks);
 		_agentControlTokens = new AgentControlTokenRegistry();
 		_orchestratorStore = new OrchestratorStore(_appPaths.OrchestratorPath);
+		_launcher = new SessionLauncher(
+			_runtimeCoordinator,
+			_terminalHost,
+			ViewModel,
+			_agentControlTokens,
+			_appPaths,
+			GetAgentControlAddress,
+			_settingsFileStore.ReadAgentControlEnabled(),
+			_resolveCommandAsync,
+			_uiTaskDispatcher,
+			_eventTasks,
+			OnOutputReceived,
+			ResetSnapshotBaselineSafeAsync,
+			_scenarioCoordinator.NotifySessionDied,
+			ReportStatusAsync);
 		AgentControlHost agentControlHost = new(this, ViewModel, _uiTaskDispatcher);
 		AgentControlDispatcher agentControlDispatcher = new(agentControlHost);
 		OrchestratorHost orchestratorHost = new(
@@ -221,7 +235,6 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		_agentControlEndpoint = new AgentControlEndpoint(_agentControlTokens, agentControlRpc);
 		AgentControlAddress = _agentControlEndpoint.Start(
 			agentControlPort ?? _settingsFileStore.ReadAgentControlPort());
-		_agentControlEnabled = _settingsFileStore.ReadAgentControlEnabled();
 		_terminalHost.InputReceived += OnInputReceived;
 		_terminalHost.ResizeReceived += OnResizeReceived;
 		_terminalHost.ScreenSnapshotReceived += OnScreenSnapshotReceived;
@@ -286,6 +299,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 	internal RestorationSummary? LastRestorationSummary { get; private set; }
 	public IReadOnlyDictionary<string, SessionRuntime> Runtimes => _runtimeCoordinator.Runtimes;
 	internal Uri AgentControlAddress { get; }
+	private Uri GetAgentControlAddress() => AgentControlAddress;
 	internal WebViewDiagnosticEntry[] DiagnosticSnapshot => _diagnostics.Snapshot();
 	internal ObservedTaskGroup GetEventTasks() => _eventTasks;
 	internal IUiTaskDispatcher GetUiTaskDispatcher() => _uiTaskDispatcher;
@@ -430,12 +444,12 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		await _settingsFileStore.EnsureDefaultFilesAsync(cancellationToken);
 		try
 		{
-			_pactSkillPublication =
+			_launcher.SkillPublication =
 				await new PactSkillPublisher(_appPaths).PublishAsync(cancellationToken);
 		}
 		catch (Exception exception)
 		{
-			_pactSkillPublication = PactSkillPublication.Empty;
+			_launcher.SkillPublication = PactSkillPublication.Empty;
 			RecordDiagnostic(
 				"pact-skill-publication-failed",
 				$"category={exception.GetType().Name}");
@@ -626,7 +640,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			async (target, ct) =>
 			{
 				timing.Mark("show");
-				await ActivateRuntimeAsync(target, startIfNeeded, preferResumeCommand, ct);
+				await _launcher.ActivateAsync(target, startIfNeeded, preferResumeCommand, ct);
 				timing.Mark("runtime");
 			},
 			async _ =>
@@ -1866,7 +1880,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			sessionCreated = true;
 			await _terminalHost.CreateTerminalAsync(reviewerSessionId);
 			terminalCreated = true;
-			await ActivateRuntimeAsync(
+			await _launcher.ActivateAsync(
 				reviewer,
 				startIfNeeded: true,
 				preferResumeCommand: false,
@@ -2642,7 +2656,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		{
 			await _terminalHost.CreateTerminalAsync(session.Record.Id);
 		}
-		return await ActivateRuntimeAsync(
+		return await _launcher.ActivateAsync(
 			session,
 			startIfNeeded: true,
 			preferResumeCommand: true,
@@ -2728,138 +2742,6 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		}
 	}
 
-	private async Task<SessionStartPlan> ActivateRuntimeAsync(
-		SessionViewModel session,
-		bool startIfNeeded,
-		bool preferResumeCommand,
-		CancellationToken cancellationToken)
-	{
-		var startPlan = ShellProfileCommandPlanner.GetStartPlan(
-			session.Record,
-			preferResumeCommand);
-		var runtime = _runtimeCoordinator.GetOrCreateRuntime(session.Record.Id);
-		if (runtime.TryGetController(out var existingController)
-			&& existingController.IsActive)
-		{
-			(var columns, var rows) = _terminalHost.GetCurrentSize(session.Record.Id);
-			await existingController.ResizeAsync(columns, rows);
-			return startPlan;
-		}
-		if (!startIfNeeded)
-		{
-			return startPlan;
-		}
-
-		var injection = CodexEmbeddedMode.Apply(
-			session.Record.Kind,
-			startPlan.CommandLine,
-			CreateAgentLaunchInjection(session.Record));
-		var commandLine = await _resolveCommandAsync(startPlan.CommandLine, injection.Arguments);
-		if (string.IsNullOrWhiteSpace(commandLine))
-		{
-			_agentControlTokens.Revoke(session.Record.Id);
-			throw new InvalidOperationException("Session has no launch command.");
-		}
-
-		void OutputHandler(object? _, string text)
-		{
-			OnOutputReceived(session.Record.Id, text);
-		}
-
-		Task InputWritingHandler(string input)
-		{
-			return AgentKeyEncoder.IsSubmit(input)
-				? ResetSnapshotBaselineSafeAsync(session.Record.Id)
-				: Task.CompletedTask;
-		}
-
-		void InputWrittenHandler(object? _, string input)
-		{
-			ViewModel.TerminalTabStatuses.OnUserInput(
-				session.Record.Id,
-				input,
-				DateTimeOffset.UtcNow);
-		}
-
-		void ViewportChangedHandler(object? _, TerminalViewportChangedEventArgs args)
-		{
-			ViewModel.TerminalTabStatuses.OnViewportChanged(
-				session.Record.Id,
-				args.Columns,
-				args.Rows,
-				DateTimeOffset.UtcNow);
-		}
-
-		(var startColumns, var startRows) = _terminalHost.GetCurrentSize(session.Record.Id);
-		TerminalStartOptions options = new(
-			commandLine,
-			session.Record.WorkingDirectory,
-			startColumns,
-			startRows,
-			injection.EnvironmentVariables);
-		try
-		{
-			await _runtimeCoordinator.StartAsync(
-				session.Record.Id,
-				session.Record.Kind,
-				options,
-				OnControllerExited,
-				OutputHandler,
-				InputWritingHandler,
-				InputWrittenHandler,
-				ViewportChangedHandler,
-				cancellationToken);
-			await ViewModel.UpdateSessionStatusAsync(session.Record.Id, SessionStatus.Running, cancellationToken);
-			ViewModel.TerminalTabStatuses.OnSessionStarted(
-				session.Record.Id,
-				startPlan.Mode,
-				DateTimeOffset.UtcNow);
-			return startPlan;
-		}
-		catch
-		{
-			await _runtimeCoordinator.StopAsync(session.Record.Id);
-			_agentControlTokens.Revoke(session.Record.Id);
-			throw;
-		}
-	}
-
-	private LaunchInjection CreateAgentLaunchInjection(SessionRecord session)
-	{
-		_agentControlTokens.Revoke(session.Id);
-		var argumentTemplate = _agentControlEnabled
-			? AgentControlArgumentTemplates.For(session.Kind)
-			: null;
-		IReadOnlyList<string> instructionArguments =
-			PactInstructionComposer.BuildArguments(
-				session.Kind,
-				_agentControlEnabled,
-				_pactSkillPublication);
-		if (argumentTemplate is not { Count: > 0 })
-		{
-			return new LaunchInjection(
-				instructionArguments,
-				new Dictionary<string, string>(StringComparer.Ordinal));
-		}
-
-		var token = _agentControlTokens.Issue(session.Id);
-		try
-		{
-			return AgentControlLaunchInjection.Create(
-				argumentTemplate,
-				instructionArguments,
-				_appPaths.AgentControlDirectory,
-				session.Id,
-				AgentControlAddress,
-				token);
-		}
-		catch
-		{
-			_agentControlTokens.Revoke(session.Id);
-			throw;
-		}
-	}
-
 	private async Task SendTextToSessionAsync(SessionViewModel target, string text, bool submit, CancellationToken cancellationToken)
 	{
 		var result = await _runtimeCoordinator.DeliverPromptAsync(
@@ -2912,7 +2794,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 	private async Task StartPromptRuntimeAsync(SessionViewModel session, CancellationToken cancellationToken)
 	{
 		await _terminalHost.CreateTerminalAsync(session.Record.Id);
-		await ActivateRuntimeAsync(session, startIfNeeded: true, preferResumeCommand: true, cancellationToken);
+		await _launcher.ActivateAsync(session, startIfNeeded: true, preferResumeCommand: true, cancellationToken);
 	}
 
 	private Dictionary<string, string> BuildPromptVariables(SessionViewModel target, string selectedText)
@@ -3274,33 +3156,6 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			await ViewModel.UpdateSessionResumeCommandAsync(session.Record.Id, resumeCommand, cancellationToken);
 		}
 		return true;
-	}
-
-	private void OnControllerExited(string sessionId, TerminalController controller) =>
-		_eventTasks.TryRun(
-			"terminal-exit",
-			() => HandleControllerExitedAsync(sessionId, controller),
-			exception => ReportStatusAsync(
-				$"Terminal exit cleanup failed: {exception.Message}"));
-
-	private async Task HandleControllerExitedAsync(
-		string sessionId,
-		TerminalController controller)
-	{
-		if (!await _runtimeCoordinator.HandleControllerExitedAsync(
-				sessionId,
-				controller))
-		{
-			return;
-		}
-
-		_agentControlTokens.Revoke(sessionId);
-		_scenarioCoordinator.NotifySessionDied(sessionId);
-		await _uiTaskDispatcher.InvokeAsync(
-			() => ViewModel.UpdateSessionStatusAsync(
-				sessionId,
-				SessionStatus.Exited,
-				CancellationToken.None));
 	}
 
 	private async Task DisposeWebViewsAsync()
