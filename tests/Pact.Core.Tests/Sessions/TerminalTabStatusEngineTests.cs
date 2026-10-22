@@ -907,4 +907,19 @@ public sealed class TerminalTabStatusEngineTests
 		changes.ShouldHaveSingleItem().Description.ShouldBe(string.Empty);
 		engine.CurrentIndicator.ShouldBe(TerminalTabIndicator.Unread);
 	}
+
+	[Test]
+	public void Codex_clear_ends_the_activity_its_enter_started()
+	{
+		var engine = CreateEngine(profile: CodexScreenProfile.Instance);
+		engine.OnUserInput("/clear", T0);
+		engine.OnUserInput("\r", T0.AddSeconds(1));
+		engine.ActivityInProgress.ShouldBeTrue();
+
+		engine.OnScreenSnapshot(StyledAgentScreenProfileTests.CodexStartScreen(), T0.AddSeconds(2));
+
+		engine.ActivityInProgress.ShouldBeFalse();
+		engine.CurrentIndicator.ShouldNotBe(TerminalTabIndicator.Busy);
+		engine.CurrentStatus.VerdictState.ShouldBe(TerminalScreenVerdictState.Done);
+	}
 }

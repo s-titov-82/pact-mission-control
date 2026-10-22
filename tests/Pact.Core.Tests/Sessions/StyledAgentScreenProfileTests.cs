@@ -131,6 +131,42 @@ public sealed class StyledAgentScreenProfileTests
 		verdict.PromptIsEmpty.ShouldBe(true);
 	}
 
+	[Test]
+	public void Codex_start_screen_with_an_empty_composer_is_done()
+	{
+		var verdict = CodexScreenProfile.Instance.Classify(CodexStartScreen());
+
+		verdict.State.ShouldBe(TerminalScreenVerdictState.Done);
+		verdict.PromptIsEmpty.ShouldBe(true);
+	}
+
+	[Test]
+	public void Codex_work_below_the_start_banner_is_still_busy()
+	{
+		var verdict = CodexScreenProfile.Instance.Classify(CodexStartScreen(
+			new("› fix the build", false, []),
+			new("", false, []),
+			new("• Working (3s • esc to interrupt)", false, [])));
+
+		verdict.State.ShouldBe(TerminalScreenVerdictState.Busy);
+	}
+
+	internal static TerminalScreenSnapshot CodexStartScreen(params TerminalScreenRow[] transcript) =>
+		TerminalScreenSnapshot.FromRows([
+			new("╭─────────────────────────────────────────────────╮", false, []),
+			new("│ ✨ Update available! 0.162.1 -> 0.163.0         │", false, []),
+			new("│ Run npm install -g @openai/codex to update.     │", false, []),
+			new("╰─────────────────────────────────────────────────╯", false, []),
+			new("", false, []),
+			new("  >_ OpenAI Codex (v0.162.1)", false, []),
+			new("     D:\\Personal\\Pact", false, []),
+			new("", false, []),
+			.. transcript,
+			new("", false, []),
+			new("› Ask Codex to do anything", false, [new(2, 24)]),
+			new("", false, []),
+			new("  gpt-5.5 high · ~\\Pact · Context 100% left", false, [])], 80, true);
+
 	private static TerminalScreenSnapshot Screen(AgentKind kind, string input, bool? dim, bool busy = false)
 	{
 		var marker = kind == AgentKind.Claude ? '❯' : '›';

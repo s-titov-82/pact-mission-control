@@ -3,7 +3,8 @@ using System.Text.RegularExpressions;
 namespace Pact.Core.ScreenVerdictProfiles;
 
 /// <summary>
-/// Recognizes Codex's interrupt hint and completion summaries in stable screens.
+/// Recognizes Codex's interrupt hint and completion summaries in stable screens. The start
+/// banner counts as a completion, so a fresh or cleared session reads as idle.
 /// </summary>
 public sealed partial class CodexScreenProfile : AgentScreenProfileBase
 {
@@ -46,7 +47,7 @@ public sealed partial class CodexScreenProfile : AgentScreenProfileBase
 	[GeneratedRegex(@"(?<descr>Working)\s\(\s?\d{1,2}[hms]", RegexOptions.IgnoreCase | RegexOptions.RightToLeft)]
 	private static partial Regex WorkingRx();
 
-	[GeneratedRegex(@"(?<descr>Worked\sfor\s\d{1,2}[hms])|[\s\r\n]─{25,}[\s\r\n]|(?<descr>Run /usage to use one)", RegexOptions.RightToLeft)]
+	[GeneratedRegex(@"(?<descr>Worked\sfor\s\d{1,2}[hms])|[\s\r\n]─{25,}[\s\r\n]|(?<descr>Run /usage to use one)|>_\sOpenAI\sCodex\s\(v", RegexOptions.RightToLeft)]
 	private static partial Regex WorkedForRx();
 
 	[GeneratedRegex(@"■\sConversation\sinterrupted|■ request timed out|To continue this session, run", RegexOptions.RightToLeft)]

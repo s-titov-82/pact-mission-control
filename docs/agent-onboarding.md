@@ -84,7 +84,9 @@ Claude and Codex check Busy first, so `esc to interrupt` wins over any Done
 marker on the same screen. Claude reports Done for a capitalized past-tense
 verb with a duration (`Worked for 2m 30s`, `Cooked for 12s`, `Sautéed for 3s`),
 since the verb changes but its shape does not; Codex reports Done for
-`Worked for`, its usage hint, or the composer's long divider rule. The same
+`Worked for`, its usage hint, the composer's long divider rule, or its
+`>_ OpenAI Codex (v…` start banner, which is the only marker on a fresh or
+`/clear`ed screen and lets such a session become ready. The same
 markers end the assistant message that each profile extracts, so a screen may
 carry unrelated text between the message and its closing marker. The classifier
 reports `InputRequested` with the pending question as its status line; folder
