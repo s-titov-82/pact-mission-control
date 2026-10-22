@@ -116,6 +116,11 @@ composer не доказывает наличие или отсутствие п
 `docs/superpowers/specs/2026-10-09-harness-events-and-styled-classification-design.md`
 и ревью к ней — без части про хуки.
 
+**Сделано 2026-10-13.** Пустой composer определяется по атрибуту Dim нижних
+строк экрана и разметке каждого агента
+([план](../superpowers/plans/2026-10-12-styled-screen-composer.md)). На живых
+сессиях Claude и Codex определение работает правильно.
+
 ## P1. Состав поддерживаемых кодовых харнессов
 
 **Первый кандидат — OpenCode.** Проверить нативный Windows TUI в Pact:
