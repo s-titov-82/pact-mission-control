@@ -10,16 +10,16 @@ namespace Pact.App.Avalonia.Controllers;
 /// </summary>
 internal sealed class AgentControlHost : IAgentControlHost
 {
-	private readonly AvaloniaMainShellController _shell;
+	private readonly ReviewLaunchService _reviews;
 	private readonly MainWindowViewModel _viewModel;
 	private readonly IUiTaskDispatcher _uiDispatcher;
 
 	public AgentControlHost(
-		AvaloniaMainShellController shell,
+		ReviewLaunchService reviews,
 		MainWindowViewModel viewModel,
 		IUiTaskDispatcher uiDispatcher)
 	{
-		_shell = shell ?? throw new ArgumentNullException(nameof(shell));
+		_reviews = reviews ?? throw new ArgumentNullException(nameof(reviews));
 		_viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
 		_uiDispatcher = uiDispatcher ?? throw new ArgumentNullException(nameof(uiDispatcher));
 	}
@@ -135,7 +135,7 @@ internal sealed class AgentControlHost : IAgentControlHost
 		ReviewStartOutcome? outcome = null;
 		await _uiDispatcher.InvokeAsync(async () =>
 		{
-			outcome = await _shell.StartAgentRequestedReviewAsync(
+			outcome = await _reviews.StartAgentRequestedReviewAsync(
 				projectId,
 				authorSessionId,
 				request,
