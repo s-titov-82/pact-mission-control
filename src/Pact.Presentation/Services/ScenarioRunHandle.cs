@@ -26,14 +26,12 @@ public sealed class ScenarioRunHandle : IDisposable
 	private readonly List<ScenarioJournalEntry> _journal = [];
 	private TaskCompletionSource? _resumeRequested;
 	private CancellationTokenSource? _pauseInterruption;
-	private ScenarioRunState _state = ScenarioRunState.Running;
+	private ScenarioPauseState _pause = ScenarioPauseState.Initial;
 	private string? _currentStepId;
 	private string? _failureMessage;
 	private ScenarioExpectedResponse? _expectedResponse;
-	private bool _softStopRequested;
 	private bool _abortRequested;
 	private bool _failureRequested;
-	private bool _pauseRequested;
 	private bool _finalized;
 
 	internal ScenarioRunHandle(
@@ -98,7 +96,7 @@ public sealed class ScenarioRunHandle : IDisposable
 		{
 			lock (_sync)
 			{
-				return _state;
+				return _pause.State;
 			}
 		}
 	}
@@ -133,34 +131,24 @@ public sealed class ScenarioRunHandle : IDisposable
 	/// Session the watchdog is waiting on while paused; it is the one session unlocked so the
 	/// user can answer. <see langword="null"/> when not paused.
 	/// </summary>
-	public string? StuckSessionId
+	public string? StuckSessionId => PauseState.StuckSessionId;
+
+	/// <summary>Kind of the current pause; <see cref="ScenarioPauseKind.None"/> unless paused.</summary>
+	public ScenarioPauseKind PauseKind => PauseState.PauseKind;
+
+	/// <summary>Why Pact paused the run for attention, or <see langword="null"/>.</summary>
+	public ScenarioAttentionReason? AttentionReason => PauseState.AttentionReason;
+
+	/// <summary>The run state and the reason it stands still, as one value.</summary>
+	public ScenarioPauseState PauseState
 	{
 		get
 		{
 			lock (_sync)
 			{
-				return field;
+				return _pause;
 			}
 		}
-
-		private set;
-	}
-
-	/// <summary>
-	/// Whether a user-requested pause releases every bound session instead of only the terminal
-	/// that needs watchdog attention.
-	/// </summary>
-	public bool UnlockAllSessionsWhilePaused
-	{
-		get
-		{
-			lock (_sync)
-			{
-				return field;
-			}
-		}
-
-		private set;
 	}
 
 	/// <summary>
@@ -219,7 +207,7 @@ public sealed class ScenarioRunHandle : IDisposable
 	/// </summary>
 	public void RequestSoftStop()
 	{
-		var raiseChanged = false;
+		Applied applied;
 		lock (_sync)
 		{
 			if (_finalized)
@@ -227,18 +215,10 @@ public sealed class ScenarioRunHandle : IDisposable
 				return;
 			}
 
-			_softStopRequested = true;
-			if (_state == ScenarioRunState.Running)
-			{
-				_state = ScenarioRunState.StoppingAfterStep;
-				raiseChanged = true;
-			}
+			applied = ApplyLocked(ScenarioPauseMachine.RequestSoftStop);
 		}
 
-		if (raiseChanged)
-		{
-			RaiseStateChanged();
-		}
+		Act(applied, "run");
 	}
 
 	/// <summary>
@@ -253,58 +233,19 @@ public sealed class ScenarioRunHandle : IDisposable
 	/// </summary>
 	public ScenarioPauseRequestStatus RequestManualPause()
 	{
-		CancellationTokenSource? pauseInterruption = null;
-		ScenarioPauseRequestStatus status;
+		Applied applied;
 		lock (_sync)
 		{
-			if (_finalized || _state == ScenarioRunState.StoppingAfterStep)
+			if (_finalized)
 			{
 				return ScenarioPauseRequestStatus.NotPausable;
 			}
 
-			if (_state == ScenarioRunState.Paused)
-			{
-				if (UnlockAllSessionsWhilePaused)
-				{
-					return ScenarioPauseRequestStatus.Unchanged;
-				}
-
-				StuckSessionId = null;
-				UnlockAllSessionsWhilePaused = true;
-				status = ScenarioPauseRequestStatus.Escalated;
-			}
-			else if (_state == ScenarioRunState.Running)
-			{
-				if (_pauseRequested)
-				{
-					return ScenarioPauseRequestStatus.Unchanged;
-				}
-
-				_pauseRequested = true;
-				pauseInterruption = _pauseInterruption;
-				status = ScenarioPauseRequestStatus.Requested;
-			}
-			else
-			{
-				return ScenarioPauseRequestStatus.NotPausable;
-			}
+			applied = ApplyLocked(ScenarioPauseMachine.RequestPause);
 		}
 
-		if (status == ScenarioPauseRequestStatus.Requested)
-		{
-			try
-			{
-				pauseInterruption?.Cancel();
-			}
-			catch (ObjectDisposedException)
-			{
-				// The wait completed while the pause request was being published. The retained
-				// request is observed at the next safe exchange boundary.
-			}
-		}
-
-		RaiseStateChanged();
-		return status;
+		Act(applied, "run");
+		return applied.Transition.Status ?? ScenarioPauseRequestStatus.NotPausable;
 	}
 
 	/// <summary>
@@ -359,37 +300,94 @@ public sealed class ScenarioRunHandle : IDisposable
 		}
 	}
 
-	internal void ResumeAfterDelivery() => TryResume(attentionOnly: true);
+	internal void ResumeAfterDelivery() => Transition(ScenarioPauseMachine.DeliverySucceeded);
 
-	internal void ResumeAfterResponse() => TryResume();
+	internal void ResumeAfterResponse() => Transition(ScenarioPauseMachine.Resume);
 
 	/// <summary>
 	/// Resumes an established pause. A pending pause request is deliberately not canceled.
 	/// </summary>
-	public bool TryResume() => TryResume(attentionOnly: false);
+	public bool TryResume() => Transition(ScenarioPauseMachine.Resume);
 
-	private bool TryResume(bool attentionOnly)
+	private bool Transition(Func<ScenarioPauseState, ScenarioPauseTransition> step)
 	{
-		TaskCompletionSource? resumeRequested;
+		Applied applied;
 		lock (_sync)
 		{
-			if (_state != ScenarioRunState.Paused
-				|| (attentionOnly && UnlockAllSessionsWhilePaused))
-			{
-				return false;
-			}
+			applied = ApplyLocked(step);
+		}
 
-			_state = ScenarioRunState.Running;
-			StuckSessionId = null;
-			UnlockAllSessionsWhilePaused = false;
-			resumeRequested = _resumeRequested;
+		Act(applied, "run");
+		return applied.Transition.Effects.HasFlag(ScenarioPauseEffects.Changed);
+	}
+
+	// Applies one transition under _sync and takes the plumbing it needs: a fresh resume signal
+	// when the run enters a pause, the signal to complete when it leaves one, and the wait to
+	// interrupt for a pause request.
+	private Applied ApplyLocked(Func<ScenarioPauseState, ScenarioPauseTransition> step)
+	{
+		var before = _pause;
+		var transition = step(before);
+		_pause = transition.State;
+		if (!before.IsPaused && transition.State.IsPaused)
+		{
+			_resumeRequested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		}
+
+		TaskCompletionSource? resumed = null;
+		if (transition.Effects.HasFlag(ScenarioPauseEffects.SignalResume))
+		{
+			resumed = _resumeRequested;
 			_resumeRequested = null;
 		}
 
-		RaiseStateChanged();
-		resumeRequested?.TrySetResult();
-		return true;
+		return new(
+			transition,
+			resumed,
+			transition.Effects.HasFlag(ScenarioPauseEffects.InterruptWait) ? _pauseInterruption : null,
+			transition.State.IsPaused ? _resumeRequested?.Task : null);
 	}
+
+	// Carries out a transition's effects outside _sync.
+	private void Act(Applied applied, string stepId, string? attentionMessage = null)
+	{
+		var effects = applied.Transition.Effects;
+		if (applied.Interrupt is { } interruption)
+		{
+			try
+			{
+				interruption.Cancel();
+			}
+			catch (ObjectDisposedException)
+			{
+				// The wait completed while the pause request was being published. The retained
+				// request is observed at the next safe exchange boundary.
+			}
+		}
+
+		if (effects.HasFlag(ScenarioPauseEffects.Changed))
+		{
+			RaiseStateChanged();
+		}
+
+		if (effects.HasFlag(ScenarioPauseEffects.JournalManualPause))
+		{
+			AddJournalEntry(stepId, "paused by user", ScenarioJournalLevel.Info);
+		}
+
+		if (effects.HasFlag(ScenarioPauseEffects.JournalAttention) && attentionMessage is not null)
+		{
+			AddJournalEntry(stepId, attentionMessage, ScenarioJournalLevel.Warning);
+		}
+
+		applied.Resumed?.TrySetResult();
+	}
+
+	private readonly record struct Applied(
+		ScenarioPauseTransition Transition,
+		TaskCompletionSource? Resumed,
+		CancellationTokenSource? Interrupt,
+		Task? ResumeTask);
 
 	internal void Start() => _ = Task.Run(RunLoopAsync);
 
@@ -400,6 +398,12 @@ public sealed class ScenarioRunHandle : IDisposable
 		CancellationToken cancellationToken)
 	{
 		cancellationToken.ThrowIfCancellationRequested();
+		AddJournalEntry(stepId, message, level);
+		return Task.CompletedTask;
+	}
+
+	private void AddJournalEntry(string stepId, string message, ScenarioJournalLevel level)
+	{
 		ScenarioJournalEntry entry = new(DateTimeOffset.UtcNow, stepId, message, level);
 
 		lock (_sync)
@@ -408,7 +412,6 @@ public sealed class ScenarioRunHandle : IDisposable
 		}
 
 		JournalEntryAdded?.Invoke(this, entry);
-		return Task.CompletedTask;
 	}
 
 	internal async Task ReportDiagnosticAsync(string phase, Exception? exception = null)
@@ -448,25 +451,13 @@ public sealed class ScenarioRunHandle : IDisposable
 
 	internal void ThrowIfSoftStopRequested()
 	{
-		lock (_sync)
+		if (IsSoftStopRequested())
 		{
-			if (_softStopRequested)
-			{
-				throw new ScenarioSoftStopRequestedException();
-			}
+			throw new ScenarioSoftStopRequestedException();
 		}
 	}
 
-	internal bool IsPauseRequested
-	{
-		get
-		{
-			lock (_sync)
-			{
-				return _pauseRequested;
-			}
-		}
-	}
+	internal bool IsPauseRequested => PauseState.PauseRequested;
 
 	/// <summary>Whether a manual pause request is retained for the next safe boundary.</summary>
 	public bool PauseRequested => IsPauseRequested;
@@ -501,18 +492,20 @@ public sealed class ScenarioRunHandle : IDisposable
 
 	internal async Task WaitWhileManualPauseAsync(CancellationToken cancellationToken)
 	{
-		Task? resumeRequested = null;
-		lock (_sync)
-		{
-			if (_state == ScenarioRunState.Paused && UnlockAllSessionsWhilePaused)
-			{
-				resumeRequested = _resumeRequested?.Task;
-			}
-		}
-
-		if (resumeRequested is not null)
+		if (ManualResumeTask() is { } resumeRequested)
 		{
 			await resumeRequested.WaitAsync(cancellationToken).ConfigureAwait(false);
+		}
+	}
+
+	// The resume signal of a manual pause, or null when the run is not manually paused.
+	private Task? ManualResumeTask()
+	{
+		lock (_sync)
+		{
+			return _pause is { IsPaused: true, PauseKind: ScenarioPauseKind.Manual }
+				? _resumeRequested?.Task
+				: null;
 		}
 	}
 
@@ -523,7 +516,7 @@ public sealed class ScenarioRunHandle : IDisposable
 		lock (_sync)
 		{
 			_pauseInterruption = interruption;
-			cancel = _pauseRequested;
+			cancel = _pause.PauseRequested;
 		}
 
 		if (cancel)
@@ -556,59 +549,37 @@ public sealed class ScenarioRunHandle : IDisposable
 		CancellationToken cancellationToken,
 		bool waitForResume = true)
 	{
-		TaskCompletionSource? resumeRequested = null;
+		Applied applied;
 		lock (_sync)
 		{
-			if (_pauseRequested)
-			{
-				_pauseRequested = false;
-				_state = ScenarioRunState.Paused;
-				StuckSessionId = null;
-				UnlockAllSessionsWhilePaused = true;
-				_resumeRequested = new TaskCompletionSource(
-					TaskCreationOptions.RunContinuationsAsynchronously);
-				resumeRequested = _resumeRequested;
-			}
+			applied = ApplyLocked(ScenarioPauseMachine.ReachBoundary);
 		}
 
-		if (resumeRequested is null)
+		if (!applied.Transition.Effects.HasFlag(ScenarioPauseEffects.Changed))
 		{
 			return false;
 		}
 
-		RaiseStateChanged();
-		await JournalAsync(
-			stepId,
-			"paused by user",
-			ScenarioJournalLevel.Info,
-			CancellationToken.None).ConfigureAwait(false);
-		if (waitForResume)
+		Act(applied, stepId);
+		if (waitForResume && applied.ResumeTask is { } resumeRequested)
 		{
-			await resumeRequested.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+			await resumeRequested.WaitAsync(cancellationToken).ConfigureAwait(false);
 		}
 
 		return true;
 	}
 
-	internal async Task PauseForTimeoutAsync(
-		string stepId,
-		string sessionId,
-		CancellationToken cancellationToken) =>
-		await PauseForAttentionAsync(
+	internal void PauseForTimeout(string stepId, string sessionId) =>
+		PauseForAttention(
 			stepId,
 			sessionId,
-			"step watchdog elapsed - needs attention",
-			waitForResume: false,
-			cancellationToken).ConfigureAwait(false);
+			ScenarioAttentionReason.Watchdog,
+			"step watchdog elapsed - needs attention");
 
 	// Pauses for attention after a delivery that may have reached the terminal; the step goes on
 	// waiting for its response file, which resumes the run.
-	internal Task PauseForUndeliveredAsync(
-		string stepId,
-		string sessionId,
-		string reason,
-		CancellationToken cancellationToken) =>
-		PauseForAttentionAsync(stepId, sessionId, reason, waitForResume: false, cancellationToken);
+	internal void PauseForUndelivered(string stepId, string sessionId, string reason) =>
+		PauseForAttention(stepId, sessionId, ScenarioAttentionReason.Unconfirmed, reason);
 
 	internal async Task PauseForBlockedDeliveryAsync(
 		string stepId,
@@ -617,30 +588,8 @@ public sealed class ScenarioRunHandle : IDisposable
 		TimeSpan retryDelay,
 		CancellationToken cancellationToken)
 	{
-		await PauseForAttentionAsync(
-				stepId,
-				sessionId,
-				reason,
-				waitForResume: false,
-				cancellationToken)
-			.ConfigureAwait(false);
-		await WaitForRetryOpportunityAsync(retryDelay, cancellationToken).ConfigureAwait(false);
-	}
-
-	private async Task WaitForRetryOpportunityAsync(
-		TimeSpan retryDelay,
-		CancellationToken cancellationToken)
-	{
-		Task? manualResume = null;
-		lock (_sync)
-		{
-			if (_state == ScenarioRunState.Paused && UnlockAllSessionsWhilePaused)
-			{
-				manualResume = _resumeRequested?.Task;
-			}
-		}
-
-		if (manualResume is not null)
+		PauseForAttention(stepId, sessionId, ScenarioAttentionReason.NothingSent, reason);
+		if (ManualResumeTask() is { } manualResume)
 		{
 			await manualResume.WaitAsync(cancellationToken).ConfigureAwait(false);
 			return;
@@ -649,61 +598,19 @@ public sealed class ScenarioRunHandle : IDisposable
 		await Task.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
 	}
 
-	private async Task PauseForAttentionAsync(
+	private void PauseForAttention(
 		string stepId,
 		string sessionId,
-		string journalMessage,
-		bool waitForResume,
-		CancellationToken cancellationToken)
+		ScenarioAttentionReason reason,
+		string journalMessage)
 	{
-		TaskCompletionSource resumeRequested;
-		var journalLevel = ScenarioJournalLevel.Warning;
-		var enteredPause = false;
+		Applied applied;
 		lock (_sync)
 		{
-			if (_state == ScenarioRunState.Paused && !_pauseRequested)
-			{
-				resumeRequested = _resumeRequested ??= new TaskCompletionSource(
-					TaskCreationOptions.RunContinuationsAsynchronously);
-			}
-			else if (_pauseRequested)
-			{
-				_pauseRequested = false;
-				journalMessage = "paused by user";
-				journalLevel = ScenarioJournalLevel.Info;
-				StuckSessionId = null;
-				UnlockAllSessionsWhilePaused = true;
-				enteredPause = true;
-				_state = ScenarioRunState.Paused;
-				_resumeRequested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-				resumeRequested = _resumeRequested;
-			}
-			else
-			{
-				journalLevel = ScenarioJournalLevel.Warning;
-				StuckSessionId = sessionId;
-				UnlockAllSessionsWhilePaused = false;
-				enteredPause = true;
-				_state = ScenarioRunState.Paused;
-				_resumeRequested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-				resumeRequested = _resumeRequested;
-			}
+			applied = ApplyLocked(state => ScenarioPauseMachine.NeedAttention(state, sessionId, reason));
 		}
 
-		if (enteredPause)
-		{
-			RaiseStateChanged();
-			await JournalAsync(
-				stepId,
-				journalMessage,
-				journalLevel,
-				CancellationToken.None).ConfigureAwait(false);
-		}
-
-		if (waitForResume)
-		{
-			await resumeRequested.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
-		}
+		Act(applied, stepId, journalMessage);
 	}
 
 	private async Task RunLoopAsync()
@@ -866,9 +773,7 @@ public sealed class ScenarioRunHandle : IDisposable
 			shouldFinalize = !_finalized;
 			if (shouldFinalize)
 			{
-				_state = terminalState;
-				StuckSessionId = null;
-				UnlockAllSessionsWhilePaused = false;
+				_pause = ScenarioPauseMachine.Finish(_pause, terminalState).State;
 				_finalized = true;
 			}
 		}
@@ -981,7 +886,7 @@ public sealed class ScenarioRunHandle : IDisposable
 	{
 		lock (_sync)
 		{
-			return _softStopRequested;
+			return _pause.StopRequested;
 		}
 	}
 

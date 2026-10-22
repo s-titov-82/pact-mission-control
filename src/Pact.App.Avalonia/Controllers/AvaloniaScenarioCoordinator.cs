@@ -375,26 +375,16 @@ internal sealed class AvaloniaScenarioCoordinator
 			return;
 		}
 
-		if (run.State == ScenarioRunState.Paused)
+		var pause = run.PauseState;
+		if (pause.IsPaused)
 		{
-			if (run.UnlockAllSessionsWhilePaused)
-			{
-				_viewModel.SetScenarioLocks(run.RunId, sessionIds, locked: false);
-				ReportStatus("Scenario paused by user.");
-				return;
-			}
-
-			var stuckSessionId = run.StuckSessionId;
-			var stillLocked = stuckSessionId is null
-				? sessionIds.ToArray()
-				: sessionIds.Where(id => !string.Equals(id, stuckSessionId, StringComparison.Ordinal)).ToArray();
+			var unlocked = ScenarioPauseMachine.UnlockedSessions(pause, sessionIds);
+			var stillLocked = sessionIds.Except(unlocked, StringComparer.Ordinal).ToArray();
 			_viewModel.SetScenarioLocks(run.RunId, stillLocked, locked: true);
-			if (stuckSessionId is not null)
-			{
-				_viewModel.SetScenarioLocks(run.RunId, [stuckSessionId], locked: false);
-			}
-
-			ReportStatus("Scenario paused - agent needs attention.");
+			_viewModel.SetScenarioLocks(run.RunId, unlocked, locked: false);
+			ReportStatus(pause.PauseKind == ScenarioPauseKind.Manual
+				? "Scenario paused by user."
+				: "Scenario paused - agent needs attention.");
 			return;
 		}
 

@@ -167,8 +167,7 @@ public sealed class ScenarioIterationContext
 			};
 			if (!nothingWritten)
 			{
-				await _handle.PauseForUndeliveredAsync(stepId, sessionId, reason, cancellationToken)
-					.ConfigureAwait(false);
+				_handle.PauseForUndelivered(stepId, sessionId, reason);
 				return;
 			}
 
@@ -224,10 +223,7 @@ public sealed class ScenarioIterationContext
 			}
 			catch (ScenarioStepTimeoutException)
 			{
-				await _handle.PauseForTimeoutAsync(
-					stepId,
-					sessionId,
-					cancellationToken).ConfigureAwait(false);
+				_handle.PauseForTimeout(stepId, sessionId);
 				continue;
 			}
 			finally

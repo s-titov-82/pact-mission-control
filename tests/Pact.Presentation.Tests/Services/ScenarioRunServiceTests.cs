@@ -552,7 +552,7 @@ public sealed class ScenarioRunServiceTests : IDisposable
 		await WaitForStateAsync(handle, ScenarioRunState.Paused);
 
 		handle.StuckSessionId.ShouldBeNull();
-		handle.UnlockAllSessionsWhilePaused.ShouldBeTrue();
+		handle.PauseKind.ShouldBe(ScenarioPauseKind.Manual);
 		await WaitForJournalAsync(handle, entry => entry.Message == "paused by user");
 		gateway.Sent.ShouldHaveSingleItem();
 
@@ -599,7 +599,7 @@ public sealed class ScenarioRunServiceTests : IDisposable
 		await WaitForStateAsync(handle, ScenarioRunState.Paused);
 
 		handle.PauseRequested.ShouldBeFalse();
-		handle.UnlockAllSessionsWhilePaused.ShouldBeTrue();
+		handle.PauseKind.ShouldBe(ScenarioPauseKind.Manual);
 		responseReady.TrySetResult("file response");
 		await handle.Completion.WaitAsync(TimeSpan.FromSeconds(2));
 
@@ -657,7 +657,7 @@ public sealed class ScenarioRunServiceTests : IDisposable
 		await replacementWaitStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
 
 		handle.State.ShouldBe(ScenarioRunState.Paused);
-		handle.UnlockAllSessionsWhilePaused.ShouldBeTrue();
+		handle.PauseKind.ShouldBe(ScenarioPauseKind.Manual);
 		gateway.Sent.ShouldHaveSingleItem();
 
 		responseReady.TrySetResult("file response");
@@ -706,7 +706,7 @@ public sealed class ScenarioRunServiceTests : IDisposable
 		handle.StateChanged += (_, _) =>
 		{
 			if (handle.State == ScenarioRunState.Paused
-				&& handle.UnlockAllSessionsWhilePaused)
+				&& handle.PauseKind == ScenarioPauseKind.Manual)
 			{
 				pauseTransitions++;
 			}
@@ -715,7 +715,7 @@ public sealed class ScenarioRunServiceTests : IDisposable
 
 		await WaitForStateAsync(handle, ScenarioRunState.Paused);
 
-		handle.UnlockAllSessionsWhilePaused.ShouldBeTrue();
+		handle.PauseKind.ShouldBe(ScenarioPauseKind.Manual);
 		handle.StuckSessionId.ShouldBeNull();
 		await WaitForJournalAsync(handle, entry => entry.Message == "paused by user");
 
@@ -766,7 +766,7 @@ public sealed class ScenarioRunServiceTests : IDisposable
 		handle.StateChanged += (_, _) =>
 		{
 			if (handle.State == ScenarioRunState.Paused
-				&& handle.UnlockAllSessionsWhilePaused)
+				&& handle.PauseKind == ScenarioPauseKind.Manual)
 			{
 				pauseTransitions++;
 			}
@@ -780,7 +780,7 @@ public sealed class ScenarioRunServiceTests : IDisposable
 		releaseDelivery.TrySetResult();
 		await WaitForStateAsync(handle, ScenarioRunState.Paused);
 
-		handle.UnlockAllSessionsWhilePaused.ShouldBeTrue();
+		handle.PauseKind.ShouldBe(ScenarioPauseKind.Manual);
 		handle.StuckSessionId.ShouldBeNull();
 		handle.Resume();
 		await handle.Completion.WaitAsync(TimeSpan.FromSeconds(2));
@@ -1219,6 +1219,99 @@ public sealed class ScenarioRunServiceTests : IDisposable
 		var service = CreateService(new FakeGateway());
 
 		service.NotifySessionDied("missing-session").ShouldBeFalse();
+	}
+
+	[Test]
+	public async Task Escalated_pause_reports_manual_kind_and_unlocks_all()
+	{
+		FakeGateway gateway = new();
+		gateway.DeliveryResults.Enqueue(new(
+			PromptDeliveryOutcome.Unconfirmed,
+			string.Empty,
+			WriteAttempted: true,
+			SubmitAttempted: true));
+		var service = CreateService(gateway);
+		var handle = service.Start(
+			Blueprint,
+			new ScriptedProgram(async (context, ct) =>
+			{
+				await context.SendAsync("send", "reviewer", "read task file", ct);
+				await context.WaitForResponseAsync(
+					"capture",
+					"reviewer",
+					(_, waitCancellationToken) => Task.Delay(Timeout.InfiniteTimeSpan, waitCancellationToken)
+						.ContinueWith(_ => string.Empty, TaskScheduler.Default),
+					ct);
+				return true;
+			}),
+			"project",
+			Bindings,
+			"target",
+			1);
+		await WaitForStateAsync(handle, ScenarioRunState.Paused);
+		handle.PauseKind.ShouldBe(ScenarioPauseKind.Attention);
+
+		var status = handle.RequestManualPause();
+
+		status.ShouldBe(ScenarioPauseRequestStatus.Escalated);
+		handle.PauseKind.ShouldBe(ScenarioPauseKind.Manual);
+		handle.StuckSessionId.ShouldBeNull();
+		ScenarioPauseMachine.UnlockedSessions(handle.PauseState, Bindings.Values)
+			.ShouldBe(Bindings.Values.Distinct(StringComparer.Ordinal), ignoreOrder: true);
+		handle.Abort();
+		await handle.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+	}
+
+	[Test]
+	public async Task Attention_pause_reports_its_reason()
+	{
+		FakeGateway gateway = new();
+		gateway.DeliveryResults.Enqueue(new(
+			PromptDeliveryOutcome.Unconfirmed,
+			string.Empty,
+			WriteAttempted: true,
+			SubmitAttempted: true));
+		TaskCompletionSource watchdogGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		TaskCompletionSource<string> responseReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		var attempts = 0;
+		var service = CreateService(gateway);
+		var handle = service.Start(
+			Blueprint,
+			new ScriptedProgram(async (context, ct) =>
+			{
+				await context.SendAsync("send", "reviewer", "read task file", ct);
+				await context.WaitForResponseAsync(
+					"capture",
+					"reviewer",
+					async (_, waitCancellationToken) =>
+					{
+						if (++attempts == 1)
+						{
+							await watchdogGate.Task.WaitAsync(waitCancellationToken);
+							throw new ScenarioStepTimeoutException();
+						}
+
+						return await responseReady.Task.WaitAsync(waitCancellationToken);
+					},
+					ct);
+				return true;
+			}),
+			"project",
+			Bindings,
+			"target",
+			1);
+		await WaitForStateAsync(handle, ScenarioRunState.Paused);
+		handle.AttentionReason.ShouldBe(ScenarioAttentionReason.Unconfirmed);
+
+		watchdogGate.TrySetResult();
+		await WaitForJournalAsync(handle, entry => entry.Message == "step watchdog elapsed - needs attention");
+
+		handle.AttentionReason.ShouldBe(ScenarioAttentionReason.Watchdog);
+		handle.Resume();
+		handle.AttentionReason.ShouldBeNull();
+		responseReady.TrySetResult("file response");
+		await handle.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+		gateway.Sent.ShouldHaveSingleItem();
 	}
 
 	private static ScenarioRunService CreateService(FakeGateway gateway) =>

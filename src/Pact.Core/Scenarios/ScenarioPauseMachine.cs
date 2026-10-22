@@ -91,7 +91,7 @@ public static class ScenarioPauseMachine
 	}
 
 	/// <summary>
-	/// Pact needs the user. A pending manual request wins; a running run pauses for attention;
+	/// Pact needs the user. A pending manual request wins; a running or stopping run pauses for attention;
 	/// an attention pause takes a different reason; a manual pause is left alone.
 	/// </summary>
 	public static ScenarioPauseTransition NeedAttention(
@@ -107,7 +107,7 @@ public static class ScenarioPauseMachine
 
 		return state switch
 		{
-			{ State: ScenarioRunState.Running } => new(
+			{ State: ScenarioRunState.Running or ScenarioRunState.StoppingAfterStep } => new(
 				state with
 				{
 					State = ScenarioRunState.Paused,

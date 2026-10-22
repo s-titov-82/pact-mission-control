@@ -488,7 +488,7 @@ internal sealed class OrchestratorHost : IOrchestratorHost
 				_ => run.State.ToString().ToLowerInvariant()
 			};
 		var pauseKind = run.State == ScenarioRunState.Paused
-			? run.UnlockAllSessionsWhilePaused ? "manual" : "attention"
+			? run.PauseKind == ScenarioPauseKind.Manual ? "manual" : "attention"
 			: null;
 		var currentStepName = run.Blueprint.Steps
 			.FirstOrDefault(step => string.Equals(

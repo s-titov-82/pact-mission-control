@@ -81,8 +81,12 @@ public sealed class ScenarioRunViewModel : INotifyPropertyChanged, IDisposable
 	public bool PauseRequested => _handle.PauseRequested;
 	/// <summary>Session the watchdog is waiting on while paused; it alone stays unlocked.</summary>
 	public string? StuckSessionId => _handle.StuckSessionId;
-	/// <summary>Whether the current pause releases every scenario-bound terminal.</summary>
-	public bool UnlockAllSessionsWhilePaused => _handle.UnlockAllSessionsWhilePaused;
+	/// <summary>Kind of the current pause; <see cref="ScenarioPauseKind.None"/> unless paused.</summary>
+	public ScenarioPauseKind PauseKind => _handle.PauseKind;
+	/// <summary>Why Pact paused the run for attention, or <see langword="null"/>.</summary>
+	public ScenarioAttentionReason? AttentionReason => _handle.AttentionReason;
+	/// <summary>The run state and the reason it stands still, as one value.</summary>
+	public ScenarioPauseState PauseState => _handle.PauseState;
 	/// <summary>Steps of the blueprint, with the current one highlighted.</summary>
 	public ObservableCollection<ScenarioRunStepViewModel> Steps { get; } = [];
 	/// <summary>Journal entries recorded so far.</summary>
@@ -271,7 +275,9 @@ public sealed class ScenarioRunViewModel : INotifyPropertyChanged, IDisposable
 																		 OnPropertyChanged(nameof(ExpectedResponse));
 																		 OnPropertyChanged(nameof(PauseRequested));
 																		 OnPropertyChanged(nameof(StuckSessionId));
-																		 OnPropertyChanged(nameof(UnlockAllSessionsWhilePaused));
+																		 OnPropertyChanged(nameof(PauseKind));
+																		 OnPropertyChanged(nameof(AttentionReason));
+																		 OnPropertyChanged(nameof(PauseState));
 																		 OnPropertyChanged(nameof(CanSoftStop));
 																		 OnPropertyChanged(nameof(CanPause));
 																		 OnPropertyChanged(nameof(CanAbort));

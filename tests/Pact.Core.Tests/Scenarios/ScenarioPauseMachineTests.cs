@@ -77,6 +77,17 @@ public sealed class ScenarioPauseMachineTests
 	}
 
 	[Test]
+	public void Attention_while_stopping_after_the_step_pauses_and_keeps_the_stop()
+	{
+		var stopping = Running with { State = ScenarioRunState.StoppingAfterStep, StopRequested = true };
+
+		var t = ScenarioPauseMachine.NeedAttention(stopping, "s1", ScenarioAttentionReason.Watchdog);
+
+		t.State.ShouldBe(Attention with { AttentionReason = ScenarioAttentionReason.Watchdog, StopRequested = true });
+		t.Effects.ShouldBe(ScenarioPauseEffects.Changed | ScenarioPauseEffects.JournalAttention);
+	}
+
+	[Test]
 	public void Attention_again_for_the_same_reason_changes_nothing()
 	{
 		var t = ScenarioPauseMachine.NeedAttention(Attention, "s2", ScenarioAttentionReason.Unconfirmed);

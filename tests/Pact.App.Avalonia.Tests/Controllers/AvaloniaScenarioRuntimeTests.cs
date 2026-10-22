@@ -159,20 +159,19 @@ public sealed class AvaloniaScenarioRuntimeTests
 			TestContext.CurrentContext.CancellationToken)).ShouldBeOfType<ScenarioRunViewModel>();
 		await WaitUntilAsync(() => reviewerBackend.Inputs.Count >= 2);
 
+		var bound = setup.RoleBindings.Select(binding => binding.SelectedSession!).ToArray();
 		fixture.Controller.PauseScenario(run);
 		await WaitUntilAsync(() => run.State == ScenarioRunState.Paused);
 
-		setup.RoleBindings
-			.Select(binding => binding.SelectedSession!)
-			.ShouldAllBe(session => !session.IsLockedByScenario);
+		// Locks follow the run state through the UI dispatcher, a moment after the state itself.
+		run.PauseKind.ShouldBe(ScenarioPauseKind.Manual);
+		await WaitUntilAsync(() => bound.All(session => !session.IsLockedByScenario));
 
 		ReportIdleScreen(fixture, reviewer.Record.Id);
 		fixture.Controller.ResumeScenario(run);
 		await WaitUntilAsync(() => run.State == ScenarioRunState.Running);
 
-		setup.RoleBindings
-			.Select(binding => binding.SelectedSession!)
-			.ShouldAllBe(session => session.LockedByScenarioRunId == run.RunId);
+		await WaitUntilAsync(() => bound.All(session => session.LockedByScenarioRunId == run.RunId));
 
 		run.Abort();
 		await run.Completion.WaitAsync(
