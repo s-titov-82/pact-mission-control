@@ -307,6 +307,9 @@ public sealed class ReviewLoopScenarioProgram : IScenarioProgram, IScenarioRunAr
 				responseCancellation.Cancel();
 			}
 
+			// The delivery is stopped and drained before the run may wait for Resume, so the
+			// trigger of a task whose response exists is never sent.
+			await context.AcceptResponseAsync(captureStepId, cancellationToken).ConfigureAwait(false);
 			context.Journal(captureStepId, $"read {step.ResponsePath}:\n{response}");
 			return response;
 		}

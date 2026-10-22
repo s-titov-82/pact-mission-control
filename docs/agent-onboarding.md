@@ -149,9 +149,10 @@ that wrote nothing is retried once the terminal is safe; once anything reached
 the terminal, an unconfirmed delivery pauses for attention, unlocks the affected
 terminal, and is never resent. The step watchdog also only pauses for attention
 and keeps observing the response. Manual Pause unlocks every involved terminal and
-forbids new automatic writes until Resume, but a footer-complete expected
-response clears Pause, re-locks the terminals, and advances immediately without
-Resume. The assigned agent writes the matching unique
+forbids new automatic writes until Resume. A footer-complete expected response
+that appears during Manual Pause stops any further delivery of the trigger at
+once and is kept; the run advances with it after Resume. During an attention
+pause the response resumes the run by itself. The assigned agent writes the matching unique
 `pass-NNN-<role>-response.md` and ends its non-empty response with the exact
 transport footer specified in the task.
 Only that footer-complete file advances the step, and the footer is removed

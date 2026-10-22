@@ -22,8 +22,8 @@ Default target seeds the setup dialog's review-target field; it can still be ove
 While a run is active, both involved sessions are input-locked — you cannot type
 into them, though their output stays visible and scrollable. Manual Pause
 unlocks both sessions and blocks new automatic terminal writes until Resume; a
-valid response file that appears during the pause advances the run and restores
-the locks without requiring Resume. If watchdog attention pauses a run because
+valid response file that appears during the pause stops the step's trigger from
+being sent and is kept, and the run continues with it after Resume. If watchdog attention pauses a run because
 a session looks stuck, only that affected session unlocks so you can answer it
 manually and let the run resume.
 

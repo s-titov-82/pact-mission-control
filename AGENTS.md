@@ -123,9 +123,12 @@ different renderer.
   through delivery retries, watchdog attention, and manual pause. The step
   watchdog (15 minutes without a response file) only pauses for attention and
   keeps waiting; it never resends the trigger. Manual Pause
-  blocks all new automatic terminal writes until Resume, but an already
-  appearing valid response clears the pause, re-locks the involved sessions,
-  and advances the run without requiring Resume.
+  blocks all new automatic terminal writes until Resume. A valid response that
+  appears during Manual Pause is read and stops any further delivery of that
+  step's trigger at once, but the run advances only after Resume. A valid
+  response ends an attention pause by itself. The run state, pause kind
+  (manual or attention) and attention reason live in one Core state machine,
+  `ScenarioPauseMachine`.
 - Paused runs retain their exchange files and resume the same wait. Completed,
   maximum-iteration, aborted, and failed runs remove only their own Pact-owned
   directory; startup removes abandoned `.pact-reviews`, never generic

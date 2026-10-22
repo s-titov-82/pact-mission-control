@@ -512,11 +512,12 @@ public sealed class ScenarioRunServiceTests : IDisposable
 	}
 
 	[Test]
-	public async Task RequestPause_during_response_wait_keeps_observing_and_clears_pause_without_resending()
+	public async Task Response_during_manual_pause_is_used_only_after_resume()
 	{
 		FakeGateway gateway = new();
 		TaskCompletionSource firstWaitStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
 		TaskCompletionSource<string> responseReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		string? received = null;
 		var attempts = 0;
 		var service = CreateService(gateway);
 		var handle = service.Start(
@@ -539,7 +540,8 @@ public sealed class ScenarioRunServiceTests : IDisposable
 						return await responseReady.Task.WaitAsync(waitCancellationToken);
 					},
 					ct);
-				response.ShouldBe("file response");
+				await context.AcceptResponseAsync("capture", ct);
+				received = response;
 				return true;
 			}),
 			"project",
@@ -550,18 +552,161 @@ public sealed class ScenarioRunServiceTests : IDisposable
 		await firstWaitStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
 		handle.RequestPause();
 		await WaitForStateAsync(handle, ScenarioRunState.Paused);
-
 		handle.StuckSessionId.ShouldBeNull();
 		handle.PauseKind.ShouldBe(ScenarioPauseKind.Manual);
 		await WaitForJournalAsync(handle, entry => entry.Message == "paused by user");
-		gateway.Sent.ShouldHaveSingleItem();
 
 		responseReady.TrySetResult("file response");
+		await WaitForJournalAsync(handle, entry => entry.Message == HeldResponseLine);
+
+		handle.State.ShouldBe(ScenarioRunState.Paused);
+		handle.PauseKind.ShouldBe(ScenarioPauseKind.Manual);
+		received.ShouldBeNull();
+		handle.Journal.Count(entry => entry.Message == HeldResponseLine).ShouldBe(1);
+		handle.Resume();
 		await handle.Completion.WaitAsync(TimeSpan.FromSeconds(2));
 
+		received.ShouldBe("file response");
 		attempts.ShouldBe(2);
 		gateway.Sent.ShouldHaveSingleItem();
 		handle.State.ShouldBe(ScenarioRunState.Completed);
+	}
+
+	[Test]
+	public async Task Abort_while_a_response_is_held_ends_the_run()
+	{
+		var (gateway, handle, responseReady) = StartHeldResponseRun();
+		await WaitForStateAsync(handle, ScenarioRunState.Paused);
+		responseReady.TrySetResult("file response");
+		await WaitForJournalAsync(handle, entry => entry.Message == HeldResponseLine);
+
+		handle.Abort();
+		await handle.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+		handle.State.ShouldBe(ScenarioRunState.Aborted);
+		gateway.Sent.ShouldHaveSingleItem();
+	}
+
+	[Test]
+	public async Task Soft_stop_during_held_response_ends_after_resume_without_sending()
+	{
+		var (gateway, handle, responseReady) = StartHeldResponseRun();
+		await WaitForStateAsync(handle, ScenarioRunState.Paused);
+		responseReady.TrySetResult("file response");
+		await WaitForJournalAsync(handle, entry => entry.Message == HeldResponseLine);
+
+		handle.RequestSoftStop();
+
+		handle.State.ShouldBe(ScenarioRunState.Paused);
+		handle.PauseKind.ShouldBe(ScenarioPauseKind.Manual);
+		handle.Resume();
+		await handle.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+		handle.State.ShouldBe(ScenarioRunState.Aborted);
+		gateway.Sent.ShouldHaveSingleItem();
+	}
+
+	[Test]
+	public async Task A_pause_taken_by_the_delivery_still_keeps_the_response_wait_going()
+	{
+		TaskCompletionSource releaseDelivery = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		TaskCompletionSource deliveryStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		TaskCompletionSource secondWaitStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		FakeGateway gateway = new()
+		{
+			DeliveryResult = new(PromptDeliveryOutcome.NotRunning, "not running"),
+			BeforeDeliveryResultAsync = async ct =>
+			{
+				deliveryStarted.TrySetResult();
+				await releaseDelivery.Task.WaitAsync(ct);
+			}
+		};
+		var attempts = 0;
+		ScenarioRunHandle? handle = null;
+		var service = CreateService(gateway);
+		handle = service.Start(
+			Blueprint,
+			new ScriptedProgram(async (context, ct) =>
+			{
+				var response = context.WaitForResponseAsync(
+					"capture",
+					"reviewer",
+					async (_, waitCancellationToken) =>
+					{
+						if (++attempts > 1)
+						{
+							secondWaitStarted.TrySetResult();
+							return await Task.Delay(Timeout.InfiniteTimeSpan, waitCancellationToken)
+								.ContinueWith(_ => string.Empty, TaskScheduler.Default);
+						}
+
+						try
+						{
+							await Task.Delay(Timeout.InfiniteTimeSpan, waitCancellationToken);
+						}
+						catch (OperationCanceledException)
+						{
+							// Let the delivery take the pause request before this wait reports it.
+							releaseDelivery.TrySetResult();
+							await WaitForStateAsync(handle!, ScenarioRunState.Paused);
+							throw;
+						}
+
+						return string.Empty;
+					},
+					ct);
+				var delivery = context.SendAsync("send", "reviewer", "read task file", ct);
+				await Task.WhenAll(response, delivery);
+				return true;
+			}),
+			"project",
+			Bindings,
+			"target",
+			1);
+		await deliveryStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+		handle.RequestManualPause().ShouldBe(ScenarioPauseRequestStatus.Requested);
+		await secondWaitStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+		handle.State.ShouldBe(ScenarioRunState.Paused);
+		handle.PauseKind.ShouldBe(ScenarioPauseKind.Manual);
+		handle.Abort();
+		await handle.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+		handle.State.ShouldBe(ScenarioRunState.Aborted);
+	}
+
+	private const string HeldResponseLine = "response received; waiting for Resume";
+
+	// A two-step run paused by the user while it waits for the first response; the second step
+	// would send another trigger.
+	private static (FakeGateway Gateway, ScenarioRunHandle Handle, TaskCompletionSource<string> ResponseReady) StartHeldResponseRun()
+	{
+		FakeGateway gateway = new();
+		TaskCompletionSource<string> responseReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		ScenarioRunHandle? handle = null;
+		var service = CreateService(gateway);
+		handle = service.Start(
+			Blueprint,
+			new ScriptedProgram(async (context, ct) =>
+			{
+				await context.SendAsync("send", "reviewer", "read task file", ct);
+				await context.WaitForResponseAsync(
+					"capture",
+					"reviewer",
+					async (_, waitCancellationToken) =>
+					{
+						handle!.RequestPause();
+						return await responseReady.Task.WaitAsync(waitCancellationToken);
+					},
+					ct);
+				await context.AcceptResponseAsync("capture", ct);
+				await context.SendAsync("send-2", "reviewer", "read the next task file", ct);
+				return true;
+			}),
+			"project",
+			Bindings,
+			"target",
+			1);
+		return (gateway, handle, responseReady);
 	}
 
 	[Test]
@@ -584,6 +729,7 @@ public sealed class ScenarioRunServiceTests : IDisposable
 						return await responseReady.Task.WaitAsync(waitCancellationToken);
 					},
 					ct);
+				await context.AcceptResponseAsync("capture", ct);
 				response.ShouldBe("file response");
 				return true;
 			}),
@@ -601,13 +747,15 @@ public sealed class ScenarioRunServiceTests : IDisposable
 		handle.PauseRequested.ShouldBeFalse();
 		handle.PauseKind.ShouldBe(ScenarioPauseKind.Manual);
 		responseReady.TrySetResult("file response");
+		await WaitForJournalAsync(handle, entry => entry.Message == HeldResponseLine);
+		handle.Resume();
 		await handle.Completion.WaitAsync(TimeSpan.FromSeconds(2));
 
 		handle.State.ShouldBe(ScenarioRunState.Completed);
 	}
 
 	[Test]
-	public async Task Manual_pause_and_watchdog_never_resend_and_the_response_completes()
+	public async Task Manual_pause_and_watchdog_never_resend_and_the_response_completes_after_resume()
 	{
 		FakeGateway gateway = new();
 		TaskCompletionSource firstWaitStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -643,6 +791,7 @@ public sealed class ScenarioRunServiceTests : IDisposable
 						return await responseReady.Task.WaitAsync(waitCancellationToken);
 					},
 					ct);
+				await context.AcceptResponseAsync("capture", ct);
 				response.ShouldBe("file response");
 				return true;
 			}),
@@ -661,6 +810,9 @@ public sealed class ScenarioRunServiceTests : IDisposable
 		gateway.Sent.ShouldHaveSingleItem();
 
 		responseReady.TrySetResult("file response");
+		await WaitForJournalAsync(handle, entry => entry.Message == HeldResponseLine);
+		handle.State.ShouldBe(ScenarioRunState.Paused);
+		handle.Resume();
 		await handle.Completion.WaitAsync(TimeSpan.FromSeconds(2));
 
 		handle.State.ShouldBe(ScenarioRunState.Completed);
@@ -697,6 +849,7 @@ public sealed class ScenarioRunServiceTests : IDisposable
 						return await responseReady.Task.WaitAsync(waitCancellationToken);
 					},
 					ct);
+				await context.AcceptResponseAsync("capture", ct);
 				return true;
 			}),
 			"project",
@@ -720,6 +873,8 @@ public sealed class ScenarioRunServiceTests : IDisposable
 		await WaitForJournalAsync(handle, entry => entry.Message == "paused by user");
 
 		responseReady.TrySetResult("file response");
+		await WaitForJournalAsync(handle, entry => entry.Message == HeldResponseLine);
+		handle.Resume();
 		await handle.Completion.WaitAsync(TimeSpan.FromSeconds(2));
 
 		pauseTransitions.ShouldBe(1);
@@ -855,7 +1010,7 @@ public sealed class ScenarioRunServiceTests : IDisposable
 	}
 
 	[Test]
-	public async Task ReviewLoop_manual_pause_during_delivery_accepts_response_without_resume_or_resend()
+	public async Task Pause_during_delivery_then_response_waits_for_resume()
 	{
 		TaskCompletionSource deliveryStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
 		TaskCompletionSource releaseDelivery = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -923,11 +1078,93 @@ public sealed class ScenarioRunServiceTests : IDisposable
 			$"review accepted\nDONE\n{completionFooter}",
 			CancellationToken.None);
 		releaseDelivery.TrySetResult();
+		await WaitForJournalAsync(handle, entry => entry.Message == HeldResponseLine);
+
+		handle.State.ShouldBe(ScenarioRunState.Paused);
+		handle.PauseKind.ShouldBe(ScenarioPauseKind.Manual);
+		gateway.Sent.Count(sent => sent.Prompt.Contains(taskPath, StringComparison.Ordinal)).ShouldBe(1);
+		gateway.DeliveryResult = new(PromptDeliveryOutcome.Confirmed, WriteAttempted: true, SubmitAttempted: true);
+		handle.Resume();
 		await handle.Completion.WaitAsync(TimeSpan.FromSeconds(5));
 
 		handle.State.ShouldBe(ScenarioRunState.Completed);
 		handle.ExpectedResponse.ShouldBeNull();
-		gateway.Sent.Count(sent => sent.SessionId == "reviewer-session").ShouldBe(1);
+		gateway.Sent.Count(sent => sent.Prompt.Contains(taskPath, StringComparison.Ordinal)).ShouldBe(1);
+	}
+
+	[Test]
+	public async Task Response_during_manual_pause_cancels_a_waiting_delivery_and_waits_for_resume()
+	{
+		TaskCompletionSource firstSend = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		FakeGateway gateway = new()
+		{
+			DeliveryResult = new(PromptDeliveryOutcome.NotRunning, "not running"),
+			BeforeDeliveryResultAsync = _ =>
+			{
+				firstSend.TrySetResult();
+				return Task.CompletedTask;
+			}
+		};
+		var (handle, _) = StartReviewLoop(gateway);
+		await firstSend.Task.WaitAsync(TimeSpan.FromSeconds(2));
+		var taskPath = ExtractTaskPath(gateway.Sent[0].Prompt);
+		var task = await File.ReadAllTextAsync(taskPath, CancellationToken.None);
+		handle.RequestManualPause().ShouldBeOneOf(
+			ScenarioPauseRequestStatus.Requested,
+			ScenarioPauseRequestStatus.Escalated);
+
+		await File.WriteAllTextAsync(
+			ExtractProtocolValue(task, "Response file"),
+			$"review accepted\nDONE\n{ExtractProtocolValue(task, "Completion footer")}",
+			CancellationToken.None);
+		await WaitForJournalAsync(handle, entry => entry.Message == HeldResponseLine);
+
+		// The held line is journaled only after the delivery was cancelled and drained.
+		var sendsForTask = gateway.Sent.Count(sent => sent.Prompt.Contains(taskPath, StringComparison.Ordinal));
+		handle.State.ShouldBe(ScenarioRunState.Paused);
+		handle.PauseKind.ShouldBe(ScenarioPauseKind.Manual);
+		gateway.DeliveryResult = new(PromptDeliveryOutcome.Confirmed, WriteAttempted: true, SubmitAttempted: true);
+		handle.Resume();
+		await handle.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+
+		handle.State.ShouldBe(ScenarioRunState.Completed);
+		gateway.Sent.Count(sent => sent.Prompt.Contains(taskPath, StringComparison.Ordinal)).ShouldBe(sendsForTask);
+		gateway.Sent.ShouldContain(sent => sent.SessionId == "author-session");
+	}
+
+	private (ScenarioRunHandle Handle, ReviewLoopScenarioProgram Program) StartReviewLoop(FakeGateway gateway)
+	{
+		ScenarioRunService service = new(gateway, stepWatchdogTimeout: TimeSpan.FromSeconds(30));
+		ScenarioDefinition definition = new(
+			"review-loop",
+			ScenarioKind.ReviewLoop,
+			"Review loop",
+			1,
+			"DONE",
+			"target",
+			"Review {target}",
+			"Fix {reviewerOutput}",
+			"Recheck {authorOutput}",
+			"Fix {reviewerOutput}",
+			[new("strict", "Strict", "Review strictly")],
+			"strict");
+		ReviewLoopScenarioProgram program = new(
+			definition,
+			"Review strictly",
+			_directory,
+			filePollInterval: TimeSpan.FromMilliseconds(10));
+		var handle = service.Start(
+			ReviewLoopScenarioProgram.Blueprint,
+			program,
+			"project",
+			new Dictionary<string, string>
+			{
+				[ReviewLoopScenarioProgram.AuthorRole] = "author-session",
+				[ReviewLoopScenarioProgram.ReviewerRole] = "reviewer-session"
+			},
+			"target",
+			maxIterations: 1);
+		return (handle, program);
 	}
 
 	[Test]

@@ -302,8 +302,6 @@ public sealed class ScenarioRunHandle : IDisposable
 
 	internal void ResumeAfterDelivery() => Transition(ScenarioPauseMachine.DeliverySucceeded);
 
-	internal void ResumeAfterResponse() => Transition(ScenarioPauseMachine.Resume);
-
 	/// <summary>
 	/// Resumes an established pause. A pending pause request is deliberately not canceled.
 	/// </summary>
@@ -447,6 +445,27 @@ public sealed class ScenarioRunHandle : IDisposable
 		{
 			RaiseStateChanged();
 		}
+	}
+
+	// A valid response arrived. An attention pause ends; a manual pause keeps the response until
+	// the user resumes. A soft stop is honored only after that wait.
+	internal async Task AcceptResponseAsync(string stepId, CancellationToken cancellationToken)
+	{
+		Applied applied;
+		lock (_sync)
+		{
+			applied = ApplyLocked(ScenarioPauseMachine.ResponseArrived);
+		}
+
+		Act(applied, stepId);
+		if (applied.Transition.Effects.HasFlag(ScenarioPauseEffects.HoldResponse)
+			&& applied.ResumeTask is { } resumeRequested)
+		{
+			AddJournalEntry(stepId, "response received; waiting for Resume", ScenarioJournalLevel.Info);
+			await resumeRequested.WaitAsync(cancellationToken).ConfigureAwait(false);
+		}
+
+		ThrowIfSoftStopRequested();
 	}
 
 	internal void ThrowIfSoftStopRequested()

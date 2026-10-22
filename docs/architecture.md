@@ -260,13 +260,14 @@ pending, or the session was not running) is retried once the terminal is safe.
 Once anything reached the terminal, an unconfirmed delivery pauses for attention
 and is never resent; the response file decides. The step watchdog likewise only
 pauses for attention and keeps waiting. A complete footer-valid response is
-authoritative: it cancels any delivery still in progress, clears either pause
-kind, re-locks the terminals, and advances the run.
+authoritative: it cancels any delivery still in progress before the run may
+use it, ends an attention pause, re-locks the terminals, and advances the run.
 
 Manual Pause releases every involved terminal and suppresses all new automatic
 writes until explicit Resume, but it does not stop response observation. A
-response completed during manual Pause therefore clears the pause and continues
-without Resume. Watchdog attention releases only the terminal that needs
+response completed during manual Pause is read, stops the delivery, and is kept
+(`ScenarioIterationContext.AcceptResponseAsync`); the run advances with it only
+after Resume. Watchdog attention releases only the terminal that needs
 attention. Paused runs retain their files; the run
 state and journal remain in memory rather than introducing a second durable
 state file. The final result and journal are rendered as read-only Markdown

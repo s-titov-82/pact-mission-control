@@ -25,8 +25,9 @@ only when it is non-empty and ends with the exact requested footer. Terminal
 
 Use Pause when a person needs to intervene. Pause releases the involved
 terminals and blocks new automatic writes. Resume continues the same waiting
-step. If a valid response file appears while paused, Pact can continue without
-requiring Resume. Closing the project or application aborts its active review.
+step. If a valid response file appears while you paused the run, Pact stops
+sending the step's trigger and keeps the response, then continues with it after
+Resume. Closing the project or application aborts its active review.
 
 See [Scenarios](../../help/en/settings-scenarios.md) and
 [Review profiles](../../help/en/settings-review-profiles.md) for configuration.

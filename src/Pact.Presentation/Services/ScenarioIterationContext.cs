@@ -183,7 +183,8 @@ public sealed class ScenarioIterationContext
 	/// <summary>
 	/// Waits for one durable response while keeping observation active through pause and the
 	/// step watchdog. When the watchdog elapses the run pauses for attention and keeps waiting;
-	/// it never resends the trigger. A footer-complete response resumes the run.
+	/// it never resends the trigger. It returns a footer-complete response at once and never ends a
+	/// pause; <see cref="AcceptResponseAsync"/> decides when the run may use the response.
 	/// </summary>
 	/// <param name="stepId">Stable identifier of the scenario step awaiting the response.</param>
 	/// <param name="role">Scenario role whose terminal and response file are being observed.</param>
@@ -215,10 +216,10 @@ public sealed class ScenarioIterationContext
 					_stepWatchdogTimeout,
 					waitCancellation.Token).ConfigureAwait(false);
 			}
-			catch (OperationCanceledException) when (
-				!cancellationToken.IsCancellationRequested
-				&& _handle.IsPauseRequested)
+			catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
 			{
+				// Only a pause request cancels this wait apart from the run itself. The request may
+				// already have been taken by a concurrent delivery, so it is not checked here.
 				interruptedForPause = true;
 			}
 			catch (ScenarioStepTimeoutException)
@@ -240,10 +241,22 @@ public sealed class ScenarioIterationContext
 				continue;
 			}
 
-			_handle.ResumeAfterResponse();
-			_handle.ThrowIfSoftStopRequested();
 			return response!;
 		}
+	}
+
+	/// <summary>
+	/// Lets the run use a response that <see cref="WaitForResponseAsync"/> returned. An attention
+	/// pause ends; during a manual pause the response is kept and this waits until the user
+	/// resumes. Call it only after any delivery of the step's trigger has been stopped, so a
+	/// trigger is never sent once its response exists.
+	/// </summary>
+	/// <param name="stepId">Stable identifier of the step that received the response.</param>
+	/// <param name="cancellationToken">Cancels the wait for Resume.</param>
+	public Task AcceptResponseAsync(string stepId, CancellationToken cancellationToken)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(stepId);
+		return _handle.AcceptResponseAsync(stepId, cancellationToken);
 	}
 
 	/// <summary>Adds an entry to the run journal.</summary>
