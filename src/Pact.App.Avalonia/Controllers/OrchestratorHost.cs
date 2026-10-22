@@ -3,7 +3,6 @@ using Pact.Core.AgentControl;
 using Pact.Core.Presentation;
 using Pact.Core.Scenarios;
 using Pact.Core.Sessions;
-using Pact.Presentation.Services;
 using Pact.Presentation.Services.Orchestrator;
 using Pact.Presentation.ViewModels;
 
