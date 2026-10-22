@@ -36,6 +36,26 @@ public sealed class OrchestratorCompositionTests
 	}
 
 	[Test]
+	public async Task Orchestrator_output_reaches_its_terminal_and_enter_resets_the_snapshot_baseline()
+	{
+		await using CompositionFixture fixture = new();
+		await fixture.InitializeAsync();
+
+		fixture.OrchestratorBackend.EmitOutput("orchestrator says hi");
+		using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+		while (!fixture.Host.WrittenOutput.ToArray().Any(entry =>
+			entry.SessionId == "pact-orchestrator" && entry.Text.Contains("orchestrator says hi", StringComparison.Ordinal)))
+		{
+			timeout.Token.ThrowIfCancellationRequested();
+			await Task.Yield();
+		}
+
+		await fixture.Controller.WriteInputAsync("pact-orchestrator", "\r");
+
+		fixture.Host.SnapshotBaselineResetSessions.ShouldContain("pact-orchestrator");
+	}
+
+	[Test]
 	public async Task An_unknown_orchestrator_tool_is_refused()
 	{
 		await using CompositionFixture fixture = new();

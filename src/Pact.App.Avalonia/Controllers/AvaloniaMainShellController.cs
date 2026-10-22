@@ -4,7 +4,6 @@ using System.Runtime.CompilerServices;
 using Avalonia.Threading;
 using Pact.App.Avalonia.Diagnostics;
 using Pact.App.Avalonia.Lifecycle;
-using Pact.App.Avalonia.Platform;
 using Pact.App.Avalonia.SelectionActions;
 using Pact.App.Avalonia.Web;
 using Pact.Core.AgentControl;
@@ -63,14 +62,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 	private readonly SessionLauncher _launcher;
 	private readonly OrchestratorStore _orchestratorStore;
 	private readonly OrchestratorDispatcher _orchestratorDispatcher;
-	private const string OrchestratorSessionId = "pact-orchestrator";
-	private OrchestratorRecord _orchestratorRecord = OrchestratorRecord.CreateDefault();
-	private SessionViewModel? _orchestratorSession;
-	private WorkstationLockMonitor? _workstationLockMonitor;
-	private IntPtr _mainWindowHandle;
-	private bool _orchestratorIntentionalStop;
-	private int _orchestratorConsecutiveFailures;
-	private DateTimeOffset _orchestratorStartedAt;
+	private readonly OrchestratorSupervisor _orchestrator;
 	private IReadOnlyList<ResolvedGitHelperAction> _resolvedGitHelperActions = [];
 	private GitButtonCommandSet _gitButtonCommands = GitButtonCommandSet.Create(null);
 	private ExternalGitHelperResolver? _gitHelperResolver;
@@ -210,16 +202,29 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			ResetSnapshotBaselineSafeAsync,
 			_scenarioCoordinator.NotifySessionDied,
 			ReportStatusAsync);
+		_orchestrator = new OrchestratorSupervisor(
+			_runtimeCoordinator,
+			_terminalHost,
+			ViewModel,
+			_launcher,
+			_agentControlTokens,
+			GetAgentControlAddress,
+			_resolveCommandAsync,
+			_timeProvider,
+			_eventTasks,
+			ReportStatusAsync,
+			IsShutdownBegun,
+			() => _terminalHostInitialized);
 		AgentControlHost agentControlHost = new(this, ViewModel, _uiTaskDispatcher);
 		AgentControlDispatcher agentControlDispatcher = new(agentControlHost);
 		OrchestratorHost orchestratorHost = new(
 			ViewModel,
 			_uiTaskDispatcher,
 			IsLiveSession,
-			SendOrchestratorMessageAsync,
+			_orchestrator.SendMessageAsync,
 			_webPageCoordinator.ResumeInBackgroundAsync,
 			_webPageCoordinator.ReadDocumentHtmlAsync,
-			() => _orchestratorSession is null ? null : OrchestratorSessionId,
+			() => _orchestrator.Session is null ? null : OrchestratorSupervisor.SessionId,
 			_runtimeCoordinator.StartAndWaitReadyAsync);
 		_orchestratorDispatcher = new OrchestratorDispatcher(orchestratorHost);
 		AgentControlToolRouter toolRouter = new(
@@ -280,9 +285,9 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 				FindRestorableWebPage,
 				_webPageCoordinator.ResumeInBackgroundAsync,
 				ViewModel.TerminalTabStatuses.RestoreUnreadCompletion,
-				RestoreOrchestratorAsync,
+				_orchestrator.RestoreAsync,
 				RestoreSelectionAsync,
-				id => string.Equals(id, OrchestratorSessionId, StringComparison.Ordinal),
+				id => string.Equals(id, OrchestratorSupervisor.SessionId, StringComparison.Ordinal),
 				_timeProvider);
 		}
 	}
@@ -463,8 +468,8 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		_terminalHostInitialized = true;
 		if (!await TryRestoreSoftRestartAsync(cancellationToken))
 		{
-			if (_orchestratorRecord.Enabled
-				&& _orchestratorRecord.IsProvisioned
+			if (_orchestrator.Record.Enabled
+				&& _orchestrator.Record.IsProvisioned
 				&& !IsOrchestratorRunning)
 			{
 				await StartOrchestratorAsync(cancellationToken);
@@ -1283,57 +1288,10 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 				.Order(StringComparer.Ordinal));
 	}
 
-	public async Task ApplyOrchestratorSettingsAsync(
+	public Task ApplyOrchestratorSettingsAsync(
 		OrchestratorRecord record,
-		CancellationToken cancellationToken)
-	{
-		ArgumentNullException.ThrowIfNull(record);
-		var restartRequired = _orchestratorSession is not null
-			&& (_orchestratorRecord.Credential != record.Credential
-				|| _orchestratorRecord.LaunchCommand != record.LaunchCommand
-				|| _orchestratorRecord.WorkingDirectory != record.WorkingDirectory);
-		if (restartRequired || !record.Enabled || !record.IsProvisioned)
-		{
-			await StopOrchestratorAsync();
-		}
-
-		_orchestratorRecord = record;
-		_agentControlTokens.SetOrchestratorCredential(
-			record.Enabled && record.IsProvisioned ? record.Credential : null);
-		RefreshWorkstationLockMonitor();
-		if (!record.IsProvisioned)
-		{
-			ViewModel.OrchestratorSlot.Apply(
-				isProvisioned: false,
-				isEnabled: record.Enabled,
-				isRunning: false,
-				stateText: "Not provisioned");
-			return;
-		}
-
-		if (!record.Enabled)
-		{
-			ViewModel.OrchestratorSlot.Apply(
-				isProvisioned: true,
-				isEnabled: false,
-				isRunning: false,
-				stateText: "Stopped");
-			return;
-		}
-
-		if (!_terminalHostInitialized)
-		{
-			ViewModel.OrchestratorSlot.Apply(
-				isProvisioned: true,
-				isEnabled: true,
-				isRunning: false,
-				stateText: "Starting");
-		}
-		else if (!IsOrchestratorRunning)
-		{
-			await StartOrchestratorAsync(cancellationToken);
-		}
-	}
+		CancellationToken cancellationToken) =>
+		_orchestrator.ApplySettingsAsync(record, cancellationToken);
 
 	internal OrchestratorSectionViewModel CreateOrchestratorSectionViewModel() =>
 		new(
@@ -1342,332 +1300,29 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			HermesHome.ResolveRoot(),
 			AgentControlAddress.AbsoluteUri);
 
-	internal void AttachWorkstationLockMonitor(IntPtr windowHandle)
-	{
-		if (!OperatingSystem.IsWindows() || windowHandle == IntPtr.Zero)
-		{
-			return;
-		}
+	internal void AttachWorkstationLockMonitor(IntPtr windowHandle) =>
+		_orchestrator.AttachWorkstationLockMonitor(windowHandle);
 
-		_mainWindowHandle = windowHandle;
-		RefreshWorkstationLockMonitor();
-	}
+	internal bool IsOrchestratorRunning => _orchestrator.IsRunning;
 
-	private void RefreshWorkstationLockMonitor()
-	{
-		var shouldSubscribe = OperatingSystem.IsWindows()
-			&& _mainWindowHandle != IntPtr.Zero
-			&& _orchestratorRecord.Enabled
-			&& _orchestratorRecord.LockDetectionEnabled;
-		if (shouldSubscribe && _workstationLockMonitor is null)
-		{
-			_workstationLockMonitor = new WorkstationLockMonitor(_mainWindowHandle);
-			_workstationLockMonitor.LockStateChanged += OnWorkstationLockStateChanged;
-			return;
-		}
+	internal Task StartOrchestratorAsync(CancellationToken cancellationToken = default) =>
+		_orchestrator.StartAsync(cancellationToken);
 
-		if (shouldSubscribe || _workstationLockMonitor is null)
-		{
-			return;
-		}
-
-		_workstationLockMonitor.LockStateChanged -= OnWorkstationLockStateChanged;
-		_workstationLockMonitor.Dispose();
-		_workstationLockMonitor = null;
-	}
-
-	internal bool IsOrchestratorRunning =>
-		_runtimeCoordinator.TryGetActiveController(
-			OrchestratorSessionId,
-			out _,
-			out _);
-
-	internal async Task StartOrchestratorAsync(CancellationToken cancellationToken = default)
-	{
-		if (!_orchestratorRecord.Enabled)
-		{
-			ViewModel.OrchestratorSlot.Apply(
-				isProvisioned: _orchestratorRecord.IsProvisioned,
-				isEnabled: false,
-				isRunning: false,
-				stateText: "Stopped");
-			return;
-		}
-
-		if (!_orchestratorRecord.IsProvisioned)
-		{
-			ViewModel.OrchestratorSlot.Apply(
-				isProvisioned: false,
-				isEnabled: true,
-				isRunning: false,
-				stateText: "Not provisioned");
-			return;
-		}
-
-		if (IsOrchestratorRunning)
-		{
-			return;
-		}
-
-		try
-		{
-			var commandLine = await _resolveCommandAsync(_orchestratorRecord.LaunchCommand, []);
-			if (string.IsNullOrWhiteSpace(commandLine))
-			{
-				throw new InvalidOperationException(
-					"The launch command could not be resolved.");
-			}
-
-			var now = DateTimeOffset.UtcNow;
-			SessionRecord record = new(
-				OrchestratorSessionId,
-				AgentKind.Hermes,
-				"Orchestrator",
-				_orchestratorRecord.WorkingDirectory,
-				_orchestratorRecord.LaunchCommand,
-				ResumeCommand: null,
-				SessionStatus.Starting,
-				now,
-				now);
-			_orchestratorSession ??= new SessionViewModel(record);
-			_orchestratorSession.UpdateRecord(record);
-			ViewModel.OrchestratorSlot.AttachSession(_orchestratorSession);
-			ViewModel.TerminalTabStatuses.RegisterSession(_orchestratorSession);
-			await _terminalHost.CreateTerminalAsync(OrchestratorSessionId);
-
-			void OutputHandler(object? _, string text)
-			{
-				OnOutputReceived(OrchestratorSessionId, text);
-			}
-
-			Task InputWritingHandler(string input)
-			{
-				return AgentKeyEncoder.IsSubmit(input)
-					? ResetSnapshotBaselineSafeAsync(OrchestratorSessionId)
-					: Task.CompletedTask;
-			}
-
-			void InputWrittenHandler(object? _, string input)
-			{
-				ViewModel.TerminalTabStatuses.OnUserInput(
-								OrchestratorSessionId,
-								input,
-								DateTimeOffset.UtcNow);
-			}
-
-			void ViewportChangedHandler(object? _, TerminalViewportChangedEventArgs args)
-			{
-				ViewModel.TerminalTabStatuses.OnViewportChanged(
-								OrchestratorSessionId,
-								args.Columns,
-								args.Rows,
-								DateTimeOffset.UtcNow);
-			}
-
-			(var columns, var rows) = _terminalHost.GetCurrentSize(OrchestratorSessionId);
-			Dictionary<string, string> environment = new(StringComparer.Ordinal)
-			{
-				["PACT_MCP_URL"] = AgentControlAddress.AbsoluteUri,
-				["PACT_MCP_TOKEN"] = _orchestratorRecord.Credential
-			};
-			_orchestratorIntentionalStop = false;
-			_orchestratorStartedAt = _timeProvider.GetUtcNow();
-			await _runtimeCoordinator.StartAsync(
-				OrchestratorSessionId,
-				record.Kind,
-				new TerminalStartOptions(
-					commandLine,
-					_orchestratorRecord.WorkingDirectory,
-					columns,
-					rows,
-					environment),
-				OnOrchestratorExited,
-				OutputHandler,
-				InputWritingHandler,
-				InputWrittenHandler,
-				ViewportChangedHandler,
-				cancellationToken);
-			_orchestratorSession.UpdateRecord(record with { Status = SessionStatus.Running });
-			ViewModel.TerminalTabStatuses.OnSessionStarted(
-				OrchestratorSessionId,
-				TerminalStartMode.Normal,
-				DateTimeOffset.UtcNow);
-			ViewModel.OrchestratorSlot.Apply(
-				isProvisioned: true,
-				isEnabled: true,
-				isRunning: true,
-				stateText: "Running");
-		}
-		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-		{
-			throw;
-		}
-		catch (Exception exception)
-		{
-			var failure = exception;
-			try
-			{
-				await _runtimeCoordinator.StopAsync(OrchestratorSessionId);
-			}
-			catch (Exception cleanupException)
-			{
-				failure = new AggregateException(exception, cleanupException);
-			}
-
-			ViewModel.TerminalTabStatuses.RemoveSession(OrchestratorSessionId);
-			ViewModel.OrchestratorSlot.Apply(
-				isProvisioned: true,
-				isEnabled: true,
-				isRunning: false,
-				stateText: $"Failed: {failure.Message}");
-		}
-	}
-
-	internal async Task StopOrchestratorAsync()
-	{
-		_orchestratorIntentionalStop = true;
-		await _runtimeCoordinator.StopAsync(OrchestratorSessionId);
-		ViewModel.TerminalTabStatuses.RemoveSession(OrchestratorSessionId);
-		_orchestratorSession?.UpdateRecord(
-			_orchestratorSession.Record with { Status = SessionStatus.Stopped });
-
-		ViewModel.OrchestratorSlot.Apply(
-			isProvisioned: _orchestratorRecord.IsProvisioned,
-			isEnabled: _orchestratorRecord.Enabled,
-			isRunning: false,
-			stateText: _orchestratorRecord.IsProvisioned ? "Stopped" : "Not provisioned");
-	}
+	internal Task StopOrchestratorAsync() => _orchestrator.StopAsync();
 
 	internal Task SelectOrchestratorAsync(CancellationToken cancellationToken = default) =>
-		_orchestratorSession is not null && IsOrchestratorRunning
+		_orchestrator.Session is { } session && _orchestrator.IsRunning
 			? SelectSessionAsync(
-				_orchestratorSession,
+				session,
 				startIfNeeded: false,
 				cancellationToken: cancellationToken)
 			: Task.CompletedTask;
 
-	private void OnOrchestratorExited(string sessionId, TerminalController controller) =>
-		_eventTasks.TryRun(
-			"orchestrator-exit",
-			() => HandleOrchestratorExitedAsync(controller),
-			exception => ReportStatusAsync(
-				$"Orchestrator exit cleanup failed: {exception.Message}"));
-
-	private async Task HandleOrchestratorExitedAsync(TerminalController controller)
-	{
-		if (!await _runtimeCoordinator.HandleControllerExitedAsync(
-				OrchestratorSessionId,
-				controller))
-		{
-			return;
-		}
-
-		ViewModel.TerminalTabStatuses.RemoveSession(OrchestratorSessionId);
-		var intentional = _orchestratorIntentionalStop;
-		_orchestratorIntentionalStop = false;
-		if (intentional || _shutdownBegun || !_orchestratorRecord.Enabled)
-		{
-			ViewModel.OrchestratorSlot.Apply(
-				isProvisioned: true,
-				isEnabled: _orchestratorRecord.Enabled,
-				isRunning: false,
-				stateText: "Stopped");
-			return;
-		}
-
-		var ranFor = _timeProvider.GetUtcNow() - _orchestratorStartedAt;
-		_orchestratorConsecutiveFailures = ranFor >= TimeSpan.FromMinutes(1)
-			? 0
-			: _orchestratorConsecutiveFailures + 1;
-		var delay = OrchestratorRestartPolicy.NextDelay(
-			_orchestratorConsecutiveFailures,
-			ranFor);
-		if (delay is null)
-		{
-			ViewModel.OrchestratorSlot.Apply(
-				isProvisioned: true,
-				isEnabled: true,
-				isRunning: false,
-				stateText: "Failed: restart budget exhausted");
-			return;
-		}
-
-		ViewModel.OrchestratorSlot.Apply(
-			isProvisioned: true,
-			isEnabled: true,
-			isRunning: false,
-			stateText: delay == TimeSpan.Zero
-				? "Restarting"
-				: $"Restarting in {delay.Value.TotalSeconds:0}s");
-		await Task.Delay(delay.Value, _timeProvider, CancellationToken.None);
-		if (!_shutdownBegun && _orchestratorRecord.Enabled)
-		{
-			await StartOrchestratorAsync(CancellationToken.None);
-		}
-	}
-
-	private void OnWorkstationLockStateChanged(object? sender, bool locked)
-	{
-		_eventTasks.TryRun(
-			"orchestrator-lock-state",
-			() => DeliverWorkstationLockPromptAsync(locked),
-			exception => ReportStatusAsync(
-				$"Orchestrator lock prompt failed: {exception.Message}"));
-	}
-
-	internal async Task DeliverWorkstationLockPromptAsync(bool locked)
-	{
-		if (!WorkstationLockPolicy.TryBuildPrompt(
-				_orchestratorRecord,
-				locked,
-				out var prompt))
-		{
-			return;
-		}
-
-		if (_orchestratorSession is null || !IsOrchestratorRunning)
-		{
-			ViewModel.OrchestratorSlot.Apply(
-				isProvisioned: _orchestratorRecord.IsProvisioned,
-				isEnabled: _orchestratorRecord.Enabled,
-				isRunning: false,
-				stateText: locked
-					? "Stopped — lock prompt was not delivered"
-					: "Stopped — unlock prompt was not delivered");
-			return;
-		}
-
-		var result = await _runtimeCoordinator.DeliverPromptAsync(
-			_orchestratorSession.Record.Id,
-			prompt,
-			submit: true,
-			PromptSender.Outsider,
-			startIfNotRunning: false,
-			CancellationToken.None);
-		if (DescribeUndelivered(result) is { } reason)
-		{
-			ViewModel.OrchestratorSlot.Apply(
-				isProvisioned: _orchestratorRecord.IsProvisioned,
-				isEnabled: _orchestratorRecord.Enabled,
-				isRunning: true,
-				stateText: $"{(locked ? "Lock" : "Unlock")} prompt: {reason}");
-		}
-	}
+	internal Task DeliverWorkstationLockPromptAsync(bool locked) =>
+		_orchestrator.DeliverWorkstationLockPromptAsync(locked);
 
 	private bool IsLiveSession(string sessionId) =>
 		_runtimeCoordinator.TryGetActiveController(sessionId, out _, out _);
-
-	private Task<PromptDeliveryResult> SendOrchestratorMessageAsync(
-		SessionViewModel target,
-		string text,
-		CancellationToken cancellationToken) =>
-		_runtimeCoordinator.DeliverPromptAsync(
-			target.Record.Id,
-			text,
-			submit: true,
-			PromptSender.Outsider,
-			startIfNotRunning: false,
-			cancellationToken);
 
 	public async Task PauseWorkspaceAsync(WorkspaceViewModel workspace, CancellationToken cancellationToken = default)
 	{
@@ -2613,11 +2268,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			_processMetricsMonitor.Dispose();
 			_webProcessMetricsMonitor.MetricsChanged -= OnWebProcessMetricsChanged;
 			await _webProcessMetricsMonitor.DisposeAsync();
-			if (_workstationLockMonitor is not null)
-			{
-				_workstationLockMonitor.LockStateChanged -= OnWorkstationLockStateChanged;
-				_workstationLockMonitor.Dispose();
-			}
+			_orchestrator.DetachWorkstationLockMonitor();
 			_agentControlEndpoint.Dispose();
 			_webPageCoordinator.Dispose();
 			_runtimeCoordinator.Dispose();
@@ -2663,27 +2314,14 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			cancellationToken);
 	}
 
-	private async Task<bool> RestoreOrchestratorAsync(CancellationToken cancellationToken)
-	{
-		if (!_orchestratorRecord.Enabled || !_orchestratorRecord.IsProvisioned)
-		{
-			return false;
-		}
-		if (!IsOrchestratorRunning)
-		{
-			await StartOrchestratorAsync(cancellationToken);
-		}
-		return IsOrchestratorRunning;
-	}
-
 	private async Task<bool> RestoreSelectionAsync(
 		SoftRestartSelection selection,
 		CancellationToken cancellationToken)
 	{
 		if (selection.ItemId is { } itemId)
 		{
-			if (_orchestratorSession is not null
-				&& string.Equals(itemId, OrchestratorSessionId, StringComparison.Ordinal)
+			if (_orchestrator.Session is not null
+				&& string.Equals(itemId, OrchestratorSupervisor.SessionId, StringComparison.Ordinal)
 				&& IsOrchestratorRunning)
 			{
 				await SelectOrchestratorAsync(cancellationToken);
@@ -2751,24 +2389,11 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			PromptSender.Outsider,
 			startIfNotRunning: true,
 			cancellationToken);
-		if (DescribeUndelivered(result) is { } reason)
+		if (PromptDeliveryText.DescribeUndelivered(result) is { } reason)
 		{
 			await ReportStatusAsync($"{target.Title}: {reason}");
 		}
 	}
-
-	private static string? DescribeUndelivered(PromptDeliveryResult result) => result.Outcome switch
-	{
-		PromptDeliveryOutcome.Confirmed or PromptDeliveryOutcome.Submitted => null,
-		PromptDeliveryOutcome.RefusedQuestion when result.WriteAttempted =>
-			$"a question opened after the text was pasted ({result.StatusLine}); it was not submitted",
-		PromptDeliveryOutcome.RefusedQuestion => $"waiting for an answer ({result.StatusLine}); nothing was sent",
-		PromptDeliveryOutcome.RefusedLocked => "locked by a running scenario; nothing was sent",
-		PromptDeliveryOutcome.NotRunning => $"not running ({result.StatusLine}); nothing was sent",
-		PromptDeliveryOutcome.PasteNotShown => "the pasted text never showed, so it was not submitted",
-		PromptDeliveryOutcome.Unconfirmed => "sent, but the agent was not seen taking it",
-		_ => $"delivery ended as {result.Outcome}"
-	};
 
 	private bool IsSessionLockedByScenario(string sessionId)
 	{
