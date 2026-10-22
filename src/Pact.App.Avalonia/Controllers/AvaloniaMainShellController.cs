@@ -35,7 +35,6 @@ namespace Pact.App.Avalonia.Controllers;
 
 internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsyncDisposable
 {
-	private static readonly TimeSpan GracefulAgentExitTimeout = TimeSpan.FromSeconds(20);
 	private static readonly TimeSpan NativeCopyWindow = TimeSpan.FromSeconds(1);
 	private static readonly TimeSpan NativeCopyPollInterval = TimeSpan.FromMilliseconds(50);
 	private readonly SettingsFileStore _settingsFileStore;
@@ -63,6 +62,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 	private readonly OrchestratorDispatcher _orchestratorDispatcher;
 	private readonly OrchestratorSupervisor _orchestrator;
 	private readonly ReviewLaunchService _reviewLaunch;
+	private readonly ResumeCaptureService _resumeCapture;
 	private IReadOnlyList<ResolvedGitHelperAction> _resolvedGitHelperActions = [];
 	private GitButtonCommandSet _gitButtonCommands = GitButtonCommandSet.Create(null);
 	private ExternalGitHelperResolver? _gitHelperResolver;
@@ -224,6 +224,12 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			_launcher,
 			_agentControlTokens,
 			ThrowIfRejectingInput);
+		_resumeCapture = new ResumeCaptureService(
+			_runtimeCoordinator,
+			ViewModel,
+			_timeProvider,
+			ShowSessionTerminalUnderBusyAsync,
+			ReportStatusAsync);
 		AgentControlHost agentControlHost = new(_reviewLaunch, ViewModel, _uiTaskDispatcher);
 		AgentControlDispatcher agentControlDispatcher = new(agentControlHost);
 		OrchestratorHost orchestratorHost = new(
@@ -1341,7 +1347,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			workspace,
 			deleteSnapshots: false,
 			cancellationToken);
-		await CaptureResumeCommandsBeforeStopAsync(workspace.Sessions.ToArray(), cancellationToken);
+		await _resumeCapture.CaptureBeforeStopAsync(workspace.Sessions.ToArray(), cancellationToken);
 		foreach (var session in workspace.Sessions.ToArray())
 		{
 			await StopSessionAsync(session, SessionStatus.Stopped);
@@ -1735,7 +1741,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			return;
 		}
 
-		await CaptureResumeCommandsBeforeStopAsync([session], cancellationToken);
+		await _resumeCapture.CaptureBeforeStopAsync([session], cancellationToken);
 		await StopSessionAsync(session, SessionStatus.Stopped);
 		await ViewModel.SetRootItemPausedAsync(session.Record.Id, true, cancellationToken);
 		if (ReferenceEquals(ViewModel.SelectedSession, session))
@@ -2060,7 +2066,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			failures);
 		await RunCleanupStepAsync(() => ViewModel.FlushAllNoteDocumentsAsync(CancellationToken.None), failures);
 		await RunCleanupStepAsync(
-			() => CaptureResumeCommandsBeforeStopAsync(ViewModel.Sessions.ToArray(), CancellationToken.None),
+			() => _resumeCapture.CaptureBeforeStopAsync(ViewModel.Sessions.ToArray(), CancellationToken.None),
 			failures);
 		foreach (var sessionId in ViewModel.Sessions
 			.Select(session => session.Record.Id)
@@ -2482,100 +2488,6 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		await ViewModel.UpdateSessionStatusAsync(session.Record.Id, status, CancellationToken.None);
 	}
 
-	private async Task CaptureResumeCommandsBeforeStopAsync(
-		IEnumerable<SessionViewModel> sessions,
-		CancellationToken cancellationToken)
-	{
-		var eligible = sessions
-			.Where(IsResumeCaptureEligible)
-			.ToArray();
-		using CancellationTokenSource deadline =
-			new(GracefulAgentExitTimeout, _timeProvider);
-		using var linkedCancellation =
-			CancellationTokenSource.CreateLinkedTokenSource(
-				cancellationToken,
-				deadline.Token);
-		var attempts = eligible
-			.Select(session => CaptureResumeCommandUnderDeadlineAsync(
-				session,
-				new ResumeCaptureCancellation(
-					deadline.Token,
-					cancellationToken),
-				linkedCancellation.Token))
-			.ToArray();
-		var timedOutSessionIds = await Task.WhenAll(attempts);
-		foreach (var sessionId in timedOutSessionIds.OfType<string>())
-		{
-			await ReportStatusAsync($"Resume capture timed out: {sessionId}");
-		}
-	}
-
-	private bool IsResumeCaptureEligible(SessionViewModel session) =>
-		_runtimeCoordinator.TryGetActiveController(
-			session.Record.Id,
-			out _,
-			out _)
-		&& session.Record.Kind is AgentKind.Codex or AgentKind.Claude
-		&& !AgentResumeCommandExtractor.IsConcreteResumeCommand(session.Record.ResumeCommand);
-
-	private async Task<string?> CaptureResumeCommandUnderDeadlineAsync(
-		SessionViewModel session,
-		ResumeCaptureCancellation cancellation,
-		CancellationToken cancellationToken)
-	{
-		try
-		{
-			if (!_runtimeCoordinator.TryGetActiveController(
-					session.Record.Id,
-					out var runtime,
-					out _))
-			{
-				return null;
-			}
-
-			await ShowSessionTerminalUnderBusyAsync(session);
-			if (await TrySaveResumeCommandFromRecentOutputAsync(session, runtime, cancellationToken))
-			{
-				return null;
-			}
-
-			await ReportStatusAsync($"Capturing resume session id: {session.Title}");
-			if (!await _runtimeCoordinator.SubmitCommandAsync(
-					session.Record.Id,
-					"/exit",
-					TimeSpan.FromMilliseconds(75),
-					_timeProvider,
-					cancellationToken))
-			{
-				return null;
-			}
-
-			while (true)
-			{
-				cancellationToken.ThrowIfCancellationRequested();
-				if (await TrySaveResumeCommandFromRecentOutputAsync(session, runtime, cancellationToken))
-				{
-					return null;
-				}
-
-				await Task.Delay(
-					TimeSpan.FromMilliseconds(100),
-					_timeProvider,
-					cancellationToken);
-			}
-		}
-		catch (OperationCanceledException) when (
-			cancellation.Deadline.IsCancellationRequested
-			&& !cancellation.Caller.IsCancellationRequested)
-		{
-			return session.Record.Id;
-		}
-	}
-
-	private readonly record struct ResumeCaptureCancellation(
-		CancellationToken Deadline,
-		CancellationToken Caller);
-
 	private async Task ShowSessionTerminalUnderBusyAsync(SessionViewModel session)
 	{
 		await InvokeUiActionAsync(() =>
@@ -2584,36 +2496,6 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			IsTerminalVisible = true;
 		});
 		await _terminalHost.ShowTerminalAsync(session.Record.Id);
-	}
-
-	private async Task<bool> TrySaveResumeCommandFromRecentOutputAsync(
-		SessionViewModel session,
-		SessionRuntime runtime,
-		CancellationToken cancellationToken)
-	{
-		var extracted = AgentResumeCommandExtractor.TryExtract(runtime.GetRecentOutput(), session.Record.Kind);
-		var resumeId = AgentResumeCommandExtractor.TryGetResumeId(extracted);
-		if (string.IsNullOrWhiteSpace(resumeId))
-		{
-			return false;
-		}
-
-		var resumeCommand = string.IsNullOrWhiteSpace(session.Record.ResumeCommand)
-			? extracted
-			: AgentResumeCommandExtractor.SetResumeCommandId(
-				session.Record.ResumeCommand,
-				resumeId);
-		if (string.IsNullOrWhiteSpace(resumeCommand)
-			|| !AgentResumeCommandExtractor.IsConcreteResumeCommand(resumeCommand))
-		{
-			return false;
-		}
-
-		if (!string.Equals(session.Record.ResumeCommand, resumeCommand, StringComparison.Ordinal))
-		{
-			await ViewModel.UpdateSessionResumeCommandAsync(session.Record.Id, resumeCommand, cancellationToken);
-		}
-		return true;
 	}
 
 	private async Task DisposeWebViewsAsync()
