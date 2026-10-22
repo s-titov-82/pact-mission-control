@@ -36,6 +36,26 @@ public sealed class OrchestratorCompositionTests
 	}
 
 	[Test]
+	public async Task An_unknown_orchestrator_tool_is_refused()
+	{
+		await using CompositionFixture fixture = new();
+		await fixture.InitializeAsync();
+
+		(await fixture.InvokeAsync(fixture.Credential, "pact_no_such_tool", new JsonObject()))
+			.ShouldBe("Unknown tool 'pact_no_such_tool'.");
+	}
+
+	[Test]
+	public async Task A_missing_orchestrator_argument_is_reported_by_name()
+	{
+		await using CompositionFixture fixture = new();
+		await fixture.InitializeAsync();
+
+		(await fixture.InvokeAsync(fixture.Credential, "pact_get_session", new JsonObject()))
+			.ShouldBe("Argument 'sessionId' is required.");
+	}
+
+	[Test]
 	public async Task Review_control_reports_an_unknown_run_through_the_live_endpoint()
 	{
 		await using CompositionFixture fixture = new();

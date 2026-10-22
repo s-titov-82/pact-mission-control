@@ -600,6 +600,66 @@ public sealed class AgentControlCompositionTests
 		fixture.ViewModel.SelectedScenarioRun.ShouldBeNull();
 	}
 
+	[Test]
+	public async Task A_missing_required_argument_is_reported_by_name()
+	{
+		await using CompositionFixture fixture = new(twoProjects: false);
+		await fixture.InitializeAsync();
+
+		var result = await fixture.InvokeToolAsync(CompositionFixture.SessionA, "pact_append_note", new JsonObject());
+
+		result.IsError.ShouldBeTrue();
+		result.Text.ShouldBe("Argument 'text' is required.");
+	}
+
+	[Test]
+	public async Task A_string_argument_of_another_type_is_rejected()
+	{
+		await using CompositionFixture fixture = new(twoProjects: false);
+		await fixture.InitializeAsync();
+
+		var result = await fixture.InvokeToolAsync(
+			CompositionFixture.SessionA,
+			"pact_append_note",
+			new JsonObject { ["text"] = 5 });
+
+		result.IsError.ShouldBeTrue();
+		result.Text.ShouldBe("Argument 'text' must be a string.");
+	}
+
+	[Test]
+	public async Task A_non_integer_iteration_count_is_rejected()
+	{
+		await using CompositionFixture fixture = new(twoProjects: false);
+		await fixture.InitializeAsync();
+
+		var result = await fixture.InvokeToolAsync(
+			CompositionFixture.SessionA,
+			"pact_request_review",
+			new JsonObject
+			{
+				["scenarioId"] = "plan-review",
+				["reviewProfileId"] = "reviewer",
+				["target"] = "plan.md",
+				["maxIterations"] = "many"
+			});
+
+		result.IsError.ShouldBeTrue();
+		result.Text.ShouldBe("Argument 'maxIterations' must be an integer.");
+	}
+
+	[Test]
+	public async Task An_unknown_session_tool_is_refused()
+	{
+		await using CompositionFixture fixture = new(twoProjects: false);
+		await fixture.InitializeAsync();
+
+		var result = await fixture.InvokeToolAsync(CompositionFixture.SessionA, "pact_no_such_tool", new JsonObject());
+
+		result.IsError.ShouldBeTrue();
+		result.Text.ShouldBe("Unknown tool 'pact_no_such_tool'.");
+	}
+
 	private sealed record ToolResult(string Text, bool IsError);
 
 	private sealed class CompositionFixture : IAsyncDisposable
