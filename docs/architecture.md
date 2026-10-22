@@ -330,6 +330,18 @@ aborts scenarios, flushes documents, captures agent resume commands under one
 shared deadline, stops session backends, disposes WebViews, and finally
 releases the data-root mutex.
 
+The shell controller composes and routes; subsystems it used to hold live in
+their own App-layer classes, each given only the services and delegates it
+uses. `AgentControlToolRouter` parses MCP tool arguments and routes session and
+orchestrator calls to their dispatchers. `SessionLauncher` starts session
+processes: the launch command and MCP injection for regular sessions, and one
+`StartProcessAsync` core that wires output, submit, input and viewport handlers
+for every process, the orchestrator included. `OrchestratorSupervisor` owns
+the orchestrator slot's settings, start, stop, restart policy and workstation
+lock prompts. `ReviewLaunchService` starts agent-requested reviews and rolls
+the reviewer back on failure. `ResumeCaptureService` captures resume commands
+before sessions stop.
+
 ## Non-goals
 
 - A cross-platform product head.

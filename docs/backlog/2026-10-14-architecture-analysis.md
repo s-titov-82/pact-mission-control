@@ -293,7 +293,11 @@ App.Avalonia
    делегатов.
 5. **Распил shell controller:** `AgentControlToolRouter`, `SessionLauncher`
    (снимает копию запуска оркестратора), `OrchestratorSupervisor`,
-   `ReviewLaunchService`, `ResumeCaptureService`.
+   `ReviewLaunchService`, `ResumeCaptureService`. *Сделано 2026-10-22: пять
+   классов в `src/Pact.App.Avalonia/Controllers`, у оркестратора и обычных
+   сессий одно ядро `SessionLauncher.StartProcessAsync`; поведение не менялось;
+   контроллер сократился с 4449 до 3136 строк; спека
+   `docs/superpowers/specs/2026-10-22-shell-controller-split-design.md`.*
 6. **`PresentedSurface` и намерение фокуса.** Здесь же разобрать
    отложенный случай фокуса после MCP-вкладки при неактивном окне.
 
