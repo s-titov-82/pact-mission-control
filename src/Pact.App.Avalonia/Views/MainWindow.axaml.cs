@@ -57,6 +57,8 @@ internal sealed partial class MainWindow : Window, IDisposable
 	internal bool IsTerminalPaneVisible => TerminalPane.IsVisible;
 	internal bool IsTerminalLoadingSurfaceVisible => TerminalLoadingSurface.IsVisible;
 	internal bool IsPausedPaneVisible => PausedPane.IsVisible;
+	internal string? PausedCaptionText => PausedCaption.Text;
+	internal bool IsPausedLogoVisible => PausedLogo.IsVisible && PausedLogo.Source is not null;
 	internal bool IsEmptyPaneVisible => EmptyPane.IsVisible;
 	internal Func<SettingsWindow, Task>? ShowSettingsWindowAsyncOverride { get; set; }
 	internal Func<MessageDialogRequest, Task<MessageDialogResult>>? ShowMessageDialogAsyncOverride { get; set; }
@@ -1349,6 +1351,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 		NotesPane.IsVisible = visibility.Notes;
 		ScenarioJournal.IsVisible = visibility.Journal;
 		PausedPane.IsVisible = visibility.Paused;
+		PausedCaption.Text = PausedPlaceholderText.For(EngineProbeController.PresentedSurface);
 		BrowserPane.IsVisible = visibility.Browser;
 		EmptyPane.IsVisible = visibility.Empty;
 		UpdateTerminalPresentationVisibility();

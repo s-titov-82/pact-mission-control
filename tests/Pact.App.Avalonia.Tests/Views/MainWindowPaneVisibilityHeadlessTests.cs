@@ -14,9 +14,11 @@ using Pact.App.Avalonia.Views.Settings;
 using Pact.Core.Agents;
 using Pact.Core.Platform;
 using Pact.Core.Projects;
+using Pact.Core.RootTabs;
 using Pact.Core.Sessions;
 using Pact.Core.Web;
 using Pact.Infrastructure.Storage;
+using Pact.Presentation.Services;
 using Pact.Presentation.Settings;
 using Pact.Presentation.ViewModels;
 
@@ -371,6 +373,31 @@ public sealed class MainWindowPaneVisibilityHeadlessTests
 	}
 
 	[AvaloniaTest]
+	public async Task Paused_root_item_shows_the_logo_and_its_caption()
+	{
+		var now = DateTimeOffset.UtcNow;
+		SessionRecord rootSession = new(
+			"root-session",
+			AgentKind.Codex,
+			"Root Codex",
+			@"C:\work\root",
+			"codex",
+			null,
+			SessionStatus.Stopped,
+			now,
+			now);
+		await using WindowFixture fixture = new(
+			rootTabs: new RootTabsRecord(1, rootSession.Id, [rootSession], [], [rootSession.Id]));
+		using MainWindow window = new(fixture.Controller);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		Dispatcher.UIThread.RunJobs();
+
+		window.IsPausedPaneVisible.ShouldBeTrue();
+		window.PausedCaptionText.ShouldBe(@"Paused — Codex, C:\work\root");
+		window.IsPausedLogoVisible.ShouldBeTrue();
+	}
+
+	[AvaloniaTest]
 	public async Task SelectingWebPageFromFreshStateShowsBrowserPane()
 	{
 		// Fresh state: no sessions in the project, so nothing forces IsTerminalVisible to true.
@@ -488,7 +515,10 @@ public sealed class MainWindowPaneVisibilityHeadlessTests
 		private readonly ShellControllerTestBuilder _builder;
 		private string _root => _temporaryDirectory.Path;
 
-		public WindowFixture(bool includeSession = false, FakeTerminalBackend? backend = null)
+		public WindowFixture(
+			bool includeSession = false,
+			FakeTerminalBackend? backend = null,
+			RootTabsRecord? rootTabs = null)
 		{
 			var now = DateTimeOffset.UtcNow;
 			SessionRecord[] sessions = includeSession
@@ -514,7 +544,13 @@ public sealed class MainWindowPaneVisibilityHeadlessTests
 				]
 			};
 			Store = new InMemoryProjectStore(new ProjectsDocument(1, [project]));
-			ViewModel = new MainWindowViewModel(Store, new EmptyNotesStore());
+			ViewModel = rootTabs is null
+				? new MainWindowViewModel(Store, new EmptyNotesStore())
+				: new MainWindowViewModel(
+					Store,
+					new EmptyNotesStore(),
+					new TerminalTabStatusCoordinator(action => action()),
+					new InMemoryRootTabsStore(rootTabs));
 			Host = new FakeTerminalWebViewHost();
 			AppPaths paths = new(_root);
 			Paths = paths;
@@ -597,6 +633,28 @@ public sealed class MainWindowPaneVisibilityHeadlessTests
 		{
 			_document = update(_document);
 			return Task.FromResult(_document);
+		}
+	}
+
+	private sealed class InMemoryRootTabsStore(RootTabsRecord record) : IRootTabsStore
+	{
+		private RootTabsRecord _record = record;
+
+		public Task<RootTabsRecord> LoadAsync(CancellationToken cancellationToken) =>
+			Task.FromResult(_record);
+
+		public Task SaveAsync(RootTabsRecord document, CancellationToken cancellationToken)
+		{
+			_record = document.Normalize();
+			return Task.CompletedTask;
+		}
+
+		public Task<RootTabsRecord> UpdateAsync(
+			Func<RootTabsRecord, RootTabsRecord> update,
+			CancellationToken cancellationToken)
+		{
+			_record = update(_record).Normalize();
+			return Task.FromResult(_record);
 		}
 	}
 

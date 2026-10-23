@@ -21,14 +21,15 @@
         <views:MissionControlLoader x:Name="TerminalLoadingIndicator"
                                     HorizontalAlignment="Center" VerticalAlignment="Center" />
       </Border>
-      <Border x:Name="PausedPane" Background="{StaticResource AppPaneBackgroundBrush}" IsVisible="False">
-        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10">
-          <PathIcon Width="28" Height="28" Foreground="{StaticResource AppTextMutedBrush}"
-                    Data="{StaticResource AppPauseIcon}" />
-          <TextBlock HorizontalAlignment="Center" FontSize="18" FontWeight="SemiBold"
-                     Text="Paused" />
+      <Border x:Name="PausedPane" Background="Black" IsVisible="False">
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
+          <Image x:Name="PausedLogo" Width="96" Height="96" HorizontalAlignment="Center"
+                 Source="/Assets/AppIcon.png" />
+          <TextBlock x:Name="PausedCaption" MaxWidth="560" HorizontalAlignment="Center"
+                     TextAlignment="Center" TextWrapping="Wrap" FontSize="16" FontWeight="SemiBold"
+                     Foreground="White" />
           <TextBlock MaxWidth="360" HorizontalAlignment="Center" TextAlignment="Center"
-                     Foreground="{StaticResource AppTextMutedBrush}"
+                     FontSize="12" Foreground="{StaticResource AppTextMutedBrush}"
                      Text="Use the Resume button in the ROOT row to start this item again." />
         </StackPanel>
       </Border>
