@@ -329,7 +329,52 @@ public sealed partial class SessionRuntimeCoordinatorTests
 	}
 
 	[Test]
-	public async Task Readiness_does_not_treat_an_empty_composer_as_a_done_verdict()
+	public async Task Readiness_accepts_a_fresh_agent_with_an_empty_composer()
+	{
+		var (coordinator, backend, controller) = await CreateAttachedSessionAsync();
+		await using var _ = controller;
+
+		// A freshly started agent shows no completion marker, so its verdict stays Unknown;
+		// the recognized empty composer is what says it can take a prompt.
+		var result = await coordinator.WaitForSessionReadyAsync(
+			"session-1",
+			static () => new SessionScreenState(
+				"screen",
+				string.Empty,
+				false,
+				PromptIsEmpty: true,
+				IsBusy: false,
+				VerdictState: TerminalScreenVerdictState.Unknown),
+			TestContext.CurrentContext.CancellationToken);
+
+		result.IsReady.ShouldBeTrue();
+		backend.InputWrites.ShouldBeEmpty();
+	}
+
+	[TestCase(null)]
+	[TestCase(false)]
+	public async Task Readiness_needs_an_empty_composer_when_there_is_no_done_verdict(bool? promptIsEmpty)
+	{
+		var (coordinator, backend, controller) = await CreateAttachedSessionAsync();
+		await using var _ = controller;
+
+		var result = await coordinator.WaitForSessionReadyAsync(
+			"session-1",
+			() => new SessionScreenState(
+				"screen",
+				string.Empty,
+				false,
+				PromptIsEmpty: promptIsEmpty,
+				IsBusy: false,
+				VerdictState: TerminalScreenVerdictState.Unknown),
+			TestContext.CurrentContext.CancellationToken);
+
+		result.IsReady.ShouldBeFalse();
+		backend.InputWrites.ShouldBeEmpty();
+	}
+
+	[Test]
+	public async Task Readiness_does_not_accept_an_empty_composer_while_busy()
 	{
 		var (coordinator, backend, controller) = await CreateAttachedSessionAsync();
 		await using var _ = controller;
@@ -341,8 +386,8 @@ public sealed partial class SessionRuntimeCoordinatorTests
 				string.Empty,
 				false,
 				PromptIsEmpty: true,
-				IsBusy: false,
-				VerdictState: TerminalScreenVerdictState.Unknown),
+				IsBusy: true,
+				VerdictState: TerminalScreenVerdictState.Busy),
 			TestContext.CurrentContext.CancellationToken);
 
 		result.IsReady.ShouldBeFalse();

@@ -523,16 +523,17 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 	}
 
 	/// <summary>
-	/// Waits until a launched session can receive a prompt: its retained stable classifier
-	/// verdict is done, with no question or activity. The folder-trust dialog is answered with
+	/// Waits until a launched session can receive a prompt: its retained stable screen has a done
+	/// verdict or a recognized empty composer, with no question or activity. The folder-trust dialog is answered with
 	/// Enter, which is its own default, once per launched session; every other question, and a
 	/// session that never becomes ready, end the wait as not ready.
 	/// </summary>
 	/// <remarks>
 	/// One budget covers first output, the settle delay, and trust handling, so a review request
-	/// cannot be blocked for a multiple of it. Readiness is a positive classifier fact: "no
-	/// question" is not enough, because a starting TUI shows no question either and discards what
-	/// it is given.
+	/// cannot be blocked for a multiple of it. Readiness is a positive fact: "no question" is not
+	/// enough, because a starting TUI shows no question either and discards what it is given. A
+	/// fresh agent shows no completion marker, so its empty composer, read from the Dim styling of
+	/// the screen, is the fact that it can take a prompt.
 	/// </remarks>
 	public async Task<SessionReadiness> WaitForSessionReadyAsync(
 		string sessionId,
@@ -594,7 +595,10 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 					lastStatusLine = state.StatusLine;
 				}
 
-				if (state.VerdictState == TerminalScreenVerdictState.Done
+				// A finished turn is ready, and so is a fresh agent: it shows no completion
+				// marker, but its recognized empty composer says it can take a prompt.
+				if ((state.VerdictState == TerminalScreenVerdictState.Done || state.PromptIsEmpty == true)
+					&& state.VerdictState != TerminalScreenVerdictState.Busy
 					&& !state.IsBusy
 					&& !state.InputRequested)
 				{

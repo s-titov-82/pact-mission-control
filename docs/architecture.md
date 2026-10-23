@@ -246,8 +246,10 @@ distinguish composer suggestions and drafts using captured Dim metadata and
 structural boundaries; text-only or incomplete observations remain unknown. A
 freshly launched reviewer reaches readiness through one bounded budget covering
 its first output, a settle delay, and the folder-trust dialog, which Pact
-answers with Enter exactly once. Readiness requires the stable classifier
-verdict `Done`; composer content does not determine activity. A fresh capture
+answers with Enter exactly once. Readiness requires a stable screen with the
+classifier verdict `Done` or a recognized empty composer (a fresh agent shows no
+completion marker), and no activity or question; composer content does not
+determine activity. A fresh capture
 is checked for a question immediately before Enter. Delivery is confirmed only
 when a fresh capture after Enter shows an empty composer; Pact's own Enter is
 never evidence. If a capture still shows the text, Pact repeats Enter once; it
