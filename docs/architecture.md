@@ -342,6 +342,13 @@ lock prompts. `ReviewLaunchService` starts agent-requested reviews and rolls
 the reviewer back on failure. `ResumeCaptureService` captures resume commands
 before sessions stop.
 
+What the center pane shows is one `PresentedSurface` value on the shell
+controller: a terminal, a paused ROOT item, notes, a scenario journal, the
+browser, or nothing. The controller assigns it whole, and the terminal case
+also carries its loading state and a focus request that waits for loading to
+clear, so showing anything else drops both. `MainWindow` draws the panes from
+that value through `CenterPaneVisibility`. Selection stays in the view model.
+
 ## Non-goals
 
 - A cross-platform product head.
