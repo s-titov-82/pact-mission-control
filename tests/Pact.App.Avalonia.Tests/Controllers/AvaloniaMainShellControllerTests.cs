@@ -2728,6 +2728,21 @@ public sealed class AvaloniaMainShellControllerTests
 	}
 
 	[Test]
+	public async Task Pausing_a_project_keeps_the_item_selected_before_capture_as_its_active_item()
+	{
+		await using ControllerFixture fixture = new(firstResumeCommand: string.Empty);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var workspace = fixture.ViewModel.Workspaces.Single();
+		fixture.Controller.HasActiveTerminalProcess(fixture.ViewModel.Sessions[0]).ShouldBeTrue();
+		await fixture.Controller.SelectWebPageAsync(fixture.ViewModel.WebPages.Single(), TestContext.CurrentContext.CancellationToken);
+
+		await fixture.Controller.PauseWorkspaceAsync(workspace, TestContext.CurrentContext.CancellationToken);
+
+		var stored = (await fixture.Store.LoadAsync(CancellationToken.None)).Projects.Single();
+		stored.ActiveItemId.ShouldBe("web-1");
+	}
+
+	[Test]
 	public async Task PausingWorkspaceCapturesConcreteResumeIdBeforeStoppingCodex()
 	{
 		await using ControllerFixture fixture = new(firstResumeCommand: "codex resume");

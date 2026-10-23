@@ -1272,6 +1272,10 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 
 	public async Task PauseWorkspaceAsync(WorkspaceViewModel workspace, CancellationToken cancellationToken = default)
 	{
+		// Resume capture selects each session it shows, so read the user's choice first.
+		var activeItemId = ViewModel.SelectedSession?.Record.Id
+			?? ViewModel.SelectedWebPage?.Record.Id
+			?? ViewModel.SelectedProjectNote?.Record.Id;
 		InvalidateSelectionOwner(workspace);
 		await AvaloniaScenarioCoordinator.AbortWorkspaceRunsAsync(workspace, cancellationToken);
 		await UnloadWorkspaceWebPagesAsync(
@@ -1284,7 +1288,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			await StopSessionAsync(session, SessionStatus.Stopped);
 		}
 		_gitPanelViewModels.Remove(workspace.Id);
-		await ViewModel.PauseWorkspaceAsync(workspace.Id, ViewModel.SelectedSession?.Record.Id, cancellationToken);
+		await ViewModel.PauseWorkspaceAsync(workspace.Id, activeItemId, cancellationToken);
 	}
 
 	public Task<IReadOnlyList<string>> LoadRecentDirectoriesAsync(
