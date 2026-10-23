@@ -55,6 +55,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 	internal bool IsNotesPaneVisible => NotesPane.IsVisible;
 	internal Task? ShellInitializationTask { get; private set; }
 	internal bool IsTerminalPaneVisible => TerminalPane.IsVisible;
+	internal bool IsTerminalLoadingSurfaceVisible => TerminalLoadingSurface.IsVisible;
 	internal bool IsPausedPaneVisible => PausedPane.IsVisible;
 	internal bool IsEmptyPaneVisible => EmptyPane.IsVisible;
 	internal Func<SettingsWindow, Task>? ShowSettingsWindowAsyncOverride { get; set; }
@@ -1265,15 +1266,18 @@ internal sealed partial class MainWindow : Window, IDisposable
 			ScenarioJournal.DataContext = EngineProbeController.SelectedScenarioRun;
 		}
 
-		if (e.PropertyName is not (nameof(AvaloniaMainShellController.IsTerminalVisible)
-			or nameof(AvaloniaMainShellController.IsPausedItemVisible)
-			or nameof(AvaloniaMainShellController.CurrentDocsAndNotes)
-			or nameof(AvaloniaMainShellController.SelectedScenarioRun)))
+		if (e.PropertyName == nameof(AvaloniaMainShellController.PresentedSurface))
 		{
-			return;
+			if (Dispatcher.UIThread.CheckAccess())
+			{
+				RefreshPaneVisibility();
+			}
+			else
+			{
+				Dispatcher.UIThread.Post(RefreshPaneVisibility);
+			}
 		}
 
-		RefreshPaneVisibility();
 		if (e.PropertyName == nameof(AvaloniaMainShellController.CurrentDocsAndNotes)
 			&& EngineProbeController.CurrentDocsAndNotes is not null)
 		{
@@ -1335,19 +1339,18 @@ internal sealed partial class MainWindow : Window, IDisposable
 
 	private void RefreshPaneVisibility()
 	{
-		BrowserPane.Page = EngineProbeController.ViewModel.SelectedWebPage;
-		TerminalPane.IsVisible = EngineProbeController.IsTerminalVisible;
-		NotesPane.IsVisible = EngineProbeController.CurrentDocsAndNotes is not null;
-		ScenarioJournal.IsVisible = EngineProbeController.SelectedScenarioRun is not null;
-		PausedPane.IsVisible = EngineProbeController.IsPausedItemVisible;
-		BrowserPane.IsVisible = EngineProbeController.ViewModel.SelectedWebPage is not null
-			&& !EngineProbeController.IsTerminalVisible
-			&& !EngineProbeController.IsPausedItemVisible;
-		EmptyPane.IsVisible = !EngineProbeController.IsTerminalVisible
-			&& !EngineProbeController.IsPausedItemVisible
-			&& EngineProbeController.CurrentDocsAndNotes is null
-			&& EngineProbeController.SelectedScenarioRun is null
-			&& EngineProbeController.ViewModel.SelectedWebPage is null;
+		var selectedWebPage = EngineProbeController.ViewModel.SelectedWebPage;
+		var visibility = CenterPaneVisibility.For(
+			EngineProbeController.PresentedSurface,
+			selectedWebPage is not null);
+		BrowserPane.Page = selectedWebPage;
+		TerminalPane.IsVisible = visibility.Terminal;
+		TerminalLoadingSurface.IsVisible = visibility.TerminalLoading;
+		NotesPane.IsVisible = visibility.Notes;
+		ScenarioJournal.IsVisible = visibility.Journal;
+		PausedPane.IsVisible = visibility.Paused;
+		BrowserPane.IsVisible = visibility.Browser;
+		EmptyPane.IsVisible = visibility.Empty;
 		UpdateTerminalPresentationVisibility();
 	}
 
@@ -1389,17 +1392,15 @@ internal sealed partial class MainWindow : Window, IDisposable
 		await EngineProbeController.SetBusyOverlayAsync(string.Empty, false, false);
 	}
 
-	private void OnTerminalLoadingChanged(object? sender, bool isLoading) =>
-		Dispatcher.UIThread.Post(() =>
+	// Pane visibility follows PresentedSurface; this only applies a focus that waited for loading.
+	private void OnTerminalLoadingChanged(object? sender, bool isLoading)
+	{
+		if (!isLoading)
 		{
-			TerminalPane.IsVisible = EngineProbeController.IsTerminalVisible && !isLoading;
-			TerminalLoadingSurface.IsVisible = isLoading;
-			UpdateTerminalPresentationVisibility();
-			if (!isLoading)
-			{
-				RunUiEvent("focus-loaded-terminal", EngineProbeController.FocusTerminalAfterLoadingAsync);
-			}
-		});
+			Dispatcher.UIThread.Post(() =>
+				RunUiEvent("focus-loaded-terminal", EngineProbeController.FocusTerminalAfterLoadingAsync));
+		}
+	}
 
 	public void Dispose()
 	{

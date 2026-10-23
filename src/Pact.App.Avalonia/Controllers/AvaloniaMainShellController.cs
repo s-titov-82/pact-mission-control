@@ -76,8 +76,6 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 	private SelectionActionSnapshot? _selectionSnapshot;
 	private int _selectionCaptureVersion;
 	private int _rightClickPasteInProgress;
-	private string? _loadingTerminalSessionId;
-	private string? _pendingTerminalFocusSessionId;
 	private bool _webMonitorStartupRulesApplied;
 	private bool _webMonitorWindowVisible;
 	private bool _webMonitorWindowActive;
@@ -369,61 +367,20 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 	public Action? RefreshWindowFacts { get; set; }
 
 	public IReadOnlyList<WebLinkTemplateRecord> WebLinkTemplates { get; private set; } = [];
-	public ProjectNoteDocument? CurrentNoteDocument { get; private set { if (ReferenceEquals(field, value)) { return; } field = value; OnPropertyChanged(); } }
+	/// <summary>What the center pane shows; assigned whole through <see cref="Present"/>.</summary>
+	internal PresentedSurface PresentedSurface { get; private set; } = new PresentedSurface.None();
+	public ProjectNoteDocument? CurrentNoteDocument => (PresentedSurface as PresentedSurface.Notes)?.Document;
 	/// <summary>Current project documentation workspace displayed in the center pane.</summary>
-	public DocsAndNotesWorkspaceViewModel? CurrentDocsAndNotes
-	{
-		get; private set
-		{
-			if (ReferenceEquals(field, value))
-			{
-				return;
-			}
-
-			field?.PropertyChanged -= OnDocsAndNotesPropertyChanged;
-			field = value;
-			field?.PropertyChanged += OnDocsAndNotesPropertyChanged;
-			InvalidateSelectionIfSourceChanged();
-			OnPropertyChanged();
-		}
-	}
-	public ScenarioRunViewModel? SelectedScenarioRun { get; private set { if (ReferenceEquals(field, value)) { return; } field = value; OnPropertyChanged(); } }
+	public DocsAndNotesWorkspaceViewModel? CurrentDocsAndNotes => (PresentedSurface as PresentedSurface.Notes)?.Workspace;
+	public ScenarioRunViewModel? SelectedScenarioRun => (PresentedSurface as PresentedSurface.ScenarioRun)?.Run;
 	public GitPanelViewModel? CurrentGitPanel { get; private set { if (ReferenceEquals(field, value)) { return; } field = value; OnPropertyChanged(); } }
-	public bool IsTerminalVisible
-	{
-		get; private set
-		{
-			if (!value)
-			{
-				ClearTerminalLoading();
-			}
-
-			if (field == value)
-			{
-				return;
-			}
-
-			field = value;
-			OnPropertyChanged();
-		}
-	}
+	public bool IsTerminalVisible => PresentedSurface is PresentedSurface.Terminal;
 	/// <summary>
 	/// Whether the selected ROOT item is intentionally paused and should show the paused
 	/// placeholder instead of starting or loading its surface.
 	/// </summary>
-	public bool IsPausedItemVisible
-	{
-		get; private set
-		{
-			if (field == value)
-			{
-				return;
-			}
-
-			field = value;
-			OnPropertyChanged();
-		}
-	}
+	public bool IsPausedItemVisible =>
+		PresentedSurface is PresentedSurface.PausedSession or PresentedSurface.PausedWebPage;
 	public bool IsSelectionActionsOpen { get; private set { if (field == value) { return; } field = value; OnPropertyChanged(); } }
 	internal bool IsNotesSelectionSource =>
 		_selectionSnapshot?.Source.Kind == SelectionActionSourceKind.Notes;
@@ -620,33 +577,20 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		timing.Mark("note");
 		await HideActiveWebPageAsync(cancellationToken);
 		timing.Mark("web");
-		CurrentDocsAndNotes = null;
-		CurrentNoteDocument = null;
-		SelectedScenarioRun = null;
 		if (session.IsManuallyPaused)
 		{
 			ViewModel.SelectedSession = session;
 			await ViewModel.SetActiveItemAsync(session.Record.Id, cancellationToken);
-			IsTerminalVisible = false;
-			IsPausedItemVisible = true;
+			Present(new PresentedSurface.PausedSession(session));
 			return;
 		}
 
-		IsPausedItemVisible = false;
-		IsTerminalVisible = true;
 		var startsRuntime = startIfNeeded
 			&& !_runtimeCoordinator.TryGetActiveController(
 				session.Record.Id,
 				out _,
 				out _);
-		if (startsRuntime)
-		{
-			SetTerminalLoading(session.Record.Id, true);
-		}
-		else
-		{
-			ClearTerminalLoading();
-		}
+		Present(new PresentedSurface.Terminal(session, Loading: startsRuntime, FocusWhenLoaded: false));
 
 		await _runtimeCoordinator.ActivateSessionAsync(
 			session,
@@ -667,12 +611,12 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			{
 				// A starting terminal is hidden behind the loading surface and cannot take
 				// focus yet; it is focused when that surface clears.
-				_pendingTerminalFocusSessionId = string.Equals(
-					_loadingTerminalSessionId,
-					session.Record.Id,
-					StringComparison.Ordinal)
-					? session.Record.Id
-					: null;
+				if (PresentedSurface is PresentedSurface.Terminal terminal
+					&& ReferenceEquals(terminal.Session, session))
+				{
+					Present(terminal with { FocusWhenLoaded = terminal.Loading });
+				}
+
 				await _terminalHost.FocusAsync();
 				timing.Mark("focus");
 			},
@@ -685,7 +629,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 				out _,
 				out _))
 		{
-			SetTerminalLoading(session.Record.Id, false);
+			ClearTerminalLoading(session.Record.Id);
 		}
 	}
 
@@ -694,23 +638,18 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		ArgumentNullException.ThrowIfNull(webPage);
 		ClearSelectionActions(restoreTerminalFocus: false);
 		await FlushCurrentNoteAsync(cancellationToken);
-		CurrentDocsAndNotes = null;
-		CurrentNoteDocument = null;
-		SelectedScenarioRun = null;
 		ViewModel.SelectedWebPage = webPage;
 		await ViewModel.SetActiveItemAsync(webPage.Record.Id, cancellationToken);
 		if (webPage.IsManuallyPaused)
 		{
-			IsTerminalVisible = false;
-			IsPausedItemVisible = true;
+			Present(new PresentedSurface.PausedWebPage(webPage));
 			return;
 		}
 
-		IsPausedItemVisible = false;
 		// NativeWebView must enter the visual tree at a non-zero visible size.
 		// Showing the pane only after creating/navigating the native child can
 		// leave its first frame black until a later visibility cycle.
-		IsTerminalVisible = false;
+		Present(new PresentedSurface.Web());
 		if (WebPageHostFactory is not null)
 		{
 			var wasLoaded = webPage.IsBrowserLoaded;
@@ -761,11 +700,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		var document = ViewModel.GetOrCreateNoteDocument(note);
 		var workspace = ViewModel.GetOrCreateDocsAndNotesWorkspace(note);
 		await workspace.RefreshAsync(cancellationToken);
-		CurrentNoteDocument = document;
-		CurrentDocsAndNotes = workspace;
-		SelectedScenarioRun = null;
-		IsPausedItemVisible = false;
-		IsTerminalVisible = false;
+		Present(new PresentedSurface.Notes(note, workspace, document));
 	}
 
 	public async Task SelectScenarioRunAsync(ScenarioRunViewModel run)
@@ -774,11 +709,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		ClearSelectionActions(restoreTerminalFocus: false);
 		await FlushCurrentNoteAsync(CancellationToken.None);
 		ViewModel.SelectedScenarioRun = run;
-		SelectedScenarioRun = run;
-		CurrentDocsAndNotes = null;
-		CurrentNoteDocument = null;
-		IsPausedItemVisible = false;
-		IsTerminalVisible = false;
+		Present(new PresentedSurface.ScenarioRun(run));
 	}
 
 	public async Task RunQuickActionAsync(PromptTemplateRecord template, CancellationToken cancellationToken = default)
@@ -1659,8 +1590,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			InvalidateNotesSelection(workspace);
 			await FlushCurrentNoteAsync(cancellationToken);
 			await ViewModel.HideNotesTabAsync(workspace.Id, cancellationToken);
-			CurrentDocsAndNotes = null;
-			CurrentNoteDocument = null;
+			StopPresentingNotes();
 
 			if (ViewModel.SelectedSession is { } session)
 			{
@@ -1670,9 +1600,9 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			{
 				await SelectWebPageAsync(webPage, cancellationToken);
 			}
-			else
+			else if (PresentedSurface is PresentedSurface.Terminal)
 			{
-				IsTerminalVisible = false;
+				Present(new PresentedSurface.None());
 			}
 
 			return;
@@ -1746,8 +1676,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		await ViewModel.SetRootItemPausedAsync(session.Record.Id, true, cancellationToken);
 		if (ReferenceEquals(ViewModel.SelectedSession, session))
 		{
-			IsTerminalVisible = false;
-			IsPausedItemVisible = true;
+			Present(new PresentedSurface.PausedSession(session));
 		}
 	}
 
@@ -1834,8 +1763,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		await ViewModel.SetRootItemPausedAsync(webPage.Record.Id, true, cancellationToken);
 		if (ReferenceEquals(ViewModel.SelectedWebPage, webPage))
 		{
-			IsTerminalVisible = false;
-			IsPausedItemVisible = true;
+			Present(new PresentedSurface.PausedWebPage(webPage));
 		}
 	}
 
@@ -1866,8 +1794,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		InvalidateNotesSelection(workspace);
 		await FlushCurrentNoteAsync(cancellationToken);
 		await ViewModel.HideNotesTabAsync(workspace.Id, cancellationToken);
-		CurrentDocsAndNotes = null;
-		CurrentNoteDocument = null;
+		StopPresentingNotes();
 		await RestoreSelectedHostAsync(cancellationToken);
 	}
 
@@ -1908,7 +1835,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 
 		if (ReferenceEquals(SelectedScenarioRun, run))
 		{
-			SelectedScenarioRun = null;
+			Present(new PresentedSurface.None());
 		}
 
 		await RestoreSelectedHostAsync(cancellationToken);
@@ -2080,7 +2007,13 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 				(id, status) => ViewModel.UpdateSessionStatusAsync(id, status, CancellationToken.None),
 				static () => { }), failures);
 		await RunCleanupStepAsync(
-			() => InvokeUiActionAsync(() => IsTerminalVisible = false),
+			() => InvokeUiActionAsync(() =>
+			{
+				if (PresentedSurface is PresentedSurface.Terminal)
+				{
+					Present(new PresentedSurface.None());
+				}
+			}),
 			failures);
 		await RunCleanupStepAsync(DisposeWebViewsAsync, failures);
 		if (failures.Count > 0)
@@ -2327,11 +2260,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		}
 		else
 		{
-			CurrentDocsAndNotes = null;
-			CurrentNoteDocument = null;
-			SelectedScenarioRun = null;
-			IsTerminalVisible = false;
-			IsPausedItemVisible = false;
+			Present(new PresentedSurface.None());
 		}
 	}
 
@@ -2434,7 +2363,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		ViewModel.TerminalTabStatuses.OnScreenSnapshot(e.SessionId, e.Snapshot, DateTimeOffset.UtcNow);
 		if (e.Snapshot.Stable && !string.IsNullOrWhiteSpace(e.Snapshot.Text))
 		{
-			SetTerminalLoading(e.SessionId, false);
+			ClearTerminalLoading(e.SessionId);
 		}
 	}
 
@@ -2493,7 +2422,10 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		await InvokeUiActionAsync(() =>
 		{
 			ViewModel.SelectedSession = session;
-			IsTerminalVisible = true;
+			Present(PresentedSurface is PresentedSurface.Terminal current
+				&& ReferenceEquals(current.Session, session)
+					? current
+					: new PresentedSurface.Terminal(session, Loading: false, FocusWhenLoaded: false));
 		});
 		await _terminalHost.ShowTerminalAsync(session.Record.Id);
 	}
@@ -2546,11 +2478,16 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 	/// </summary>
 	internal async Task FocusTerminalAfterLoadingAsync()
 	{
-		var sessionId = _pendingTerminalFocusSessionId;
-		_pendingTerminalFocusSessionId = null;
-		if (sessionId is null
-			|| !IsTerminalVisible
-			|| !string.Equals(_runtimeCoordinator.ActiveSessionId, sessionId, StringComparison.Ordinal))
+		if (PresentedSurface is not PresentedSurface.Terminal { FocusWhenLoaded: true, Loading: false } terminal)
+		{
+			return;
+		}
+
+		Present(terminal with { FocusWhenLoaded = false });
+		if (!string.Equals(
+				_runtimeCoordinator.ActiveSessionId,
+				terminal.Session.Record.Id,
+				StringComparison.Ordinal))
 		{
 			return;
 		}
@@ -2965,37 +2902,78 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		}
 	}
 
-	private void SetTerminalLoading(string sessionId, bool isLoading)
+	/// <summary>
+	/// Shows <paramref name="next"/> in place of whatever was shown, keeping the notes
+	/// subscription, the selection-action source and the loading event in step with it.
+	/// </summary>
+	private void Present(PresentedSurface next)
 	{
-		if (isLoading)
-		{
-			var changed = _loadingTerminalSessionId is null;
-			_loadingTerminalSessionId = sessionId;
-			if (changed)
-			{
-				TerminalLoadingChanged?.Invoke(this, true);
-			}
-
-			return;
-		}
-
-		if (!string.Equals(_loadingTerminalSessionId, sessionId, StringComparison.Ordinal))
+		var previous = PresentedSurface;
+		if (previous == next)
 		{
 			return;
 		}
 
-		ClearTerminalLoading();
+		PresentedSurface = next;
+		var previousDocs = (previous as PresentedSurface.Notes)?.Workspace;
+		var nextDocs = (next as PresentedSurface.Notes)?.Workspace;
+		if (!ReferenceEquals(previousDocs, nextDocs))
+		{
+			previousDocs?.PropertyChanged -= OnDocsAndNotesPropertyChanged;
+			nextDocs?.PropertyChanged += OnDocsAndNotesPropertyChanged;
+			InvalidateSelectionIfSourceChanged();
+		}
+
+		var wasLoading = previous is PresentedSurface.Terminal { Loading: true };
+		var isLoading = next is PresentedSurface.Terminal { Loading: true };
+		if (wasLoading != isLoading)
+		{
+			TerminalLoadingChanged?.Invoke(this, isLoading);
+		}
+
+		OnPropertyChanged(nameof(PresentedSurface));
+		RaiseIfChanged(previous is PresentedSurface.Terminal, IsTerminalVisible, nameof(IsTerminalVisible));
+		RaiseIfChanged(
+			previous is PresentedSurface.PausedSession or PresentedSurface.PausedWebPage,
+			IsPausedItemVisible,
+			nameof(IsPausedItemVisible));
+		RaiseIfChanged(previousDocs, nextDocs, nameof(CurrentDocsAndNotes));
+		RaiseIfChanged((previous as PresentedSurface.Notes)?.Document, CurrentNoteDocument, nameof(CurrentNoteDocument));
+		RaiseIfChanged((previous as PresentedSurface.ScenarioRun)?.Run, SelectedScenarioRun, nameof(SelectedScenarioRun));
 	}
 
-	private void ClearTerminalLoading()
+	private void RaiseIfChanged(bool previous, bool current, string propertyName)
 	{
-		if (_loadingTerminalSessionId is null)
+		if (previous != current)
 		{
-			return;
+			OnPropertyChanged(propertyName);
 		}
+	}
 
-		_loadingTerminalSessionId = null;
-		TerminalLoadingChanged?.Invoke(this, false);
+	private void RaiseIfChanged(object? previous, object? current, string propertyName)
+	{
+		if (!ReferenceEquals(previous, current))
+		{
+			OnPropertyChanged(propertyName);
+		}
+	}
+
+	/// <summary>Drops the notes surface when it is the one shown; anything else stays.</summary>
+	private void StopPresentingNotes()
+	{
+		if (PresentedSurface is PresentedSurface.Notes)
+		{
+			Present(new PresentedSurface.None());
+		}
+	}
+
+	private void ClearTerminalLoading(string sessionId)
+	{
+		if (PresentedSurface is PresentedSurface.Terminal { Loading: true } terminal
+			&& string.Equals(terminal.Session.Record.Id, sessionId, StringComparison.Ordinal))
+		{
+			Present(terminal with { Loading = false });
+		}
 	}
 	private void OnBusyOverlayActionRequested(object? sender, EventArgs e) =>
 		BusyOverlayActionRequested?.Invoke(this, EventArgs.Empty);

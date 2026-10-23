@@ -200,6 +200,151 @@ public sealed class AvaloniaMainShellControllerTests
 	}
 
 	[Test]
+	public async Task Showing_a_web_page_drops_terminal_loading_and_pending_focus()
+	{
+		await using ControllerFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var second = fixture.ViewModel.Sessions[1];
+		await fixture.Controller.SelectSessionAsync(second, startIfNeeded: true, cancellationToken: TestContext.CurrentContext.CancellationToken);
+		fixture.Controller.PresentedSurface.ShouldBe(new PresentedSurface.Terminal(second, Loading: true, FocusWhenLoaded: true));
+		List<bool> loadingChanges = [];
+		fixture.Controller.TerminalLoadingChanged += (_, isLoading) => loadingChanges.Add(isLoading);
+
+		await fixture.Controller.SelectWebPageAsync(fixture.ViewModel.WebPages.Single(), TestContext.CurrentContext.CancellationToken);
+
+		loadingChanges.ShouldBe([false]);
+		fixture.Controller.PresentedSurface.ShouldBe(new PresentedSurface.Web());
+	}
+
+	[Test]
+	public async Task Pending_focus_is_dropped_when_the_surface_moves_on()
+	{
+		await using ControllerFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var second = fixture.ViewModel.Sessions[1];
+		await fixture.Controller.SelectSessionAsync(second, startIfNeeded: true, cancellationToken: TestContext.CurrentContext.CancellationToken);
+		await fixture.Controller.SelectWebPageAsync(fixture.ViewModel.WebPages.Single(), TestContext.CurrentContext.CancellationToken);
+		var focusCalls = fixture.Host.FocusCallCount;
+
+		fixture.Host.RaiseScreenSnapshotReceived(second.Record.Id, "ready", stable: true);
+		await fixture.Controller.FocusTerminalAfterLoadingAsync();
+
+		fixture.Host.FocusCallCount.ShouldBe(focusCalls);
+		fixture.Controller.PresentedSurface.ShouldBe(new PresentedSurface.Web());
+	}
+
+	[Test]
+	public async Task Reselecting_a_starting_terminal_clears_its_loading_surface_as_before()
+	{
+		await using ControllerFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var second = fixture.ViewModel.Sessions[1];
+		await fixture.Controller.SelectSessionAsync(second, startIfNeeded: true, cancellationToken: TestContext.CurrentContext.CancellationToken);
+		List<bool> loadingChanges = [];
+		fixture.Controller.TerminalLoadingChanged += (_, isLoading) => loadingChanges.Add(isLoading);
+
+		await fixture.Controller.SelectSessionAsync(second, startIfNeeded: true, cancellationToken: TestContext.CurrentContext.CancellationToken);
+
+		loadingChanges.ShouldBe([false]);
+		fixture.Controller.PresentedSurface.ShouldBe(new PresentedSurface.Terminal(second, Loading: false, FocusWhenLoaded: false));
+	}
+
+	[Test]
+	public async Task Leaving_notes_unsubscribes_and_invalidates_a_notes_selection()
+	{
+		await using ControllerFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var workspace = fixture.ViewModel.Workspaces.Single();
+		var note = await fixture.ViewModel.ShowNotesTabAsync(workspace.Id, TestContext.CurrentContext.CancellationToken);
+		await fixture.Controller.SelectNoteAsync(note, TestContext.CurrentContext.CancellationToken);
+		var docs = fixture.Controller.CurrentDocsAndNotes.ShouldNotBeNull();
+		fixture.Controller.CompleteNotesSelection("selected note", new(SelectionActionSourceKind.Notes, 40, 60, true));
+		fixture.Controller.IsNotesSelectionSource.ShouldBeTrue();
+
+		await fixture.Controller.SelectSessionAsync(fixture.ViewModel.Sessions[0], startIfNeeded: true, cancellationToken: TestContext.CurrentContext.CancellationToken);
+
+		fixture.Controller.IsSelectionActionsOpen.ShouldBeFalse();
+		fixture.Controller.IsNotesSelectionSource.ShouldBeFalse();
+		List<string?> changes = [];
+		fixture.Controller.PropertyChanged += (_, e) => changes.Add(e.PropertyName);
+		await docs.SelectSectionAsync(DocsAndNotesSection.Common, TestContext.CurrentContext.CancellationToken);
+		changes.ShouldBeEmpty();
+	}
+
+	[Test]
+	public async Task Pausing_a_root_session_from_notes_shows_only_its_paused_placeholder()
+	{
+		await using ControllerFixture fixture = new(
+			firstResumeCommand: string.Empty,
+			rootTabs: RootTabsWithLiveCodex(resumeCommand: null));
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var root = await StartRootThenShowNotesAsync(fixture);
+
+		await fixture.Controller.PauseRootSessionAsync(root, TestContext.CurrentContext.CancellationToken);
+
+		AssertOnlyPausedPlaceholder(fixture, root);
+	}
+
+	[Test]
+	public async Task Pausing_a_root_session_from_notes_after_a_capture_timeout_shows_only_its_paused_placeholder()
+	{
+		ManualTimeProvider time = new(new DateTimeOffset(2026, 10, 23, 12, 0, 0, TimeSpan.Zero));
+		// The project's own Codex keeps a concrete resume command, so disposing the fixture does
+		// not wait on a capture deadline that nobody advances.
+		await using ControllerFixture fixture = new(
+			rootTabs: RootTabsWithLiveCodex(resumeCommand: "codex resume"),
+			timeProvider: time);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var root = await StartRootThenShowNotesAsync(fixture);
+		var deadlineCreated = time.WaitForTimerCreatedAsync(TimeSpan.FromSeconds(20));
+
+		var pause = fixture.Controller.PauseRootSessionAsync(root, TestContext.CurrentContext.CancellationToken);
+		await deadlineCreated.WaitAsync(TimeSpan.FromSeconds(5), TestContext.CurrentContext.CancellationToken);
+		time.Advance(TimeSpan.FromSeconds(20));
+		await pause.WaitAsync(TimeSpan.FromSeconds(5), TestContext.CurrentContext.CancellationToken);
+
+		AssertOnlyPausedPlaceholder(fixture, root);
+	}
+
+	private static RootTabsRecord RootTabsWithLiveCodex(string? resumeCommand)
+	{
+		var now = DateTimeOffset.UtcNow;
+		SessionRecord rootSession = new(
+			"root-session",
+			AgentKind.Codex,
+			"Root Codex",
+			Path.GetTempPath(),
+			"codex",
+			resumeCommand,
+			SessionStatus.Stopped,
+			now,
+			now);
+		return new RootTabsRecord(1, null, [rootSession], [], []);
+	}
+
+	private static async Task<SessionViewModel> StartRootThenShowNotesAsync(ControllerFixture fixture)
+	{
+		var root = fixture.ViewModel.RootTabs.Sessions.Single();
+		await fixture.Controller.SelectSessionAsync(root, startIfNeeded: true, cancellationToken: TestContext.CurrentContext.CancellationToken);
+		fixture.Controller.HasActiveTerminalProcess(root).ShouldBeTrue();
+		var workspace = fixture.ViewModel.Workspaces.Single();
+		var note = await fixture.ViewModel.ShowNotesTabAsync(workspace.Id, TestContext.CurrentContext.CancellationToken);
+		await fixture.Controller.SelectNoteAsync(note, TestContext.CurrentContext.CancellationToken);
+		fixture.Controller.CurrentDocsAndNotes.ShouldNotBeNull();
+		return root;
+	}
+
+	private static void AssertOnlyPausedPlaceholder(ControllerFixture fixture, SessionViewModel root)
+	{
+		fixture.Controller.PresentedSurface.ShouldBe(new PresentedSurface.PausedSession(root));
+		fixture.Controller.CurrentDocsAndNotes.ShouldBeNull();
+		fixture.Controller.CurrentNoteDocument.ShouldBeNull();
+		fixture.Controller.IsPausedItemVisible.ShouldBeTrue();
+		fixture.Controller.IsTerminalVisible.ShouldBeFalse();
+		fixture.ViewModel.SelectedSession.ShouldBeSameAs(root);
+	}
+
+	[Test]
 	public async Task Rapid_webview_resizes_are_observed_and_finish_at_the_latest_dimensions()
 	{
 		await using ControllerFixture fixture = new();

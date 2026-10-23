@@ -341,6 +341,8 @@ public sealed class MainWindowPaneVisibilityHeadlessTests
 		await using WindowFixture fixture = new(includeSession: true, backend: backend);
 		using MainWindow window = new(fixture.Controller);
 		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		// The started terminal stays behind its loading surface until its first stable screen.
+		fixture.Host.RaiseScreenSnapshotReceived("session-1", "ready", stable: true);
 		window.IsTerminalPaneVisible.ShouldBeTrue();
 
 		var shutdown = fixture.Controller.ShutdownAsync();
@@ -349,6 +351,23 @@ public sealed class MainWindowPaneVisibilityHeadlessTests
 		await shutdown;
 
 		window.IsTerminalPaneVisible.ShouldBeFalse();
+	}
+
+	[AvaloniaTest]
+	public async Task First_stable_screen_swaps_the_loading_surface_for_the_terminal()
+	{
+		await using WindowFixture fixture = new(includeSession: true);
+		using MainWindow window = new(fixture.Controller);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		Dispatcher.UIThread.RunJobs();
+		window.IsTerminalLoadingSurfaceVisible.ShouldBeTrue();
+		window.IsTerminalPaneVisible.ShouldBeFalse();
+
+		fixture.Host.RaiseScreenSnapshotReceived("session-1", "ready", stable: true);
+		Dispatcher.UIThread.RunJobs();
+
+		window.IsTerminalPaneVisible.ShouldBeTrue();
+		window.IsTerminalLoadingSurfaceVisible.ShouldBeFalse();
 	}
 
 	[AvaloniaTest]
