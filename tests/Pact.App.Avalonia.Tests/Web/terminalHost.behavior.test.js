@@ -480,6 +480,39 @@ function runResizeBridgeBehavior() {
     'an unchanged fitted size must not emit a duplicate resize');
 }
 
+function runNewTerminalTakesSharedSizeBehavior() {
+  window.agentTerminal.showTerminal('session-1', { snapshotDebounceMs: 500 });
+  hostMessages.length = 0;
+
+  window.agentTerminal.createTerminal('session-2', { snapshotDebounceMs: 500 });
+
+  const hidden = terminalInstances[1];
+  assert.equal(hidden.cols, 101);
+  assert.equal(hidden.rows, 37);
+  assert.deepEqual(hostMessages, [{
+    type: 'resize',
+    sessionId: 'session-2',
+    cols: 101,
+    rows: 37
+  }], 'a never-shown terminal must report the size its process should start with');
+}
+
+function runNewTerminalTakesInitialSizeBehavior() {
+  window.agentTerminal.createTerminal(
+    'session-1',
+    { snapshotDebounceMs: 500, initialSize: { cols: 120, rows: 36 } });
+
+  const hidden = terminalInstances[0];
+  assert.equal(hidden.cols, 120);
+  assert.equal(hidden.rows, 36);
+  assert.deepEqual(hostMessages, [{
+    type: 'resize',
+    sessionId: 'session-1',
+    cols: 120,
+    rows: 36
+  }]);
+}
+
 function runModifiedEnterBehavior() {
   window.agentTerminal.createTerminal('session-1', { snapshotDebounceMs: 500 });
   const terminal = terminalInstances[0];
@@ -867,6 +900,10 @@ if (behavior === 'real-styled-cells') {
   runPrebatchedOutputBehavior();
 } else if (behavior === 'resize-bridge') {
   runResizeBridgeBehavior();
+} else if (behavior === 'new-terminal-takes-shared-size') {
+  runNewTerminalTakesSharedSizeBehavior();
+} else if (behavior === 'new-terminal-takes-initial-size') {
+  runNewTerminalTakesInitialSizeBehavior();
 } else if (behavior === 'modified-enter') {
   runModifiedEnterBehavior();
 } else if (behavior === 'selection') {

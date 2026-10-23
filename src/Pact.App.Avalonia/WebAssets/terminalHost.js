@@ -207,6 +207,8 @@ const rootElement = document.getElementById('terminal');
 const terminals = new Map();
 let activeSessionId = null;
 let hostVisible = true;
+// Last fitted size; every instance shares it because they stack in one element.
+let sharedSize = null;
 const performanceCounters = {
   bridgeWrites: 0,
   bridgeCharacters: 0,
@@ -513,6 +515,14 @@ function createInstance(sessionId, options) {
     return true;
   });
 
+  // A terminal created hidden is never fitted, yet its process starts at the size
+  // the host reports. Without this, an agent paints for one width into another and
+  // its screen cannot be read until the tab is first shown.
+  const size = sharedSize ?? options?.initialSize;
+  if (size) {
+    term.resize(size.cols, size.rows);
+  }
+
   return instance;
 }
 
@@ -598,6 +608,7 @@ function resizeAllInstances() {
   active.fitAddon.fit();
   const cols = active.term.cols;
   const rows = active.term.rows;
+  sharedSize = { cols, rows };
   for (const instance of terminals.values()) {
     if (instance !== active) {
       instance.term.resize(cols, rows);

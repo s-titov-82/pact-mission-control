@@ -138,7 +138,8 @@ internal sealed class AvaloniaTerminalWebViewHost : ITerminalWebViewHost, IAsync
 
 	public Task CreateTerminalAsync(string sessionId) => ExecuteScriptWhenReadyAsync(
 		$"window.agentTerminal.createTerminal({JsonSerializer.Serialize(sessionId)}, "
-		+ $"{{ snapshotDebounceMs: {SnapshotDebounceMs} }});");
+		+ $"{{ snapshotDebounceMs: {SnapshotDebounceMs}, "
+		+ $"initialSize: {{ cols: {DefaultSize.Columns}, rows: {DefaultSize.Rows} }} }});");
 
 	public async Task ShowTerminalAsync(string sessionId)
 	{

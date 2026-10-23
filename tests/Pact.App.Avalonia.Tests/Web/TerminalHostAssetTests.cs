@@ -32,6 +32,8 @@ public sealed partial class TerminalHostAssetTests
 	[TestCase("hidden-terminals-leave-layout")]
 	[TestCase("prebatched-output")]
 	[TestCase("resize-bridge")]
+	[TestCase("new-terminal-takes-shared-size")]
+	[TestCase("new-terminal-takes-initial-size")]
 	[TestCase("modified-enter")]
 	[TestCase("selection")]
 	[TestCase("selection-completion")]
