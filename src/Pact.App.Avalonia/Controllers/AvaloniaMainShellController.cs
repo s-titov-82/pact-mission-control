@@ -1272,10 +1272,14 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 
 	public async Task PauseWorkspaceAsync(WorkspaceViewModel workspace, CancellationToken cancellationToken = default)
 	{
-		// Resume capture selects each session it shows, so read the user's choice first.
-		var activeItemId = ViewModel.SelectedSession?.Record.Id
+		// Resume capture selects each session it shows, so read the user's choice first. A
+		// selection outside this project leaves the project's own remembered item in place.
+		var selectedItemId = ViewModel.SelectedSession?.Record.Id
 			?? ViewModel.SelectedWebPage?.Record.Id
 			?? ViewModel.SelectedProjectNote?.Record.Id;
+		var activeItemId = selectedItemId is not null && OwnsItem(workspace, selectedItemId)
+			? selectedItemId
+			: workspace.Record.ActiveItemId;
 		InvalidateSelectionOwner(workspace);
 		await AvaloniaScenarioCoordinator.AbortWorkspaceRunsAsync(workspace, cancellationToken);
 		await UnloadWorkspaceWebPagesAsync(
@@ -1290,6 +1294,11 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		_gitPanelViewModels.Remove(workspace.Id);
 		await ViewModel.PauseWorkspaceAsync(workspace.Id, activeItemId, cancellationToken);
 	}
+
+	private static bool OwnsItem(WorkspaceViewModel workspace, string itemId) =>
+		workspace.Sessions.Any(session => string.Equals(session.Record.Id, itemId, StringComparison.Ordinal))
+		|| workspace.WebPages.Any(page => string.Equals(page.Record.Id, itemId, StringComparison.Ordinal))
+		|| workspace.Notes.Any(note => string.Equals(note.Record.Id, itemId, StringComparison.Ordinal));
 
 	public Task<IReadOnlyList<string>> LoadRecentDirectoriesAsync(
 		CancellationToken cancellationToken = default) =>

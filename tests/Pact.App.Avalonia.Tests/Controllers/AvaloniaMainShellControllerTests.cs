@@ -2743,6 +2743,31 @@ public sealed class AvaloniaMainShellControllerTests
 	}
 
 	[Test]
+	public async Task Pausing_a_project_from_outside_it_keeps_its_stored_active_item()
+	{
+		await using ControllerFixture fixture = new(
+			firstResumeCommand: string.Empty,
+			activeItemId: "web-1",
+			rootTabs: RootTabsWithLiveCodex(resumeCommand: "codex resume abc12345"));
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var workspace = fixture.ViewModel.Workspaces.Single();
+		await fixture.Controller.SelectSessionAsync(
+			fixture.ViewModel.Sessions[0],
+			startIfNeeded: true,
+			cancellationToken: TestContext.CurrentContext.CancellationToken);
+		await fixture.Controller.SelectWebPageAsync(fixture.ViewModel.WebPages.Single(), TestContext.CurrentContext.CancellationToken);
+		await fixture.Controller.SelectSessionAsync(
+			fixture.ViewModel.RootTabs.Sessions.Single(),
+			startIfNeeded: false,
+			cancellationToken: TestContext.CurrentContext.CancellationToken);
+
+		await fixture.Controller.PauseWorkspaceAsync(workspace, TestContext.CurrentContext.CancellationToken);
+
+		var stored = (await fixture.Store.LoadAsync(CancellationToken.None)).Projects.Single();
+		stored.ActiveItemId.ShouldBe("web-1");
+	}
+
+	[Test]
 	public async Task PausingWorkspaceCapturesConcreteResumeIdBeforeStoppingCodex()
 	{
 		await using ControllerFixture fixture = new(firstResumeCommand: "codex resume");
