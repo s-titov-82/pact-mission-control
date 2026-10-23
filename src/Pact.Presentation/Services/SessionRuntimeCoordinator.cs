@@ -545,6 +545,9 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 		var startedAt = Stopwatch.GetTimestamp();
 		var trustAnswerSent = false;
 		var lastStatusLine = string.Empty;
+		var initialOutput = "none";
+		var screenStates = 0;
+		SessionScreenState? lastState = null;
 
 		TimeSpan Remaining()
 		{
@@ -553,15 +556,17 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 		}
 
 		if (TryGetRuntime(sessionId, out var runtime)
-			&& runtime.InitialOutputTask is { } initialOutput
+			&& runtime.InitialOutputTask is { } initialOutputTask
 			&& Remaining() > TimeSpan.Zero)
 		{
 			try
 			{
-				await initialOutput.WaitAsync(Remaining(), cancellationToken).ConfigureAwait(false);
+				await initialOutputTask.WaitAsync(Remaining(), cancellationToken).ConfigureAwait(false);
+				initialOutput = "arrived";
 			}
 			catch (TimeoutException)
 			{
+				initialOutput = "timed-out";
 				return NotReady();
 			}
 		}
@@ -582,6 +587,8 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 			var state = readScreenState();
 			if (state is not null)
 			{
+				screenStates++;
+				lastState = state;
 				if (!string.IsNullOrWhiteSpace(state.StatusLine))
 				{
 					lastStatusLine = state.StatusLine;
@@ -591,7 +598,7 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 					&& !state.IsBusy
 					&& !state.InputRequested)
 				{
-					return new SessionReadiness(IsReady: true, StatusLine: string.Empty);
+					return Traced(new SessionReadiness(IsReady: true, StatusLine: string.Empty));
 				}
 
 				if (state.InputRequested)
@@ -639,11 +646,25 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 
 		SessionReadiness NotReady()
 		{
-			return new SessionReadiness(
+			return Traced(new SessionReadiness(
 				IsReady: false,
 				string.IsNullOrWhiteSpace(lastStatusLine)
 					? "the session never became ready to receive input"
-					: lastStatusLine);
+					: lastStatusLine));
+		}
+
+		// Facts only: no screen or status text, so the log never holds what the agent shows.
+		SessionReadiness Traced(SessionReadiness readiness)
+		{
+			DeliveryTrace?.Invoke(
+				$"readiness session={sessionId} ready={(readiness.IsReady ? "true" : "false")} "
+					+ $"elapsedMs={(long)Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds} "
+					+ $"initialOutput={initialOutput} screenStates={screenStates} "
+					+ $"verdict={lastState?.VerdictState?.ToString() ?? "none"} "
+					+ $"busy={(lastState?.IsBusy == true ? "true" : "false")} "
+					+ $"question={(lastState?.InputRequested == true ? "true" : "false")} "
+					+ $"trustAnswered={(trustAnswerSent ? "true" : "false")}");
+			return readiness;
 		}
 	}
 

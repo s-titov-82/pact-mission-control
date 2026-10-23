@@ -309,6 +309,26 @@ public sealed partial class SessionRuntimeCoordinatorTests
 	}
 
 	[Test]
+	public async Task Readiness_wait_traces_its_outcome()
+	{
+		var (coordinator, _, controller) = await CreateAttachedSessionAsync();
+		await using var _ = controller;
+		List<string> traces = [];
+		coordinator.DeliveryTrace = traces.Add;
+
+		var result = await coordinator.WaitForSessionReadyAsync(
+			"session-1",
+			static () => null,
+			TestContext.CurrentContext.CancellationToken);
+
+		result.IsReady.ShouldBeFalse();
+		var trace = traces.ShouldHaveSingleItem();
+		trace.ShouldStartWith("readiness session=session-1 ");
+		trace.ShouldContain("ready=false");
+		trace.ShouldContain("screenStates=0");
+	}
+
+	[Test]
 	public async Task Readiness_does_not_treat_an_empty_composer_as_a_done_verdict()
 	{
 		var (coordinator, backend, controller) = await CreateAttachedSessionAsync();

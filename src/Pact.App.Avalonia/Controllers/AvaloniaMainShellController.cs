@@ -221,7 +221,8 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			_terminalHost,
 			_launcher,
 			_agentControlTokens,
-			ThrowIfRejectingInput);
+			ThrowIfRejectingInput,
+			AppendDiagnosticLog);
 		_resumeCapture = new ResumeCaptureService(
 			_runtimeCoordinator,
 			ViewModel,

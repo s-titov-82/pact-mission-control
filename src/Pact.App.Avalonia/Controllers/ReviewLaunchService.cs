@@ -20,8 +20,10 @@ internal sealed class ReviewLaunchService(
 	ITerminalWebViewHost terminalHost,
 	SessionLauncher launcher,
 	AgentControlTokenRegistry agentControlTokens,
-	Action throwIfRejectingInput)
+	Action throwIfRejectingInput,
+	Action<string> trace)
 {
+	private readonly Action<string> _trace = trace ?? throw new ArgumentNullException(nameof(trace));
 	private readonly MainWindowViewModel _viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
 	private readonly AvaloniaScenarioCoordinator _scenarioCoordinator = scenarioCoordinator ?? throw new ArgumentNullException(nameof(scenarioCoordinator));
 	private readonly ReviewProfileProvider _reviewProfileProvider = reviewProfiles ?? throw new ArgumentNullException(nameof(reviewProfiles));
@@ -45,6 +47,8 @@ internal sealed class ReviewLaunchService(
 		CancellationToken cancellationToken)
 	{
 		_throwIfRejectingInput();
+		_trace($"review-launch phase=requested project={projectId} author={authorSessionId} "
+			+ $"scenario={request.ScenarioId} profile={request.ReviewProfileId}");
 		using var reservation = _scenarioCoordinator.TryReserveProjectSlot(
 			projectId,
 			out var conflict);
@@ -103,18 +107,23 @@ internal sealed class ReviewLaunchService(
 				workspaceId: workspace.Id,
 				select: false);
 			sessionCreated = true;
+			_trace($"review-launch phase=session-created reviewer={reviewerSessionId} kind={profile.Kind}");
 			await _terminalHost.CreateTerminalAsync(reviewerSessionId);
 			terminalCreated = true;
-			await _launcher.ActivateAsync(
+			_trace($"review-launch phase=terminal-created reviewer={reviewerSessionId}");
+			var plan = await _launcher.ActivateAsync(
 				reviewer,
 				startIfNeeded: true,
 				preferResumeCommand: false,
 				cancellationToken);
+			_trace($"review-launch phase=activated reviewer={reviewerSessionId} plan={plan} "
+				+ $"running={_runtimeCoordinator.TryGetActiveController(reviewerSessionId, out _, out _)}");
 			var readiness = await _runtimeCoordinator.WaitForSessionReadyAsync(
 				reviewerSessionId,
 				cancellationToken);
 			if (!readiness.IsReady)
 			{
+				_trace($"review-launch phase=not-ready reviewer={reviewerSessionId}");
 				var rollbackFailure = await RollBackAgentReviewerAsync(
 					reviewerSessionId,
 					sessionCreated,
@@ -145,10 +154,12 @@ internal sealed class ReviewLaunchService(
 				request.Target,
 				request.MaxIterations ?? definition.MaxIterations,
 				reviewerInstructions);
+			_trace($"review-launch phase=run-started reviewer={reviewerSessionId} run={run.RunId}");
 			return new ReviewStartOutcome(run.RunId, Conflict: null, FailureMessage: null);
 		}
 		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
 		{
+			_trace($"review-launch phase=cancelled reviewer={reviewerSessionId}");
 			await RollBackAgentReviewerAsync(
 				reviewerSessionId,
 				sessionCreated,
@@ -157,6 +168,7 @@ internal sealed class ReviewLaunchService(
 		}
 		catch (Exception exception)
 		{
+			_trace($"review-launch phase=failed reviewer={reviewerSessionId} exception={exception.GetType().Name}");
 			var rollbackFailure = await RollBackAgentReviewerAsync(
 				reviewerSessionId,
 				sessionCreated,
