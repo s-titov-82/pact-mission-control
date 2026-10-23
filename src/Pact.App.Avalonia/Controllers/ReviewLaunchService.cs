@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using Pact.Core.AgentControl;
 using Pact.Core.Presentation;
 using Pact.Infrastructure.AgentControl;
@@ -123,7 +124,7 @@ internal sealed class ReviewLaunchService(
 				cancellationToken);
 			if (!readiness.IsReady)
 			{
-				_trace($"review-launch phase=not-ready reviewer={reviewerSessionId}");
+				TraceClassifierFacts(reviewerSessionId);
 				var rollbackFailure = await RollBackAgentReviewerAsync(
 					reviewerSessionId,
 					sessionCreated,
@@ -178,6 +179,26 @@ internal sealed class ReviewLaunchService(
 				: $"Review start failed: {exception.Message}. Rollback: {rollbackFailure}";
 			return FailedReviewStart(message);
 		}
+	}
+
+	// Facts only: sizes, times and the verdict name, never the screen text.
+	private void TraceClassifierFacts(string sessionId)
+	{
+		var statuses = _viewModel.TerminalTabStatuses;
+		if (!statuses.TryGetDiagnostics(sessionId, out var diagnostics)
+			|| !statuses.TryGetScreenState(sessionId, out var screen))
+		{
+			_trace($"review-launch phase=not-ready reviewer={sessionId} registered=false");
+			return;
+		}
+
+		_trace($"review-launch phase=not-ready reviewer={sessionId} registered=true "
+			+ $"lifecycle={diagnostics.LifecycleStatus} indicator={diagnostics.Indicator} "
+			+ $"verdict={diagnostics.VerdictState?.ToString() ?? "none"} "
+			+ $"columns={diagnostics.Columns?.ToString(CultureInfo.InvariantCulture) ?? "none"} "
+			+ $"rows={diagnostics.Rows?.ToString(CultureInfo.InvariantCulture) ?? "none"} "
+			+ $"lastClassificationAt={diagnostics.LastClassificationAt?.ToString("O", CultureInfo.InvariantCulture) ?? "none"} "
+			+ $"stableScreenChars={screen.Screen.Length} promptIsEmpty={diagnostics.PromptIsEmpty?.ToString() ?? "none"}");
 	}
 
 	private async Task<string?> RollBackAgentReviewerAsync(
