@@ -331,6 +331,34 @@ public sealed class TerminalTabStatusEngineTests
 	}
 
 	[Test]
+	public void A_new_launch_does_not_inherit_the_previous_process_readiness()
+	{
+		var evidence = new TerminalPromptEvidence(true, true, 5, false, true, 5);
+		ScriptedProfile profile = new()
+		{
+			Verdict = new TerminalScreenVerdict(
+				TerminalScreenVerdictState.Done,
+				string.Empty,
+				PromptIsEmpty: true,
+				PromptEvidence: evidence)
+		};
+		var engine = CreateEngine(profile: profile);
+		engine.OnScreenSnapshot("previous process, settled and ready", T0);
+		engine.SetLifecycleStatus(SessionStatus.Stopped, T0.AddSeconds(1));
+
+		engine.OnSessionStarted(TerminalStartMode.Normal, T0.AddSeconds(2));
+		engine.SetLifecycleStatus(SessionStatus.Running, T0.AddSeconds(2));
+		engine.OnScreenSnapshot("new process, still repainting", T0.AddSeconds(3), stable: false);
+
+		engine.CurrentStatus.VerdictState.ShouldBeNull();
+		engine.CurrentStatus.StablePromptIsEmpty.ShouldBeNull();
+
+		engine.OnScreenSnapshot("new process, settled", T0.AddSeconds(4));
+		engine.CurrentStatus.VerdictState.ShouldBe(TerminalScreenVerdictState.Done);
+		engine.CurrentStatus.StablePromptIsEmpty.ShouldBe(true);
+	}
+
+	[Test]
 	public void Claude_busy_verdict_with_a_visible_prompt_keeps_the_busy_indicator()
 	{
 		var engine = CreateEngine(profile: ClaudeScreenProfile.Instance);

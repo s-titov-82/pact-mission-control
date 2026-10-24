@@ -288,6 +288,13 @@ public sealed class TerminalTabStatusEngine
 	public void OnSessionStarted(TerminalStartMode mode, DateTimeOffset occurredAt) =>
 		Process(TerminalTabEventKind.SessionStarted, occurredAt, () =>
 		{
+			// What the previous process showed says nothing about whether this one can take a
+			// prompt; the last stable screen and message stay for display.
+			_lastStableVerdictState = null;
+			_lastStableVerdictDescription = string.Empty;
+			_promptIsEmpty = null;
+			_stablePromptIsEmpty = null;
+			_promptEvidence = null;
 			if (mode == TerminalStartMode.Resume)
 			{
 				StartActivity(occurredAt, resumeReplay: true);
