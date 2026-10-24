@@ -349,6 +349,41 @@ public sealed class ReviewRelayTests : IDisposable
 	}
 
 	[Test]
+	public async Task A_log_stays_claimed_until_its_footer_is_written()
+	{
+		var (relay, host) = Create();
+		var reviewId = (await relay.RequestAsync(Author, Request(), CancellationToken.None)).Payload!;
+		var logPath = relay.Find(reviewId)!.LogPath;
+		var turnId = (string)Turn(relay, Reviewer)["turnId"]!;
+		File.SetAttributes(logPath, FileAttributes.ReadOnly);
+		host.OnTrace = line =>
+		{
+			if (!line.Contains("step=footer", StringComparison.Ordinal))
+			{
+				return;
+			}
+
+			host.OnTrace = null;
+			File.SetAttributes(logPath, FileAttributes.Normal);
+			for (var index = 0; index < 9; index++)
+			{
+				var newer = Path.Combine(Path.GetDirectoryName(logPath)!, $"newer-{index}.md");
+				File.WriteAllText(newer, "log");
+				File.SetCreationTimeUtc(newer, DateTime.UtcNow.AddMinutes(10));
+			}
+
+			// Another review starts while this one is still writing its footer.
+			relay.RequestAsync(Author, Request(), CancellationToken.None).GetAwaiter().GetResult()
+				.Succeeded.ShouldBeTrue();
+		};
+
+		await relay.SubmitAsync(Reviewer, turnId, "All good.", approved: true, CancellationToken.None);
+
+		host.OnTrace.ShouldBeNull();
+		File.Exists(logPath).ShouldBeTrue();
+	}
+
+	[Test]
 	public async Task Ending_a_project_s_reviews_is_quiet()
 	{
 		var (relay, host) = Create();

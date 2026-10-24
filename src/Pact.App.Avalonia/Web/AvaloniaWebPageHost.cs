@@ -117,7 +117,6 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 		cancellationToken.ThrowIfCancellationRequested();
 		await Dispatcher.UIThread.InvokeAsync(() =>
 		{
-			HiddenFocus.Release(_webView);
 			_isPresented = false;
 			ApplyNativeVisibility();
 			RecordDiagnostic("hidden");
@@ -423,6 +422,12 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 	private void ApplyNativeVisibility()
 	{
 		var visible = _isPresented && !_isNavigationLoading;
+		if (!visible)
+		{
+			// Every hide, a navigation's included: WebView2 crashes when a hidden control keeps focus.
+			HiddenFocus.Release(_webView);
+		}
+
 		_webView.IsVisible = visible;
 		_visibilityController?.SetVisible(visible);
 		if (visible && !_isNativelyVisible && _visibilityController is not null)

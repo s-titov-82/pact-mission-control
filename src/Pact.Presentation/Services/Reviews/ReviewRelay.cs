@@ -501,12 +501,7 @@ public sealed class ReviewRelay
 		var conversation = review.Conversation!;
 		var state = conversation.State;
 		var reason = conversation.EndReason ?? review.EndReason;
-		Retire(review);
-		await WriteLogAsync(
-			review,
-			"footer",
-			path => _log.WriteFooterAsync(path, state, reason, _time.GetLocalNow(), CancellationToken.None))
-			.ConfigureAwait(false);
+		await WriteFooterThenRetireAsync(review, state, reason).ConfigureAwait(false);
 		_host.Trace($"review phase=ended review={review.Id} state={state}");
 		PruneLogs(review);
 		if (review.Quiet)
@@ -535,13 +530,8 @@ public sealed class ReviewRelay
 		}
 
 		_host.Trace($"review phase=start-ended review={review.Id} state={review.EndState}");
+		await WriteFooterThenRetireAsync(review, review.EndState, review.EndReason).ConfigureAwait(false);
 		PruneLogs(review);
-		Retire(review);
-		await WriteLogAsync(
-			review,
-			"footer",
-			path => _log.WriteFooterAsync(path, review.EndState, review.EndReason, _time.GetLocalNow(), CancellationToken.None))
-			.ConfigureAwait(false);
 		if (!review.Quiet && review.LogPath is not null)
 		{
 			await RunHostStepAsync(review, "open-log", () => OpenLogAsync(review)).ConfigureAwait(false);
@@ -550,6 +540,24 @@ public sealed class ReviewRelay
 		return AgentControlResult.Refused(
 			"review-start-failed",
 			$"The review did not start: {review.EndReason} The reviewer tab, if it was created, stays open.");
+	}
+
+	// The review keeps its log claimed until the footer is in, so a review starting meanwhile
+	// cannot prune the log out from under it.
+	private async Task WriteFooterThenRetireAsync(Review review, ReviewState state, string? reason)
+	{
+		try
+		{
+			await WriteLogAsync(
+				review,
+				"footer",
+				path => _log.WriteFooterAsync(path, state, reason, _time.GetLocalNow(), CancellationToken.None))
+				.ConfigureAwait(false);
+		}
+		finally
+		{
+			Retire(review);
+		}
 	}
 
 	// The log is the user's record of the review; failing to write it never stops the review.
