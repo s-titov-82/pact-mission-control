@@ -23,9 +23,8 @@ public sealed class ScenarioDefinitionStoreTests
 		planReview.DefaultTarget.ShouldNotContain(
 			"docs/superpowers",
 			Case.Insensitive);
-		// Default templates use the file exchange protocol: response content
-		// travels through {reviewResultFile}/{authorFeedbackFile}; the
-		// completion-marker policy is engine-appended, not template-carried.
+		// The other side's answer travels in previousTurn, which Pact returns with each
+		// message; the completion-marker policy is appended by Pact, not template-carried.
 		planReview.StartPromptTemplate.ShouldContain("{target}");
 		planReview.StartPromptTemplate.ShouldNotContain("{reviewerInstruction}");
 		planReview.StartPromptTemplate.ShouldContain(
@@ -33,9 +32,9 @@ public sealed class ScenarioDefinitionStoreTests
 		planReview.StartPromptTemplate.ShouldContain("Counterfactual check");
 		planReview.StartPromptTemplate.ShouldContain("god-object");
 		planReview.FirstFeedbackTemplate.ShouldContain("{target}");
-		planReview.FirstFeedbackTemplate.ShouldContain("{reviewResultFile}");
-		planReview.AuthorReturnTemplate.ShouldContain("{authorFeedbackFile}");
-		planReview.FeedbackTemplate.ShouldContain("{reviewResultFile}");
+		planReview.FirstFeedbackTemplate.ShouldContain("`previousTurn`");
+		planReview.AuthorReturnTemplate.ShouldContain("`previousTurn`");
+		planReview.FeedbackTemplate.ShouldContain("`previousTurn`");
 		planReview.DefaultReviewerInstructionId.ShouldBe("strict");
 		planReview.ReviewerInstructions.Select(item => item.Id).ToArray().ShouldBe(["strict", "allow-minors"]);
 
