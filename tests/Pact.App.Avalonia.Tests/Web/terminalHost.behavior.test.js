@@ -480,21 +480,17 @@ function runResizeBridgeBehavior() {
     'an unchanged fitted size must not emit a duplicate resize');
 }
 
-function runNewTerminalTakesSharedSizeBehavior() {
+function runNewTerminalTakesHostSizeBehavior() {
   window.agentTerminal.showTerminal('session-1', { snapshotDebounceMs: 500 });
   hostMessages.length = 0;
 
-  window.agentTerminal.createTerminal('session-2', { snapshotDebounceMs: 500 });
+  window.agentTerminal.createTerminal(
+    'session-2',
+    { snapshotDebounceMs: 500, initialSize: { cols: 90, rows: 30 } });
 
   const hidden = terminalInstances[1];
-  assert.equal(hidden.cols, 101);
-  assert.equal(hidden.rows, 37);
-  assert.deepEqual(hostMessages, [{
-    type: 'resize',
-    sessionId: 'session-2',
-    cols: 101,
-    rows: 37
-  }], 'a never-shown terminal must report the size its process should start with');
+  assert.equal(hidden.cols, 90, 'the host picks the size the process starts with');
+  assert.equal(hidden.rows, 30);
 }
 
 function runNewTerminalTakesInitialSizeBehavior() {
@@ -900,8 +896,8 @@ if (behavior === 'real-styled-cells') {
   runPrebatchedOutputBehavior();
 } else if (behavior === 'resize-bridge') {
   runResizeBridgeBehavior();
-} else if (behavior === 'new-terminal-takes-shared-size') {
-  runNewTerminalTakesSharedSizeBehavior();
+} else if (behavior === 'new-terminal-takes-host-size') {
+  runNewTerminalTakesHostSizeBehavior();
 } else if (behavior === 'new-terminal-takes-initial-size') {
   runNewTerminalTakesInitialSizeBehavior();
 } else if (behavior === 'modified-enter') {

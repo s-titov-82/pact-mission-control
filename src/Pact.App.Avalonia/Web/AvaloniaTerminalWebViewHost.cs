@@ -21,7 +21,7 @@ internal sealed class AvaloniaTerminalWebViewHost : ITerminalWebViewHost, IAsync
 	private static readonly TimeSpan SlowScriptLogInterval = TimeSpan.FromSeconds(5);
 	private long _lastSlowScriptLog;
 	private readonly NativeWebView _webView;
-	private readonly Dictionary<string, (int Columns, int Rows)> _sessionSizes = new(StringComparer.Ordinal);
+	private readonly TerminalSizeBook _sizes = new(DefaultSize);
 	private readonly SemaphoreSlim _selectionLock = new(1, 1);
 	private readonly WebViewDiagnosticTrace _diagnostics = new("terminal");
 	private readonly TerminalOutputBridgeBatcher _outputBatcher;
@@ -126,20 +126,16 @@ internal sealed class AvaloniaTerminalWebViewHost : ITerminalWebViewHost, IAsync
 		await ApplyPresentationVisibilityAsync();
 	}
 
-	public (int Columns, int Rows) GetCurrentSize(string sessionId)
-	{
-		lock (_sessionSizes)
-		{
-			return _sessionSizes.TryGetValue(sessionId, out var size)
-				? size
-				: DefaultSize;
-		}
-	}
+	public (int Columns, int Rows) GetCurrentSize(string sessionId) => _sizes.Get(sessionId);
 
-	public Task CreateTerminalAsync(string sessionId) => ExecuteScriptWhenReadyAsync(
-		$"window.agentTerminal.createTerminal({JsonSerializer.Serialize(sessionId)}, "
-		+ $"{{ snapshotDebounceMs: {SnapshotDebounceMs}, "
-		+ $"initialSize: {{ cols: {DefaultSize.Columns}, rows: {DefaultSize.Rows} }} }});");
+	public Task CreateTerminalAsync(string sessionId)
+	{
+		var (columns, rows) = _sizes.Reserve(sessionId);
+		return ExecuteScriptWhenReadyAsync(
+			$"window.agentTerminal.createTerminal({JsonSerializer.Serialize(sessionId)}, "
+			+ $"{{ snapshotDebounceMs: {SnapshotDebounceMs}, "
+			+ $"initialSize: {{ cols: {columns}, rows: {rows} }} }});");
+	}
 
 	public async Task ShowTerminalAsync(string sessionId)
 	{
@@ -174,10 +170,7 @@ internal sealed class AvaloniaTerminalWebViewHost : ITerminalWebViewHost, IAsync
 
 	public async Task DisposeTerminalAsync(string sessionId)
 	{
-		lock (_sessionSizes)
-		{
-			_sessionSizes.Remove(sessionId);
-		}
+		_sizes.Remove(sessionId);
 		await _outputBatcher.RemoveSessionAsync(sessionId);
 		await ExecuteScriptWhenReadyAsync(
 			$"window.agentTerminal.disposeTerminal({JsonSerializer.Serialize(sessionId)});");
@@ -351,10 +344,7 @@ internal sealed class AvaloniaTerminalWebViewHost : ITerminalWebViewHost, IAsync
 				InputReceived?.Invoke(this, (input.SessionId, input.Data));
 				break;
 			case TerminalWebMessage.Resize resize:
-				lock (_sessionSizes)
-				{
-					_sessionSizes[resize.SessionId] = (resize.Columns, resize.Rows);
-				}
+				_sizes.Record(resize.SessionId, resize.Columns, resize.Rows);
 
 				ResizeReceived?.Invoke(this, (resize.SessionId, resize.Columns, resize.Rows));
 				break;
