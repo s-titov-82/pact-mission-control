@@ -250,6 +250,28 @@ public sealed class AvaloniaMainShellControllerTests
 	}
 
 	[Test]
+	public async Task Opening_a_project_document_shows_it_in_notes()
+	{
+		await using ControllerFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var workspace = fixture.ViewModel.Workspaces.Single();
+		var plan = Path.Combine(fixture.Root, "docs", "plans", "p.md");
+		Directory.CreateDirectory(Path.GetDirectoryName(plan)!);
+		await File.WriteAllTextAsync(plan, "# Plan", TestContext.CurrentContext.CancellationToken);
+
+		(await fixture.Controller.OpenProjectDocumentAsync(
+				workspace.Id,
+				"docs/plans/p.md",
+				TestContext.CurrentContext.CancellationToken))
+			.ShouldBeTrue();
+
+		var notes = fixture.Controller.PresentedSurface.ShouldBeOfType<PresentedSurface.Notes>();
+		notes.Workspace.SelectedSection.ShouldBe(DocsAndNotesSection.Docs);
+		notes.Workspace.SelectedNode.ShouldNotBeNull().RelativePath.ShouldBe("docs/plans/p.md");
+		workspace.Notes.ShouldHaveSingleItem();
+	}
+
+	[Test]
 	public async Task Leaving_notes_unsubscribes_and_invalidates_a_notes_selection()
 	{
 		await using ControllerFixture fixture = new();

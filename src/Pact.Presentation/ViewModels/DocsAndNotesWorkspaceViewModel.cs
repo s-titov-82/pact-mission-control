@@ -262,6 +262,41 @@ public sealed class DocsAndNotesWorkspaceViewModel : INotifyPropertyChanged
 		await ActivateAsync(node, cancellationToken);
 	}
 
+	/// <summary>
+	/// Shows a project Markdown file: selects Docs for a file under <c>docs/</c> and Common
+	/// otherwise, expands its folders and opens it. Rescans once when the file is not in the
+	/// tree yet, as for one written after the last refresh.
+	/// </summary>
+	/// <returns><see langword="false"/> when the pane does not list the file.</returns>
+	public async Task<bool> OpenDocumentAsync(string relativePath, CancellationToken cancellationToken)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(relativePath);
+		var section = relativePath.StartsWith("docs/", StringComparison.OrdinalIgnoreCase)
+			? DocsAndNotesSection.Docs
+			: DocsAndNotesSection.Common;
+		IReadOnlyList<MarkdownTreeNodeViewModel> Tree()
+		{
+			return section == DocsAndNotesSection.Docs ? DocsTree : CommonTree;
+		}
+
+		var node = FindDocument(Tree(), relativePath);
+		if (node is null)
+		{
+			await RefreshAsync(cancellationToken);
+			node = FindDocument(Tree(), relativePath);
+			if (node is null)
+			{
+				return false;
+			}
+		}
+
+		await FlushActiveAsync(cancellationToken);
+		SelectedSection = section;
+		_visitedSections.Add(section);
+		await ActivateAsync(node, cancellationToken);
+		return true;
+	}
+
 	/// <summary>Flips a folder's expansion; document nodes and stale nodes are ignored.</summary>
 	public void ToggleFolder(MarkdownTreeNodeViewModel node)
 	{

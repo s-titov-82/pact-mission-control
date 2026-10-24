@@ -60,6 +60,60 @@ public sealed class DocsAndNotesWorkspaceViewModelTests : IDisposable
 	}
 
 	[Test]
+	public async Task Opening_a_docs_file_selects_the_docs_section_and_the_node()
+	{
+		Write("docs/superpowers/plans/p.md", "# Plan");
+		var workspace = CreateWorkspace();
+		await workspace.RefreshAsync(CancellationToken.None);
+
+		(await workspace.OpenDocumentAsync("docs/superpowers/plans/p.md", CancellationToken.None))
+			.ShouldBeTrue();
+
+		workspace.SelectedSection.ShouldBe(DocsAndNotesSection.Docs);
+		workspace.SelectedNode.ShouldNotBeNull().RelativePath.ShouldBe("docs/superpowers/plans/p.md");
+		workspace.DocsTree.Single().IsExpanded.ShouldBeTrue();
+		workspace.DocsTree.Single().Children.Single().IsExpanded.ShouldBeTrue();
+		(workspace.ActiveDocument?.Text).ShouldBe("# Plan");
+	}
+
+	[Test]
+	public async Task Opening_a_common_file_selects_common()
+	{
+		Write("notes/idea.md", "# Idea");
+		var workspace = CreateWorkspace();
+		await workspace.RefreshAsync(CancellationToken.None);
+
+		(await workspace.OpenDocumentAsync("notes/idea.md", CancellationToken.None)).ShouldBeTrue();
+
+		workspace.SelectedSection.ShouldBe(DocsAndNotesSection.Common);
+		workspace.SelectedNode.ShouldNotBeNull().RelativePath.ShouldBe("notes/idea.md");
+		(workspace.ActiveDocument?.Text).ShouldBe("# Idea");
+	}
+
+	[Test]
+	public async Task Opening_a_file_written_after_the_last_refresh_finds_it()
+	{
+		var workspace = CreateWorkspace();
+		await workspace.RefreshAsync(CancellationToken.None);
+		Write("docs/new.md", "# New");
+
+		(await workspace.OpenDocumentAsync("docs/new.md", CancellationToken.None)).ShouldBeTrue();
+
+		(workspace.ActiveDocument?.Text).ShouldBe("# New");
+	}
+
+	[Test]
+	public async Task Opening_a_file_outside_the_tree_reports_false()
+	{
+		var workspace = CreateWorkspace();
+		await workspace.RefreshAsync(CancellationToken.None);
+
+		(await workspace.OpenDocumentAsync("docs/none.md", CancellationToken.None)).ShouldBeFalse();
+
+		workspace.SelectedSection.ShouldBe(DocsAndNotesSection.Notes);
+	}
+
+	[Test]
 	public async Task Common_opens_the_root_readme_on_first_activation()
 	{
 		Write("README.md", "# Readme");

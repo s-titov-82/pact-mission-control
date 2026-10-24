@@ -139,6 +139,37 @@ public sealed class AgentControlDispatcher
 		return AgentControlResult.Ok();
 	}
 
+	/// <summary>Shows a Markdown file of the calling session's project in its Docs pane.</summary>
+	public async Task<AgentControlResult> OpenDocumentAsync(
+		string sessionId,
+		OpenDocumentRequest request,
+		CancellationToken cancellationToken)
+	{
+		ArgumentNullException.ThrowIfNull(request);
+		if (!_host.TryGetOwner(sessionId, out var owner))
+		{
+			return UnknownSession();
+		}
+
+		var failure = AgentControlRequestValidator.Validate(owner, request);
+		if (failure is not null)
+		{
+			return AgentControlResult.Refused(failure);
+		}
+
+		var root = await _host.GetProjectRootAsync(owner.ProjectId!, cancellationToken).ConfigureAwait(false);
+		if (!ProjectDocumentPath.TryResolve(root, request.Path, out var relativePath, out failure))
+		{
+			return AgentControlResult.Refused(failure!);
+		}
+
+		return await _host.OpenProjectDocumentAsync(owner.ProjectId!, relativePath, cancellationToken).ConfigureAwait(false)
+			? AgentControlResult.Ok()
+			: AgentControlResult.Refused(
+				"not-listed",
+				$"The Docs pane does not list '{relativePath}'; files in generated folders such as .git, bin or .pact-reviews are not shown.");
+	}
+
 	/// <summary>Atomically starts a review for the calling session's project.</summary>
 	public async Task<AgentControlResult> RequestReviewAsync(
 		string sessionId,

@@ -9,7 +9,7 @@ namespace Pact.Presentation.Tests.Services.AgentControl;
 public sealed class SessionToolsTests
 {
 	[Test]
-	public void BuildToolsList_ListsAllFiveTools()
+	public void BuildToolsList_lists_every_session_tool()
 	{
 		var result = CreateTools().BuildToolsList();
 
@@ -20,7 +20,8 @@ public sealed class SessionToolsTests
 					"pact_append_note",
 					"pact_open_web_tab",
 					"pact_get_notes",
-					"pact_replace_notes"
+					"pact_replace_notes",
+					"pact_open_document"
 				],
 				ignoreOrder: true);
 	}
@@ -73,6 +74,15 @@ public sealed class SessionToolsTests
 
 		review["inputSchema"]!["properties"]!["scenarioId"]!["enum"]!
 			.AsArray().Select(value => (string?)value).ShouldBe(["code-review"]);
+	}
+
+	[Test]
+	public void Open_document_requires_a_path()
+	{
+		var tool = FindTool(CreateTools(), "pact_open_document");
+
+		tool["inputSchema"]!["required"]!.AsArray().Select(value => (string?)value).ShouldBe(["path"]);
+		((string?)tool["inputSchema"]!["properties"]!["path"]!["type"]).ShouldBe("string");
 	}
 
 	[Test]

@@ -128,6 +128,29 @@ public static class SessionTools
 					return await CompleteAsync(result, "Browser tab opened.", "Agent action: browser tab opened");
 				}),
 			new AgentControlTool(
+				"pact_open_document",
+				"Open a Markdown file of this session's project in the Docs pane and show it to the user.",
+				() => AgentControlSchema.Object(
+					new()
+					{
+						["path"] = AgentControlSchema.String(
+							"Path relative to the project root, or an absolute path inside it.")
+					},
+					"path"),
+				async (call, cancellationToken) =>
+				{
+					if (!TryGetRequiredString(call.Arguments, "path", out var path, out var error))
+					{
+						return error;
+					}
+
+					var result = await dispatcher.OpenDocumentAsync(
+						call.SessionId ?? string.Empty,
+						new OpenDocumentRequest(path),
+						cancellationToken);
+					return await CompleteAsync(result, "Document opened.", "Agent action: document opened");
+				}),
+			new AgentControlTool(
 				"pact_get_notes",
 				"Read this session's current project Notes text and revision.",
 				() => AgentControlSchema.Object(new()),

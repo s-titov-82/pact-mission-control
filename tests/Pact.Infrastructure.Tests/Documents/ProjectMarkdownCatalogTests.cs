@@ -90,6 +90,26 @@ public sealed class ProjectMarkdownCatalogTests : IDisposable
 	}
 
 	[Test]
+	public void Catalog_skips_file_links()
+	{
+		WriteExternal("outside.md");
+		Write("docs/real.md");
+		var link = Path.Combine(_root, "docs", "linked.md");
+		try
+		{
+			File.CreateSymbolicLink(link, Path.Combine(_externalRoot, "outside.md"));
+		}
+		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+		{
+			Assert.Ignore("File symbolic links are not permitted here.");
+		}
+
+		var catalog = ProjectMarkdownCatalog.Scan(_root);
+
+		catalog.Docs.Select(file => file.RelativePath).ShouldBe(["docs/real.md"]);
+	}
+
+	[Test]
 	public void Scan_returns_empty_groups_for_a_project_without_markdown()
 	{
 		Directory.CreateDirectory(_root);

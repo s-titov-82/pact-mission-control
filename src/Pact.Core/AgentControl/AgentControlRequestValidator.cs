@@ -82,6 +82,14 @@ public static class AgentControlRequestValidator
 			: null;
 	}
 
+	/// <summary>Validates that the authenticated owner has a project whose documents it may open.</summary>
+	public static AgentControlFailure? Validate(AgentControlOwner owner, OpenDocumentRequest request)
+	{
+		ArgumentNullException.ThrowIfNull(owner);
+		ArgumentNullException.ThrowIfNull(request);
+		return RequireProjectOwner(owner, "open a project document");
+	}
+
 	private static AgentControlFailure? RequireProjectOwner(AgentControlOwner owner, string action) =>
 		owner.IsRoot || string.IsNullOrWhiteSpace(owner.ProjectId)
 			? new AgentControlFailure(

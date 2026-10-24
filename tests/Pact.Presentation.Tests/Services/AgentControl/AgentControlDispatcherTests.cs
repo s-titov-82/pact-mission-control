@@ -126,6 +126,72 @@ public sealed class AgentControlDispatcherTests
 	}
 
 	[Test]
+	public async Task Open_document_from_root_is_refused()
+	{
+		FakeAgentControlHost host = new();
+		AgentControlDispatcher dispatcher = new(host);
+
+		var result = await dispatcher.OpenDocumentAsync(
+			RootSessionId,
+			new OpenDocumentRequest("docs/a.md"),
+			CancellationToken.None);
+
+		result.Failure!.Code.ShouldBe("owner-not-a-project");
+		host.OpenedDocuments.ShouldBeEmpty();
+	}
+
+	[Test]
+	public async Task Open_document_resolves_against_the_project_root()
+	{
+		using var root = TemporaryDirectory.Create();
+		Directory.CreateDirectory(Path.Combine(root.Path, "docs"));
+		await File.WriteAllTextAsync(Path.Combine(root.Path, "docs", "a.md"), "# A");
+		FakeAgentControlHost host = new() { ProjectRoot = root.Path };
+		AgentControlDispatcher dispatcher = new(host);
+
+		var result = await dispatcher.OpenDocumentAsync(
+			ProjectSessionId,
+			new OpenDocumentRequest(Path.Combine(root.Path, "docs", "a.md")),
+			CancellationToken.None);
+
+		result.Succeeded.ShouldBeTrue();
+		host.OpenedDocuments.ShouldBe([("project-1", "docs/a.md")]);
+	}
+
+	[Test]
+	public async Task Open_document_refuses_a_path_outside_the_project()
+	{
+		using var root = TemporaryDirectory.Create();
+		FakeAgentControlHost host = new() { ProjectRoot = root.Path };
+		AgentControlDispatcher dispatcher = new(host);
+
+		var result = await dispatcher.OpenDocumentAsync(
+			ProjectSessionId,
+			new OpenDocumentRequest("../secret.md"),
+			CancellationToken.None);
+
+		result.Failure!.Code.ShouldBe("outside-project");
+		host.OpenedDocuments.ShouldBeEmpty();
+	}
+
+	[Test]
+	public async Task Open_document_reports_a_file_the_docs_pane_does_not_list()
+	{
+		using var root = TemporaryDirectory.Create();
+		Directory.CreateDirectory(Path.Combine(root.Path, ".pact-reviews"));
+		await File.WriteAllTextAsync(Path.Combine(root.Path, ".pact-reviews", "a.md"), "# A");
+		FakeAgentControlHost host = new() { ProjectRoot = root.Path, DocumentShown = false };
+		AgentControlDispatcher dispatcher = new(host);
+
+		var result = await dispatcher.OpenDocumentAsync(
+			ProjectSessionId,
+			new OpenDocumentRequest(".pact-reviews/a.md"),
+			CancellationToken.None);
+
+		result.Failure!.Code.ShouldBe("not-listed");
+	}
+
+	[Test]
 	public async Task OpenWebTabAsync_CreatesTabUnderProjectOwner()
 	{
 		FakeAgentControlHost host = new();
@@ -342,6 +408,24 @@ public sealed class AgentControlDispatcherTests
 		{
 			WebTabs.Add((owner, url, title));
 			return Task.CompletedTask;
+		}
+
+		public string ProjectRoot { get; set; } = string.Empty;
+
+		public List<(string ProjectId, string RelativePath)> OpenedDocuments { get; } = [];
+
+		public bool DocumentShown { get; set; } = true;
+
+		public Task<string> GetProjectRootAsync(string projectId, CancellationToken cancellationToken) =>
+			Task.FromResult(ProjectRoot);
+
+		public Task<bool> OpenProjectDocumentAsync(
+			string projectId,
+			string relativePath,
+			CancellationToken cancellationToken)
+		{
+			OpenedDocuments.Add((projectId, relativePath));
+			return Task.FromResult(DocumentShown);
 		}
 
 		public Task<ReviewStartOutcome> StartReviewIfIdleAsync(

@@ -14,6 +14,10 @@ For a project session, use `pact_get_notes` to read the exact Notes text and rev
 
 The orchestrator targets a running project explicitly: use `pact_get_project_notes`, `pact_replace_project_notes`, and `pact_append_project_note` with its `workspaceId`. Paused projects are deliberately not orchestrator targets. ROOT has no project Notes.
 
+## Documents
+
+For a project session, use `pact_open_document` with a Markdown `path` (relative to the project root, or absolute inside it) to show a file you wrote, such as a plan or spec, in the project's Docs pane. It switches the user to that document, so call it when they should read it now.
+
 ## Browser
 
 Use `pact_open_web_tab` to open a visible web tab in Pact. Follow the live schema for URL and target arguments.

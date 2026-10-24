@@ -229,7 +229,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			_timeProvider,
 			ShowSessionTerminalUnderBusyAsync,
 			ReportStatusAsync);
-		AgentControlHost agentControlHost = new(_reviewLaunch, ViewModel, _uiTaskDispatcher);
+		AgentControlHost agentControlHost = new(_reviewLaunch, ViewModel, _uiTaskDispatcher, OpenProjectDocumentAsync);
 		AgentControlDispatcher agentControlDispatcher = new(agentControlHost);
 		OrchestratorHost orchestratorHost = new(
 			ViewModel,
@@ -702,6 +702,30 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		var workspace = ViewModel.GetOrCreateDocsAndNotesWorkspace(note);
 		await workspace.RefreshAsync(cancellationToken);
 		Present(new PresentedSurface.Notes(note, workspace, document));
+	}
+
+	/// <summary>
+	/// Shows a project Markdown file in the project's Notes tab, opening the tab when it is
+	/// closed, and switches the user to it.
+	/// </summary>
+	/// <returns><see langword="false"/> when the project is not open or its Docs pane does not list the file.</returns>
+	public async Task<bool> OpenProjectDocumentAsync(
+		string projectId,
+		string relativePath,
+		CancellationToken cancellationToken = default)
+	{
+		if (ViewModel.Workspaces.FirstOrDefault(workspace => string.Equals(
+				workspace.Id,
+				projectId,
+				StringComparison.Ordinal)) is not { } workspace)
+		{
+			return false;
+		}
+
+		var note = await ViewModel.ShowNotesTabAsync(workspace.Id, cancellationToken);
+		await SelectNoteAsync(note, cancellationToken);
+		return await ViewModel.GetOrCreateDocsAndNotesWorkspace(note)
+			.OpenDocumentAsync(relativePath, cancellationToken);
 	}
 
 	public async Task SelectScenarioRunAsync(ScenarioRunViewModel run)

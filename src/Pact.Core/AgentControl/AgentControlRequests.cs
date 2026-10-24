@@ -34,3 +34,7 @@ public sealed record OpenWebTabRequest(string Url, string? Title);
 /// <param name="Code">Stable machine-readable reason.</param>
 /// <param name="Message">Explanation suitable for the calling agent.</param>
 public sealed record AgentControlFailure(string Code, string Message);
+
+/// <summary>A request to show a Markdown file of the caller's project in the Docs pane.</summary>
+/// <param name="Path">Path relative to the project root, or an absolute path inside it.</param>
+public sealed record OpenDocumentRequest(string Path);

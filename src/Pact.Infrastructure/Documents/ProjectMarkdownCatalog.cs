@@ -68,6 +68,8 @@ public sealed record ProjectMarkdownCatalog(
 					Path.GetExtension(path),
 					".md",
 					StringComparison.OrdinalIgnoreCase))
+				// A file link may point outside the project.
+				.Where(path => (File.GetAttributes(path) & FileAttributes.ReparsePoint) == 0)
 				.ToArray();
 		}
 		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)

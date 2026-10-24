@@ -13,12 +13,15 @@ internal sealed class AgentControlHost : IAgentControlHost
 	private readonly ReviewLaunchService _reviews;
 	private readonly MainWindowViewModel _viewModel;
 	private readonly IUiTaskDispatcher _uiDispatcher;
+	private readonly Func<string, string, CancellationToken, Task<bool>> _openProjectDocumentAsync;
 
 	public AgentControlHost(
 		ReviewLaunchService reviews,
 		MainWindowViewModel viewModel,
-		IUiTaskDispatcher uiDispatcher)
+		IUiTaskDispatcher uiDispatcher,
+		Func<string, string, CancellationToken, Task<bool>> openProjectDocumentAsync)
 	{
+		_openProjectDocumentAsync = openProjectDocumentAsync ?? throw new ArgumentNullException(nameof(openProjectDocumentAsync));
 		_reviews = reviews ?? throw new ArgumentNullException(nameof(reviews));
 		_viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
 		_uiDispatcher = uiDispatcher ?? throw new ArgumentNullException(nameof(uiDispatcher));
@@ -125,6 +128,31 @@ internal sealed class AgentControlHost : IAgentControlHost
 				cancellationToken,
 				select: false);
 		});
+
+	public async Task<string> GetProjectRootAsync(string projectId, CancellationToken cancellationToken)
+	{
+		var root = string.Empty;
+		await _uiDispatcher.InvokeAsync(() =>
+		{
+			root = _viewModel.Workspaces
+				.Concat(_viewModel.PausedWorkspaces)
+				.First(workspace => string.Equals(workspace.Id, projectId, StringComparison.Ordinal))
+				.RootPath;
+			return Task.CompletedTask;
+		});
+		return root;
+	}
+
+	public async Task<bool> OpenProjectDocumentAsync(
+		string projectId,
+		string relativePath,
+		CancellationToken cancellationToken)
+	{
+		var shown = false;
+		await _uiDispatcher.InvokeAsync(async () =>
+			shown = await _openProjectDocumentAsync(projectId, relativePath, cancellationToken));
+		return shown;
+	}
 
 	public async Task<ReviewStartOutcome> StartReviewIfIdleAsync(
 		string projectId,

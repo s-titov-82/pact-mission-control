@@ -47,6 +47,16 @@ public interface IAgentControlHost
 		string? title,
 		CancellationToken cancellationToken);
 
+	/// <summary>Reads the root directory of a project.</summary>
+	Task<string> GetProjectRootAsync(string projectId, CancellationToken cancellationToken);
+
+	/// <summary>Shows a project Markdown file in its Docs pane and switches the user to it.</summary>
+	/// <returns><see langword="false"/> when the Docs pane does not list the file.</returns>
+	Task<bool> OpenProjectDocumentAsync(
+		string projectId,
+		string relativePath,
+		CancellationToken cancellationToken);
+
 	/// <summary>
 	/// Atomically reserves the project review slot, creates its reviewer, and starts the run.
 	/// </summary>
