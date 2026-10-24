@@ -22,23 +22,28 @@ public sealed record ReviewLogHeader(
 public sealed class ReviewLogWriter : IDisposable
 {
 	private const int KeptLogs = 10;
+
+	// Two reviews starting in one project must not prune from the same listing.
+	private static readonly Lock RetentionGate = new();
 	private static readonly UTF8Encoding Utf8 = new(encoderShouldEmitUTF8Identifier: false);
 
 	// A turn and the end of the review can be written from different threads.
 	private readonly SemaphoreSlim _gate = new(1, 1);
 
 	/// <summary>
-	/// Picks the log file for a review in <c>.pact/reviews</c>, removes the oldest logs so ten remain
-	/// with the new one, and keeps the <c>.pact</c> folder out of Git by writing
+	/// Picks the log file for a review in <c>.pact/reviews</c>, removes the oldest logs not in
+	/// <paramref name="logsInUse"/> so ten remain with the new one, and keeps the <c>.pact</c> folder out of Git by writing
 	/// <c>.pact/.gitignore</c> when it is missing.
 	/// </summary>
 	public static string CreatePath(
 		string projectRoot,
 		DateTimeOffset startedAt,
 		string templateId,
-		string reviewId)
+		string reviewId,
+		IReadOnlyCollection<string> logsInUse)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(projectRoot);
+		ArgumentNullException.ThrowIfNull(logsInUse);
 		ArgumentException.ThrowIfNullOrWhiteSpace(templateId);
 		ArgumentException.ThrowIfNullOrWhiteSpace(reviewId);
 
@@ -51,12 +56,21 @@ public sealed class ReviewLogWriter : IDisposable
 			File.WriteAllText(gitignore, "*\n", Utf8);
 		}
 
-		// Names start with the start time, so name order is age order; the new log makes ten.
-		foreach (var old in Directory.GetFiles(reviewsDirectory, "*.md")
-			.Order(StringComparer.Ordinal)
-			.SkipLast(KeptLogs - 1))
+		lock (RetentionGate)
 		{
-			File.Delete(old);
+			// Oldest first by creation time (names carry only the minute); the new log makes ten,
+			// and a log a running review still writes to is never removed.
+			var logs = Directory.GetFiles(reviewsDirectory, "*.md")
+				.OrderBy(File.GetCreationTimeUtc)
+				.ThenBy(path => path, StringComparer.Ordinal)
+				.ToArray();
+			var excess = logs.Length - (KeptLogs - 1);
+			foreach (var old in logs
+				.Where(path => !logsInUse.Contains(path, StringComparer.OrdinalIgnoreCase))
+				.Take(Math.Max(0, excess)))
+			{
+				File.Delete(old);
+			}
 		}
 
 		var shortId = reviewId.Length > 8 ? reviewId[..8] : reviewId;

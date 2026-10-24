@@ -11,7 +11,7 @@ public sealed class ReviewLogWriterTests : IDisposable
 	[Test]
 	public void Creating_a_log_path_ignores_the_pact_folder_in_git()
 	{
-		var path = ReviewLogWriter.CreatePath(_project.Path, StartedAt, "code-review", "7edcec18b3a74c8f");
+		var path = ReviewLogWriter.CreatePath(_project.Path, StartedAt, "code-review", "7edcec18b3a74c8f", []);
 
 		path.ShouldBe(Path.Combine(_project.Path, ".pact", "reviews", "2026-10-24-0905-code-review-7edcec18.md"));
 		File.ReadAllText(Path.Combine(_project.Path, ".pact", ".gitignore")).ShouldBe("*\n");
@@ -27,7 +27,7 @@ public sealed class ReviewLogWriterTests : IDisposable
 			File.WriteAllText(Path.Combine(reviews, $"2026-10-{day:00}-0900-code-review-{day:00000000}.md"), "# old");
 		}
 
-		var path = ReviewLogWriter.CreatePath(_project.Path, StartedAt, "code-review", "7edcec18b3a74c8f");
+		var path = ReviewLogWriter.CreatePath(_project.Path, StartedAt, "code-review", "7edcec18b3a74c8f", []);
 		File.WriteAllText(path, "# new");
 
 		var kept = Directory.GetFiles(reviews, "*.md").Select(Path.GetFileName).Order(StringComparer.Ordinal).ToArray();
@@ -37,12 +37,54 @@ public sealed class ReviewLogWriterTests : IDisposable
 	}
 
 	[Test]
+	public void A_log_still_in_use_is_never_pruned()
+	{
+		var reviews = Path.Combine(_project.Path, ".pact", "reviews");
+		Directory.CreateDirectory(reviews);
+		var active = WriteAged(reviews, "2026-10-01-0900-code-review-00000001.md", minutesAgo: 100);
+		for (var day = 2; day <= 10; day++)
+		{
+			WriteAged(reviews, $"2026-10-{day:00}-0900-code-review-{day:00000000}.md", minutesAgo: 100 - day);
+		}
+
+		ReviewLogWriter.CreatePath(_project.Path, StartedAt, "code-review", "7edcec18b3a74c8f", [active]);
+
+		File.Exists(active).ShouldBeTrue();
+		File.Exists(Path.Combine(reviews, "2026-10-02-0900-code-review-00000002.md")).ShouldBeFalse();
+	}
+
+	[Test]
+	public void Age_is_the_file_s_creation_time_not_its_name()
+	{
+		var reviews = Path.Combine(_project.Path, ".pact", "reviews");
+		Directory.CreateDirectory(reviews);
+		for (var index = 1; index <= 10; index++)
+		{
+			// Same minute, so the names say nothing about age; index 10 is the oldest.
+			WriteAged(reviews, $"2026-10-24-0900-code-review-{index:00000000}.md", minutesAgo: index);
+		}
+
+		ReviewLogWriter.CreatePath(_project.Path, StartedAt, "code-review", "7edcec18b3a74c8f", []);
+
+		File.Exists(Path.Combine(reviews, "2026-10-24-0900-code-review-00000010.md")).ShouldBeFalse();
+		File.Exists(Path.Combine(reviews, "2026-10-24-0900-code-review-00000001.md")).ShouldBeTrue();
+	}
+
+	private static string WriteAged(string directory, string name, int minutesAgo)
+	{
+		var path = Path.Combine(directory, name);
+		File.WriteAllText(path, "# old");
+		File.SetCreationTimeUtc(path, DateTime.UtcNow.AddMinutes(-minutesAgo));
+		return path;
+	}
+
+	[Test]
 	public void An_existing_pact_gitignore_is_kept()
 	{
 		Directory.CreateDirectory(Path.Combine(_project.Path, ".pact"));
 		File.WriteAllText(Path.Combine(_project.Path, ".pact", ".gitignore"), "reviews/\n");
 
-		ReviewLogWriter.CreatePath(_project.Path, StartedAt, "code-review", "7edcec18b3a74c8f");
+		ReviewLogWriter.CreatePath(_project.Path, StartedAt, "code-review", "7edcec18b3a74c8f", []);
 
 		File.ReadAllText(Path.Combine(_project.Path, ".pact", ".gitignore")).ShouldBe("reviews/\n");
 	}
@@ -51,7 +93,7 @@ public sealed class ReviewLogWriterTests : IDisposable
 	public async Task Turns_are_appended_in_order_with_header_and_footer()
 	{
 		using ReviewLogWriter writer = new();
-		var path = ReviewLogWriter.CreatePath(_project.Path, StartedAt, "code-review", "7edcec18b3a74c8f");
+		var path = ReviewLogWriter.CreatePath(_project.Path, StartedAt, "code-review", "7edcec18b3a74c8f", []);
 
 		await writer.WriteHeaderAsync(
 			path,
@@ -79,7 +121,7 @@ public sealed class ReviewLogWriterTests : IDisposable
 	public async Task Writes_from_several_threads_all_land()
 	{
 		using ReviewLogWriter writer = new();
-		var path = ReviewLogWriter.CreatePath(_project.Path, StartedAt, "code-review", "7edcec18b3a74c8f");
+		var path = ReviewLogWriter.CreatePath(_project.Path, StartedAt, "code-review", "7edcec18b3a74c8f", []);
 		await File.WriteAllTextAsync(path, string.Empty);
 
 		await Task.WhenAll(Enumerable.Range(1, 40).Select(index => Task.Run(() => writer.AppendTurnAsync(

@@ -96,6 +96,8 @@ public sealed class ReviewRelayTests : IDisposable
 		result.Failure.Message.ShouldContain("author tab closed");
 		host.StartTokens.Single().IsCancellationRequested.ShouldBeTrue();
 		host.Deliveries.ShouldBeEmpty();
+		relay.GetTurn(Author).Failure!.Code.ShouldBe("no-review");
+		relay.GetTurn(Author).Failure!.Code.ShouldBe("no-review");
 	}
 
 	[Test]

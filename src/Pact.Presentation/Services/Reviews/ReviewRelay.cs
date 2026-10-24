@@ -366,6 +366,12 @@ public sealed class ReviewRelay
 	/// <summary>Aborts the review a closed tab took part in and forgets the tab's finished review.</summary>
 	public async Task NotifySessionClosedAsync(string sessionId)
 	{
+		lock (_gate)
+		{
+			// A review still starting or ending retires later; it must not bring the tab back.
+			FindActive(sessionId)?.ClosedSessionIds.Add(sessionId);
+		}
+
 		await EndFromOutsideAsync(sessionId, ReviewState.Aborted, "tab closed").ConfigureAwait(false);
 		lock (_gate)
 		{
@@ -582,9 +588,20 @@ public sealed class ReviewRelay
 			? (reviewerProject.SessionTitle, Kind: reviewerProject.Kind.ToString())
 			: (SessionTitle: review.Profile.DisplayName, Kind: review.Profile.Kind.ToString());
 		var startedAt = _time.GetLocalNow();
+		string[] logsInUse;
+		lock (_gate)
+		{
+			logsInUse = [.. _active.Select(active => active.LogPath).OfType<string>()];
+		}
+
 		try
 		{
-			review.LogPath = ReviewLogWriter.CreatePath(review.Project.RootPath, startedAt, review.Template.Id, review.Id);
+			review.LogPath = ReviewLogWriter.CreatePath(
+				review.Project.RootPath,
+				startedAt,
+				review.Template.Id,
+				review.Id,
+				logsInUse);
 		}
 		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
 		{
@@ -720,10 +737,12 @@ public sealed class ReviewRelay
 		lock (_gate)
 		{
 			_active.Remove(review);
-			_finished[review.AuthorSessionId] = review;
-			if (review.ReviewerSessionId is { } reviewer)
+			foreach (var sessionId in new[] { review.AuthorSessionId, review.ReviewerSessionId })
 			{
-				_finished[reviewer] = review;
+				if (sessionId is not null && !review.ClosedSessionIds.Contains(sessionId))
+				{
+					_finished[sessionId] = review;
+				}
 			}
 		}
 	}
@@ -804,6 +823,7 @@ public sealed class ReviewRelay
 		public string EndReason { get; set; } = string.Empty;
 		public bool Quiet { get; set; }
 		public bool TellAuthor { get; set; } = true;
+		public HashSet<string> ClosedSessionIds { get; } = new(StringComparer.Ordinal);
 	}
 
 	// Replaced triggers are left to the collector: a late status notice may still look at one.

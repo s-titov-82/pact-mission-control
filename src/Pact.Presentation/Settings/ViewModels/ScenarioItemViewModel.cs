@@ -115,7 +115,7 @@ public sealed class ScenarioItemViewModel : SettingsItemViewModelBase
 	/// <summary>Read-only display of the node's raw "kind" value; this section only handles reviewLoop.</summary>
 	public string KindDisplay { get; }
 
-	/// <summary>Stable key; also used to persist the default target.</summary>
+	/// <summary>Stable key a review request names.</summary>
 	public string Id
 	{
 		get => _id;
