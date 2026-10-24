@@ -2,7 +2,9 @@ using System.Text.Json;
 using Pact.Core.AgentControl;
 using Pact.Core.Presentation;
 using Pact.Core.Sessions;
+using Pact.Core.Reviews;
 using Pact.Presentation.Services.Orchestrator;
+using Pact.Presentation.Services.Reviews;
 
 namespace Pact.Presentation.Tests.Services.Orchestrator;
 
@@ -103,67 +105,39 @@ public sealed class OrchestratorDispatcherTests
 	}
 
 	[Test]
-	public void List_active_runs_reports_runs_with_their_participants()
+	public void List_active_runs_reports_active_reviews()
 	{
 		OrchestratorDispatcher dispatcher = new(new FakeOrchestratorHost());
 
 		var result = dispatcher.ListActiveRuns();
 
 		var payload = result.Payload.ShouldNotBeNull();
-		payload.ShouldContain("run-1");
-		payload.ShouldContain("session-a");
-		payload.ShouldContain("pause-requested");
-		payload.ShouldContain("pass-002-reviewer-response.md");
+		payload.ShouldContain("\"reviewId\":\"review-1\"");
+		payload.ShouldContain("\"authorSessionId\":\"session-a\"");
+		payload.ShouldContain("\"state\":\"running\"");
+		payload.ShouldContain("\"turn\":\"reviewer\"");
+		payload.ShouldContain(".pact/reviews/review-1.md");
 	}
 
 	[Test]
-	public void Get_review_run_reports_current_step_expected_file_and_journal()
+	public void Get_review_run_reports_one_review()
 	{
 		OrchestratorDispatcher dispatcher = new(new FakeOrchestratorHost());
 
-		var result = dispatcher.GetReviewRun("run-1");
+		var result = dispatcher.GetReviewRun("review-1");
 
 		result.Succeeded.ShouldBeTrue();
-		var payload = result.Payload.ShouldNotBeNull();
-		payload.ShouldContain("Wait for reviewer response file");
-		payload.ShouldContain("pass-002-reviewer-response.md");
-		payload.ShouldContain("published task");
+		result.Payload.ShouldNotBeNull().ShouldContain("\"iteration\":2");
 	}
 
 	[Test]
-	public void Pause_review_returns_an_explicit_applied_outcome()
+	public void Get_review_run_refuses_an_unknown_review()
 	{
 		OrchestratorDispatcher dispatcher = new(new FakeOrchestratorHost());
 
-		var result = dispatcher.PauseReview("run-1");
+		var result = dispatcher.GetReviewRun("ghost");
 
-		result.Succeeded.ShouldBeTrue();
-		result.Payload.ShouldNotBeNull().ShouldContain("\"status\":\"applied\"");
-	}
-
-	[Test]
-	public void Resume_review_returns_unchanged_while_pause_is_only_requested()
-	{
-		OrchestratorDispatcher dispatcher = new(new FakeOrchestratorHost());
-
-		var result = dispatcher.ResumeReview("run-1");
-
-		result.Succeeded.ShouldBeTrue();
-		result.Payload.ShouldNotBeNull().ShouldContain("\"status\":\"unchanged\"");
-	}
-
-	[TestCase("ghost", "unknown-review-run")]
-	[TestCase("stopping", "review-not-pausable")]
-	public void Pause_review_maps_control_failures_to_stable_codes(
-		string runId,
-		string expectedCode)
-	{
-		OrchestratorDispatcher dispatcher = new(new FakeOrchestratorHost());
-
-		var result = dispatcher.PauseReview(runId);
-
-		result.Succeeded.ShouldBeFalse();
-		result.Failure.ShouldNotBeNull().Code.ShouldBe(expectedCode);
+		result.Failure.ShouldNotBeNull().Code.ShouldBe("unknown-review-run");
 	}
 
 	[Test]
@@ -346,14 +320,12 @@ public sealed class OrchestratorDispatcherTests
 	[TestCase(PromptDeliveryOutcome.Confirmed, null)]
 	[TestCase(PromptDeliveryOutcome.Submitted, null)]
 	[TestCase(PromptDeliveryOutcome.RefusedQuestion, "input-requested")]
-	[TestCase(PromptDeliveryOutcome.RefusedLocked, "session-scenario-locked")]
 	[TestCase(PromptDeliveryOutcome.NotRunning, "session-not-alive")]
 	[TestCase(PromptDeliveryOutcome.Unconfirmed, "not-confirmed")]
 	[TestCase(PromptDeliveryOutcome.PasteNotShown, "paste-not-shown")]
 	public async Task Send_message_maps_the_delivery_outcome(PromptDeliveryOutcome outcome, string? code)
 	{
 		FakeOrchestratorHost host = new() { Delivery = new(outcome, "Approve this edit?") };
-		host.SetScenarioLocked("session-a", "run-1");
 		OrchestratorDispatcher dispatcher = new(host);
 
 		var result = await dispatcher.SendMessageAsync(
@@ -372,10 +344,6 @@ public sealed class OrchestratorDispatcherTests
 		if (outcome == PromptDeliveryOutcome.RefusedQuestion)
 		{
 			result.Failure.Message.ShouldContain("Approve this edit?");
-		}
-		else if (outcome == PromptDeliveryOutcome.RefusedLocked)
-		{
-			result.Failure.Message.ShouldContain("run-1");
 		}
 	}
 
@@ -466,30 +434,15 @@ public sealed class OrchestratorDispatcherTests
 
 	internal sealed class FakeOrchestratorHost : IOrchestratorHost
 	{
-		private readonly ReviewRunDetails _review = new(
-			new ActiveRunSummary(
-				"run-1",
-				"project-a",
-				"session-a",
-				"reviewer-a",
-				Iteration: 2,
-				DateTimeOffset.UnixEpoch,
-				State: "pause-requested",
-				PauseKind: null,
-				CurrentStepId: "capture-review",
-				CurrentStepName: "Wait for reviewer response file",
-				PauseRequested: true,
-				ExpectedRole: "reviewer",
-				ExpectedSessionId: "reviewer-a",
-				ExpectedTaskPath: @"C:\project\.pact-reviews\run-1\pass-002-reviewer-task.md",
-				ExpectedResponsePath: @"C:\project\.pact-reviews\run-1\pass-002-reviewer-response.md"),
-			[
-				new ReviewJournalSummary(
-					DateTimeOffset.UnixEpoch,
-					"info",
-					"send-review-brief",
-					"published task")
-			]);
+		private readonly ReviewSummary _review = new(
+			"review-1",
+			"project-a",
+			"session-a",
+			"reviewer-a",
+			ReviewState.Running,
+			Iteration: 2,
+			ReviewRole.Reviewer,
+			".pact/reviews/review-1.md");
 		private readonly Dictionary<string, WebTabSummary> _webTabs = new(
 			StringComparer.Ordinal)
 		{
@@ -526,8 +479,6 @@ public sealed class OrchestratorDispatcherTests
 		{
 			["session-a"] = true
 		};
-
-		private readonly Dictionary<string, string> _scenarioLocks = [];
 
 		private readonly Dictionary<string, SessionScreenState> _screens = new()
 		{
@@ -590,7 +541,7 @@ public sealed class OrchestratorDispatcherTests
 		public bool TryGetScreen(string sessionId, out SessionScreenState state) =>
 			_screens.TryGetValue(sessionId, out state!);
 
-		public IReadOnlyList<ActiveRunSummary> ListActiveRuns() => [_review.Run];
+		public IReadOnlyList<ReviewSummary> ListActiveReviews() => [_review];
 
 		public bool IsRunningWorkspace(string workspaceId) =>
 			string.Equals(workspaceId, "project-a", StringComparison.Ordinal);
@@ -684,23 +635,8 @@ public sealed class OrchestratorDispatcherTests
 					range));
 		}
 
-		public bool TryGetActiveRun(string runId, out ReviewRunDetails details)
-		{
-			details = _review;
-			return string.Equals(runId, _review.Run.RunId, StringComparison.Ordinal);
-		}
-
-		public ReviewControlOutcome RequestReviewPause(string runId) => runId switch
-		{
-			"run-1" => new(ReviewControlStatus.Applied, _review.Run),
-			"stopping" => new(ReviewControlStatus.NotPausable, null),
-			_ => new(ReviewControlStatus.UnknownRun, null)
-		};
-
-		public ReviewControlOutcome ResumeReview(string runId) =>
-			string.Equals(runId, "run-1", StringComparison.Ordinal)
-				? new(ReviewControlStatus.Unchanged, _review.Run)
-				: new(ReviewControlStatus.UnknownRun, null);
+		public ReviewSummary? FindReview(string reviewId) =>
+			string.Equals(reviewId, _review.ReviewId, StringComparison.Ordinal) ? _review : null;
 
 		public IReadOnlyList<UsageSummary> ListUsage() =>
 			[
@@ -736,18 +672,10 @@ public sealed class OrchestratorDispatcherTests
 			return Task.FromResult(Delivery);
 		}
 
-		public bool IsScenarioLocked(string sessionId, out string runId)
-		{
-			return _scenarioLocks.TryGetValue(sessionId, out runId!);
-		}
-
 		public bool IsSessionAlive(string sessionId) =>
 			_alive.TryGetValue(sessionId, out var alive) && alive;
 
 		public void SetAlive(string sessionId, bool alive) => _alive[sessionId] = alive;
-
-		public void SetScenarioLocked(string sessionId, string runId) =>
-			_scenarioLocks[sessionId] = runId;
 
 		public void SetScreen(string sessionId, SessionScreenState state) =>
 			_screens[sessionId] = state;

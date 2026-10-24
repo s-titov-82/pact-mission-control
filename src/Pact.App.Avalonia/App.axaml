@@ -64,7 +64,6 @@
           <SolidColorBrush x:Key="AppDangerStrongBrush" Color="#B91C1C" />
           <SolidColorBrush x:Key="AppWarningBackgroundBrush" Color="#FEF3C7" />
           <SolidColorBrush x:Key="AppWarningBorderBrush" Color="#D97706" />
-          <SolidColorBrush x:Key="AppScenarioLockBrush" Color="#7C3AED" />
           <SolidColorBrush x:Key="AppSuccessBrush" Color="#16A34A" />
           <SolidColorBrush x:Key="AppStepBackgroundBrush" Color="#E5E7EB" />
         </ResourceDictionary>
@@ -82,7 +81,6 @@
           <SolidColorBrush x:Key="AppDangerStrongBrush" Color="#FCA5A5" />
           <SolidColorBrush x:Key="AppWarningBackgroundBrush" Color="#3A2A14" />
           <SolidColorBrush x:Key="AppWarningBorderBrush" Color="#B97818" />
-          <SolidColorBrush x:Key="AppScenarioLockBrush" Color="#A78BFA" />
           <SolidColorBrush x:Key="AppSuccessBrush" Color="#4ADE80" />
           <SolidColorBrush x:Key="AppStepBackgroundBrush" Color="#1F2937" />
         </ResourceDictionary>

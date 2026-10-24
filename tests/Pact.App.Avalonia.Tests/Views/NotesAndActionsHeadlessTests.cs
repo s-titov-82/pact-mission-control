@@ -792,27 +792,6 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 	}
 
 	[AvaloniaTest]
-	public void ScenarioButtonIsEnabledAndRaisesSelectedDefinition()
-	{
-		RightActionsPanel actions = new();
-		ScenarioDefinition definition = new(
-			"review", ScenarioKind.ReviewLoop, "Review", 2, "DONE", "target",
-			"start", "first", "return", "feedback", [], string.Empty);
-		ScenarioDefinition? received = null;
-		actions.ScenarioRequested += (_, value) => received = value;
-		var list = actions.FindControl<ItemsControl>("ScenarioActionsList")!;
-		var template = list.ItemTemplate.ShouldBeAssignableTo<IDataTemplate>()!;
-		var item = template.Build(definition).ShouldBeAssignableTo<Control>()!;
-		item.DataContext = definition;
-		var button = item.GetSelfAndVisualDescendants().OfType<Button>().Single();
-
-		button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-
-		button.IsEnabled.ShouldBeTrue();
-		received.ShouldBeSameAs(definition);
-	}
-
-	[AvaloniaTest]
 	public async Task Documents_tree_is_hidden_for_notes_and_shown_for_document_sections()
 	{
 		var theme = new FluentTheme();

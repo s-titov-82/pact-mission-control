@@ -45,7 +45,6 @@ public sealed class CompositionRootTests : IDisposable
 		services.GetRequiredService<TerminalCommandResolver>().ShouldNotBeNull();
 		services.GetRequiredService<WebMonitorSnapshotStore>().ShouldNotBeNull();
 		services.GetRequiredService<WebMonitorCoordinator>().ShouldNotBeNull();
-		services.GetRequiredService<ScenarioDefinitionStore>().ShouldNotBeNull();
 		services.GetRequiredService<IGitHubReleaseClient>()
 			.ShouldBeOfType<GitHubReleaseClient>();
 		services.GetRequiredService<UpdateCoordinator>()

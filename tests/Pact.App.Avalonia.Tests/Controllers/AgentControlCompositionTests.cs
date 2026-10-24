@@ -617,7 +617,6 @@ public sealed class AgentControlCompositionTests
 
 		result.IsError.ShouldBeFalse(result.Text);
 		fixture.ViewModel.SelectedSession!.Record.Id.ShouldBe(CompositionFixture.SessionB);
-		fixture.ViewModel.SelectedScenarioRun.ShouldBeNull();
 	}
 
 	[Test]

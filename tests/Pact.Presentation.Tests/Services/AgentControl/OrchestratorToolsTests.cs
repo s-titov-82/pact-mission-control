@@ -12,7 +12,7 @@ namespace Pact.Presentation.Tests.Services.AgentControl;
 public sealed class OrchestratorToolsTests
 {
 	[Test]
-	public void Tools_list_all_fifteen_orchestrator_tools()
+	public void Tools_list_every_orchestrator_tool()
 	{
 		var result = CreateTools().BuildToolsList();
 
@@ -25,8 +25,6 @@ public sealed class OrchestratorToolsTests
 				"pact_get_subscription_usage",
 				"pact_list_active_runs",
 				"pact_get_review_run",
-				"pact_pause_review",
-				"pact_resume_review",
 				"pact_get_project_notes",
 				"pact_replace_project_notes",
 				"pact_append_project_note",
@@ -92,8 +90,6 @@ public sealed class OrchestratorToolsTests
 	}
 
 	[TestCase("pact_get_review_run")]
-	[TestCase("pact_pause_review")]
-	[TestCase("pact_resume_review")]
 	public void Review_run_tools_require_a_run_id(string toolName)
 	{
 		var result = CreateTools().BuildToolsList();
@@ -136,7 +132,7 @@ public sealed class OrchestratorToolsTests
 
 		ToolNames(ordinary).ShouldNotContain("pact_list_workspaces");
 		ToolNames(orchestrator).ShouldContain("pact_list_workspaces");
-		ToolNames(orchestrator).ShouldContain("pact_pause_review");
+		ToolNames(orchestrator).ShouldContain("pact_get_review_run");
 		ToolNames(orchestrator).ShouldNotContain("pact_request_review");
 	}
 

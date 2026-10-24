@@ -264,28 +264,6 @@ public sealed class ProjectsSectionViewModelTests : IDisposable
 	}
 
 	[Test]
-	public async Task Locked_session_produces_an_empty_edit_and_is_skipped_on_save()
-	{
-		var dir = CreateSubDir("p1");
-		var workspace = CreateWorkspace("p1", "Original", dir);
-		var session = CreateSession("s1", "Title", dir, "cmd");
-		session.LockForScenario("run-1");
-		workspace.Sessions.Add(session);
-		FakeProjectSettingsEditor editor = new();
-		var section = CreateSection(() => [workspace], editor);
-		await section.LoadAsync(CancellationToken.None);
-		var sessionItem = section.Items[0].Sessions[0];
-
-		sessionItem.IsLocked.ShouldBeTrue();
-		sessionItem.BuildSessionEdit().ShouldBe(new SessionSettingsEdit());
-
-		var result = await section.SaveAsync(CancellationToken.None);
-
-		result.ShouldBeTrue();
-		editor.SessionUpdates.ShouldBeEmpty();
-	}
-
-	[Test]
 	public async Task SelectItem_selects_project_tab_and_session_unknown_ids_are_noop()
 	{
 		var dirA = CreateSubDir("a");

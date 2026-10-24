@@ -16,18 +16,6 @@
                  VerticalAlignment="Center" Text="Actions" />
     </DockPanel>
     <Grid x:Name="DefaultActionsPanel" Grid.Row="1" RowDefinitions="Auto,0,Auto,*,Auto">
-      <StackPanel>
-        <TextBlock Margin="0,20,0,0" FontWeight="SemiBold" Text="Scenarios" />
-        <ScrollViewer MaxHeight="200" VerticalScrollBarVisibility="Auto">
-          <ItemsControl x:Name="ScenarioActionsList" Margin="0,8,0,0" ItemsSource="{Binding ScenarioDefinitions}">
-            <ItemsControl.ItemTemplate><DataTemplate>
-              <Button Height="32" Margin="0,0,0,6" Padding="10,0"
-                      HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Content="{Binding Name}"
-                      Click="OnScenarioClicked" />
-            </DataTemplate></ItemsControl.ItemTemplate>
-          </ItemsControl>
-        </ScrollViewer>
-      </StackPanel>
       <Grid x:Name="DocumentsSection" Grid.Row="1" Margin="0,20,0,0"
             RowDefinitions="Auto,*" IsVisible="False">
         <TextBlock FontWeight="SemiBold" Text="Documents" />

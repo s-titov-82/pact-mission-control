@@ -77,30 +77,17 @@ public sealed class OrchestratorDispatcher
 	public AgentControlResult GetSubscriptionUsage() =>
 		AgentControlResult.Ok(Serialize(_host.ListUsage()));
 
-	/// <summary>Returns review runs that currently control session input.</summary>
+	/// <summary>Returns the reviews that are starting or running.</summary>
 	public AgentControlResult ListActiveRuns() =>
-		AgentControlResult.Ok(Serialize(_host.ListActiveRuns()));
+		AgentControlResult.Ok(Serialize(_host.ListActiveReviews()));
 
-	/// <summary>Returns one active review run with its current in-memory journal.</summary>
-	public AgentControlResult GetReviewRun(string runId)
-	{
-		if (!_host.TryGetActiveRun(runId, out var details))
-		{
-			return AgentControlResult.Refused(
+	/// <summary>Returns one active review.</summary>
+	public AgentControlResult GetReviewRun(string reviewId) =>
+		_host.FindReview(reviewId) is { } review
+			? AgentControlResult.Ok(Serialize(review))
+			: AgentControlResult.Refused(
 				"unknown-review-run",
-				$"Review run '{runId}' is not active.");
-		}
-
-		return AgentControlResult.Ok(Serialize(details));
-	}
-
-	/// <summary>Requests or escalates a manual pause for one active review run.</summary>
-	public AgentControlResult PauseReview(string runId) =>
-		ProjectReviewControl(runId, _host.RequestReviewPause(runId));
-
-	/// <summary>Resumes an established manual or attention pause.</summary>
-	public AgentControlResult ResumeReview(string runId) =>
-		ProjectReviewControl(runId, _host.ResumeReview(runId));
+				$"Review '{reviewId}' is not active.");
 
 	/// <summary>Reads the current Notes buffer for a running project workspace.</summary>
 	public async Task<AgentControlResult> GetProjectNotesAsync(
@@ -309,11 +296,6 @@ public sealed class OrchestratorDispatcher
 						+ "was pasted; it was not submitted."
 					: $"Session '{sessionId}' is waiting for a human answer ({delivery.StatusLine}); "
 						+ "nothing was sent."),
-			PromptDeliveryOutcome.RefusedLocked => AgentControlResult.Refused(
-				"session-scenario-locked",
-				_host.IsScenarioLocked(sessionId, out var runId)
-					? $"Session '{sessionId}' is controlled by review run '{runId}'."
-					: $"Session '{sessionId}' is controlled by a review run."),
 			PromptDeliveryOutcome.NotRunning => AgentControlResult.Refused(
 				"session-not-alive",
 				$"Session '{sessionId}' has no live terminal; start it with pact_start_session."),
@@ -355,20 +337,6 @@ public sealed class OrchestratorDispatcher
 
 	private static string Serialize<T>(T value) =>
 		JsonSerializer.Serialize(value, JsonOptions);
-
-	private static AgentControlResult ProjectReviewControl(
-		string runId,
-		ReviewControlOutcome outcome) =>
-		outcome.Status switch
-		{
-			ReviewControlStatus.UnknownRun => AgentControlResult.Refused(
-				"unknown-review-run",
-				$"Review run '{runId}' is not active."),
-			ReviewControlStatus.NotPausable => AgentControlResult.Refused(
-				"review-not-pausable",
-				$"Review run '{runId}' is stopping and cannot accept that control request."),
-			_ => AgentControlResult.Ok(Serialize(outcome))
-		};
 
 	private AgentControlResult? ValidateProjectWorkspace(string workspaceId)
 	{

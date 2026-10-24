@@ -24,9 +24,6 @@ public enum PromptDeliveryOutcome
 	/// <summary>A question is pending; see <see cref="PromptDeliveryResult.WriteAttempted"/>.</summary>
 	RefusedQuestion,
 
-	/// <summary>A scenario run owns the session; nothing was written.</summary>
-	RefusedLocked,
-
 	/// <summary>
 	/// The session has no live process, and starting it was not allowed or did not reach
 	/// readiness; <see cref="PromptDeliveryResult.StatusLine"/> gives the reason.

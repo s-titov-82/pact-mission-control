@@ -19,7 +19,7 @@ public sealed class SettingsHelpWindowHeadlessTests
 
 		window.Title.ShouldBe("PACT:> Mission Control — Scenarios");
 		title.Text.ShouldBe("Scenarios");
-		body.Text!.Contains("review loop", StringComparison.OrdinalIgnoreCase).ShouldBeTrue();
+		body.Text!.Contains("review template", StringComparison.OrdinalIgnoreCase).ShouldBeTrue();
 		body.IsReadOnly.ShouldBeTrue();
 		(body.TextWrapping == global::Avalonia.Media.TextWrapping.Wrap).ShouldBeTrue();
 	}

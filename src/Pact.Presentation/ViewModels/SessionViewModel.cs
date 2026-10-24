@@ -100,14 +100,6 @@ public sealed class SessionViewModel : INotifyPropertyChanged
 	/// <summary>Whether this tab is the selected item.</summary>
 	public bool IsCurrentTerminal { get; private set; }
 
-	/// <summary>Run holding this session's input lock, or <see langword="null"/> when unlocked.</summary>
-	public string? LockedByScenarioRunId { get; private set; }
-
-	/// <summary>
-	/// Whether a scenario blocks manual input. The session stays visible and scrollable.
-	/// </summary>
-	public bool IsLockedByScenario => LockedByScenarioRunId is not null;
-
 	/// <summary>Whether this agent supports a conversation-reset command.</summary>
 	public bool CanResetAgentSession =>
 		!IsManuallyPaused && AgentResetCommands.TryGetResetCommand(Record.Kind, out _);
@@ -170,36 +162,6 @@ public sealed class SessionViewModel : INotifyPropertyChanged
 		OnPropertyChanged(nameof(CanPause));
 		OnPropertyChanged(nameof(CanResume));
 		OnPropertyChanged(nameof(CanResetAgentSession));
-	}
-
-	/// <summary>Blocks manual input while <paramref name="runId"/> is using this session.</summary>
-	public void LockForScenario(string runId)
-	{
-		ArgumentException.ThrowIfNullOrWhiteSpace(runId);
-		if (string.Equals(LockedByScenarioRunId, runId, StringComparison.Ordinal))
-		{
-			return;
-		}
-
-		LockedByScenarioRunId = runId;
-		OnPropertyChanged(nameof(LockedByScenarioRunId));
-		OnPropertyChanged(nameof(IsLockedByScenario));
-	}
-
-	/// <summary>
-	/// Restores manual input. Also used on a watchdog pause to free just the stuck session so
-	/// the user can answer it.
-	/// </summary>
-	public void UnlockFromScenario()
-	{
-		if (LockedByScenarioRunId is null)
-		{
-			return;
-		}
-
-		LockedByScenarioRunId = null;
-		OnPropertyChanged(nameof(LockedByScenarioRunId));
-		OnPropertyChanged(nameof(IsLockedByScenario));
 	}
 
 	/// <summary>

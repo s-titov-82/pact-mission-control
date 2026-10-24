@@ -15,8 +15,8 @@ public enum ScenarioKind
 /// editable text rather than a fixed enum, so presets seed the field instead of constraining it.
 /// </summary>
 /// <param name="Id">Stable key referenced by <see cref="ScenarioDefinition.DefaultReviewerInstructionId"/>.</param>
-/// <param name="Name">Label shown in the scenario setup dialog.</param>
-/// <param name="Text">Instruction text, editable before the run starts.</param>
+/// <param name="Name">Label shown in settings.</param>
+/// <param name="Text">Instruction text appended to the reviewer's messages.</param>
 public sealed record ScenarioReviewerInstruction(
 	string Id,
 	string Name,
@@ -31,21 +31,21 @@ public sealed record ScenarioReviewerInstruction(
 /// <paramref name="FirstFeedbackTemplate"/> carries those findings to the author,
 /// <paramref name="AuthorReturnTemplate"/> returns the author's reply for re-verification in
 /// passes 2..N, and <paramref name="FeedbackTemplate"/> carries follow-up findings back.
-/// The engine appends its own protocol blocks to every rendered template, so the text sent to
-/// an agent is never exactly the template body.
+/// Pact appends its own protocol paragraph to every rendered template, so the text an agent
+/// reads is never exactly the template body.
 /// </remarks>
 /// <param name="Id">Stable key; also used to persist <paramref name="DefaultTarget"/>.</param>
 /// <param name="Kind">Scenario program to run.</param>
 /// <param name="Name">Label shown in the scenarios list.</param>
 /// <param name="MaxIterations">
-/// Review pass budget. Exhausting it ends the run as
-/// <see cref="ScenarioRunState.MaxIterationsReached"/> rather than as a success.
+/// Default iteration limit. Reaching it ends the review as MaxIterationsReached rather than as
+/// a success.
 /// </param>
 /// <param name="StopMarker">
-/// Exact text the reviewer emits to declare completion. This machine-checked marker is the
-/// only accepted completion signal; terminal busy/idle state never ends a run.
+/// Completion marker named by older templates. Approval is now an explicit flag on
+/// <c>pact_submit_review_turn</c>; the marker only keeps reviewer instructions readable.
 /// </param>
-/// <param name="DefaultTarget">Review scope pointer or text prefilled in the setup dialog.</param>
+/// <param name="DefaultTarget">Review target used when a request names none.</param>
 /// <param name="StartPromptTemplate">Pass 1 brief for the reviewer.</param>
 /// <param name="FirstFeedbackTemplate">Pass 1 findings sent to the author.</param>
 /// <param name="AuthorReturnTemplate">Author's reply returned to the reviewer in passes 2..N.</param>

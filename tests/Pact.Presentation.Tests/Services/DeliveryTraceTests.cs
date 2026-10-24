@@ -8,7 +8,7 @@ public sealed class DeliveryTraceTests
 	[Test]
 	public void A_trace_line_names_every_stage_without_prompt_text()
 	{
-		DeliveryTrace trace = new("s1", PromptSender.ScenarioOwner)
+		DeliveryTrace trace = new("s1", PromptSender.Outsider)
 		{
 			Admission = "ok",
 			Paste = "bracketed",
@@ -19,7 +19,7 @@ public sealed class DeliveryTraceTests
 		};
 
 		trace.Format(new PromptDeliveryResult(PromptDeliveryOutcome.Confirmed)).ShouldBe(
-			"delivery session=s1 sender=ScenarioOwner start=none gate-wait=0 admission=ok "
+			"delivery session=s1 sender=Outsider start=none gate-wait=0 admission=ok "
 			+ "paste=bracketed shown=12 enter=260 confirmed=900 repair=none keyboard=no outcome=Confirmed");
 	}
 }

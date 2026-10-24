@@ -37,7 +37,6 @@ public sealed class WorkspaceViewModel : INotifyPropertyChanged
 		_isGitRepository = isGitRepository;
 		IsGitRepository = _isGitRepository(Record.RootPath);
 		Sessions.CollectionChanged += OnTreeItemCollectionChanged;
-		ScenarioRuns.CollectionChanged += OnTreeItemCollectionChanged;
 		WebPages.CollectionChanged += OnTreeItemCollectionChanged;
 		Notes.CollectionChanged += OnTreeItemCollectionChanged;
 		Notes.CollectionChanged += (_, _) => OnPropertyChanged(nameof(IsNotesTabOpen));
@@ -69,9 +68,6 @@ public sealed class WorkspaceViewModel : INotifyPropertyChanged
 
 	/// <summary>Terminal sessions in this project.</summary>
 	public ObservableCollection<SessionViewModel> Sessions { get; } = [];
-
-	/// <summary>Scenario runs shown under this project.</summary>
-	public ObservableCollection<ScenarioRunViewModel> ScenarioRuns { get; } = [];
 
 	/// <summary>Web page tabs in this project.</summary>
 	public ObservableCollection<WebPageViewModel> WebPages { get; } = [];
@@ -162,19 +158,14 @@ public sealed class WorkspaceViewModel : INotifyPropertyChanged
 			return groupIndex >= 0 ? groupIndex : CountTreeItems<SessionViewModel>();
 		}
 
-		if (ReferenceEquals(sender, ScenarioRuns))
-		{
-			return Sessions.Count + (groupIndex >= 0 ? groupIndex : CountTreeItems<ScenarioRunViewModel>());
-		}
-
 		if (ReferenceEquals(sender, WebPages))
 		{
-			return Sessions.Count + ScenarioRuns.Count + (groupIndex >= 0 ? groupIndex : CountTreeItems<WebPageViewModel>());
+			return Sessions.Count + (groupIndex >= 0 ? groupIndex : CountTreeItems<WebPageViewModel>());
 		}
 
 		if (ReferenceEquals(sender, Notes))
 		{
-			return Sessions.Count + ScenarioRuns.Count + WebPages.Count
+			return Sessions.Count + WebPages.Count
 				+ (groupIndex >= 0 ? groupIndex : CountTreeItems<ProjectNoteViewModel>());
 		}
 
@@ -201,11 +192,6 @@ public sealed class WorkspaceViewModel : INotifyPropertyChanged
 		foreach (var session in Sessions)
 		{
 			TreeItems.Add(session);
-		}
-
-		foreach (var run in ScenarioRuns)
-		{
-			TreeItems.Add(run);
 		}
 
 		foreach (var webPage in WebPages)

@@ -25,7 +25,6 @@ public sealed class SelectedTabDetailsFactoryTests
 			SessionStatus.Running,
 			ObservedAt,
 			ObservedAt));
-		session.LockForScenario("b3bfb31f-full-run-id");
 		TerminalClassifierDiagnostics diagnostics = new(
 			"session-1",
 			AgentKind.Claude,
@@ -70,7 +69,6 @@ public sealed class SelectedTabDetailsFactoryTests
 		Rows(details)["Activity"].ShouldBe("Idle · epoch 3");
 		Rows(details)["Viewport"].ShouldBe("215 × 37");
 		Rows(details)["Working directory"].ShouldBe(@"D:\Work\Project");
-		Rows(details)["Scenario"].ShouldBe("Locked by b3bfb31f");
 		Rows(details)["Classified"].ShouldBe("2026-08-24 09:00:00Z");
 		Rows(details)["Process tree"].ShouldBe("PID 4242 · 3 processes");
 		Rows(details)["CPU"].ShouldBe("5.3%");

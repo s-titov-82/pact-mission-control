@@ -3,7 +3,6 @@ using Pact.Core.Agents;
 using Pact.Core.Projects;
 using Pact.Core.Sessions;
 using Pact.Core.Web;
-using Pact.Presentation.Services;
 using Pact.Presentation.ViewModels;
 
 namespace Pact.Presentation.Tests.ViewModels;
@@ -50,18 +49,16 @@ public sealed class WorkspaceViewModelTests
 	}
 
 	[Test]
-	public void TreeItems_are_sessions_then_scenario_runs_then_web_pages()
+	public void TreeItems_are_sessions_then_web_pages()
 	{
 		WorkspaceViewModel workspace = new(CreateProject());
 		SessionViewModel session = new(CreateSession());
 		WebPageViewModel webPage = new(CreateWebPage());
-		var run = CreateScenarioRunViewModel();
 
 		workspace.WebPages.Add(webPage);
-		workspace.ScenarioRuns.Add(run);
 		workspace.Sessions.Add(session);
 
-		workspace.TreeItems.ShouldBe([session, run, webPage]);
+		workspace.TreeItems.ShouldBe([session, webPage]);
 	}
 
 	[Test]
@@ -69,18 +66,16 @@ public sealed class WorkspaceViewModelTests
 	{
 		WorkspaceViewModel workspace = new(CreateProject());
 		SessionViewModel session = new(CreateSession());
-		var run = CreateScenarioRunViewModel();
 		WebPageViewModel webPage = new(CreateWebPage());
 		List<NotifyCollectionChangedAction> actions = [];
 
 		workspace.Sessions.Add(session);
-		workspace.ScenarioRuns.Add(run);
 		workspace.TreeItems.CollectionChanged += (_, e) => actions.Add(e.Action);
 
 		workspace.WebPages.Add(webPage);
 
 		actions.ShouldBe([NotifyCollectionChangedAction.Add]);
-		workspace.TreeItems.ShouldBe([session, run, webPage]);
+		workspace.TreeItems.ShouldBe([session, webPage]);
 	}
 
 	[Test]
@@ -197,43 +192,4 @@ public sealed class WorkspaceViewModelTests
 		return new WebPageRecord("web-1", "GitLab", "https://gitlab/group/repo", "https://gitlab/group/repo/-/merge_requests/1", now, now);
 	}
 
-	private static ScenarioRunViewModel CreateScenarioRunViewModel()
-	{
-		ScenarioRunService service = new(new ImmediateScenarioGateway());
-		ScenarioBlueprint blueprint = new(
-			"test-scenario",
-			"Test scenario",
-			["reviewer"],
-			[new ScenarioStepMetadata("run", "reviewer", null, "Run", ScenarioStepKind.Decision)],
-			DefaultMaxIterations: 1,
-			DefaultTarget: "start");
-		var handle = service.Start(
-			blueprint,
-			new ImmediateScenarioProgram(),
-			"project-1",
-			new Dictionary<string, string> { ["reviewer"] = "session-1" },
-			"start",
-			maxIterations: 1);
-		return new ScenarioRunViewModel(handle, action => action());
-	}
-
-	private sealed class ImmediateScenarioGateway : IScenarioTerminalGateway
-	{
-		public Task<PromptDeliveryResult> SendPromptAsync(
-			string sessionId,
-			string prompt,
-			CancellationToken cancellationToken) =>
-			Task.FromResult(new PromptDeliveryResult(
-				PromptDeliveryOutcome.Confirmed,
-				string.Empty,
-				WriteAttempted: true,
-				SubmitAttempted: true));
-		public Task SendEscapeAsync(string sessionId, CancellationToken cancellationToken) => Task.CompletedTask;
-		public bool IsSessionAlive(string sessionId) => true;
-	}
-
-	private sealed class ImmediateScenarioProgram : IScenarioProgram
-	{
-		public Task<bool> RunIterationAsync(ScenarioIterationContext context, CancellationToken cancellationToken) => Task.FromResult(true);
-	}
 }

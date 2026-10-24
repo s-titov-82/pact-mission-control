@@ -401,18 +401,6 @@ public sealed class ProjectTreeRowActionsHeadlessTests
 		closed.ShouldBeSameAs(note);
 	}
 
-	[AvaloniaTest]
-	public void LockedSessionRowUsesTheLockedStyleClass()
-	{
-		ProjectTreeView view = new();
-		var session = CreateSession();
-		session.LockForScenario("run-1");
-
-		var row = BuildRow(view, session).ShouldBeOfType<Border>();
-
-		row.Classes.ShouldContain("locked");
-	}
-
 	private static Control BuildRow(ProjectTreeView view, object item)
 	{
 		var tree = view.FindControl<TreeView>("ProjectTree")!;

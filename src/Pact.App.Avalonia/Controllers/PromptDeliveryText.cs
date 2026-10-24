@@ -12,7 +12,6 @@ internal static class PromptDeliveryText
 		PromptDeliveryOutcome.RefusedQuestion when result.WriteAttempted =>
 			$"a question opened after the text was pasted ({result.StatusLine}); it was not submitted",
 		PromptDeliveryOutcome.RefusedQuestion => $"waiting for an answer ({result.StatusLine}); nothing was sent",
-		PromptDeliveryOutcome.RefusedLocked => "locked by a running scenario; nothing was sent",
 		PromptDeliveryOutcome.NotRunning => $"not running ({result.StatusLine}); nothing was sent",
 		PromptDeliveryOutcome.PasteNotShown => "the pasted text never showed, so it was not submitted",
 		PromptDeliveryOutcome.Unconfirmed => "sent, but the agent was not seen taking it",

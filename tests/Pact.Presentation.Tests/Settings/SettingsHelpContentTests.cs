@@ -31,8 +31,8 @@ public sealed class SettingsHelpContentTests
 		body.ShouldContain("credential");
 	}
 
-	[TestCase(SettingsSection.Scenarios, "footer-complete reviewer response file")]
-	[TestCase(SettingsSection.Scenarios, "Manual Pause")]
+	[TestCase(SettingsSection.Scenarios, "pact_submit_review_turn")]
+	[TestCase(SettingsSection.Scenarios, "Nothing is locked")]
 	[TestCase(SettingsSection.Appearance, "external process metrics")]
 	[TestCase(SettingsSection.Updates, "stable GitHub releases")]
 	[TestCase(SettingsSection.WebLinkTemplates, "project and ROOT")]
@@ -41,14 +41,5 @@ public sealed class SettingsHelpContentTests
 		var (_, body) = SettingsHelpContent.Get(section);
 
 		body.ShouldContain(expectedText);
-	}
-
-	[Test]
-	public void Scenario_help_says_a_response_during_manual_pause_waits_for_resume()
-	{
-		var (_, body) = SettingsHelpContent.Get(SettingsSection.Scenarios);
-
-		body.ShouldNotContain("without requiring Resume");
-		body.ShouldContain("the run continues with it after Resume");
 	}
 }

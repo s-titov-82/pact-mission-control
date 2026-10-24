@@ -345,7 +345,6 @@ public sealed class MainWindowViewModelTests
 		workspace.TreeItems.OfType<WebPageViewModel>().ShouldHaveSingleItem().ShouldBeSameAs(webPage);
 		viewModel.SelectedWebPage.ShouldBeSameAs(webPage);
 		viewModel.SelectedSession.ShouldBeNull();
-		viewModel.SelectedScenarioRun.ShouldBeNull();
 	}
 
 	[Test]
@@ -484,15 +483,12 @@ public sealed class MainWindowViewModelTests
 		}));
 		await viewModel.LoadAsync(CancellationToken.None);
 		var workspace = viewModel.Workspaces.ShouldHaveSingleItem();
-		using var run = CreateScenarioRunViewModel();
-		viewModel.AddScenarioRun(workspace.Id, run);
 
 		viewModel.SelectedSession = viewModel.Sessions.ShouldHaveSingleItem();
 		viewModel.SelectedWebPage = viewModel.WebPages.ShouldHaveSingleItem();
 
 		(viewModel.SelectedWebPage?.Record.Id).ShouldBe(webPageRecord.Id);
 		viewModel.SelectedSession.ShouldBeNull();
-		viewModel.SelectedScenarioRun.ShouldBeNull();
 		viewModel.Sessions.ShouldHaveSingleItem().IsCurrentTerminal.ShouldBeFalse();
 		viewModel.SendSelectedTargets.ShouldBeEmpty();
 		viewModel.PromptTemplateTargets.ShouldBeEmpty();
@@ -1073,28 +1069,6 @@ public sealed class MainWindowViewModelTests
 	}
 
 	[Test]
-	public async Task Unread_session_driven_by_a_running_scenario_does_not_ask_for_attention()
-	{
-		using var fixture = await ScenarioAttentionFixture.CreateAsync();
-
-		fixture.ViewModel.Sessions[1].Indicator.ShouldBe(TerminalTabIndicator.Unread);
-		fixture.ViewModel.HasUnreadCompletions.ShouldBeFalse();
-	}
-
-	[Test]
-	public async Task Unread_session_of_a_paused_scenario_asks_for_attention()
-	{
-		using var fixture = await ScenarioAttentionFixture.CreateAsync();
-		List<string?> notifications = [];
-		fixture.ViewModel.PropertyChanged += (_, args) => notifications.Add(args.PropertyName);
-
-		await fixture.PauseAsync();
-
-		fixture.ViewModel.HasUnreadCompletions.ShouldBeTrue();
-		notifications.ShouldContain(nameof(MainWindowViewModel.HasUnreadCompletions));
-	}
-
-	[Test]
 	public async Task Unread_aggregate_notifies_only_when_projected_indicator_changes()
 	{
 		var now = DateTimeOffset.UtcNow;
@@ -1361,21 +1335,20 @@ public sealed class MainWindowViewModelTests
 	}
 
 	[Test]
-	public async Task SelectionActionTargetProjects_groups_unlocked_sessions_by_active_projects()
+	public async Task SelectionActionTargetProjects_groups_sessions_by_active_projects()
 	{
 		var viewModel = MainWindowViewModelTestFactory.Create(new InMemoryProjectStore(ProjectsDocument.CreateDefault()));
 		var first = await viewModel.EnsureWorkspaceForDirectoryAsync(@"D:\Work\First", CancellationToken.None);
 		var second = await viewModel.EnsureWorkspaceForDirectoryAsync(@"D:\Work\Second", CancellationToken.None);
 		var author = await viewModel.CreateSessionAsync("session-1", "default", AgentKind.Codex, "author", first.RootPath, "codex", null, CancellationToken.None, first.Id);
 		var reviewer = await viewModel.CreateSessionAsync("session-2", "default", AgentKind.Codex, "reviewer", first.RootPath, "codex", null, CancellationToken.None, first.Id);
-		var shell = await viewModel.CreateSessionAsync("session-3", "default", AgentKind.Pwsh, "shell", second.RootPath, "pwsh", null, CancellationToken.None, second.Id);
+		await viewModel.CreateSessionAsync("session-3", "default", AgentKind.Pwsh, "shell", second.RootPath, "pwsh", null, CancellationToken.None, second.Id);
 		var secondAuthor = await viewModel.CreateSessionAsync("session-4", "default", AgentKind.Codex, "second author", second.RootPath, "codex", null, CancellationToken.None, second.Id);
-		viewModel.SetScenarioLocks("run-1", [shell.Record.Id], locked: true);
 		viewModel.SelectedSession = secondAuthor;
 
 		viewModel.SelectionActionTargetProjects.Select(project => project.Name).ToArray().ShouldBe(["Second", "First"]);
 		var secondTarget = viewModel.SelectionActionTargetProjects[0];
-		secondTarget.Sessions.ShouldBeEmpty();
+		secondTarget.Sessions.Select(session => session.Title).ToArray().ShouldBe(["shell"]);
 		secondTarget.NotesTarget.ShouldNotBeNull();
 		var firstTarget = viewModel.SelectionActionTargetProjects[1];
 		firstTarget.Sessions.Select(session => session.Title).ToArray().ShouldBe(["author", "reviewer"]);
@@ -1482,76 +1455,6 @@ public sealed class MainWindowViewModelTests
 		viewModel.SendSelectedTargets.Cast<object>().ShouldNotContain(webPage);
 		viewModel.PromptTemplateTargets.Cast<object>().ShouldNotContain(webPage);
 		viewModel.PromptTemplateTargets.ShouldBe([session]);
-	}
-
-	[Test]
-	public async Task SelectedSession_excludes_scenario_locked_send_targets()
-	{
-		InMemoryProjectStore store = new(ProjectsDocument.CreateDefault());
-		var viewModel = MainWindowViewModelTestFactory.Create(store);
-		var workspace = await viewModel.EnsureWorkspaceForDirectoryAsync(
-			@"D:\Personal\Pact",
-			CancellationToken.None);
-		var author = await viewModel.CreateSessionAsync(
-			sessionId: "session-1",
-			projectId: "default",
-			kind: AgentKind.Codex,
-			title: "author",
-			workingDirectory: @"D:\Personal\Pact",
-			launchCommand: "codex",
-			resumeCommand: "codex resume session-1",
-			cancellationToken: CancellationToken.None,
-			workspaceId: workspace.Id);
-		var reviewer = await viewModel.CreateSessionAsync(
-			sessionId: "session-2",
-			projectId: "default",
-			kind: AgentKind.Codex,
-			title: "reviewer",
-			workingDirectory: @"D:\Personal\Pact",
-			launchCommand: "codex",
-			resumeCommand: "codex resume session-2",
-			cancellationToken: CancellationToken.None,
-			workspaceId: workspace.Id);
-		reviewer.LockForScenario("run-1");
-
-		viewModel.SelectedSession = author;
-
-		viewModel.SendSelectedTargets.ShouldBeEmpty();
-	}
-
-	[Test]
-	public async Task SelectedSession_excludes_scenario_locked_prompt_template_targets()
-	{
-		InMemoryProjectStore store = new(ProjectsDocument.CreateDefault());
-		var viewModel = MainWindowViewModelTestFactory.Create(store);
-		var workspace = await viewModel.EnsureWorkspaceForDirectoryAsync(
-			@"D:\Personal\Pact",
-			CancellationToken.None);
-		var author = await viewModel.CreateSessionAsync(
-			sessionId: "session-1",
-			projectId: "default",
-			kind: AgentKind.Codex,
-			title: "author",
-			workingDirectory: @"D:\Personal\Pact",
-			launchCommand: "codex",
-			resumeCommand: "codex resume session-1",
-			cancellationToken: CancellationToken.None,
-			workspaceId: workspace.Id);
-		var reviewer = await viewModel.CreateSessionAsync(
-			sessionId: "session-2",
-			projectId: "default",
-			kind: AgentKind.Codex,
-			title: "reviewer",
-			workingDirectory: @"D:\Personal\Pact",
-			launchCommand: "codex",
-			resumeCommand: "codex resume session-2",
-			cancellationToken: CancellationToken.None,
-			workspaceId: workspace.Id);
-		reviewer.LockForScenario("run-1");
-
-		viewModel.SelectedSession = author;
-
-		viewModel.PromptTemplateTargets.ShouldBe([author]);
 	}
 
 	[Test]
@@ -1744,15 +1647,9 @@ public sealed class MainWindowViewModelTests
 		var workspace = await viewModel.EnsureWorkspaceForDirectoryAsync(
 			@"D:\Work\Project",
 			CancellationToken.None);
-		using var run = CreateScenarioRunViewModel();
-		viewModel.AddScenarioRun(workspace.Id, run);
 
 		await viewModel.RemoveWorkspaceAsync(workspace.Id, CancellationToken.None);
 
-		viewModel.ScenarioRuns.ShouldBeEmpty();
-		workspace.ScenarioRuns.ShouldBeEmpty();
-		workspace.TreeItems.OfType<ScenarioRunViewModel>().ShouldBeEmpty();
-		viewModel.SelectedScenarioRun.ShouldBeNull();
 	}
 
 	[Test]
@@ -2030,18 +1927,12 @@ public sealed class MainWindowViewModelTests
 			resumeCommand: "codex resume session-1",
 			cancellationToken: CancellationToken.None,
 			workspaceId: workspace.Id);
-		using var run = CreateScenarioRunViewModel();
-		viewModel.AddScenarioRun(workspace.Id, run);
 
 		await viewModel.PauseWorkspaceAsync(
 			workspace.Id,
 			activeItemId: session.Record.Id,
 			CancellationToken.None);
 
-		viewModel.ScenarioRuns.ShouldBeEmpty();
-		workspace.ScenarioRuns.ShouldBeEmpty();
-		workspace.TreeItems.OfType<ScenarioRunViewModel>().ShouldBeEmpty();
-		viewModel.SelectedScenarioRun.ShouldBeNull();
 	}
 
 	[Test]
@@ -2173,137 +2064,6 @@ public sealed class MainWindowViewModelTests
 		var storedProject = store.Document.Projects.ShouldHaveSingleItem();
 		storedProject.GitLabRepoId.ShouldBe("group/repo");
 		workspace.Record.GitLabRepoId.ShouldBe("group/repo");
-	}
-
-	[Test]
-	public async Task SetScenarioLocks_locks_only_listed_sessions()
-	{
-		InMemoryProjectStore store = new(ProjectsDocument.CreateDefault());
-		var viewModel = MainWindowViewModelTestFactory.Create(store);
-		var workspace = await viewModel.EnsureWorkspaceForDirectoryAsync(
-			@"D:\Work\Project",
-			CancellationToken.None);
-		var firstSession = await viewModel.CreateSessionAsync(
-			sessionId: "session-1",
-			projectId: "default",
-			kind: AgentKind.Codex,
-			title: "author",
-			workingDirectory: @"D:\Work\Project",
-			launchCommand: "codex",
-			resumeCommand: "codex resume session-1",
-			cancellationToken: CancellationToken.None,
-			workspaceId: workspace.Id);
-		var secondSession = await viewModel.CreateSessionAsync(
-			sessionId: "session-2",
-			projectId: "default",
-			kind: AgentKind.Codex,
-			title: "reviewer",
-			workingDirectory: @"D:\Work\Project",
-			launchCommand: "codex",
-			resumeCommand: "codex resume session-2",
-			cancellationToken: CancellationToken.None,
-			workspaceId: workspace.Id);
-
-		viewModel.SetScenarioLocks("run-1", ["session-1", "missing-session"], locked: true);
-
-		firstSession.LockedByScenarioRunId.ShouldBe("run-1");
-		firstSession.IsLockedByScenario.ShouldBeTrue();
-		secondSession.LockedByScenarioRunId.ShouldBeNull();
-		secondSession.IsLockedByScenario.ShouldBeFalse();
-	}
-
-	[Test]
-	public async Task SetScenarioLocks_unlocks_only_sessions_locked_by_the_same_run()
-	{
-		InMemoryProjectStore store = new(ProjectsDocument.CreateDefault());
-		var viewModel = MainWindowViewModelTestFactory.Create(store);
-		var workspace = await viewModel.EnsureWorkspaceForDirectoryAsync(
-			@"D:\Work\Project",
-			CancellationToken.None);
-		var firstSession = await viewModel.CreateSessionAsync(
-			sessionId: "session-1",
-			projectId: "default",
-			kind: AgentKind.Codex,
-			title: "author",
-			workingDirectory: @"D:\Work\Project",
-			launchCommand: "codex",
-			resumeCommand: "codex resume session-1",
-			cancellationToken: CancellationToken.None,
-			workspaceId: workspace.Id);
-		var secondSession = await viewModel.CreateSessionAsync(
-			sessionId: "session-2",
-			projectId: "default",
-			kind: AgentKind.Codex,
-			title: "reviewer",
-			workingDirectory: @"D:\Work\Project",
-			launchCommand: "codex",
-			resumeCommand: "codex resume session-2",
-			cancellationToken: CancellationToken.None,
-			workspaceId: workspace.Id);
-		firstSession.LockForScenario("run-1");
-		secondSession.LockForScenario("run-2");
-
-		viewModel.SetScenarioLocks("run-1", ["session-1", "session-2"], locked: false);
-
-		firstSession.LockedByScenarioRunId.ShouldBeNull();
-		firstSession.IsLockedByScenario.ShouldBeFalse();
-		secondSession.LockedByScenarioRunId.ShouldBe("run-2");
-		secondSession.IsLockedByScenario.ShouldBeTrue();
-	}
-
-	[Test]
-	public async Task AddScenarioRun_adds_run_to_project_scope_and_selects_it()
-	{
-		InMemoryProjectStore store = new(ProjectsDocument.CreateDefault());
-		var viewModel = MainWindowViewModelTestFactory.Create(store);
-		var workspace = await viewModel.EnsureWorkspaceForDirectoryAsync(
-			@"D:\Work\Project",
-			CancellationToken.None);
-		var session = await viewModel.CreateSessionAsync(
-			sessionId: "session-1",
-			projectId: "default",
-			kind: AgentKind.Codex,
-			title: "author",
-			workingDirectory: @"D:\Work\Project",
-			launchCommand: "codex",
-			resumeCommand: "codex resume session-1",
-			cancellationToken: CancellationToken.None,
-			workspaceId: workspace.Id);
-		using var run = CreateScenarioRunViewModel();
-
-		viewModel.AddScenarioRun(workspace.Id, run);
-
-		workspace.ScenarioRuns.ShouldHaveSingleItem().ShouldBeSameAs(run);
-		workspace.TreeItems.OfType<ScenarioRunViewModel>().ShouldHaveSingleItem().ShouldBeSameAs(run);
-		workspace.TreeItems.ShouldBe([session, run]);
-		viewModel.ScenarioRuns.ShouldHaveSingleItem().ShouldBeSameAs(run);
-		viewModel.SelectedScenarioRun.ShouldBeSameAs(run);
-		run.IsCurrentScenario.ShouldBeTrue();
-		viewModel.SelectedSession.ShouldBeNull();
-		session.IsCurrentTerminal.ShouldBeFalse();
-
-		viewModel.SelectedSession = session;
-
-		run.IsCurrentScenario.ShouldBeFalse();
-	}
-
-	[Test]
-	public async Task RemoveScenarioRun_removes_from_window_and_workspace_scope()
-	{
-		InMemoryProjectStore store = new(ProjectsDocument.CreateDefault());
-		var viewModel = MainWindowViewModelTestFactory.Create(store);
-		var workspace = await viewModel.EnsureWorkspaceForDirectoryAsync(
-			@"D:\Work\Project",
-			CancellationToken.None);
-		using var run = CreateScenarioRunViewModel();
-		viewModel.AddScenarioRun(workspace.Id, run);
-
-		viewModel.RemoveScenarioRun(run);
-
-		workspace.ScenarioRuns.ShouldBeEmpty();
-		workspace.TreeItems.OfType<ScenarioRunViewModel>().ShouldBeEmpty();
-		viewModel.ScenarioRuns.ShouldBeEmpty();
-		viewModel.SelectedScenarioRun.ShouldBeNull();
 	}
 
 	[Test]
@@ -2451,161 +2211,6 @@ public sealed class MainWindowViewModelTests
 		};
 	}
 
-	/// <summary>
-	/// One project whose second session is unread while a scenario drives it, so attention rules
-	/// can be observed against a real run rather than a stubbed state.
-	/// </summary>
-	private sealed class ScenarioAttentionFixture : IDisposable
-	{
-		private ScenarioAttentionFixture(
-			MainWindowViewModel viewModel,
-			ScenarioRunHandle handle,
-			ScenarioRunViewModel run)
-		{
-			ViewModel = viewModel;
-			Handle = handle;
-			Run = run;
-		}
-
-		public MainWindowViewModel ViewModel { get; }
-
-		public ScenarioRunHandle Handle { get; }
-
-		public ScenarioRunViewModel Run { get; }
-
-		public static async Task<ScenarioAttentionFixture> CreateAsync()
-		{
-			var now = DateTimeOffset.UtcNow;
-			var project = CreateProjectRecord("project-1", "Project") with
-			{
-				Sessions =
-				[
-					CreateSessionRecord("session-1", now) with { Status = SessionStatus.Running },
-					CreateSessionRecord("session-2", now) with { Status = SessionStatus.Running }
-				]
-			};
-			TerminalTabStatusCoordinator statuses = new(action => action());
-			var viewModel = MainWindowViewModelTestFactory.Create(
-				new InMemoryProjectStore(ProjectsDocument.CreateDefault() with { Projects = [project] }),
-				statuses);
-			statuses.SetWindowFacts(true, true, now);
-			await viewModel.LoadAsync(CancellationToken.None);
-			await viewModel.UpdateSessionStatusAsync("session-1", SessionStatus.Running, CancellationToken.None);
-			await viewModel.UpdateSessionStatusAsync("session-2", SessionStatus.Running, CancellationToken.None);
-			viewModel.SelectedSession = viewModel.Sessions[0];
-
-			TaskCompletionSource waitStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
-			ScenarioRunService service = new(new AttentionGateway());
-			var handle = service.Start(
-				AttentionBlueprint,
-				new WaitingProgram(waitStarted),
-				"project-1",
-				new Dictionary<string, string> { ["reviewer"] = "session-2" },
-				"start",
-				maxIterations: 1);
-			ScenarioRunViewModel run = new(handle, dispatch: action => action());
-			viewModel.AddScenarioRun("project-1", run, select: false);
-			viewModel.Sessions[1].LockForScenario(handle.RunId);
-			await waitStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
-
-			statuses.OnUserInput("session-2", "\r", now.AddSeconds(1));
-			statuses.OnScreenSnapshot("session-2", @"PS D:\Work> ", now.AddSeconds(2));
-			// Stated here so a projection change fails at its own cause rather than inside an
-			// attention assertion that assumes the unread precondition holds.
-			viewModel.Sessions[1].Indicator.ShouldBe(TerminalTabIndicator.Unread);
-			return new ScenarioAttentionFixture(viewModel, handle, run);
-		}
-
-		public async Task PauseAsync()
-		{
-			Handle.RequestPause();
-			await WaitForRunStateAsync(Handle, ScenarioRunState.Paused);
-		}
-
-		public void Dispose()
-		{
-			Handle.Abort();
-			Run.Dispose();
-			Handle.Dispose();
-		}
-	}
-
-	private static readonly ScenarioBlueprint AttentionBlueprint = new(
-		"attention-scenario",
-		"Attention scenario",
-		["reviewer"],
-		[
-			new ScenarioStepMetadata("send", "reviewer", null, "Send prompt", ScenarioStepKind.Send),
-			new ScenarioStepMetadata("capture", "reviewer", null, "Capture response", ScenarioStepKind.Capture)
-		],
-		DefaultMaxIterations: 1,
-		DefaultTarget: "start");
-
-	private sealed class AttentionGateway : IScenarioTerminalGateway
-	{
-		public Task<PromptDeliveryResult> SendPromptAsync(
-			string sessionId,
-			string prompt,
-			CancellationToken cancellationToken) =>
-			Task.FromResult(new PromptDeliveryResult(
-				PromptDeliveryOutcome.Confirmed,
-				string.Empty,
-				WriteAttempted: true,
-				SubmitAttempted: true));
-
-		public Task SendEscapeAsync(string sessionId, CancellationToken cancellationToken) => Task.CompletedTask;
-
-		public bool IsSessionAlive(string sessionId) => true;
-	}
-
-	private sealed class WaitingProgram(TaskCompletionSource waitStarted) : IScenarioProgram
-	{
-		public async Task<bool> RunIterationAsync(
-			ScenarioIterationContext context,
-			CancellationToken cancellationToken)
-		{
-			await context.SendAsync("send", "reviewer", "work", cancellationToken);
-			await context.WaitForResponseAsync(
-				"capture",
-				"reviewer",
-				async (_, waitCancellationToken) =>
-				{
-					waitStarted.TrySetResult();
-					await Task.Delay(Timeout.InfiniteTimeSpan, waitCancellationToken);
-					return "unreachable";
-				},
-				cancellationToken);
-			return true;
-		}
-	}
-
-	private static async Task WaitForRunStateAsync(ScenarioRunHandle handle, ScenarioRunState state)
-	{
-		TaskCompletionSource reached = new(TaskCreationOptions.RunContinuationsAsynchronously);
-		void OnStateChanged(object? _, EventArgs __)
-		{
-			if (handle.State == state)
-			{
-				reached.TrySetResult();
-			}
-		}
-
-		handle.StateChanged += OnStateChanged;
-		try
-		{
-			if (handle.State == state)
-			{
-				return;
-			}
-
-			await reached.Task.WaitAsync(TimeSpan.FromSeconds(5));
-		}
-		finally
-		{
-			handle.StateChanged -= OnStateChanged;
-		}
-	}
-
 	private static SessionRecord CreateSessionRecord(string id, DateTimeOffset createdAt) => new SessionRecord(
 			id,
 			AgentKind.Pwsh,
@@ -2624,50 +2229,6 @@ public sealed class MainWindowViewModelTests
 			"https://example.test/resume",
 			createdAt,
 			createdAt);
-
-	private static ScenarioRunViewModel CreateScenarioRunViewModel()
-	{
-		ScenarioRunService service = new(new ImmediateScenarioGateway());
-		ScenarioBlueprint blueprint = new(
-			"test-scenario",
-			"Test scenario",
-			["reviewer"],
-			[new ScenarioStepMetadata("run", "reviewer", null, "Run", ScenarioStepKind.Decision)],
-			DefaultMaxIterations: 1,
-			DefaultTarget: "start");
-		var handle = service.Start(
-			blueprint,
-			new ImmediateScenarioProgram(),
-			"project-1",
-			new Dictionary<string, string> { ["reviewer"] = "session-1" },
-			"start",
-			maxIterations: 1);
-		return new ScenarioRunViewModel(handle, action => action());
-	}
-
-	private sealed class ImmediateScenarioGateway : IScenarioTerminalGateway
-	{
-		public Task<PromptDeliveryResult> SendPromptAsync(
-			string sessionId,
-			string prompt,
-			CancellationToken cancellationToken) =>
-			Task.FromResult(new PromptDeliveryResult(
-				PromptDeliveryOutcome.Confirmed,
-				string.Empty,
-				WriteAttempted: true,
-				SubmitAttempted: true));
-
-		public Task SendEscapeAsync(string sessionId, CancellationToken cancellationToken) =>
-			Task.CompletedTask;
-
-		public bool IsSessionAlive(string sessionId) => true;
-	}
-
-	private sealed class ImmediateScenarioProgram : IScenarioProgram
-	{
-		public Task<bool> RunIterationAsync(ScenarioIterationContext context, CancellationToken cancellationToken) =>
-			Task.FromResult(true);
-	}
 
 	private sealed class InMemoryProjectStore(ProjectsDocument document) : IProjectStore
 	{

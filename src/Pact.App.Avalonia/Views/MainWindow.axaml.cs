@@ -124,7 +124,6 @@ internal sealed partial class MainWindow : Window, IDisposable
 		WireProjectTreeEvents();
 		WireRightActionsEvents();
 		WireSelectionActionsEvents();
-		WireScenarioJournalEvents();
 		WireControllerEvents();
 		RefreshSelectedTabDetails();
 		App.Bootstrap.RegisterShellShutdown(
@@ -170,7 +169,6 @@ internal sealed partial class MainWindow : Window, IDisposable
 		WireProjectTreeEvents();
 		WireRightActionsEvents();
 		WireSelectionActionsEvents();
-		WireScenarioJournalEvents();
 		WireControllerEvents();
 		RefreshSelectedTabDetails();
 	}
@@ -558,31 +556,6 @@ internal sealed partial class MainWindow : Window, IDisposable
 		}
 	}
 
-	private void WireScenarioJournalEvents()
-	{
-		ObserveEvent<ScenarioRunViewModel>(
-			handler => ScenarioJournal.CloseRunRequested += handler,
-			handler => ScenarioJournal.CloseRunRequested -= handler,
-			"close-scenario-run",
-			run => EngineProbeController.CloseScenarioRunAsync(run));
-		ObserveAction<ScenarioRunViewModel>(
-			handler => ScenarioJournal.SoftStopRequested += handler,
-			handler => ScenarioJournal.SoftStopRequested -= handler,
-			EngineProbeController.RequestScenarioSoftStop);
-		ObserveAction<ScenarioRunViewModel>(
-			handler => ScenarioJournal.PauseRequested += handler,
-			handler => ScenarioJournal.PauseRequested -= handler,
-			EngineProbeController.PauseScenario);
-		ObserveAction<ScenarioRunViewModel>(
-			handler => ScenarioJournal.AbortRequested += handler,
-			handler => ScenarioJournal.AbortRequested -= handler,
-			EngineProbeController.AbortScenario);
-		ObserveAction<ScenarioRunViewModel>(
-			handler => ScenarioJournal.ResumeRequested += handler,
-			handler => ScenarioJournal.ResumeRequested -= handler,
-			EngineProbeController.ResumeScenario);
-	}
-
 	private void WireRightActionsEvents()
 	{
 		ObserveEvent<MarkdownTreeNodeViewModel>(
@@ -609,11 +582,6 @@ internal sealed partial class MainWindow : Window, IDisposable
 			handler => RightActions.RestartAndUpdateRequested -= handler,
 			"restart-and-update",
 			() => RequestRestartAndUpdateAsync(CancellationToken.None));
-		ObserveEvent<Core.Scenarios.ScenarioDefinition>(
-			handler => RightActions.ScenarioRequested += handler,
-			handler => RightActions.ScenarioRequested -= handler,
-			"open-scenario",
-			OpenScenarioSetupAsync);
 	}
 
 	private void WireSelectionActionsEvents()
@@ -673,36 +641,6 @@ internal sealed partial class MainWindow : Window, IDisposable
 
 		await workspace.SelectDocumentAsync(node, CancellationToken.None);
 		NotesPane.FocusEditor();
-	}
-
-	private async Task OpenScenarioSetupAsync(Core.Scenarios.ScenarioDefinition definition)
-	{
-		var workspace = EngineProbeController.ViewModel.SelectedWorkspace;
-		if (workspace is null && EngineProbeController.ViewModel.SelectedSession is { } selectedSession)
-		{
-			workspace = EngineProbeController.ViewModel.Workspaces.FirstOrDefault(candidate =>
-				candidate.Sessions.Contains(selectedSession));
-		}
-
-		workspace ??= EngineProbeController.ViewModel.Workspaces.FirstOrDefault();
-		var setup = EngineProbeController.CreateScenarioSetup(definition, workspace);
-		if (setup is null || workspace is null)
-		{
-			return;
-		}
-
-		ScenarioSetupWindow dialog = new(setup);
-		var accepted = await dialog.ShowDialog<bool>(this);
-		if (!accepted)
-		{
-			return;
-		}
-
-		await EngineProbeController.StartScenarioAsync(
-			definition,
-			workspace,
-			setup,
-			CancellationToken.None);
 	}
 
 	private async Task OpenSettingsAsync(
@@ -1263,11 +1201,6 @@ internal sealed partial class MainWindow : Window, IDisposable
 			RightActions.Workspace = EngineProbeController.CurrentDocsAndNotes;
 		}
 
-		if (e.PropertyName == nameof(AvaloniaMainShellController.SelectedScenarioRun))
-		{
-			ScenarioJournal.DataContext = EngineProbeController.SelectedScenarioRun;
-		}
-
 		if (e.PropertyName == nameof(AvaloniaMainShellController.PresentedSurface))
 		{
 			if (Dispatcher.UIThread.CheckAccess())
@@ -1349,7 +1282,6 @@ internal sealed partial class MainWindow : Window, IDisposable
 		TerminalPane.IsVisible = visibility.Terminal;
 		TerminalLoadingSurface.IsVisible = visibility.TerminalLoading;
 		NotesPane.IsVisible = visibility.Notes;
-		ScenarioJournal.IsVisible = visibility.Journal;
 		PausedPane.IsVisible = visibility.Paused;
 		PausedCaption.Text = PausedPlaceholderText.For(EngineProbeController.PresentedSurface);
 		BrowserPane.IsVisible = visibility.Browser;

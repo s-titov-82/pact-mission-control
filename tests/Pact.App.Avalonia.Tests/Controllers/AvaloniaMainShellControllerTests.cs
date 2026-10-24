@@ -636,22 +636,6 @@ public sealed class AvaloniaMainShellControllerTests
 	}
 
 	[Test]
-	public async Task Clipboard_paste_rejects_scenario_locked_selected_session()
-	{
-		await using ControllerFixture fixture = new();
-		await fixture.Controller.InitializeAsync(
-			new Uri("file:///terminal.html"),
-			TestContext.CurrentContext.CancellationToken);
-		var session = fixture.ViewModel.SelectedSession.ShouldNotBeNull();
-		session.LockForScenario("run-1");
-		fixture.Clipboard.NextRead = Task.FromResult("blocked");
-
-		await Should.ThrowAsync<InvalidOperationException>(fixture.Controller.PasteAsync);
-
-		fixture.Backends[0].Inputs.ShouldBeEmpty();
-	}
-
-	[Test]
 	public async Task GetActiveSessions_uses_live_controllers_instead_of_saved_status()
 	{
 		await using ControllerFixture fixture = new();
@@ -1850,7 +1834,6 @@ public sealed class AvaloniaMainShellControllerTests
 
 		fixture.Controller.CurrentNoteDocument.ShouldBeNull();
 		fixture.Controller.CurrentDocsAndNotes.ShouldBeNull();
-		fixture.Controller.SelectedScenarioRun.ShouldBeNull();
 		fixture.Controller.IsTerminalVisible.ShouldBeFalse();
 	}
 
@@ -2513,22 +2496,6 @@ public sealed class AvaloniaMainShellControllerTests
 
 		fixture.Controller.IsSelectionActionsOpen.ShouldBeFalse();
 		fixture.Controller.SelectionActionsAnchor.ShouldBeNull();
-	}
-
-	[Test]
-	public async Task LockedSessionRejectsManualInputWhileControllerStaysActive()
-	{
-		await using ControllerFixture fixture = new();
-		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
-		var session = fixture.ViewModel.SelectedSession!;
-		session.LockForScenario("run-1");
-
-		await fixture.Controller.WriteInputAsync(session.Record.Id, "blocked");
-
-		fixture.Backends[0].Inputs.ShouldBeEmpty();
-		fixture.Controller.Runtimes[session.Record.Id]
-			.TryGetController(out var activeController).ShouldBeTrue();
-		activeController.IsActive.ShouldBeTrue();
 	}
 
 	[Test]

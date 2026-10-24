@@ -53,7 +53,7 @@ public static class SettingsHelpContent
 
         The read-only summary line above the fields (id, status, created/active timestamps) reflects the project's current runtime state and cannot be edited here.
 
-        Every session that belongs to the project is listed under it. A session's title, working directory, launch command, and resume command are editable — except while the session is locked by a running scenario, when a "Locked by a running scenario" hint appears and its fields become read-only until the run finishes. The working directory field is hidden for agent sessions (Codex, Claude, Hermes), which always run in the project's own directory; it only applies to pwsh/custom shell sessions.
+        Every session that belongs to the project is listed under it. A session's title, working directory, launch command, and resume command are editable. The working directory field is hidden for agent sessions (Codex, Claude, Hermes), which always run in the project's own directory; it only applies to pwsh/custom shell sessions.
 
         There is no delete button for a project in this section. Projects are created by opening a directory from the main window and removed by closing the project there — Settings only edits the projects that are currently open. A paused project is edited from the separate "Paused projects" section instead of here.
         """;
@@ -63,7 +63,7 @@ public static class SettingsHelpContent
 
         There is no "+" here: adding a project from a directory always creates an active project, so use the Current projects section (or the main window) for that. Unpausing/resuming a project is also done from the main window, not from Settings.
 
-        Everything else — the read-only summary line, the locked-session hint, the hidden working-directory field for agent sessions, and the lack of a delete button — behaves the same as in Current projects.
+        Everything else — the read-only summary line, the hidden working-directory field for agent sessions, and the lack of a delete button — behaves the same as in Current projects.
         """;
 
 	private const string LaunchProfilesBody = """
@@ -87,7 +87,7 @@ public static class SettingsHelpContent
         """;
 
 	private const string OrchestratorBody = """
-        The orchestrator is one dedicated Hermes session pinned above projects and ROOT. It can inspect session status, read retained agent messages, report subscription usage and active review runs, and send a prompt to another live session when that session is not controlled by a scenario.
+        The orchestrator is one dedicated Hermes session pinned above projects and ROOT. It can inspect session status, read retained agent messages, report subscription usage and active reviews, and send a prompt to another live session.
 
         Initialize asks Hermes to create the Pact profile, installs the Pact MCP connection, SOUL and status-report skill, writes the endpoint and credential to the profile environment, and then saves the launch configuration. Every provisioning step is shown separately. Existing Hermes configuration is preserved semantically, and Pact backs up files before replacing content it does not recognize as its own.
 
@@ -127,24 +127,22 @@ public static class SettingsHelpContent
         """;
 
 	private const string ScenariosBody = """
-        A scenario automates a review loop between two live terminal sessions: an author and a reviewer. You start one from the Scenarios list in the main window by clicking its button; a setup dialog then binds the author and reviewer roles to actual running sessions and lets you set the review target (a scope pointer or pasted text) before the run starts.
+        A scenario here is a review template: the wording Pact uses when one agent asks another to review its work. An agent starts a review with its pact_request_review tool (the "Request review" Quick Action asks it to); Pact opens the reviewer as a new tab in the same project without switching to it, and the two agents then hand turns to each other through Pact: each side reads its turn with pact_get_review_turn and answers with pact_submit_review_turn. Pact types a short line into the terminal of the side whose turn it is.
 
-        Every scenario definition here is a "review-loop": the reviewer checks the author's work against a stop marker across up to Max iterations passes, using four prompt templates in a fixed order:
+        Four templates wrap the messages:
 
-        - Start prompt template — sent to the reviewer for pass 1; carries the full review brief (target, criteria, marker rules).
-        - First feedback template — sent to the author after pass 1, carrying the reviewer's findings.
-        - Author return template — sent to the reviewer for pass 2 through N, carrying the author's reply for re-verification.
-        - Feedback template — sent to the author for pass 2 through N, carrying the reviewer's follow-up findings.
+        - Start prompt template — the reviewer's first message; carries the review brief (target, criteria).
+        - First feedback template — the author's message carrying the reviewer's first findings.
+        - Author return template — the reviewer's message carrying the author's answer, for re-verification.
+        - Feedback template — the author's message carrying later findings.
 
-        Completion is decided from the footer-complete reviewer response file: whenever that response contains the exact Stop marker text, the run ends successfully — there is no other automatic success condition. Terminal screen state or captured output alone never completes a pass. If Max iterations passes elapse without the marker appearing, the run stops incomplete.
+        The other side's answer always travels in its own previousTurn field, whatever the template says; placeholders that used to name response files render as a pointer to that field. Pact appends its own short protocol paragraph to every message.
 
-        Reviewer instructions are free-form text presets, not a fixed list of disciplines; add or remove them with the +/− buttons next to the list, and edit each preset's Id, Name, and Text. Default reviewer instruction picks which preset is pre-selected when you set up a run of this scenario.
+        The reviewer approves by submitting its turn with approved: true; the Stop marker is kept only so older reviewer instructions still read sensibly. When the author answers the last of Max iterations, the review ends without approval.
 
-        Default target seeds the setup dialog's review-target field; it can still be overridden for any individual run.
+        Reviewer instructions are free-form text presets; add or remove them with the +/− buttons next to the list, and edit each preset's Id, Name, and Text. Default reviewer instruction picks the preset appended to the reviewer's messages. Default target is used when a request names none.
 
-        While a run is active, both involved sessions are input-locked — you cannot type into them, though their output stays visible and scrollable. Manual Pause unlocks both sessions and blocks new automatic terminal writes until Resume; a valid response file that appears during the pause stops the step's trigger from being sent and is kept, and the run continues with it after Resume. If watchdog attention pauses a run because a session looks stuck, only that affected session unlocks so you can answer it manually and let the run resume.
-
-        Every run is journaled in memory while it can still be shown in the journal panel. Closing the run discards that journal; no scenario journal is written to the data root.
+        Nothing is locked: you can type into either tab at any time. Every review is logged to .pact/reviews in the project (the folder ignores itself in Git), and the log opens in Docs when the review ends. The reviewer tab closes itself after approval or the last iteration and stays open when the review fails or is aborted.
         """;
 
 	private const string GitHelpersBody = """

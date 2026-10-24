@@ -14,7 +14,6 @@
     <Grid x:Name="CenterPane" Grid.Column="2">
       <views:TerminalPaneView x:Name="TerminalPane" />
       <views:NotesPaneView x:Name="NotesPane" IsVisible="False" />
-      <views:ScenarioJournalView x:Name="ScenarioJournal" IsVisible="False" />
       <views:BrowserPaneView x:Name="BrowserPane" IsVisible="False" />
       <Border x:Name="TerminalLoadingSurface" ZIndex="20"
               Background="{StaticResource AppPaneBackgroundBrush}" IsVisible="False">

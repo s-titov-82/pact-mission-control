@@ -31,8 +31,7 @@ public sealed class OrchestratorCompositionTests
 		asSession.ShouldNotContain("pact_list_workspaces");
 		asOrchestrator.ShouldContain("pact_list_workspaces");
 		asOrchestrator.ShouldContain("pact_get_review_run");
-		asOrchestrator.ShouldContain("pact_pause_review");
-		asOrchestrator.ShouldContain("pact_resume_review");
+		asOrchestrator.ShouldNotContain("pact_pause_review");
 	}
 
 	[Test]
@@ -76,14 +75,14 @@ public sealed class OrchestratorCompositionTests
 	}
 
 	[Test]
-	public async Task Review_control_reports_an_unknown_run_through_the_live_endpoint()
+	public async Task Review_lookup_reports_an_unknown_review_through_the_live_endpoint()
 	{
 		await using CompositionFixture fixture = new();
 		await fixture.InitializeAsync();
 
 		var result = await fixture.InvokeAsync(
 			fixture.Credential,
-			"pact_pause_review",
+			"pact_get_review_run",
 			new JsonObject { ["runId"] = "missing-run" });
 
 		result.ShouldContain("unknown-review-run");

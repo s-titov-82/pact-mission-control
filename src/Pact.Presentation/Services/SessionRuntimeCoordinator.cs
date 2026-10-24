@@ -788,12 +788,6 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 			return new(PromptDeliveryOutcome.RefusedQuestion, screen.StatusLine);
 		}
 
-		if (sender == PromptSender.Outsider && facts.IsScenarioLocked(sessionId))
-		{
-			trace.Admission = "locked";
-			return new(PromptDeliveryOutcome.RefusedLocked);
-		}
-
 		trace.Admission = "ok";
 		var profile = AgentScreenProfileSelector.ForKind(runtime.Kind);
 		var keyboardAtEnter = 0L;
@@ -1141,11 +1135,9 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 	public async Task WriteInputAsync(
 		string sessionId,
 		string input,
-		Func<string, bool> isLocked,
 		Func<string, string, Task> showIgnoredAsync)
 	{
 		ArgumentNullException.ThrowIfNull(input);
-		ArgumentNullException.ThrowIfNull(isLocked);
 		ArgumentNullException.ThrowIfNull(showIgnoredAsync);
 
 		if (!TryGetRuntime(sessionId, out var runtime)
@@ -1153,11 +1145,6 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 			|| !controller.IsActive)
 		{
 			await showIgnoredAsync(sessionId, "Session is not running; input ignored.").ConfigureAwait(false);
-			return;
-		}
-		if (isLocked(sessionId))
-		{
-			RaiseStatusMessage("Terminal is locked by a running scenario");
 			return;
 		}
 		var written = await runtime.RunInputExclusiveAsync(

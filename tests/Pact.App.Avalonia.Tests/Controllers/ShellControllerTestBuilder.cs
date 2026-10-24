@@ -35,7 +35,6 @@ internal sealed class ShellControllerTestBuilder : IAsyncDisposable
 	private IUiTaskDispatcher _uiTaskDispatcher = new ImmediateUiTaskDispatcher();
 	private ObservedTaskGroup _eventTasks =
 		new((_, _) => Task.CompletedTask);
-	private ScenarioDefinitionStore _scenarioDefinitionStore;
 	private IClipboardService _clipboard = new EmptyClipboardService();
 	private TimeProvider _timeProvider = TimeProvider.System;
 	private IProcessTreeSnapshotReader? _processTreeSnapshotReader;
@@ -58,7 +57,6 @@ internal sealed class ShellControllerTestBuilder : IAsyncDisposable
 		_recentDirectoryStore = new RecentDirectoryStore(
 			appPaths.RecentDirectoriesPath,
 			appPaths.AtomicTempDirectory);
-		_scenarioDefinitionStore = new ScenarioDefinitionStore(appPaths.ScenariosPath);
 	}
 
 	public ShellControllerTestBuilder WithWebPageHostFactory(IWebPageHostFactory value)
@@ -116,13 +114,6 @@ internal sealed class ShellControllerTestBuilder : IAsyncDisposable
 		return this;
 	}
 
-	public ShellControllerTestBuilder WithScenarioDefinitionStore(
-		ScenarioDefinitionStore value)
-	{
-		_scenarioDefinitionStore = value;
-		return this;
-	}
-
 	public ShellControllerTestBuilder WithClipboard(IClipboardService value)
 	{
 		_clipboard = value;
@@ -171,7 +162,6 @@ internal sealed class ShellControllerTestBuilder : IAsyncDisposable
 			monitor,
 			_uiTaskDispatcher,
 			_eventTasks,
-			_scenarioDefinitionStore,
 			_clipboard,
 			_timeProvider,
 			FreePort(),

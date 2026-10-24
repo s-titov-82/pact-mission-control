@@ -12,7 +12,6 @@ using Pact.Core.Platform;
 using Pact.Core.Presentation;
 using Pact.Core.Projects;
 using Pact.Core.Prompting;
-using Pact.Core.Scenarios;
 using Pact.Core.Sessions;
 using Pact.Core.Terminal;
 using Pact.Core.Updates;
@@ -54,7 +53,6 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 	private readonly TimeProvider _timeProvider;
 	private readonly Dictionary<string, GitPanelViewModel> _gitPanelViewModels = new(StringComparer.Ordinal);
 	private readonly RecentDirectoryStore _recentDirectoryStore;
-	private readonly AvaloniaScenarioCoordinator _scenarioCoordinator;
 	private readonly ReviewProfileProvider _reviewProfileProvider;
 	private readonly AgentControlTokenRegistry _agentControlTokens;
 	private readonly AgentControlEndpoint _agentControlEndpoint;
@@ -106,7 +104,6 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		WebMonitorCoordinator webMonitorCoordinator,
 		IUiTaskDispatcher uiTaskDispatcher,
 		ObservedTaskGroup eventTasks,
-		ScenarioDefinitionStore scenarioDefinitionStore,
 		IClipboardService clipboard,
 		TimeProvider timeProvider,
 		int? agentControlPort = null,
@@ -136,7 +133,6 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		_timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
 		_runtimeCoordinator.SessionFacts = new ShellSessionFacts(
 			ReadScreenState,
-			IsSessionLockedByScenario,
 			StartSessionByIdAsync);
 		_runtimeCoordinator.DeliveryTrace = AppendDiagnosticLog;
 		var effectiveProcessTreeSnapshotReader =
@@ -175,16 +171,6 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		_webMonitorCoordinator.LiveDiagnosticsChanged += OnWebMonitorLiveDiagnosticsChanged;
 		_recentDirectoryStore =
 			recentDirectoryStore ?? throw new ArgumentNullException(nameof(recentDirectoryStore));
-		ArgumentNullException.ThrowIfNull(scenarioDefinitionStore);
-		_scenarioCoordinator = new AvaloniaScenarioCoordinator(
-			ViewModel,
-			_appPaths,
-			scenarioDefinitionStore,
-			_runtimeCoordinator,
-			_uiTaskDispatcher,
-			SelectScenarioRunAsync,
-			ReportStatusAsync,
-			_eventTasks);
 		_agentControlTokens = new AgentControlTokenRegistry();
 		_orchestratorStore = new OrchestratorStore(_appPaths.OrchestratorPath);
 		_launcher = new SessionLauncher(
@@ -246,7 +232,8 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			_webPageCoordinator.ResumeInBackgroundAsync,
 			_webPageCoordinator.ReadDocumentHtmlAsync,
 			() => _orchestrator.Session is null ? null : OrchestratorSupervisor.SessionId,
-			_runtimeCoordinator.StartAndWaitReadyAsync);
+			_runtimeCoordinator.StartAndWaitReadyAsync,
+			_reviewRelay);
 		_orchestratorDispatcher = new OrchestratorDispatcher(orchestratorHost);
 		AgentControlToolRouter toolRouter = new(
 			SessionTools.Create(
@@ -286,7 +273,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			SoftRestartSafetyPolicy safetyPolicy = new(
 				_runtimeCoordinator.GetActiveSessionIds,
 				ViewModel.TerminalTabStatuses.GetDiagnosticsSnapshot,
-				() => _scenarioCoordinator.HasActiveRun,
+				() => _reviewRelay.ListActive().Count > 0,
 				IsShutdownBegun);
 			SoftRestartSnapshotBuilder snapshotBuilder = new(
 				ViewModel,
@@ -381,7 +368,6 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 	public ProjectNoteDocument? CurrentNoteDocument => (PresentedSurface as PresentedSurface.Notes)?.Document;
 	/// <summary>Current project documentation workspace displayed in the center pane.</summary>
 	public DocsAndNotesWorkspaceViewModel? CurrentDocsAndNotes => (PresentedSurface as PresentedSurface.Notes)?.Workspace;
-	public ScenarioRunViewModel? SelectedScenarioRun => (PresentedSurface as PresentedSurface.ScenarioRun)?.Run;
 	public GitPanelViewModel? CurrentGitPanel { get; private set { if (ReferenceEquals(field, value)) { return; } field = value; OnPropertyChanged(); } }
 	public bool IsTerminalVisible => PresentedSurface is PresentedSurface.Terminal;
 	/// <summary>
@@ -443,7 +429,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 
 		await ViewModel.LoadAsync(cancellationToken);
 		await RestoreRetainedWebMonitorStateAsync(cancellationToken);
-		await _scenarioCoordinator.CleanupAbandonedExchangesAsync(cancellationToken);
+		await CleanupAbandonedReviewExchangesAsync(cancellationToken);
 		await ReloadExternalSettingsAsync(cancellationToken);
 		await _terminalHost.InitializeAsync(terminalPage, cancellationToken);
 		_terminalHostInitialized = true;
@@ -567,7 +553,6 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		SessionViewModel session => SelectSessionAsync(session, startIfNeeded: true, cancellationToken: cancellationToken),
 		WebPageViewModel webPage => SelectWebPageAsync(webPage, cancellationToken),
 		ProjectNoteViewModel note => SelectNoteAsync(note, cancellationToken),
-		ScenarioRunViewModel run => SelectScenarioRunAsync(run),
 		WorkspaceViewModel workspace => SelectWorkspaceAsync(workspace),
 		_ => Task.CompletedTask
 	};
@@ -734,15 +719,6 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		await SelectNoteAsync(note, cancellationToken);
 		return await ViewModel.GetOrCreateDocsAndNotesWorkspace(note)
 			.OpenDocumentAsync(relativePath, cancellationToken);
-	}
-
-	public async Task SelectScenarioRunAsync(ScenarioRunViewModel run)
-	{
-		ArgumentNullException.ThrowIfNull(run);
-		ClearSelectionActions(restoreTerminalFocus: false);
-		await FlushCurrentNoteAsync(CancellationToken.None);
-		ViewModel.SelectedScenarioRun = run;
-		Present(new PresentedSurface.ScenarioRun(run));
 	}
 
 	public async Task RunQuickActionAsync(PromptTemplateRecord template, CancellationToken cancellationToken = default)
@@ -1314,7 +1290,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			? selectedItemId
 			: workspace.Record.ActiveItemId;
 		InvalidateSelectionOwner(workspace);
-		await AvaloniaScenarioCoordinator.AbortWorkspaceRunsAsync(workspace, cancellationToken);
+		await EndWorkspaceReviewsAsync(workspace);
 		await UnloadWorkspaceWebPagesAsync(
 			workspace,
 			deleteSnapshots: false,
@@ -1654,7 +1630,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 	public async Task CloseWorkspaceAsync(WorkspaceViewModel workspace, CancellationToken cancellationToken = default)
 	{
 		InvalidateSelectionOwner(workspace);
-		await AvaloniaScenarioCoordinator.AbortWorkspaceRunsAsync(workspace, cancellationToken);
+		await EndWorkspaceReviewsAsync(workspace);
 		await UnloadWorkspaceWebPagesAsync(
 			workspace,
 			deleteSnapshots: true,
@@ -1672,7 +1648,6 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 	{
 		// The review learns first, so it ends as Aborted rather than as a dead process.
 		await _reviewRelay.NotifySessionClosedAsync(session.Record.Id);
-		_scenarioCoordinator.NotifySessionDied(session.Record.Id);
 		await StopSessionAsync(session, SessionStatus.Exited);
 		await _terminalHost.DisposeTerminalAsync(session.Record.Id);
 		await ViewModel.RemoveSessionAsync(session.Record.Id, cancellationToken);
@@ -1742,7 +1717,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(session);
-		if (!AgentResetCommands.TryGetResetCommand(session.Record.Kind, out _) || session.IsLockedByScenario)
+		if (!AgentResetCommands.TryGetResetCommand(session.Record.Kind, out _))
 		{
 			return;
 		}
@@ -1839,49 +1814,6 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		await RestoreSelectedHostAsync(cancellationToken);
 	}
 
-	public void RequestScenarioSoftStop(ScenarioRunViewModel run) =>
-		_scenarioCoordinator.RequestSoftStop(run);
-
-	public void PauseScenario(ScenarioRunViewModel run) =>
-		_scenarioCoordinator.Pause(run);
-
-	public ScenarioSetupViewModel? CreateScenarioSetup(
-		ScenarioDefinition definition,
-		WorkspaceViewModel? workspace) =>
-		_scenarioCoordinator.CreateSetup(definition, workspace);
-
-	public Task<ScenarioRunViewModel?> StartScenarioAsync(
-		ScenarioDefinition definition,
-		WorkspaceViewModel workspace,
-		ScenarioSetupViewModel setup,
-		CancellationToken cancellationToken = default) =>
-		_scenarioCoordinator.StartAsync(
-			definition,
-			workspace,
-			setup,
-			cancellationToken);
-
-	public void AbortScenario(ScenarioRunViewModel run) =>
-		_scenarioCoordinator.Abort(run);
-
-	public void ResumeScenario(ScenarioRunViewModel run) =>
-		_scenarioCoordinator.Resume(run);
-
-	public async Task CloseScenarioRunAsync(ScenarioRunViewModel run, CancellationToken cancellationToken = default)
-	{
-		if (!await _scenarioCoordinator.CloseRunAsync(run, cancellationToken))
-		{
-			return;
-		}
-
-		if (ReferenceEquals(SelectedScenarioRun, run))
-		{
-			Present(new PresentedSurface.None());
-		}
-
-		await RestoreSelectedHostAsync(cancellationToken);
-	}
-
 	private SessionScreenState? ReadScreenState(string sessionId) =>
 		ViewModel.TerminalTabStatuses.TryGetScreenState(sessionId, out var state) ? state : null;
 
@@ -1891,7 +1823,6 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		return _runtimeCoordinator.WriteInputAsync(
 			sessionId,
 			input,
-			id => ViewModel.Sessions.FirstOrDefault(session => session.Record.Id == id)?.IsLockedByScenario == true,
 			(_, message) => ReportStatusAsync(message));
 	}
 
@@ -1959,11 +1890,6 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		var selectedSession = ViewModel.SelectedSession;
 		if (!string.IsNullOrEmpty(text) && selectedSession is not null)
 		{
-			if (selectedSession.IsLockedByScenario)
-			{
-				throw new InvalidOperationException("Target session is locked by a running scenario.");
-			}
-
 			await _runtimeCoordinator.PasteAsKeyboardAsync(selectedSession.Record.Id, text);
 		}
 	}
@@ -2030,9 +1956,6 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		await RunCleanupStepAsync(_reviewRelay.ShutdownAsync, failures);
 		await RunCleanupStepAsync(StopOrchestratorAsync, failures);
 		await RunCleanupStepAsync(() => eventDrain, failures);
-		await RunCleanupStepAsync(
-			() => _scenarioCoordinator.AbortAllRunsAsync(CancellationToken.None),
-			failures);
 		await RunCleanupStepAsync(() => ViewModel.FlushAllNoteDocumentsAsync(CancellationToken.None), failures);
 		await RunCleanupStepAsync(
 			() => _resumeCapture.CaptureBeforeStopAsync(ViewModel.Sessions.ToArray(), CancellationToken.None),
@@ -2210,13 +2133,6 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		}
 	}
 
-	private bool IsSessionLockedByScenario(string sessionId)
-	{
-		var locked = false;
-		_uiTaskDispatcher.Post(() => locked = ViewModel.FindSession(sessionId)?.IsLockedByScenario == true);
-		return locked;
-	}
-
 	private async Task StartSessionByIdAsync(string sessionId, CancellationToken cancellationToken)
 	{
 		SessionViewModel? session = null;
@@ -2310,9 +2226,43 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 	private Task HandleBrowserFailureAsync(string message) =>
 		ReportStatusAsync($"Web page navigation failed: {message}");
 
+	// A paused or closed project's tabs stop without a process exit the relay would hear about.
+	private async Task EndWorkspaceReviewsAsync(WorkspaceViewModel workspace)
+	{
+		foreach (var session in workspace.Sessions.ToArray())
+		{
+			await _reviewRelay.NotifySessionClosedAsync(session.Record.Id);
+		}
+	}
+
+	// Older Pact versions exchanged review files in .pact-reviews; reviews now go through MCP.
+	private async Task CleanupAbandonedReviewExchangesAsync(CancellationToken cancellationToken)
+	{
+		var projectRoots = ViewModel.Workspaces
+			.Concat(ViewModel.PausedWorkspaces)
+			.Select(workspace => workspace.RootPath)
+			.Where(root => !string.IsNullOrWhiteSpace(root))
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.ToArray();
+		foreach (var projectRoot in projectRoots)
+		{
+			cancellationToken.ThrowIfCancellationRequested();
+			try
+			{
+				ReviewExchangeDirectory.CleanupAbandoned(projectRoot);
+			}
+			catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+			{
+				await AppLog.AppendAsync(
+					_appPaths.RootDirectory,
+					$"Abandoned review exchange cleanup failed for {projectRoot}",
+					exception);
+			}
+		}
+	}
+
 	private void OnSessionProcessDied(string sessionId)
 	{
-		_scenarioCoordinator.NotifySessionDied(sessionId);
 		RunEventOperation(
 			"review-session-died",
 			() => _reviewRelay.NotifySessionDiedAsync(sessionId),
@@ -2737,8 +2687,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 
 		if (e.PropertyName is nameof(MainWindowViewModel.SelectedSession)
 			or nameof(MainWindowViewModel.SelectedProjectNote)
-			or nameof(MainWindowViewModel.SelectedWebPage)
-			or nameof(MainWindowViewModel.SelectedScenarioRun))
+			or nameof(MainWindowViewModel.SelectedWebPage))
 		{
 			InvalidateSelectionIfSourceChanged();
 		}
@@ -2992,7 +2941,6 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			nameof(IsPausedItemVisible));
 		RaiseIfChanged(previousDocs, nextDocs, nameof(CurrentDocsAndNotes));
 		RaiseIfChanged((previous as PresentedSurface.Notes)?.Document, CurrentNoteDocument, nameof(CurrentNoteDocument));
-		RaiseIfChanged((previous as PresentedSurface.ScenarioRun)?.Run, SelectedScenarioRun, nameof(SelectedScenarioRun));
 	}
 
 	private void RaiseIfChanged(bool previous, bool current, string propertyName)

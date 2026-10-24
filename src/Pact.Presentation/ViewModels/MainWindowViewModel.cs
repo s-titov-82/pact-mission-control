@@ -41,7 +41,6 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 		new(StringComparer.OrdinalIgnoreCase);
 	private static readonly TimeSpan NoteDebounceInterval = TimeSpan.FromMilliseconds(750);
 	private SessionViewModel? _selectedSession;
-	private ScenarioRunViewModel? _selectedScenarioRun;
 	private WebPageViewModel? _selectedWebPage;
 	private ProjectNoteViewModel? _selectedProjectNote;
 
@@ -127,9 +126,6 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 
 	/// <summary>Every web page across open projects, flattened.</summary>
 	public ObservableCollection<WebPageViewModel> WebPages { get; } = [];
-
-	/// <summary>Every scenario run across open projects, flattened.</summary>
-	public ObservableCollection<ScenarioRunViewModel> ScenarioRuns { get; } = [];
 
 	/// <summary>
 	/// Sessions offered as "send selection" targets: the selected session's siblings, excluding
@@ -219,14 +215,8 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 	/// <summary>
 	/// Whether any session has an unseen completion, which drives taskbar attention.
 	/// </summary>
-	/// <remarks>
-	/// A scenario consumes its own sessions' turns, so their completions are not waiting for
-	/// anybody. Only a paused run hands its terminals back to the user and is worth interrupting
-	/// for.
-	/// </remarks>
 	public bool HasUnreadCompletions => Sessions.Any(session =>
-		session.Indicator == TerminalTabIndicator.Unread
-		&& !IsDrivenByAdvancingScenario(session));
+		session.Indicator == TerminalTabIndicator.Unread);
 
 	/// <summary>
 	/// Selected terminal session, or <see langword="null"/>. Setting this clears the web page,
@@ -245,12 +235,6 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 			_selectedSession = value;
 			if (value is not null)
 			{
-				if (_selectedScenarioRun is not null)
-				{
-					_selectedScenarioRun = null;
-					OnPropertyChanged(nameof(SelectedScenarioRun));
-				}
-
 				if (_selectedWebPage is not null)
 				{
 					_selectedWebPage = null;
@@ -267,54 +251,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 			RefreshCurrentTerminalState();
 			RefreshCurrentBrowserState();
 			RefreshCurrentNoteState();
-			RefreshCurrentScenarioState();
 			RefreshTerminalActionTargets();
-			OnPropertyChanged();
-		}
-	}
-
-	/// <summary>
-	/// Selected scenario run, or <see langword="null"/>. Setting this clears the other selections.
-	/// </summary>
-	public ScenarioRunViewModel? SelectedScenarioRun
-	{
-		get => _selectedScenarioRun;
-		set
-		{
-			if (ReferenceEquals(_selectedScenarioRun, value))
-			{
-				return;
-			}
-
-			_selectedScenarioRun = value;
-			if (value is not null)
-			{
-				if (_selectedSession is not null)
-				{
-					_selectedSession = null;
-					OnPropertyChanged(nameof(SelectedSession));
-				}
-
-				if (_selectedWebPage is not null)
-				{
-					_selectedWebPage = null;
-					OnPropertyChanged(nameof(SelectedWebPage));
-				}
-
-				if (_selectedProjectNote is not null)
-				{
-					_selectedProjectNote = null;
-					OnPropertyChanged(nameof(SelectedProjectNote));
-				}
-
-				RefreshCurrentTerminalState();
-				RefreshCurrentBrowserState();
-				RefreshCurrentNoteState();
-				RefreshCurrentScenarioState();
-				RefreshTerminalActionTargets();
-			}
-
-			RefreshCurrentScenarioState();
 			OnPropertyChanged();
 		}
 	}
@@ -344,12 +281,6 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 					OnPropertyChanged(nameof(SelectedSession));
 				}
 
-				if (_selectedScenarioRun is not null)
-				{
-					_selectedScenarioRun = null;
-					OnPropertyChanged(nameof(SelectedScenarioRun));
-				}
-
 				if (_selectedProjectNote is not null)
 				{
 					_selectedProjectNote = null;
@@ -359,7 +290,6 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 
 			RefreshCurrentBrowserState();
 			RefreshCurrentNoteState();
-			RefreshCurrentScenarioState();
 			OnPropertyChanged();
 		}
 	}
@@ -382,8 +312,6 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 			{
 				if (_selectedSession is not null)
 				{ _selectedSession = null; OnPropertyChanged(nameof(SelectedSession)); }
-				if (_selectedScenarioRun is not null)
-				{ _selectedScenarioRun = null; OnPropertyChanged(nameof(SelectedScenarioRun)); }
 				if (_selectedWebPage is not null)
 				{ _selectedWebPage = null; OnPropertyChanged(nameof(SelectedWebPage)); }
 			}
@@ -391,7 +319,6 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 			RefreshCurrentBrowserState();
 			RefreshTerminalActionTargets();
 			RefreshCurrentNoteState();
-			RefreshCurrentScenarioState();
 			OnPropertyChanged();
 		}
 	}
@@ -426,12 +353,6 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 		PausedWorkspaces.Clear();
 		Sessions.Clear();
 		WebPages.Clear();
-		foreach (var run in ScenarioRuns)
-		{
-			run.PropertyChanged -= OnScenarioRunPropertyChanged;
-		}
-
-		ScenarioRuns.Clear();
 		PromptTemplates.Clear();
 		RootTabs.UpdateRecord(rootTabsRecord);
 		foreach (var session in RootTabs.Sessions.Where(session => !session.IsManuallyPaused))
@@ -609,99 +530,6 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 		{
 			page.SetLoadingGlyph(glyph);
 		}
-	}
-
-	/// <summary>
-	/// Locks or unlocks the listed sessions for a run. Unlocking only affects sessions locked by
-	/// that same run, so one run cannot release another run's locks.
-	/// </summary>
-	public void SetScenarioLocks(string runId, IEnumerable<string> sessionIds, bool locked)
-	{
-		ArgumentException.ThrowIfNullOrWhiteSpace(runId);
-		ArgumentNullException.ThrowIfNull(sessionIds);
-
-		var changed = false;
-		foreach (var sessionId in sessionIds)
-		{
-			var session = FindSessionViewModel(sessionId);
-			if (session is null)
-			{
-				continue;
-			}
-
-			if (locked)
-			{
-				changed |= !session.IsLockedByScenario
-					|| !string.Equals(session.LockedByScenarioRunId, runId, StringComparison.Ordinal);
-				session.LockForScenario(runId);
-				continue;
-			}
-
-			if (string.Equals(session.LockedByScenarioRunId, runId, StringComparison.Ordinal))
-			{
-				session.UnlockFromScenario();
-				changed = true;
-			}
-		}
-
-		if (changed)
-		{
-			RefreshTerminalActionTargets();
-		}
-	}
-
-	/// <summary>Adds a run under its project, optionally preserving the current selection.</summary>
-	public void AddScenarioRun(
-		string workspaceId,
-		ScenarioRunViewModel run,
-		bool select = true)
-	{
-		ArgumentException.ThrowIfNullOrWhiteSpace(workspaceId);
-		ArgumentNullException.ThrowIfNull(run);
-
-		var workspace = FindWorkspaceViewModel(workspaceId)
-			?? throw new InvalidOperationException($"Project '{workspaceId}' was not found.");
-		if (!workspace.ScenarioRuns.Contains(run))
-		{
-			workspace.ScenarioRuns.Add(run);
-		}
-
-		if (!ScenarioRuns.Contains(run))
-		{
-			run.PropertyChanged += OnScenarioRunPropertyChanged;
-			ScenarioRuns.Add(run);
-			OnPropertyChanged(nameof(HasUnreadCompletions));
-		}
-
-		if (select)
-		{
-			SelectedWorkspace = workspace;
-			SelectedScenarioRun = run;
-		}
-	}
-
-	/// <summary>Removes a run from the window and its project.</summary>
-	public void RemoveScenarioRun(ScenarioRunViewModel run)
-	{
-		ArgumentNullException.ThrowIfNull(run);
-
-		foreach (var workspace in Workspaces.Concat(PausedWorkspaces))
-		{
-			workspace.ScenarioRuns.Remove(run);
-		}
-
-		if (ScenarioRuns.Remove(run))
-		{
-			run.PropertyChanged -= OnScenarioRunPropertyChanged;
-			OnPropertyChanged(nameof(HasUnreadCompletions));
-		}
-
-		if (ReferenceEquals(SelectedScenarioRun, run))
-		{
-			SelectedScenarioRun = null;
-		}
-
-		run.Dispose();
 	}
 
 	/// <summary>
@@ -1869,7 +1697,6 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 		var workspaceToRemove = FindWorkspaceViewModel(workspaceId);
 		var sessionsToRemove = workspaceToRemove?.Sessions.ToArray() ?? [];
 		var webPagesToRemove = workspaceToRemove?.WebPages.ToArray() ?? [];
-		var runsToRemove = workspaceToRemove?.ScenarioRuns.ToArray() ?? [];
 
 		await _structurePersistence.RemoveProjectAsync(workspaceId, cancellationToken);
 
@@ -1881,11 +1708,6 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 		foreach (var webPage in webPagesToRemove)
 		{
 			WebPages.Remove(webPage);
-		}
-
-		foreach (var run in runsToRemove)
-		{
-			RemoveScenarioRun(run);
 		}
 
 		if (workspaceToRemove is not null)
@@ -1933,7 +1755,6 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 			workspace => string.Equals(workspace.Id, workspaceId, StringComparison.Ordinal));
 		var sessionsToPause = workspaceToPause?.Sessions.ToArray() ?? [];
 		var webPagesToPause = workspaceToPause?.WebPages.ToArray() ?? [];
-		var runsToRemove = workspaceToPause?.ScenarioRuns.ToArray() ?? [];
 
 		var updatedProject = await _structurePersistence.PauseProjectAsync(
 			workspaceId,
@@ -1967,11 +1788,6 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 		foreach (var webPage in webPagesToPause)
 		{
 			WebPages.Remove(webPage);
-		}
-
-		foreach (var run in runsToRemove)
-		{
-			RemoveScenarioRun(run);
 		}
 
 		if (SelectedSession is not null
@@ -2132,7 +1948,6 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 		}
 
 		if (SelectedSession is not null
-			&& !SelectedSession.IsLockedByScenario
 			&& !SelectedSession.IsManuallyPaused)
 		{
 			foreach (var template in PromptTemplates.Where(template => !template.UsesSelectedText))
@@ -2170,7 +1985,6 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 		var rootSessions = RootTabs.Sessions
 			.Where(session => !session.IsManuallyPaused)
 			.Where(session => !ReferenceEquals(session, SelectedSession))
-			.Where(session => !session.IsLockedByScenario)
 			.Where(session => SelectedSelectionAction is { IsRaw: true }
 				|| SelectedSelectionAction?.Template is { } rootTemplate
 				&& PromptActionPolicy.CanTarget(rootTemplate.EffectiveType, session.Record.Kind))
@@ -2186,7 +2000,6 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 		{
 			var sessions = workspace.Sessions
 				.Where(session => !ReferenceEquals(session, SelectedSession))
-				.Where(session => !session.IsLockedByScenario)
 				.Where(session => SelectedSelectionAction is { IsRaw: true } || SelectedSelectionAction?.Template is { } template && PromptActionPolicy.CanTarget(template.EffectiveType, session.Record.Kind))
 				.ToArray();
 			var isSourceNoteProject = sourceIsNote && workspace.Notes.Any(note => ReferenceEquals(note, SelectedProjectNote));
@@ -2242,10 +2055,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 
 		foreach (var target in targets.Distinct())
 		{
-			if (!target.IsLockedByScenario)
-			{
-				SendSelectedTargets.Add(target);
-			}
+			SendSelectedTargets.Add(target);
 		}
 	}
 
@@ -2268,7 +2078,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 			if (SelectedSession.IsRootItem)
 			{
 				foreach (var rootSession in RootTabs.Sessions.Where(session =>
-							 !session.IsManuallyPaused && !session.IsLockedByScenario))
+							 !session.IsManuallyPaused))
 				{
 					PromptTemplateTargets.Add(rootSession);
 				}
@@ -2279,14 +2089,11 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 
 		foreach (var target in workspace.Sessions)
 		{
-			if (!target.IsLockedByScenario)
-			{
-				PromptTemplateTargets.Add(target);
-			}
+			PromptTemplateTargets.Add(target);
 		}
 
 		foreach (var rootSession in RootTabs.Sessions.Where(session =>
-					 !session.IsManuallyPaused && !session.IsLockedByScenario))
+					 !session.IsManuallyPaused))
 		{
 			PromptTemplateTargets.Add(rootSession);
 		}
@@ -2363,28 +2170,11 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 
 	private void OnTerminalStatusSessionPropertyChanged(object? sender, PropertyChangedEventArgs args)
 	{
-		if (args.PropertyName is nameof(SessionViewModel.Indicator)
-			or nameof(SessionViewModel.LockedByScenarioRunId))
+		if (args.PropertyName is nameof(SessionViewModel.Indicator))
 		{
 			OnPropertyChanged(nameof(HasUnreadCompletions));
 		}
 	}
-
-	private void OnScenarioRunPropertyChanged(object? sender, PropertyChangedEventArgs args)
-	{
-		// Pausing hands the run's terminals back, so the same unread completion starts asking
-		// for the user at that moment and stops asking again on resume.
-		if (args.PropertyName == nameof(ScenarioRunViewModel.State))
-		{
-			OnPropertyChanged(nameof(HasUnreadCompletions));
-		}
-	}
-
-	private bool IsDrivenByAdvancingScenario(SessionViewModel session) =>
-		session.LockedByScenarioRunId is { } runId
-		&& ScenarioRuns.Any(run =>
-			string.Equals(run.RunId, runId, StringComparison.Ordinal)
-			&& run.State != ScenarioRunState.Paused);
 
 	private void RefreshCurrentBrowserState()
 	{
@@ -2760,14 +2550,6 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 			{
 				note.SetCurrentNote(ReferenceEquals(note, SelectedProjectNote));
 			}
-		}
-	}
-
-	private void RefreshCurrentScenarioState()
-	{
-		foreach (var run in ScenarioRuns)
-		{
-			run.SetCurrentScenario(ReferenceEquals(run, SelectedScenarioRun));
 		}
 	}
 

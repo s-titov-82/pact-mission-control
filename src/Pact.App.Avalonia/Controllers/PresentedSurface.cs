@@ -27,9 +27,6 @@ internal abstract record PresentedSurface
 		DocsAndNotesWorkspaceViewModel Workspace,
 		ProjectNoteDocument Document) : PresentedSurface;
 
-	/// <summary>A scenario run's journal.</summary>
-	public sealed record ScenarioRun(ScenarioRunViewModel Run) : PresentedSurface;
-
 	/// <summary>The browser, showing the view model's selected web page.</summary>
 	public sealed record Web : PresentedSurface;
 

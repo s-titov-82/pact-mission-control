@@ -75,8 +75,6 @@ internal static class CompositionRoot
 			provider.GetRequiredService<IUiTaskDispatcher>().Post));
 		services.AddSingleton<MainWindowViewModel>();
 		services.AddSingleton<SettingsFileStore>();
-		services.AddSingleton(provider =>
-			new ScenarioDefinitionStore(provider.GetRequiredService<AppPaths>().ScenariosPath));
 		services.AddSingleton<WindowLayoutStore>();
 		services.AddSingleton(provider =>
 			new AppearanceSettingsStore(

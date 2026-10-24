@@ -95,37 +95,6 @@ public sealed class SessionViewModelTests
 	}
 
 	[Test]
-	public void LockForScenario_sets_lock_state_and_notifies_dependents()
-	{
-		SessionViewModel session = new(CreateSessionRecord());
-		List<string?> changedProperties = [];
-		session.PropertyChanged += (_, args) => changedProperties.Add(args.PropertyName);
-
-		session.LockForScenario("run-1");
-
-		session.LockedByScenarioRunId.ShouldBe("run-1");
-		session.IsLockedByScenario.ShouldBeTrue();
-		changedProperties.ShouldContain(nameof(SessionViewModel.LockedByScenarioRunId));
-		changedProperties.ShouldContain(nameof(SessionViewModel.IsLockedByScenario));
-	}
-
-	[Test]
-	public void UnlockFromScenario_clears_lock_state_and_notifies_dependents()
-	{
-		SessionViewModel session = new(CreateSessionRecord());
-		session.LockForScenario("run-1");
-		List<string?> changedProperties = [];
-		session.PropertyChanged += (_, args) => changedProperties.Add(args.PropertyName);
-
-		session.UnlockFromScenario();
-
-		session.LockedByScenarioRunId.ShouldBeNull();
-		session.IsLockedByScenario.ShouldBeFalse();
-		changedProperties.ShouldContain(nameof(SessionViewModel.LockedByScenarioRunId));
-		changedProperties.ShouldContain(nameof(SessionViewModel.IsLockedByScenario));
-	}
-
-	[Test]
 	[TestCase(AgentKind.Claude, true)]
 	[TestCase(AgentKind.Codex, true)]
 	[TestCase(AgentKind.Pwsh, false)]

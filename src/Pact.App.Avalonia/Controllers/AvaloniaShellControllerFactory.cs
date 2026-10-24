@@ -40,7 +40,6 @@ internal sealed class AvaloniaShellControllerFactory
 	private readonly IExecutableLocator _executableLocator;
 	private readonly RecentDirectoryStore _recentDirectoryStore;
 	private readonly WebMonitorCoordinator _webMonitorCoordinator;
-	private readonly ScenarioDefinitionStore _scenarioDefinitionStore;
 	private readonly IClipboardService _clipboard;
 	private readonly TimeProvider _timeProvider;
 
@@ -53,7 +52,6 @@ internal sealed class AvaloniaShellControllerFactory
 		IExecutableLocator executableLocator,
 		RecentDirectoryStore recentDirectoryStore,
 		WebMonitorCoordinator webMonitorCoordinator,
-		ScenarioDefinitionStore scenarioDefinitionStore,
 		IClipboardService clipboard,
 		TimeProvider timeProvider)
 	{
@@ -71,8 +69,6 @@ internal sealed class AvaloniaShellControllerFactory
 			recentDirectoryStore ?? throw new ArgumentNullException(nameof(recentDirectoryStore));
 		_webMonitorCoordinator =
 			webMonitorCoordinator ?? throw new ArgumentNullException(nameof(webMonitorCoordinator));
-		_scenarioDefinitionStore =
-			scenarioDefinitionStore ?? throw new ArgumentNullException(nameof(scenarioDefinitionStore));
 		_clipboard = clipboard ?? throw new ArgumentNullException(nameof(clipboard));
 		_timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
 	}
@@ -115,7 +111,6 @@ internal sealed class AvaloniaShellControllerFactory
 			_webMonitorCoordinator,
 			WindowServices.UiTaskDispatcher,
 			WindowServices.EventTasks,
-			_scenarioDefinitionStore,
 			_clipboard,
 			_timeProvider,
 			updateController: updateController,

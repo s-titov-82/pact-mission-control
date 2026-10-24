@@ -1,9 +1,9 @@
 using Pact.App.Avalonia.Lifecycle;
 using Pact.Core.AgentControl;
 using Pact.Core.Presentation;
-using Pact.Core.Scenarios;
 using Pact.Core.Sessions;
 using Pact.Presentation.Services.Orchestrator;
+using Pact.Presentation.Services.Reviews;
 using Pact.Presentation.ViewModels;
 
 namespace Pact.App.Avalonia.Controllers;
@@ -22,6 +22,7 @@ internal sealed class OrchestratorHost : IOrchestratorHost
 		Task<WebPageDocumentFragment?>> _readWebTabHtmlAsync;
 	private readonly Func<string?> _orchestratorSessionId;
 	private readonly Func<string, CancellationToken, Task<SessionReadiness>> _startAndWaitReadyAsync;
+	private readonly ReviewRelay _reviews;
 
 	public OrchestratorHost(
 		MainWindowViewModel viewModel,
@@ -35,8 +36,10 @@ internal sealed class OrchestratorHost : IOrchestratorHost
 			CancellationToken,
 			Task<WebPageDocumentFragment?>> readWebTabHtmlAsync,
 		Func<string?> orchestratorSessionId,
-		Func<string, CancellationToken, Task<SessionReadiness>> startAndWaitReadyAsync)
+		Func<string, CancellationToken, Task<SessionReadiness>> startAndWaitReadyAsync,
+		ReviewRelay reviews)
 	{
+		_reviews = reviews ?? throw new ArgumentNullException(nameof(reviews));
 		_viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
 		_uiTaskDispatcher = uiTaskDispatcher
 			?? throw new ArgumentNullException(nameof(uiTaskDispatcher));
@@ -107,89 +110,9 @@ internal sealed class OrchestratorHost : IOrchestratorHost
 		return found is not null;
 	}
 
-	public IReadOnlyList<ActiveRunSummary> ListActiveRuns()
-	{
-		IReadOnlyList<ActiveRunSummary> result = [];
-		_uiTaskDispatcher.Post(() =>
-		{
-			result = _viewModel.ScenarioRuns
-				.Where(run => !run.IsTerminal)
-				.Select(ProjectRun)
-				.ToArray();
-		});
-		return result;
-	}
+	public IReadOnlyList<ReviewSummary> ListActiveReviews() => _reviews.ListActive();
 
-	public bool TryGetActiveRun(string runId, out ReviewRunDetails details)
-	{
-		ReviewRunDetails? found = null;
-		_uiTaskDispatcher.Post(() =>
-		{
-			var run = FindActiveRun(runId);
-			if (run is not null)
-			{
-				found = new ReviewRunDetails(
-					ProjectRun(run),
-					run.Journal.Select(entry => new ReviewJournalSummary(
-						entry.Timestamp,
-						entry.Level.ToString().ToLowerInvariant(),
-						entry.StepId,
-						entry.Message)).ToArray());
-			}
-		});
-		details = found!;
-		return found is not null;
-	}
-
-	public ReviewControlOutcome RequestReviewPause(string runId)
-	{
-		ReviewControlOutcome? result = null;
-		_uiTaskDispatcher.Post(() =>
-		{
-			var run = FindActiveRun(runId);
-			if (run is null)
-			{
-				result = new(ReviewControlStatus.UnknownRun, null);
-				return;
-			}
-
-			var status = run.RequestManualPause() switch
-			{
-				ScenarioPauseRequestStatus.Requested
-					or ScenarioPauseRequestStatus.Escalated => ReviewControlStatus.Applied,
-				ScenarioPauseRequestStatus.Unchanged => ReviewControlStatus.Unchanged,
-				_ => ReviewControlStatus.NotPausable
-			};
-			result = new(status, ProjectRun(run));
-		});
-		return result!;
-	}
-
-	public ReviewControlOutcome ResumeReview(string runId)
-	{
-		ReviewControlOutcome? result = null;
-		_uiTaskDispatcher.Post(() =>
-		{
-			var run = FindActiveRun(runId);
-			if (run is null)
-			{
-				result = new(ReviewControlStatus.UnknownRun, null);
-				return;
-			}
-
-			if (run.State == ScenarioRunState.StoppingAfterStep)
-			{
-				result = new(ReviewControlStatus.NotPausable, ProjectRun(run));
-				return;
-			}
-
-			var status = run.TryResume()
-				? ReviewControlStatus.Applied
-				: ReviewControlStatus.Unchanged;
-			result = new(status, ProjectRun(run));
-		});
-		return result!;
-	}
+	public ReviewSummary? FindReview(string reviewId) => _reviews.Find(reviewId);
 
 	public IReadOnlyList<UsageSummary> ListUsage()
 	{
@@ -370,14 +293,6 @@ internal sealed class OrchestratorHost : IOrchestratorHost
 		return result;
 	}
 
-	public bool IsScenarioLocked(string sessionId, out string runId)
-	{
-		string? found = null;
-		_uiTaskDispatcher.Post(() => found = FindSession(sessionId)?.LockedByScenarioRunId);
-		runId = found ?? string.Empty;
-		return found is not null;
-	}
-
 	public bool IsSessionAlive(string sessionId) => _isSessionAlive(sessionId);
 
 	public async Task<SessionStartOutcome> StartSessionAsync(string sessionId, CancellationToken cancellationToken)
@@ -465,59 +380,4 @@ internal sealed class OrchestratorHost : IOrchestratorHost
 		session.Indicator.ToString(),
 		session.StatusDescription,
 		session.BusySince == default ? null : session.BusySince);
-
-	private string FindWorkspaceId(ScenarioRunViewModel run) =>
-		_viewModel.Workspaces.FirstOrDefault(workspace => workspace.ScenarioRuns.Contains(run))?.Id
-		?? "unknown";
-
-	private ScenarioRunViewModel? FindActiveRun(string runId) =>
-		_viewModel.ScenarioRuns.FirstOrDefault(run =>
-			!run.IsTerminal
-			&& string.Equals(run.RunId, runId, StringComparison.Ordinal));
-
-	private ActiveRunSummary ProjectRun(ScenarioRunViewModel run)
-	{
-		var expected = run.ExpectedResponse;
-		var state = run.PauseRequested
-			? "pause-requested"
-			: run.State switch
-			{
-				ScenarioRunState.Running => "running",
-				ScenarioRunState.Paused => "paused",
-				ScenarioRunState.StoppingAfterStep => "stopping",
-				_ => run.State.ToString().ToLowerInvariant()
-			};
-		var pauseKind = run.State == ScenarioRunState.Paused
-			? run.PauseKind == ScenarioPauseKind.Manual ? "manual" : "attention"
-			: null;
-		var currentStepName = run.Blueprint.Steps
-			.FirstOrDefault(step => string.Equals(
-				step.Id,
-				run.CurrentStepId,
-				StringComparison.Ordinal))?.Description;
-
-		return new ActiveRunSummary(
-			run.RunId,
-			FindWorkspaceId(run),
-			FindRole(run, "author"),
-			FindRole(run, "reviewer"),
-			run.CurrentIteration,
-			run.StartedAt,
-			state,
-			pauseKind,
-			run.CurrentStepId,
-			currentStepName,
-			run.PauseRequested,
-			expected?.Role,
-			expected?.SessionId,
-			expected?.TaskPath,
-			expected?.ResponsePath);
-	}
-
-	private static string FindRole(ScenarioRunViewModel run, string role) =>
-		run.RoleBindings.FirstOrDefault(pair => string.Equals(
-			pair.Key,
-			role,
-			StringComparison.OrdinalIgnoreCase)).Value
-		?? string.Empty;
 }

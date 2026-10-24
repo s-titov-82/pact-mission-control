@@ -61,37 +61,19 @@ public sealed partial class SessionRuntimeCoordinatorTests
 		backend.InputWrites.ShouldBe([Pasted, PlainEnter]);
 	}
 
-	[TestCase(PromptSender.Outsider)]
-	[TestCase(PromptSender.ScenarioOwner)]
-	public async Task A_pending_question_refuses_every_sender(PromptSender sender)
+	[Test]
+	public async Task A_pending_question_refuses_the_prompt()
 	{
 		var (coordinator, backend, _, facts, controller) = await CreateDeliverySessionAsync();
 		await using var _ = controller;
 		facts.Screen = Question("Approve this edit?");
 
-		var result = await DeliverAsync(coordinator, sender: sender);
+		var result = await DeliverAsync(coordinator);
 
 		result.Outcome.ShouldBe(PromptDeliveryOutcome.RefusedQuestion);
 		result.StatusLine.ShouldBe("Approve this edit?");
 		result.WriteAttempted.ShouldBeFalse();
 		backend.InputWrites.ShouldBeEmpty();
-	}
-
-	[Test]
-	public async Task A_scenario_lock_refuses_only_outsiders()
-	{
-		var (coordinator, backend, host, facts, controller) = await CreateDeliverySessionAsync();
-		await using var _ = controller;
-		facts.Locked = true;
-		host.CaptureScreen = _ => ComposerScreen(empty: backend.InputWrites.Contains(PlainEnter));
-
-		var outsider = await DeliverAsync(coordinator, sender: PromptSender.Outsider);
-		backend.InputWrites.ShouldBeEmpty();
-		var owner = await DeliverAsync(coordinator, sender: PromptSender.ScenarioOwner);
-
-		outsider.Outcome.ShouldBe(PromptDeliveryOutcome.RefusedLocked);
-		owner.Outcome.ShouldBe(PromptDeliveryOutcome.Confirmed);
-		backend.InputWrites.ShouldBe([Pasted, PlainEnter]);
 	}
 
 	[Test]
@@ -209,7 +191,6 @@ public sealed partial class SessionRuntimeCoordinatorTests
 				await coordinator.WriteInputAsync(
 					"session-1",
 					"x",
-					static _ => false,
 					static (_, _) => Task.CompletedTask);
 			}
 
@@ -237,7 +218,6 @@ public sealed partial class SessionRuntimeCoordinatorTests
 				typed = coordinator.WriteInputAsync(
 					"session-1",
 					"x",
-					static _ => false,
 					static (_, _) => Task.CompletedTask);
 			}
 		};
@@ -619,12 +599,9 @@ public sealed partial class SessionRuntimeCoordinatorTests
 	private sealed class FakeFacts : ISessionFacts
 	{
 		public SessionScreenState? Screen { get; set; } = Idle();
-		public bool Locked { get; set; }
 		public Func<string, Task>? Start { get; set; }
 
 		public SessionScreenState? ReadScreen(string sessionId) => Screen;
-
-		public bool IsScenarioLocked(string sessionId) => Locked;
 
 		public Task StartAsync(string sessionId, CancellationToken cancellationToken) =>
 			Start?.Invoke(sessionId) ?? Task.CompletedTask;

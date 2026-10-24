@@ -241,7 +241,6 @@ public sealed partial class SessionRuntimeCoordinatorTests
 				typed = coordinator.WriteInputAsync(
 					"session-1",
 					"x",
-					static _ => false,
 					static (_, _) => Task.CompletedTask);
 			}
 		};

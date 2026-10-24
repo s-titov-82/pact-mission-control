@@ -3,7 +3,6 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Pact.Core.Prompting;
-using Pact.Core.Scenarios;
 using Pact.Presentation.ViewModels;
 
 namespace Pact.App.Avalonia.Views;
@@ -26,7 +25,6 @@ internal sealed partial class RightActionsPanel : UserControl
 	public event EventHandler<PromptTemplateRecord>? QuickActionRequested;
 	public event EventHandler? SettingsRequested;
 	public event EventHandler? RestartAndUpdateRequested;
-	public event EventHandler<ScenarioDefinition>? ScenarioRequested;
 
 	/// <summary>Documentation workspace whose tree this panel renders, if any.</summary>
 	public DocsAndNotesWorkspaceViewModel? Workspace
@@ -135,11 +133,4 @@ internal sealed partial class RightActionsPanel : UserControl
 	private void OnRestartAndUpdateClicked(object? sender, RoutedEventArgs e) =>
 		RestartAndUpdateRequested?.Invoke(this, EventArgs.Empty);
 
-	private void OnScenarioClicked(object? sender, RoutedEventArgs e)
-	{
-		if (sender is Control { DataContext: ScenarioDefinition definition })
-		{
-			ScenarioRequested?.Invoke(this, definition);
-		}
-	}
 }

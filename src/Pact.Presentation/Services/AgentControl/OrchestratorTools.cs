@@ -99,29 +99,22 @@ public static class OrchestratorTools
 				(_, _) => Task.FromResult(Complete(dispatcher.GetSubscriptionUsage()))),
 			Tool(
 				"pact_list_active_runs",
-				"Scenario runs in progress, including pause state, current step, and the durable "
-					+ "response file each run awaits. Sessions taking part are input-locked; "
-					+ "report them as under review, not merely busy.",
+				"Reviews in progress between two agents: participants, state, iteration, whose turn "
+					+ "it is, and the log file under .pact/reviews. The user can still type into both tabs.",
 				new JsonObject(),
 				(_, _) => Task.FromResult(Complete(dispatcher.ListActiveRuns()))),
-			ReviewRunTool(
+			Tool(
 				"pact_get_review_run",
-				"One active review run in detail, including its in-memory journal and the exact "
-					+ "task/response file exchange currently expected.",
-				"Active review run to inspect.",
-				dispatcher.GetReviewRun),
-			ReviewRunTool(
-				"pact_pause_review",
-				"Request a manual pause at the current safe boundary. A pending pause is retained; "
-					+ "an attention pause is escalated so automatic writes stay blocked until Resume.",
-				"Active review run to pause.",
-				dispatcher.PauseReview),
-			ReviewRunTool(
-				"pact_resume_review",
-				"Resume an established review pause. Calling this while a pause is only requested "
-					+ "does not cancel the pending pause.",
-				"Active review run to resume.",
-				dispatcher.ResumeReview),
+				"One active review: participants, state, iteration, whose turn it is and its log file.",
+				new JsonObject
+				{
+					["runId"] = AgentControlSchema.String("Review id from pact_list_active_runs.")
+				},
+				(call, _) => Task.FromResult(
+					TryGetRequiredString(call.Arguments, "runId", out var reviewId, out var error)
+						? Complete(dispatcher.GetReviewRun(reviewId))
+						: error),
+				"runId"),
 			Tool(
 				"pact_get_project_notes",
 				"Read the exact Notes buffer and revision for a running project workspace.",
@@ -258,21 +251,6 @@ public static class OrchestratorTools
 			description,
 			() => AgentControlSchema.Object(properties.DeepClone().AsObject(), required),
 			invokeAsync);
-
-	private static AgentControlTool ReviewRunTool(
-		string name,
-		string description,
-		string runIdDescription,
-		Func<string, AgentControlResult> run) =>
-		Tool(
-			name,
-			description,
-			new JsonObject { ["runId"] = AgentControlSchema.String(runIdDescription) },
-			(call, _) => Task.FromResult(
-				TryGetRequiredString(call.Arguments, "runId", out var runId, out var error)
-					? Complete(run(runId))
-					: error),
-			"runId");
 
 	private static AgentControlResultData Complete(AgentControlResult result) =>
 		result.Succeeded

@@ -152,7 +152,6 @@ public static class SelectedTabDetailsFactory
 			new("Activity", FormatActivity(diagnostics)),
 			new("Viewport", FormatViewport(diagnostics)),
 			new("Working directory", session.Record.WorkingDirectory, session.Record.WorkingDirectory),
-			new("Scenario", FormatScenario(session.LockedByScenarioRunId)),
 			new("Classified", FormatTimestamp(diagnostics?.LastClassificationAt))
 		};
 		AppendProcessMetrics(rows, metrics);
@@ -347,17 +346,6 @@ public static class SelectedTabDetailsFactory
 		diagnostics?.Columns is int columns && diagnostics.Rows is int rows
 			? $"{columns.ToString(CultureInfo.InvariantCulture)} × {rows.ToString(CultureInfo.InvariantCulture)}"
 			: "Unknown";
-
-	private static string FormatScenario(string? runId)
-	{
-		if (string.IsNullOrWhiteSpace(runId))
-		{
-			return "Unlocked";
-		}
-
-		var shortId = runId.Length <= 8 ? runId : runId[..8];
-		return $"Locked by {shortId}";
-	}
 
 	private static void AppendProcessMetrics(
 		List<SelectedTabDetailRowViewModel> rows,

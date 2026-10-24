@@ -241,8 +241,7 @@ public sealed class ProjectItemViewModel : SettingsObservableObject
 }
 
 /// <summary>
-/// One session tab nested under a <see cref="ProjectItemViewModel"/>. Locked sessions (currently
-/// driven by a running scenario) always produce an empty edit regardless of any field changes.
+/// One session tab nested under a <see cref="ProjectItemViewModel"/>.
 /// </summary>
 public sealed class SessionSettingsItemViewModel : SettingsObservableObject
 {
@@ -268,7 +267,6 @@ public sealed class SessionSettingsItemViewModel : SettingsObservableObject
 			showWorkingDirectoryForAllKinds || record.Kind is AgentKind.Pwsh or AgentKind.Custom;
 		KindDisplay = record.Kind.ToString();
 		StatusDisplay = record.Status.ToString();
-		IsLocked = session.IsLockedByScenario;
 
 		_title = record.Title;
 		_baselineTitle = record.Title;
@@ -301,9 +299,6 @@ public sealed class SessionSettingsItemViewModel : SettingsObservableObject
 	/// <see cref="Validate"/> skips the directory check.
 	/// </summary>
 	public bool ShowWorkingDirectorySetting { get; }
-
-	/// <summary>Captured at load from <see cref="SessionViewModel.IsLockedByScenario"/>.</summary>
-	public bool IsLocked { get; }
 
 	/// <summary>Tab title.</summary>
 	public string Title
@@ -365,16 +360,10 @@ public sealed class SessionSettingsItemViewModel : SettingsObservableObject
 		!ProjectFieldDiff.TrimEquals(ResumeCommand, _baselineResumeCommand);
 
 	/// <summary>
-	/// Emits only the fields whose trimmed current value differs from its baseline. Always empty
-	/// for a locked session, regardless of any edited fields.
+	/// Emits only the fields whose trimmed current value differs from its baseline.
 	/// </summary>
 	public SessionSettingsEdit BuildSessionEdit()
 	{
-		if (IsLocked)
-		{
-			return new SessionSettingsEdit();
-		}
-
 		var title = ProjectFieldDiff.TrimEquals(Title, _baselineTitle) ? null : Title;
 		var workingDirectory = ProjectFieldDiff.TrimEquals(WorkingDirectory, _baselineWorkingDirectory) ? null : WorkingDirectory;
 		var launchCommand = ProjectFieldDiff.TrimEquals(LaunchCommand, _baselineLaunchCommand) ? null : LaunchCommand;

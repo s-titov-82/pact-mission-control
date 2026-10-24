@@ -191,24 +191,17 @@
             <StackPanel Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Top"
                         IsVisible="{Binding SelectedSession, Converter={StaticResource HasValue}}">
               <TextBlock Classes="SettingsInfoLine" Text="{Binding SelectedSession.InfoLine}" />
-              <TextBlock Foreground="{DynamicResource AppDangerStrongBrush}"
-                         FontStyle="Italic" IsVisible="{Binding SelectedSession.IsLocked}"
-                         Text="Locked by a running scenario." />
               <TextBlock Classes="SettingsFieldLabel" Text="Title" />
               <TextBox x:Name="SessionTitleTextBox"
-                       IsReadOnly="{Binding SelectedSession.IsLocked}"
                        Text="{Binding SelectedSession.Title}" />
               <StackPanel IsVisible="{Binding SelectedSession.ShowWorkingDirectorySetting}">
                 <TextBlock Classes="SettingsFieldLabel" Text="Working directory" />
-                <TextBox IsReadOnly="{Binding SelectedSession.IsLocked}"
-                         Text="{Binding SelectedSession.WorkingDirectory}" />
+                <TextBox Text="{Binding SelectedSession.WorkingDirectory}" />
               </StackPanel>
               <TextBlock Classes="SettingsFieldLabel" Text="Launch command" />
-              <TextBox IsReadOnly="{Binding SelectedSession.IsLocked}"
-                       Text="{Binding SelectedSession.LaunchCommand}" />
+              <TextBox Text="{Binding SelectedSession.LaunchCommand}" />
               <TextBlock Classes="SettingsFieldLabel" Text="Resume command" />
-              <TextBox IsReadOnly="{Binding SelectedSession.IsLocked}"
-                       Text="{Binding SelectedSession.ResumeCommand}" />
+              <TextBox Text="{Binding SelectedSession.ResumeCommand}" />
             </StackPanel>
           </Grid>
         </StackPanel>

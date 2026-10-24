@@ -1,6 +1,7 @@
 using Pact.Core.AgentControl;
 using Pact.Core.Presentation;
 using Pact.Core.Sessions;
+using Pact.Presentation.Services.Reviews;
 
 namespace Pact.Presentation.Services.Orchestrator;
 
@@ -31,80 +32,6 @@ public sealed record SessionSummary(
 	string Indicator,
 	string Activity,
 	DateTimeOffset? ActivitySince);
-
-/// <summary>An active review run, its control state, and the durable exchange it awaits.</summary>
-/// <param name="RunId">Stable run id.</param>
-/// <param name="WorkspaceId">Owning project id.</param>
-/// <param name="AuthorSessionId">Author session controlled by the run.</param>
-/// <param name="ReviewerSessionId">Reviewer session controlled by the run.</param>
-/// <param name="Iteration">Current review iteration.</param>
-/// <param name="StartedAt">When the run started.</param>
-/// <param name="State">Running, pause-requested, paused, or stopping.</param>
-/// <param name="PauseKind">Manual or attention for a paused run; otherwise null.</param>
-/// <param name="CurrentStepId">Current stable step id, when known.</param>
-/// <param name="CurrentStepName">Human-readable current step, when known.</param>
-/// <param name="PauseRequested">Whether a manual pause is pending at the next boundary.</param>
-/// <param name="ExpectedRole">Role expected to write the current response, when any.</param>
-/// <param name="ExpectedSessionId">Session bound to the expected role, when any.</param>
-/// <param name="ExpectedTaskPath">Published immutable task file, when any.</param>
-/// <param name="ExpectedResponsePath">Response file whose completion advances the run, when any.</param>
-public sealed record ActiveRunSummary(
-	string RunId,
-	string WorkspaceId,
-	string AuthorSessionId,
-	string ReviewerSessionId,
-	int Iteration,
-	DateTimeOffset StartedAt,
-	string State,
-	string? PauseKind,
-	string? CurrentStepId,
-	string? CurrentStepName,
-	bool PauseRequested,
-	string? ExpectedRole,
-	string? ExpectedSessionId,
-	string? ExpectedTaskPath,
-	string? ExpectedResponsePath);
-
-/// <summary>One in-memory review journal entry exposed to the orchestrator.</summary>
-/// <param name="Timestamp">When the entry was recorded.</param>
-/// <param name="Level">Lowercase journal severity.</param>
-/// <param name="StepId">Stable step id.</param>
-/// <param name="Message">Journal message, including file paths when recorded by the run.</param>
-public sealed record ReviewJournalSummary(
-	DateTimeOffset Timestamp,
-	string Level,
-	string StepId,
-	string Message);
-
-/// <summary>Detailed review state together with its in-memory journal snapshot.</summary>
-/// <param name="Run">Current active-run projection.</param>
-/// <param name="Journal">Journal entries recorded so far.</param>
-public sealed record ReviewRunDetails(
-	ActiveRunSummary Run,
-	IReadOnlyList<ReviewJournalSummary> Journal);
-
-/// <summary>Outcome of an orchestrator review-control request.</summary>
-public enum ReviewControlStatus
-{
-	/// <summary>The request changed the run.</summary>
-	Applied,
-
-	/// <summary>The run was already in the requested effective state.</summary>
-	Unchanged,
-
-	/// <summary>The run is stopping and cannot accept this control request.</summary>
-	NotPausable,
-
-	/// <summary>No active run has the supplied id.</summary>
-	UnknownRun
-}
-
-/// <summary>Typed result of a review Pause or Resume request.</summary>
-/// <param name="Status">Whether the request applied or why it did not.</param>
-/// <param name="Run">Latest run projection when the run remains active.</param>
-public sealed record ReviewControlOutcome(
-	ReviewControlStatus Status,
-	ActiveRunSummary? Run);
 
 /// <summary>One agent profile's current subscription-usage projection.</summary>
 /// <param name="ProfileId">Stable profile id.</param>
@@ -175,17 +102,11 @@ public interface IOrchestratorHost
 	/// <summary>Tries to read one session's retained stable screen state.</summary>
 	bool TryGetScreen(string sessionId, out SessionScreenState state);
 
-	/// <summary>Lists review runs that currently control terminal input.</summary>
-	IReadOnlyList<ActiveRunSummary> ListActiveRuns();
+	/// <summary>Lists reviews that are starting or running.</summary>
+	IReadOnlyList<ReviewSummary> ListActiveReviews();
 
-	/// <summary>Tries to read one active review run and its in-memory journal.</summary>
-	bool TryGetActiveRun(string runId, out ReviewRunDetails details);
-
-	/// <summary>Requests or escalates a manual pause for an active review run.</summary>
-	ReviewControlOutcome RequestReviewPause(string runId);
-
-	/// <summary>Resumes an established pause without canceling a pending pause request.</summary>
-	ReviewControlOutcome ResumeReview(string runId);
+	/// <summary>Finds an active review, or returns <see langword="null"/>.</summary>
+	ReviewSummary? FindReview(string reviewId);
 
 	/// <summary>Lists the current subscription-usage projections.</summary>
 	IReadOnlyList<UsageSummary> ListUsage();
@@ -235,9 +156,6 @@ public interface IOrchestratorHost
 		string sessionId,
 		string text,
 		CancellationToken cancellationToken);
-
-	/// <summary>Reports whether a scenario run controls the session and returns its run id.</summary>
-	bool IsScenarioLocked(string sessionId, out string runId);
 
 	/// <summary>Reports whether the session has a live terminal controller.</summary>
 	bool IsSessionAlive(string sessionId);
