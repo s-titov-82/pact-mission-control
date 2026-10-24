@@ -5,7 +5,6 @@ using Pact.App.Avalonia.Diagnostics;
 using Pact.App.Avalonia.Lifecycle;
 using Pact.App.Avalonia.SelectionActions;
 using Pact.App.Avalonia.Web;
-using Pact.Core.AgentControl;
 using Pact.Core.Agents;
 using Pact.Core.Git;
 using Pact.Core.Orchestrator;
@@ -20,12 +19,14 @@ using Pact.Core.Updates;
 using Pact.Core.Web;
 using Pact.Core.Web.Monitoring;
 using Pact.Infrastructure.AgentControl;
+using Pact.Infrastructure.Reviews;
 using Pact.Infrastructure.Orchestrator;
 using Pact.Infrastructure.Storage;
 using Pact.Infrastructure.Diagnostics;
 using Pact.Infrastructure.Updates;
 using Pact.Presentation.Services;
 using Pact.Presentation.Services.AgentControl;
+using Pact.Presentation.Services.Reviews;
 using Pact.Presentation.Services.Orchestrator;
 using Pact.Presentation.Services.WebMonitoring;
 using Pact.Presentation.Settings.ViewModels;
@@ -61,7 +62,8 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 	private readonly OrchestratorStore _orchestratorStore;
 	private readonly OrchestratorDispatcher _orchestratorDispatcher;
 	private readonly OrchestratorSupervisor _orchestrator;
-	private readonly ReviewLaunchService _reviewLaunch;
+	private readonly ReviewLogWriter _reviewLog = new();
+	private readonly ReviewRelay _reviewRelay;
 	private readonly ResumeCaptureService _resumeCapture;
 	private IReadOnlyList<ResolvedGitHelperAction> _resolvedGitHelperActions = [];
 	private GitButtonCommandSet _gitButtonCommands = GitButtonCommandSet.Create(null);
@@ -198,7 +200,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			_eventTasks,
 			OnOutputReceived,
 			ResetSnapshotBaselineSafeAsync,
-			_scenarioCoordinator.NotifySessionDied,
+			OnSessionProcessDied,
 			ReportStatusAsync);
 		_orchestrator = new OrchestratorSupervisor(
 			_runtimeCoordinator,
@@ -213,23 +215,28 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			ReportStatusAsync,
 			IsShutdownBegun,
 			() => _terminalHostInitialized);
-		_reviewLaunch = new ReviewLaunchService(
-			ViewModel,
-			_scenarioCoordinator,
-			_reviewProfileProvider,
-			_runtimeCoordinator,
-			_terminalHost,
-			_launcher,
-			_agentControlTokens,
-			ThrowIfRejectingInput,
-			AppendDiagnosticLog);
+		_reviewRelay = new ReviewRelay(
+			new ReviewRelayHost(
+				ViewModel,
+				_runtimeCoordinator,
+				_terminalHost,
+				_launcher,
+				_uiTaskDispatcher,
+				_settingsFileStore.ReadAgentControlEnabled(),
+				session => CloseSessionAsync(session),
+				OpenProjectDocumentAsync,
+				AppendDiagnosticLog),
+			() => ViewModel.ScenarioDefinitionsSnapshot,
+			() => _reviewProfileProvider.Current,
+			_reviewLog,
+			_timeProvider);
 		_resumeCapture = new ResumeCaptureService(
 			_runtimeCoordinator,
 			ViewModel,
 			_timeProvider,
 			ShowSessionTerminalUnderBusyAsync,
 			ReportStatusAsync);
-		AgentControlHost agentControlHost = new(_reviewLaunch, ViewModel, _uiTaskDispatcher, OpenProjectDocumentAsync);
+		AgentControlHost agentControlHost = new(ViewModel, _uiTaskDispatcher, OpenProjectDocumentAsync);
 		AgentControlDispatcher agentControlDispatcher = new(agentControlHost);
 		OrchestratorHost orchestratorHost = new(
 			ViewModel,
@@ -244,6 +251,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		AgentControlToolRouter toolRouter = new(
 			SessionTools.Create(
 				agentControlDispatcher,
+				_reviewRelay,
 				() => ViewModel.ScenarioDefinitionsSnapshot,
 				() => _reviewProfileProvider.Current,
 				status => _uiTaskDispatcher.InvokeAsync(() => ReportStatusAsync(status))),
@@ -1445,13 +1453,6 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			cancellationToken);
 	}
 
-	internal Task<ReviewStartOutcome> StartAgentRequestedReviewAsync(
-		string projectId,
-		string authorSessionId,
-		RequestReviewRequest request,
-		CancellationToken cancellationToken) =>
-		_reviewLaunch.StartAgentRequestedReviewAsync(projectId, authorSessionId, request, cancellationToken);
-
 	/// <summary>
 	/// Adds a ROOT terminal from a launch profile. Its initial working directory is the existing
 	/// Windows user profile directory.
@@ -1669,6 +1670,8 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 
 	public async Task CloseSessionAsync(SessionViewModel session, CancellationToken cancellationToken = default)
 	{
+		// The review learns first, so it ends as Aborted rather than as a dead process.
+		await _reviewRelay.NotifySessionClosedAsync(session.Record.Id);
 		_scenarioCoordinator.NotifySessionDied(session.Record.Id);
 		await StopSessionAsync(session, SessionStatus.Exited);
 		await _terminalHost.DisposeTerminalAsync(session.Record.Id);
@@ -2024,6 +2027,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			failures.Add(exception);
 		}
 
+		await RunCleanupStepAsync(_reviewRelay.ShutdownAsync, failures);
 		await RunCleanupStepAsync(StopOrchestratorAsync, failures);
 		await RunCleanupStepAsync(() => eventDrain, failures);
 		await RunCleanupStepAsync(
@@ -2080,6 +2084,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			await _webProcessMetricsMonitor.DisposeAsync();
 			_orchestrator.DetachWorkstationLockMonitor();
 			_agentControlEndpoint.Dispose();
+			_reviewLog.Dispose();
 			_webPageCoordinator.Dispose();
 			_runtimeCoordinator.Dispose();
 		}
@@ -2304,6 +2309,15 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 
 	private Task HandleBrowserFailureAsync(string message) =>
 		ReportStatusAsync($"Web page navigation failed: {message}");
+
+	private void OnSessionProcessDied(string sessionId)
+	{
+		_scenarioCoordinator.NotifySessionDied(sessionId);
+		RunEventOperation(
+			"review-session-died",
+			() => _reviewRelay.NotifySessionDiedAsync(sessionId),
+			"Review update failed");
+	}
 
 	private void OnWebPageSourceChanged(
 		object? sender,
@@ -2753,6 +2767,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		object? sender,
 		TerminalClassifierDiagnosticsChangedEventArgs e)
 	{
+		_reviewRelay.NotifyStatusChanged(e.Diagnostics.SessionId);
 		UpdateController?.RefreshRestartSafety();
 		if (string.Equals(
 			ViewModel.SelectedSession?.Record.Id,

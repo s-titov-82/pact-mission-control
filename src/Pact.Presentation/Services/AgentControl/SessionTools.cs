@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using Pact.Core.AgentControl;
 using Pact.Core.Scenarios;
 using Pact.Infrastructure.AgentControl;
+using Pact.Presentation.Services.Reviews;
 using static Pact.Presentation.Services.AgentControl.AgentControlToolArguments;
 
 namespace Pact.Presentation.Services.AgentControl;
@@ -11,16 +12,19 @@ public static class SessionTools
 {
 	/// <summary>Builds the session tool set.</summary>
 	/// <param name="dispatcher">Runs each action against the calling session's owner.</param>
+	/// <param name="relay">Runs the reviews agents ask for.</param>
 	/// <param name="scenarios">Current review scenarios; read on any thread when listing.</param>
 	/// <param name="profiles">Current reviewer profiles; read on any thread when listing.</param>
 	/// <param name="reportStatusAsync">Reports a successful action in the status bar.</param>
 	public static AgentControlToolSet Create(
 		AgentControlDispatcher dispatcher,
+		ReviewRelay relay,
 		Func<IReadOnlyList<ScenarioDefinition>> scenarios,
 		Func<IReadOnlyList<ReviewProfile>> profiles,
 		Func<string, Task> reportStatusAsync)
 	{
 		ArgumentNullException.ThrowIfNull(dispatcher);
+		ArgumentNullException.ThrowIfNull(relay);
 		ArgumentNullException.ThrowIfNull(scenarios);
 		ArgumentNullException.ThrowIfNull(profiles);
 		ArgumentNullException.ThrowIfNull(reportStatusAsync);
@@ -28,7 +32,7 @@ public static class SessionTools
 		async Task<AgentControlResultData> CompleteAsync(
 			AgentControlResult result,
 			string successText,
-			string statusText)
+			string? statusText)
 		{
 			if (!result.Succeeded)
 			{
@@ -40,7 +44,11 @@ public static class SessionTools
 					IsError: true);
 			}
 
-			await reportStatusAsync(statusText);
+			if (statusText is not null)
+			{
+				await reportStatusAsync(statusText);
+			}
+
 			return new AgentControlResultData(result.Payload ?? successText, IsError: false);
 		}
 
@@ -48,7 +56,9 @@ public static class SessionTools
 		[
 			new AgentControlTool(
 				"pact_request_review",
-				"Start an automated cross-agent review and return its run id.",
+				"Ask another agent to review your work. A reviewer tab opens in your project and turns "
+					+ "pass through Pact: when Pact types that your turn is ready, call pact_get_review_turn. "
+					+ "Returns the review id.",
 				() => AgentControlSchema.Object(
 					new()
 					{
@@ -78,11 +88,54 @@ public static class SessionTools
 						return error;
 					}
 
-					var result = await dispatcher.RequestReviewAsync(
+					var result = await relay.RequestAsync(
 						call.SessionId ?? string.Empty,
 						new RequestReviewRequest(scenarioId, reviewProfileId, target, maxIterations),
 						cancellationToken);
-					return await CompleteAsync(result, "Review run started.", "Agent action: review run started");
+					return await CompleteAsync(result, "Review started.", "Agent action: review requested");
+				}),
+			new AgentControlTool(
+				"pact_get_review_turn",
+				"Your review turn: the message to act on, the other side's last answer as previousTurn and "
+					+ "the turnId to answer with. After the review has ended, how it ended and its final text.",
+				() => AgentControlSchema.Object(new()),
+				async (call, _) => await CompleteAsync(
+					relay.GetTurn(call.SessionId ?? string.Empty),
+					string.Empty,
+					statusText: null)),
+			new AgentControlTool(
+				"pact_submit_review_turn",
+				"Hand your review turn back with your complete answer as text and the turnId from "
+					+ "pact_get_review_turn. A reviewer approves with approved: true instead of writing a completion marker.",
+				() => AgentControlSchema.Object(
+					new()
+					{
+						["turnId"] = AgentControlSchema.String("The turnId returned by pact_get_review_turn."),
+						["text"] = AgentControlSchema.String("Your complete answer."),
+						["approved"] = new JsonObject
+						{
+							["type"] = "boolean",
+							["description"] = "Reviewer only: approve the work and end the review."
+						}
+					},
+					"turnId",
+					"text"),
+				async (call, cancellationToken) =>
+				{
+					if (!TryGetRequiredString(call.Arguments, "turnId", out var turnId, out var error)
+						|| !TryGetRequiredString(call.Arguments, "text", out var text, out error)
+						|| !TryGetOptionalBoolean(call.Arguments, "approved", out var approved, out error))
+					{
+						return error;
+					}
+
+					var result = await relay.SubmitAsync(
+						call.SessionId ?? string.Empty,
+						turnId,
+						text,
+						approved == true,
+						cancellationToken);
+					return await CompleteAsync(result, "Turn submitted.", "Agent action: review turn submitted");
 				}),
 			new AgentControlTool(
 				"pact_append_note",

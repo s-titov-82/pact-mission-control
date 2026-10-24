@@ -352,6 +352,30 @@ public sealed partial class SessionRuntimeCoordinatorTests
 		backend.InputWrites.ShouldBeEmpty();
 	}
 
+	[TestCase(TerminalScreenVerdictState.Done, null, false, false, true)]
+	[TestCase(TerminalScreenVerdictState.Unknown, true, false, false, true)]
+	[TestCase(TerminalScreenVerdictState.Unknown, null, false, false, false)]
+	[TestCase(TerminalScreenVerdictState.Done, true, true, false, false)]
+	[TestCase(TerminalScreenVerdictState.Done, true, false, true, false)]
+	[TestCase(TerminalScreenVerdictState.Busy, true, false, false, false)]
+	public void A_session_takes_a_prompt_on_a_settled_ready_screen(
+		TerminalScreenVerdictState verdict,
+		bool? stableComposerEmpty,
+		bool busy,
+		bool question,
+		bool expected)
+	{
+		SessionRuntimeCoordinator.IsReadyForPrompt(new SessionScreenState(
+				"screen",
+				string.Empty,
+				false,
+				InputRequested: question,
+				IsBusy: busy,
+				VerdictState: verdict,
+				StablePromptIsEmpty: stableComposerEmpty))
+			.ShouldBe(expected);
+	}
+
 	[Test]
 	public async Task Readiness_does_not_accept_an_empty_composer_seen_only_while_repainting()
 	{

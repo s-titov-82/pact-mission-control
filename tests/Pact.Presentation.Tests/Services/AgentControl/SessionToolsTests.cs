@@ -2,7 +2,10 @@ using System.Text.Json.Nodes;
 using Pact.Core.Agents;
 using Pact.Core.AgentControl;
 using Pact.Infrastructure.AgentControl;
+using Pact.Infrastructure.Reviews;
 using Pact.Presentation.Services.AgentControl;
+using Pact.Presentation.Services.Reviews;
+using Pact.Presentation.Tests.Services.Reviews;
 
 namespace Pact.Presentation.Tests.Services.AgentControl;
 
@@ -17,6 +20,8 @@ public sealed class SessionToolsTests
 			.ShouldBe(
 				[
 					"pact_request_review",
+					"pact_get_review_turn",
+					"pact_submit_review_turn",
 					"pact_append_note",
 					"pact_open_web_tab",
 					"pact_get_notes",
@@ -86,6 +91,53 @@ public sealed class SessionToolsTests
 	}
 
 	[Test]
+	public void Submit_turn_requires_the_turn_and_the_text()
+	{
+		var tool = FindTool(CreateTools(), "pact_submit_review_turn");
+
+		tool["inputSchema"]!["required"]!.AsArray().Select(value => (string?)value)
+			.ShouldBe(["turnId", "text"], ignoreOrder: true);
+		((string?)tool["inputSchema"]!["properties"]!["approved"]!["type"]).ShouldBe("boolean");
+	}
+
+	[Test]
+	public async Task Review_tools_go_through_the_relay()
+	{
+		using var root = TemporaryDirectory.Create();
+		ReviewProfile profile = new("codex-high", "Codex high", AgentKind.Codex, "codex");
+		var tools = CreateTools(relay: CreateRelay(root.Path, [CreateDefinition("code-review")], [profile]));
+
+		var started = await tools.InvokeAsync(
+			new AgentControlToolCall(
+				"author-1",
+				IsOrchestrator: false,
+				"pact_request_review",
+				new JsonObject
+				{
+					["scenarioId"] = "code-review",
+					["reviewProfileId"] = "codex-high",
+					["target"] = "main..HEAD"
+				}),
+			CancellationToken.None);
+		var turn = await tools.InvokeAsync(
+			new AgentControlToolCall("reviewer-1", IsOrchestrator: false, "pact_get_review_turn", new JsonObject()),
+			CancellationToken.None);
+		var turnId = (string)JsonNode.Parse(turn.Text)!["turnId"]!;
+		var submitted = await tools.InvokeAsync(
+			new AgentControlToolCall(
+				"reviewer-1",
+				IsOrchestrator: false,
+				"pact_submit_review_turn",
+				new JsonObject { ["turnId"] = turnId, ["text"] = "Fine.", ["approved"] = true }),
+			CancellationToken.None);
+
+		started.IsError.ShouldBeFalse(started.Text);
+		turn.IsError.ShouldBeFalse(turn.Text);
+		submitted.IsError.ShouldBeFalse(submitted.Text);
+		((string?)JsonNode.Parse(submitted.Text)!["state"]).ShouldBe("Completed");
+	}
+
+	[Test]
 	public async Task Missing_required_argument_names_it()
 	{
 		var result = await CreateTools().InvokeAsync(
@@ -125,12 +177,27 @@ public sealed class SessionToolsTests
 	private static AgentControlToolSet CreateTools(
 		IReadOnlyList<ScenarioDefinition>? scenarios = null,
 		IReadOnlyList<ReviewProfile>? profiles = null,
-		Func<string, Task>? reportStatusAsync = null) =>
+		Func<string, Task>? reportStatusAsync = null,
+		ReviewRelay? relay = null) =>
 		SessionTools.Create(
 			new AgentControlDispatcher(new AgentControlDispatcherTests.FakeAgentControlHost()),
+			relay ?? CreateRelay(Path.GetTempPath(), scenarios ?? [], profiles ?? []),
 			() => scenarios ?? [],
 			() => profiles ?? [],
 			reportStatusAsync ?? (_ => Task.CompletedTask));
+
+	private static ReviewRelay CreateRelay(
+		string root,
+		IReadOnlyList<ScenarioDefinition> scenarios,
+		IReadOnlyList<ReviewProfile> profiles) =>
+		new(
+			new ReviewRelayTests.FakeReviewRelayHost(root),
+			() => scenarios,
+			() => profiles,
+			SharedLog,
+			TimeProvider.System);
+
+	private static readonly ReviewLogWriter SharedLog = new();
 
 	private static JsonNode FindTool(AgentControlToolSet tools, string name) =>
 		tools.BuildToolsList()["tools"]!.AsArray()

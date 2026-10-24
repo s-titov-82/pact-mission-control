@@ -3,6 +3,8 @@ using Pact.Infrastructure.AgentControl;
 using Pact.Infrastructure.Orchestrator;
 using Pact.Presentation.Services.AgentControl;
 using Pact.Presentation.Services.Orchestrator;
+using Pact.Presentation.Services.Reviews;
+using Pact.Presentation.Tests.Services.Reviews;
 using Pact.Presentation.Tests.Services.Orchestrator;
 
 namespace Pact.Presentation.Tests.Services.AgentControl;
@@ -175,9 +177,17 @@ public sealed class OrchestratorToolsTests
 	private static AgentControlToolSet CreateSessionTools() =>
 		SessionTools.Create(
 			new AgentControlDispatcher(new AgentControlDispatcherTests.FakeAgentControlHost()),
+			new ReviewRelay(
+				new ReviewRelayTests.FakeReviewRelayHost(Path.GetTempPath()),
+				() => [],
+				() => [],
+				SharedLog,
+				TimeProvider.System),
 			() => [],
 			() => [],
 			_ => Task.CompletedTask);
+
+	private static readonly Pact.Infrastructure.Reviews.ReviewLogWriter SharedLog = new();
 
 	private static JsonNode FindTool(string toolName) =>
 		CreateTools().BuildToolsList()["tools"]!.AsArray()

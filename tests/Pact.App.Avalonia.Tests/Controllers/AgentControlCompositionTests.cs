@@ -126,38 +126,86 @@ public sealed class AgentControlCompositionTests
 	}
 
 	[Test]
-	public async Task ConcurrentReviewRequestsForOneProjectStartExactlyOneRun()
+	public async Task A_review_passes_turns_through_the_tools_and_ends_in_the_log()
 	{
 		await using CompositionFixture fixture = new(twoProjects: false);
 		await fixture.InitializeAsync();
-		await fixture.StartSessionAsync(CompositionFixture.SessionB);
-
 		var backendCount = fixture.Backends.Count;
-		var resultsTask = Task.WhenAll(
-			fixture.InvokeToolAsync(
-				CompositionFixture.SessionA,
-				"pact_request_review",
-				PlanReviewArguments),
-			fixture.InvokeToolAsync(
-				CompositionFixture.SessionB,
-				"pact_request_review",
-				PlanReviewArguments));
+		var requestTask = fixture.InvokeToolAsync(
+			CompositionFixture.SessionA,
+			"pact_request_review",
+			PlanReviewArguments);
 		await fixture.MakeLatestReviewerReadyAsync(backendCount);
-		var results = await resultsTask;
+		var request = await requestTask;
+		request.IsError.ShouldBeFalse(request.Text);
+		var reviewer = fixture.Reviewer();
+		fixture.RecordLatestBackend(reviewer.Record.Id);
+		fixture.ViewModel.SelectedSession?.Record.Id.ShouldNotBe(reviewer.Record.Id);
 
-		results.Count(result => !result.IsError).ShouldBe(
-			1,
-			string.Join(Environment.NewLine, results.Select(result => result.Text)));
-		results.Count(result => result.IsError).ShouldBe(1);
-		fixture.ActiveRuns(CompositionFixture.ProjectA).Length.ShouldBe(1);
+		var turn = await fixture.InvokeToolAsync(reviewer.Record.Id, "pact_get_review_turn", new JsonObject());
+		turn.IsError.ShouldBeFalse(turn.Text);
+		var turnId = (string)JsonNode.Parse(turn.Text)!["turnId"]!;
+		var submitted = await fixture.InvokeToolAsync(
+			reviewer.Record.Id,
+			"pact_submit_review_turn",
+			new JsonObject { ["turnId"] = turnId, ["text"] = "Looks right.", ["approved"] = true });
+
+		submitted.IsError.ShouldBeFalse(submitted.Text);
+		fixture.Sessions(CompositionFixture.ProjectA).ShouldNotContain(session => session.Record.Id == reviewer.Record.Id);
+		var log = Directory.GetFiles(Path.Combine(fixture.RootOf(CompositionFixture.ProjectA), ".pact", "reviews"), "*.md")
+			.ShouldHaveSingleItem();
+		(await File.ReadAllTextAsync(log)).ShouldContain("Looks right.");
+		var notes = fixture.Controller.PresentedSurface.ShouldBeOfType<PresentedSurface.Notes>();
+		notes.Workspace.SelectedNode.ShouldNotBeNull().RelativePath.ShouldStartWith(".pact/reviews/");
 	}
 
 	[Test]
-	public async Task ASecondRequestHeldAtTheReservationStageIsToldAStartIsInProgress()
+	public async Task Closing_a_reviewer_tab_aborts_the_review_rather_than_failing_it()
 	{
 		await using CompositionFixture fixture = new(twoProjects: false);
 		await fixture.InitializeAsync();
-		await fixture.StartSessionAsync(CompositionFixture.SessionB);
+		var backendCount = fixture.Backends.Count;
+		var requestTask = fixture.InvokeToolAsync(
+			CompositionFixture.SessionA,
+			"pact_request_review",
+			PlanReviewArguments);
+		await fixture.MakeLatestReviewerReadyAsync(backendCount);
+		(await requestTask).IsError.ShouldBeFalse();
+
+		await fixture.Controller.CloseSessionAsync(fixture.Reviewer());
+
+		var turn = await fixture.InvokeToolAsync(CompositionFixture.SessionA, "pact_get_review_turn", new JsonObject());
+		((string?)JsonNode.Parse(turn.Text)!["state"]).ShouldBe("Aborted");
+		((string?)JsonNode.Parse(turn.Text)!["endReason"]).ShouldBe("reviewer tab closed");
+	}
+
+	[Test]
+	public async Task A_session_in_a_review_cannot_request_another()
+	{
+		await using CompositionFixture fixture = new(twoProjects: false);
+		await fixture.InitializeAsync();
+		var backendCount = fixture.Backends.Count;
+		var firstTask = fixture.InvokeToolAsync(
+			CompositionFixture.SessionA,
+			"pact_request_review",
+			PlanReviewArguments);
+		await fixture.MakeLatestReviewerReadyAsync(backendCount);
+		(await firstTask).IsError.ShouldBeFalse();
+
+		var second = await fixture.InvokeToolAsync(
+			CompositionFixture.SessionA,
+			"pact_request_review",
+			PlanReviewArguments);
+
+		second.IsError.ShouldBeTrue();
+		second.Text.ShouldContain("review-already-active");
+	}
+
+	[Test]
+	public async Task A_second_request_while_the_reviewer_starts_is_refused()
+	{
+		await using CompositionFixture fixture = new(twoProjects: false);
+		await fixture.InitializeAsync();
 		FakeTerminalBackend blockedReviewer = new()
 		{
 			StartBlocker = new TaskCompletionSource(
@@ -172,45 +220,23 @@ public sealed class AgentControlCompositionTests
 		await blockedReviewer.StartStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
 		var second = await fixture.InvokeToolAsync(
-			CompositionFixture.SessionB,
+			CompositionFixture.SessionA,
 			"pact_request_review",
 			PlanReviewArguments);
 
 		second.IsError.ShouldBeTrue();
-		second.Text.ShouldContain("already starting");
-		second.Text.ShouldNotContain("run ''");
+		second.Text.ShouldContain("review-already-active");
 		blockedReviewer.StartBlocker.SetResult();
 		await fixture.MakeReviewerReadyAsync(blockedReviewer);
 		var firstResult = await first;
 		firstResult.IsError.ShouldBeFalse(firstResult.Text);
+		fixture.Sessions(CompositionFixture.ProjectA)
+			.Count(session => session.Title.StartsWith("Review ·", StringComparison.Ordinal))
+			.ShouldBe(1);
 	}
 
 	[Test]
-	public async Task ASecondRequestAgainstARunningReviewIsToldItsRunId()
-	{
-		await using CompositionFixture fixture = new(twoProjects: false);
-		await fixture.InitializeAsync();
-		await fixture.StartSessionAsync(CompositionFixture.SessionB);
-		var backendCount = fixture.Backends.Count;
-		var firstTask = fixture.InvokeToolAsync(
-			CompositionFixture.SessionA,
-			"pact_request_review",
-			PlanReviewArguments);
-		await fixture.MakeLatestReviewerReadyAsync(backendCount);
-		var first = await firstTask;
-
-		var second = await fixture.InvokeToolAsync(
-			CompositionFixture.SessionB,
-			"pact_request_review",
-			PlanReviewArguments);
-
-		first.IsError.ShouldBeFalse(first.Text);
-		second.IsError.ShouldBeTrue();
-		second.Text.ShouldContain(first.Text);
-	}
-
-	[Test]
-	public async Task AFailedReviewerStartLeavesNoSessionControllerOrToken()
+	public async Task A_reviewer_that_fails_to_start_keeps_its_tab()
 	{
 		await using CompositionFixture fixture = new(twoProjects: false);
 		await fixture.InitializeAsync();
@@ -219,7 +245,6 @@ public sealed class AgentControlCompositionTests
 			StartFailure = new InvalidOperationException("start failed")
 		};
 		fixture.NextBackend = failedReviewer;
-		var initialCount = fixture.Sessions(CompositionFixture.ProjectA).Count;
 
 		var result = await fixture.InvokeToolAsync(
 			CompositionFixture.SessionA,
@@ -227,13 +252,8 @@ public sealed class AgentControlCompositionTests
 			PlanReviewArguments);
 
 		result.IsError.ShouldBeTrue();
-		fixture.Sessions(CompositionFixture.ProjectA).Count.ShouldBe(initialCount);
-		fixture.Controller.Runtimes.Count.ShouldBe(1);
-		var token = failedReviewer.LastStartOptions!.EnvironmentVariables![
-			"PACT_AGENT_CONTROL_TOKEN"];
-		(await fixture.PostInitializeAsync(token)).ShouldBe(HttpStatusCode.Unauthorized);
-		fixture.Host.DisposedSessions.ShouldContain(sessionId =>
-			sessionId != CompositionFixture.SessionA);
+		result.Text.ShouldContain("review-start-failed");
+		fixture.Reviewer().ShouldNotBeNull();
 	}
 
 	[Test]
@@ -870,9 +890,12 @@ public sealed class AgentControlCompositionTests
 		public ObservableCollection<SessionViewModel> Sessions(string projectId) =>
 			ViewModel.Workspaces.Single(workspace => workspace.Id == projectId).Sessions;
 
-		public ScenarioRunViewModel[] ActiveRuns(string projectId) =>
-			ViewModel.Workspaces.Single(workspace => workspace.Id == projectId)
-				.ScenarioRuns.Where(run => !run.IsTerminal).ToArray();
+		public SessionViewModel Reviewer() =>
+			Sessions(ProjectA).Single(session =>
+				session.Title.StartsWith("Review ·", StringComparison.Ordinal));
+
+		public string RootOf(string projectId) =>
+			ViewModel.Workspaces.Single(workspace => workspace.Id == projectId).RootPath;
 
 		public string NotesOf(string projectId)
 		{

@@ -523,6 +523,20 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 	}
 
 	/// <summary>
+	/// Whether a session's retained settled screen says it can take a prompt: a finished turn, or a
+	/// fresh agent, which shows no completion marker but an empty composer; never while busy or
+	/// asking a question.
+	/// </summary>
+	public static bool IsReadyForPrompt(SessionScreenState state)
+	{
+		ArgumentNullException.ThrowIfNull(state);
+		return (state.VerdictState == TerminalScreenVerdictState.Done || state.StablePromptIsEmpty == true)
+			&& state.VerdictState != TerminalScreenVerdictState.Busy
+			&& !state.IsBusy
+			&& !state.InputRequested;
+	}
+
+	/// <summary>
 	/// Waits until a launched session can receive a prompt: its retained stable screen has a done
 	/// verdict or a recognized empty composer, with no question or activity. The folder-trust dialog is answered with
 	/// Enter, which is its own default, once per launched session; every other question, and a
@@ -596,12 +610,7 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 					lastStatusLine = state.StatusLine;
 				}
 
-				// A finished turn is ready, and so is a fresh agent: it shows no completion
-				// marker, but its recognized empty composer says it can take a prompt.
-				if ((state.VerdictState == TerminalScreenVerdictState.Done || state.StablePromptIsEmpty == true)
-					&& state.VerdictState != TerminalScreenVerdictState.Busy
-					&& !state.IsBusy
-					&& !state.InputRequested)
+				if (IsReadyForPrompt(state))
 				{
 					return Traced(new SessionReadiness(IsReady: true, StatusLine: string.Empty));
 				}

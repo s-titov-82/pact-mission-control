@@ -239,104 +239,6 @@ public sealed class AgentControlDispatcherTests
 		host.WebTabs.ShouldBeEmpty();
 	}
 
-	[Test]
-	public async Task RequestReviewAsync_StartsRunAndReturnsRunId()
-	{
-		FakeAgentControlHost host = new();
-		AgentControlDispatcher dispatcher = new(host);
-
-		var result = await dispatcher.RequestReviewAsync(
-			ProjectSessionId,
-			new RequestReviewRequest("plan-review", "claude-opus", "docs/plan.md", null),
-			CancellationToken.None);
-
-		result.Succeeded.ShouldBeTrue();
-		result.Payload.ShouldBe("run-1");
-		host.StartedReviews.ShouldHaveSingleItem();
-		host.StartedReviews[0].ProjectId.ShouldBe("project-1");
-		host.StartedReviews[0].AuthorSessionId.ShouldBe(ProjectSessionId);
-		host.StartedReviews[0].Request.ReviewProfileId.ShouldBe("claude-opus");
-	}
-
-	[Test]
-	public async Task RequestReviewAsync_ReportsTheConflictingRunWhenOneIsActive()
-	{
-		FakeAgentControlHost host = new()
-		{
-			ReviewOutcome = _ => new ReviewStartOutcome(
-				null,
-				new ProjectSlotConflict("run-existing"),
-				null)
-		};
-		AgentControlDispatcher dispatcher = new(host);
-
-		var result = await dispatcher.RequestReviewAsync(
-			ProjectSessionId,
-			new RequestReviewRequest("plan-review", "claude-opus", "docs/plan.md", null),
-			CancellationToken.None);
-
-		result.Failure!.Code.ShouldBe("run-already-active");
-		result.Failure.Message.ShouldContain("run-existing");
-	}
-
-	[Test]
-	public async Task RequestReviewAsync_ReportsAStartAlreadyInProgressWithoutInventingARunId()
-	{
-		FakeAgentControlHost host = new()
-		{
-			ReviewOutcome = _ => new ReviewStartOutcome(
-				null,
-				new ProjectSlotConflict(ActiveRunId: null),
-				null)
-		};
-		AgentControlDispatcher dispatcher = new(host);
-
-		var result = await dispatcher.RequestReviewAsync(
-			ProjectSessionId,
-			new RequestReviewRequest("plan-review", "claude-opus", "docs/plan.md", null),
-			CancellationToken.None);
-
-		result.Failure!.Code.ShouldBe("review-already-starting");
-		result.Failure.Message.ShouldContain("already starting");
-		result.Failure.Message.ShouldNotContain("''");
-	}
-
-	[Test]
-	public async Task RequestReviewAsync_RefusesRootSession()
-	{
-		FakeAgentControlHost host = new();
-		AgentControlDispatcher dispatcher = new(host);
-
-		var result = await dispatcher.RequestReviewAsync(
-			RootSessionId,
-			new RequestReviewRequest("plan-review", "claude-opus", "docs/plan.md", null),
-			CancellationToken.None);
-
-		result.Failure!.Code.ShouldBe("owner-not-a-project");
-		host.StartedReviews.ShouldBeEmpty();
-	}
-
-	[Test]
-	public async Task RequestReviewAsync_ReturnsRefusalWhenStartFails()
-	{
-		FakeAgentControlHost host = new()
-		{
-			ReviewOutcome = _ => new ReviewStartOutcome(
-				null,
-				Conflict: null,
-				FailureMessage: "Review profile 'claude-opus' was not found.")
-		};
-		AgentControlDispatcher dispatcher = new(host);
-
-		var result = await dispatcher.RequestReviewAsync(
-			ProjectSessionId,
-			new RequestReviewRequest("plan-review", "claude-opus", "docs/plan.md", null),
-			CancellationToken.None);
-
-		result.Failure!.Code.ShouldBe("review-start-failed");
-		result.Failure.Message.ShouldContain("claude-opus");
-	}
-
 	internal sealed class FakeAgentControlHost : IAgentControlHost
 	{
 		public List<(string ProjectId, string Text)> AppendedNotes { get; } = [];
@@ -352,12 +254,6 @@ public sealed class AgentControlDispatcherTests
 				ProjectNotesMutationStatus.Applied);
 
 		public List<(AgentControlOwner Owner, string Url, string? Title)> WebTabs { get; } = [];
-
-		public List<(string ProjectId, string AuthorSessionId, RequestReviewRequest Request)>
-			StartedReviews
-		{ get; } = [];
-
-		public Func<RequestReviewRequest, ReviewStartOutcome>? ReviewOutcome { get; set; }
 
 		public bool TryGetOwner(string sessionId, out AgentControlOwner owner)
 		{
@@ -426,17 +322,6 @@ public sealed class AgentControlDispatcherTests
 		{
 			OpenedDocuments.Add((projectId, relativePath));
 			return Task.FromResult(DocumentShown);
-		}
-
-		public Task<ReviewStartOutcome> StartReviewIfIdleAsync(
-			string projectId,
-			string authorSessionId,
-			RequestReviewRequest request,
-			CancellationToken cancellationToken)
-		{
-			StartedReviews.Add((projectId, authorSessionId, request));
-			return Task.FromResult(ReviewOutcome?.Invoke(request)
-				?? new ReviewStartOutcome("run-1", Conflict: null, FailureMessage: null));
 		}
 	}
 }

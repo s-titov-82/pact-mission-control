@@ -91,11 +91,10 @@ public sealed class ReviewRelay
 			return AgentControlResult.Refused("invalid-argument", $"Unknown reviewer profile '{request.ReviewProfileId}'.");
 		}
 
-		if (string.IsNullOrWhiteSpace(request.Target) || request.MaxIterations is <= 0)
+		if (AgentControlRequestValidator.Validate(new AgentControlOwner(IsRoot: false, project.ProjectId), request)
+			is { } invalid)
 		{
-			return AgentControlResult.Refused(
-				"invalid-argument",
-				"target must be non-blank and maxIterations greater than zero when supplied.");
+			return AgentControlResult.Refused(invalid);
 		}
 
 		if (!_host.HasAgentControl(profile.Kind))

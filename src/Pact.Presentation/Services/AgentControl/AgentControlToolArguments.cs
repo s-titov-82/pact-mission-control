@@ -100,6 +100,38 @@ public static class AgentControlToolArguments
 		return true;
 	}
 
+	/// <summary>Reads a boolean argument the caller may leave out.</summary>
+	public static bool TryGetOptionalBoolean(
+		JsonNode arguments,
+		string name,
+		out bool? value,
+		out AgentControlResultData error)
+	{
+		value = null;
+		if (arguments is not JsonObject argumentObject)
+		{
+			error = NotAnObject();
+			return false;
+		}
+
+		if (argumentObject[name] is null)
+		{
+			error = null!;
+			return true;
+		}
+
+		if (argumentObject[name] is not JsonValue node
+			|| !node.TryGetValue<bool>(out var parsed))
+		{
+			error = ArgumentError(name, "must be a boolean");
+			return false;
+		}
+
+		value = parsed;
+		error = null!;
+		return true;
+	}
+
 	private static AgentControlResultData NotAnObject() =>
 		new("Tool arguments must be a JSON object.", IsError: true);
 

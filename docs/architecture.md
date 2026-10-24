@@ -345,8 +345,12 @@ processes: the launch command and MCP injection for regular sessions, and one
 `StartProcessAsync` core that wires output, submit, input and viewport handlers
 for every process, the orchestrator included. `OrchestratorSupervisor` owns
 the orchestrator slot's settings, start, stop, restart policy and workstation
-lock prompts. `ReviewLaunchService` starts agent-requested reviews and rolls
-the reviewer back on failure. `ResumeCaptureService` captures resume commands
+lock prompts. `ReviewRelay` (Presentation) runs agent-requested reviews: it
+starts the reviewer as a visible unselected tab, hands turns between the two
+agents over MCP (`pact_get_review_turn`, `pact_submit_review_turn`), nudges the
+side whose turn it is with a short trigger, keeps `.pact/reviews/*.md` and opens
+it in Docs when the review ends; `ReviewRelayHost` gives it the shell
+operations. `ResumeCaptureService` captures resume commands
 before sessions stop.
 
 What the center pane shows is one `PresentedSurface` value on the shell

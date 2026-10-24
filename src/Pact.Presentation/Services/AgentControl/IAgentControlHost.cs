@@ -8,15 +8,6 @@ namespace Pact.Presentation.Services.AgentControl;
 /// </param>
 public sealed record ProjectSlotConflict(string? ActiveRunId);
 
-/// <summary>Result of atomically attempting to start a project review.</summary>
-/// <param name="RunId">Started run id.</param>
-/// <param name="Conflict">Slot conflict when no run started for that reason.</param>
-/// <param name="FailureMessage">Other start failure.</param>
-public sealed record ReviewStartOutcome(
-	string? RunId,
-	ProjectSlotConflict? Conflict,
-	string? FailureMessage);
-
 /// <summary>Narrow shell operations deliberately exposed to agent-requested actions.</summary>
 public interface IAgentControlHost
 {
@@ -55,14 +46,5 @@ public interface IAgentControlHost
 	Task<bool> OpenProjectDocumentAsync(
 		string projectId,
 		string relativePath,
-		CancellationToken cancellationToken);
-
-	/// <summary>
-	/// Atomically reserves the project review slot, creates its reviewer, and starts the run.
-	/// </summary>
-	Task<ReviewStartOutcome> StartReviewIfIdleAsync(
-		string projectId,
-		string authorSessionId,
-		RequestReviewRequest request,
 		CancellationToken cancellationToken);
 }

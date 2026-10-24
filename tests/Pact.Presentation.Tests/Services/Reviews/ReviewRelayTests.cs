@@ -385,7 +385,7 @@ public sealed class ReviewRelayTests : IDisposable
 		ReviewerInstructions: [new("strict", "Strict", "Approve only when all is resolved.")],
 		DefaultReviewerInstructionId: "strict");
 
-	private sealed class FakeReviewRelayHost(string root) : IReviewRelayHost
+	internal sealed class FakeReviewRelayHost(string root) : IReviewRelayHost
 	{
 		private readonly Lock _gate = new();
 		private TaskCompletionSource<ReviewerStart>? _heldStart;

@@ -20,6 +20,41 @@ public sealed class AgentControlToolSetTests
 	}
 
 	[Test]
+	public void An_optional_boolean_is_read_when_present()
+	{
+		AgentControlToolArguments.TryGetOptionalBoolean(
+				new JsonObject { ["approved"] = true },
+				"approved",
+				out var value,
+				out _)
+			.ShouldBeTrue();
+
+		value.ShouldBe(true);
+	}
+
+	[Test]
+	public void A_missing_optional_boolean_is_null()
+	{
+		AgentControlToolArguments.TryGetOptionalBoolean(new JsonObject(), "approved", out var value, out _)
+			.ShouldBeTrue();
+
+		value.ShouldBeNull();
+	}
+
+	[Test]
+	public void A_non_boolean_is_rejected_by_name()
+	{
+		AgentControlToolArguments.TryGetOptionalBoolean(
+				new JsonObject { ["approved"] = "yes" },
+				"approved",
+				out _,
+				out var error)
+			.ShouldBeFalse();
+
+		error.Text.ShouldBe("Argument 'approved' must be a boolean.");
+	}
+
+	[Test]
 	public async Task Each_tool_lists_and_answers_from_one_description()
 	{
 		AgentControlToolSet tools = new(

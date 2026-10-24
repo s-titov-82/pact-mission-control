@@ -170,50 +170,6 @@ public sealed class AgentControlDispatcher
 				$"The Docs pane does not list '{relativePath}'; files in generated folders such as .git, bin or .pact-reviews are not shown.");
 	}
 
-	/// <summary>Atomically starts a review for the calling session's project.</summary>
-	public async Task<AgentControlResult> RequestReviewAsync(
-		string sessionId,
-		RequestReviewRequest request,
-		CancellationToken cancellationToken)
-	{
-		ArgumentNullException.ThrowIfNull(request);
-		if (!_host.TryGetOwner(sessionId, out var owner))
-		{
-			return UnknownSession();
-		}
-
-		var failure = AgentControlRequestValidator.Validate(owner, request);
-		if (failure is not null)
-		{
-			return AgentControlResult.Refused(failure);
-		}
-
-		var outcome = await _host.StartReviewIfIdleAsync(
-			owner.ProjectId!,
-			sessionId,
-			request,
-			cancellationToken).ConfigureAwait(false);
-		if (outcome.RunId is { } runId)
-		{
-			return AgentControlResult.Ok(runId);
-		}
-
-		if (outcome.Conflict is { } conflict)
-		{
-			return conflict.ActiveRunId is { } activeRunId
-				? AgentControlResult.Refused(
-					"run-already-active",
-					$"This project already has an active scenario run '{activeRunId}'; wait for it to finish.")
-				: AgentControlResult.Refused(
-					"review-already-starting",
-					"A review is already starting for this project; wait for it to begin, then try again.");
-		}
-
-		return AgentControlResult.Refused(
-			"review-start-failed",
-			outcome.FailureMessage ?? "The review could not be started.");
-	}
-
 	private static AgentControlResult UnknownSession() =>
 		AgentControlResult.Refused(
 			"unknown-session",
