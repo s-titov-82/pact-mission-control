@@ -97,7 +97,6 @@ public sealed class ReviewRelayTests : IDisposable
 		host.StartTokens.Single().IsCancellationRequested.ShouldBeTrue();
 		host.Deliveries.ShouldBeEmpty();
 		relay.GetTurn(Author).Failure!.Code.ShouldBe("no-review");
-		relay.GetTurn(Author).Failure!.Code.ShouldBe("no-review");
 	}
 
 	[Test]
@@ -113,6 +112,7 @@ public sealed class ReviewRelayTests : IDisposable
 		result.Failure!.Code.ShouldBe("review-start-failed");
 		result.Failure.Message.ShouldContain("reviewer tab closed");
 		host.Deliveries.ShouldBeEmpty();
+		relay.GetTurn(Reviewer).Failure!.Code.ShouldBe("no-review");
 	}
 
 	[Test]
@@ -396,6 +396,28 @@ public sealed class ReviewRelayTests : IDisposable
 
 		relay.GetTurn(Reviewer).Failure!.Code.ShouldBe("no-review");
 		relay.GetTurn(Author).Failure!.Code.ShouldBe("no-review");
+	}
+
+	[Test]
+	public async Task A_tab_closed_while_its_review_is_ending_is_not_brought_back()
+	{
+		var (relay, host) = Create();
+		var trigger = host.HoldNextDelivery();
+		await relay.RequestAsync(Author, Request(), CancellationToken.None);
+		var turnId = (string)Turn(relay, Reviewer)["turnId"]!;
+
+		// The approval waits for the reviewer's trigger to drain. Meanwhile the author's tab
+		// closes, which ends the review but must wait to finish it, and then the reviewer's tab
+		// closes too: the review has ended and is not yet retired.
+		var approval = relay.SubmitAsync(Reviewer, turnId, "All good.", approved: true, CancellationToken.None);
+		var authorClosing = relay.NotifySessionClosedAsync(Author);
+		var reviewerClosing = relay.NotifySessionClosedAsync(Reviewer);
+		trigger.SetCanceled();
+		await approval;
+		await authorClosing;
+		await reviewerClosing;
+
+		relay.GetTurn(Reviewer).Failure!.Code.ShouldBe("no-review");
 	}
 
 	[Test]

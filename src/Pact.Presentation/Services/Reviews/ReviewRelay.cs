@@ -369,7 +369,8 @@ public sealed class ReviewRelay
 		lock (_gate)
 		{
 			// A review still starting or ending retires later; it must not bring the tab back.
-			FindActive(sessionId)?.ClosedSessionIds.Add(sessionId);
+			// Ended reviews count too: one may be between its end and its retirement.
+			_active.FirstOrDefault(review => IsParticipant(review, sessionId))?.ClosedSessionIds.Add(sessionId);
 		}
 
 		await EndFromOutsideAsync(sessionId, ReviewState.Aborted, "tab closed").ConfigureAwait(false);
@@ -507,6 +508,7 @@ public sealed class ReviewRelay
 			path => _log.WriteFooterAsync(path, state, reason, _time.GetLocalNow(), CancellationToken.None))
 			.ConfigureAwait(false);
 		_host.Trace($"review phase=ended review={review.Id} state={state}");
+		PruneLogs(review);
 		if (review.Quiet)
 		{
 			return;
@@ -533,6 +535,7 @@ public sealed class ReviewRelay
 		}
 
 		_host.Trace($"review phase=start-ended review={review.Id} state={review.EndState}");
+		PruneLogs(review);
 		Retire(review);
 		await WriteLogAsync(
 			review,
@@ -588,20 +591,19 @@ public sealed class ReviewRelay
 			? (reviewerProject.SessionTitle, Kind: reviewerProject.Kind.ToString())
 			: (SessionTitle: review.Profile.DisplayName, Kind: review.Profile.Kind.ToString());
 		var startedAt = _time.GetLocalNow();
-		string[] logsInUse;
-		lock (_gate)
-		{
-			logsInUse = [.. _active.Select(active => active.LogPath).OfType<string>()];
-		}
-
 		try
 		{
-			review.LogPath = ReviewLogWriter.CreatePath(
-				review.Project.RootPath,
-				startedAt,
-				review.Template.Id,
-				review.Id,
-				logsInUse);
+			// The list of logs in use and the new path are taken together, so a review starting
+			// alongside never prunes a log another review has just claimed.
+			lock (_gate)
+			{
+				review.LogPath = ReviewLogWriter.CreatePath(
+					review.Project.RootPath,
+					startedAt,
+					review.Template.Id,
+					review.Id,
+					LogsInUse());
+			}
 		}
 		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
 		{
@@ -748,9 +750,36 @@ public sealed class ReviewRelay
 	}
 
 	private Review? FindActive(string sessionId) =>
-		_active.FirstOrDefault(review => !review.Ended
-			&& (string.Equals(review.AuthorSessionId, sessionId, StringComparison.Ordinal)
-				|| string.Equals(review.ReviewerSessionId, sessionId, StringComparison.Ordinal)));
+		_active.FirstOrDefault(review => !review.Ended && IsParticipant(review, sessionId));
+
+	private static bool IsParticipant(Review review, string sessionId) =>
+		string.Equals(review.AuthorSessionId, sessionId, StringComparison.Ordinal)
+		|| string.Equals(review.ReviewerSessionId, sessionId, StringComparison.Ordinal);
+
+	// Called under _gate.
+	private string[] LogsInUse() => [.. _active.Select(active => active.LogPath).OfType<string>()];
+
+	// A review that ended no longer protects older logs, so the folder shrinks back to ten; its
+	// own log stays, since it is the one being opened.
+	private void PruneLogs(Review review)
+	{
+		if (review.LogPath is not { } finishedLog)
+		{
+			return;
+		}
+
+		try
+		{
+			lock (_gate)
+			{
+				ReviewLogWriter.Prune(review.Project.RootPath, [.. LogsInUse(), finishedLog]);
+			}
+		}
+		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+		{
+			_host.Trace($"review phase=log-failed review={review.Id} step=prune error={exception.GetType().Name}");
+		}
+	}
 
 	private static ReviewSummary Summarize(Review review) => new(
 		review.Id,

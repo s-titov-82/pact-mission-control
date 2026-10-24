@@ -56,15 +56,36 @@ public sealed class ReviewLogWriter : IDisposable
 			File.WriteAllText(gitignore, "*\n", Utf8);
 		}
 
+		PruneDirectory(reviewsDirectory, logsInUse, keep: KeptLogs - 1);
+
+		var shortId = reviewId.Length > 8 ? reviewId[..8] : reviewId;
+		var stamp = startedAt.ToString("yyyy-MM-dd-HHmm", CultureInfo.InvariantCulture);
+		return Path.Combine(reviewsDirectory, $"{stamp}-{templateId}-{shortId}.md");
+	}
+
+	/// <summary>Removes the oldest logs not in <paramref name="logsInUse"/> so ten remain.</summary>
+	public static void Prune(string projectRoot, IReadOnlyCollection<string> logsInUse)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(projectRoot);
+		ArgumentNullException.ThrowIfNull(logsInUse);
+		var reviewsDirectory = Path.Combine(projectRoot, ".pact", "reviews");
+		if (Directory.Exists(reviewsDirectory))
+		{
+			PruneDirectory(reviewsDirectory, logsInUse, keep: KeptLogs);
+		}
+	}
+
+	// Oldest first by creation time (names carry only the minute); a log a running review still
+	// writes to is never removed, so the folder can briefly hold more and shrinks when it ends.
+	private static void PruneDirectory(string reviewsDirectory, IReadOnlyCollection<string> logsInUse, int keep)
+	{
 		lock (RetentionGate)
 		{
-			// Oldest first by creation time (names carry only the minute); the new log makes ten,
-			// and a log a running review still writes to is never removed.
 			var logs = Directory.GetFiles(reviewsDirectory, "*.md")
 				.OrderBy(File.GetCreationTimeUtc)
 				.ThenBy(path => path, StringComparer.Ordinal)
 				.ToArray();
-			var excess = logs.Length - (KeptLogs - 1);
+			var excess = logs.Length - keep;
 			foreach (var old in logs
 				.Where(path => !logsInUse.Contains(path, StringComparer.OrdinalIgnoreCase))
 				.Take(Math.Max(0, excess)))
@@ -72,10 +93,6 @@ public sealed class ReviewLogWriter : IDisposable
 				File.Delete(old);
 			}
 		}
-
-		var shortId = reviewId.Length > 8 ? reviewId[..8] : reviewId;
-		var stamp = startedAt.ToString("yyyy-MM-dd-HHmm", CultureInfo.InvariantCulture);
-		return Path.Combine(reviewsDirectory, $"{stamp}-{templateId}-{shortId}.md");
 	}
 
 	/// <summary>Starts the log with what was reviewed and by whom.</summary>

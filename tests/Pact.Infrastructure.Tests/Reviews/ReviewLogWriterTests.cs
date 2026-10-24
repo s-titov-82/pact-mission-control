@@ -70,6 +70,23 @@ public sealed class ReviewLogWriterTests : IDisposable
 		File.Exists(Path.Combine(reviews, "2026-10-24-0900-code-review-00000001.md")).ShouldBeTrue();
 	}
 
+	[Test]
+	public void Pruning_after_a_review_ends_brings_the_folder_back_to_ten()
+	{
+		var reviews = Path.Combine(_project.Path, ".pact", "reviews");
+		Directory.CreateDirectory(reviews);
+		string[] paths = [.. Enumerable.Range(1, 12)
+			.Select(index => WriteAged(reviews, $"2026-10-24-0900-code-review-{index:00000000}.md", minutesAgo: 100 - index))];
+		var stillRunning = paths[0];
+
+		ReviewLogWriter.Prune(_project.Path, [stillRunning]);
+
+		Directory.GetFiles(reviews, "*.md").Length.ShouldBe(10);
+		File.Exists(stillRunning).ShouldBeTrue();
+		File.Exists(paths[1]).ShouldBeFalse();
+		File.Exists(paths[2]).ShouldBeFalse();
+	}
+
 	private static string WriteAged(string directory, string name, int minutesAgo)
 	{
 		var path = Path.Combine(directory, name);
