@@ -77,8 +77,12 @@ engine for the review loop and tidies the agent-control (MCP) layer.
 
 - Delivery into a terminal goes through `SessionRuntimeCoordinator.DeliverPromptAsync`
   (the serialized per-session path); nothing writes to a terminal around it.
-- Readiness of a freshly started reviewer is `WaitForSessionReadyAsync`
-  (stable classifier verdict Done, one trust-dialog answer).
+- Readiness of a freshly started reviewer is `WaitForSessionReadyAsync`: a settled
+  screen with verdict Done or a recognized empty composer, not busy, no question; one
+  trust-dialog answer. A fresh agent shows no completion marker, so the empty composer
+  (read from a settled screen, not a repainting frame) is what says it can take a prompt.
+- A terminal created hidden starts at the size the host picked for its process (the
+  last fitted size, or the default before any); the page never chooses a size of its own.
 - The participant is identified by the session token of the MCP call
   (`call.SessionId`), never by an argument.
 - An MCP-less session cannot take part: MCP comes from the profile's

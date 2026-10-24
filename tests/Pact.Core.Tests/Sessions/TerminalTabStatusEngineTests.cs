@@ -309,6 +309,28 @@ public sealed class TerminalTabStatusEngineTests
 	}
 
 	[Test]
+	public void Only_a_settled_screen_reports_a_settled_empty_composer()
+	{
+		var evidence = new TerminalPromptEvidence(true, true, 5, false, true, 5);
+		ScriptedProfile profile = new()
+		{
+			Verdict = new TerminalScreenVerdict(
+				TerminalScreenVerdictState.Unknown,
+				string.Empty,
+				PromptIsEmpty: true,
+				PromptEvidence: evidence)
+		};
+		var engine = CreateEngine(profile: profile);
+
+		engine.OnScreenSnapshot("starting frame with an empty composer", T0, stable: false);
+		engine.CurrentStatus.PromptIsEmpty.ShouldBe(true);
+		engine.CurrentStatus.StablePromptIsEmpty.ShouldBeNull();
+
+		engine.OnScreenSnapshot("settled frame with an empty composer", T0.AddSeconds(1));
+		engine.CurrentStatus.StablePromptIsEmpty.ShouldBe(true);
+	}
+
+	[Test]
 	public void Claude_busy_verdict_with_a_visible_prompt_keeps_the_busy_indicator()
 	{
 		var engine = CreateEngine(profile: ClaudeScreenProfile.Instance);

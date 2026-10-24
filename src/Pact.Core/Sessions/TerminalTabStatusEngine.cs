@@ -26,6 +26,7 @@ public sealed class TerminalTabStatusEngine
 	private bool _inputRequested;
 	private string _inputRequestStatusLine = string.Empty;
 	private bool? _promptIsEmpty;
+	private bool? _stablePromptIsEmpty;
 	private TerminalPromptEvidence? _promptEvidence;
 	private TerminalTabIndicator _currentIndicator;
 	private TerminalScreenVerdictState? _currentVerdictState;
@@ -187,7 +188,8 @@ public sealed class TerminalTabStatusEngine
 					_inputRequestStatusLine,
 					_promptIsEmpty,
 					_activityEpoch,
-					_lastStableVerdictState);
+					_lastStableVerdictState,
+					_stablePromptIsEmpty);
 			}
 		}
 	}
@@ -314,6 +316,7 @@ public sealed class TerminalTabStatusEngine
 				// often to settle a new screen until its turn ends. Until then, what the
 				// composer holds is unknown rather than the draft seen before Enter.
 				_promptIsEmpty = null;
+				_stablePromptIsEmpty = null;
 				_promptEvidence = null;
 				StartActivity(occurredAt, restart: true);
 			}
@@ -352,6 +355,7 @@ public sealed class TerminalTabStatusEngine
 				_lastStableVerdictDescription = verdict.Description;
 				_lastClassificationAt = occurredAt;
 				_promptIsEmpty = verdict.PromptIsEmpty;
+				_stablePromptIsEmpty = verdict.PromptIsEmpty;
 				_promptEvidence = verdict.PromptEvidence;
 				var clearedInputRequest =
 					_inputRequested && verdict.State != TerminalScreenVerdictState.InputRequested;
@@ -585,10 +589,15 @@ public sealed class TerminalTabStatusEngine
 /// </param>
 /// <param name="ActivityEpoch">Monotonic activity cycle observed for the session.</param>
 /// <param name="VerdictState">Latest stable classifier verdict, or null before classification.</param>
+/// <param name="StablePromptIsEmpty">
+/// Whether the composer was blank on the last settled screen, unlike <paramref name="PromptIsEmpty"/>,
+/// which repainting frames may also update.
+/// </param>
 public sealed record SessionStatusSnapshot(
 	TerminalTabIndicator Indicator,
 	bool InputRequested,
 	string StatusLine,
 	bool? PromptIsEmpty,
 	long ActivityEpoch,
-	TerminalScreenVerdictState? VerdictState);
+	TerminalScreenVerdictState? VerdictState,
+	bool? StablePromptIsEmpty);

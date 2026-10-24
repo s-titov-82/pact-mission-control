@@ -343,11 +343,34 @@ public sealed partial class SessionRuntimeCoordinatorTests
 				string.Empty,
 				false,
 				PromptIsEmpty: true,
+				StablePromptIsEmpty: true,
 				IsBusy: false,
 				VerdictState: TerminalScreenVerdictState.Unknown),
 			TestContext.CurrentContext.CancellationToken);
 
 		result.IsReady.ShouldBeTrue();
+		backend.InputWrites.ShouldBeEmpty();
+	}
+
+	[Test]
+	public async Task Readiness_does_not_accept_an_empty_composer_seen_only_while_repainting()
+	{
+		var (coordinator, backend, controller) = await CreateAttachedSessionAsync();
+		await using var _ = controller;
+
+		var result = await coordinator.WaitForSessionReadyAsync(
+			"session-1",
+			static () => new SessionScreenState(
+				"screen",
+				string.Empty,
+				false,
+				PromptIsEmpty: true,
+				StablePromptIsEmpty: null,
+				IsBusy: false,
+				VerdictState: TerminalScreenVerdictState.Unknown),
+			TestContext.CurrentContext.CancellationToken);
+
+		result.IsReady.ShouldBeFalse();
 		backend.InputWrites.ShouldBeEmpty();
 	}
 
@@ -365,6 +388,7 @@ public sealed partial class SessionRuntimeCoordinatorTests
 				string.Empty,
 				false,
 				PromptIsEmpty: promptIsEmpty,
+				StablePromptIsEmpty: promptIsEmpty,
 				IsBusy: false,
 				VerdictState: TerminalScreenVerdictState.Unknown),
 			TestContext.CurrentContext.CancellationToken);
@@ -386,6 +410,7 @@ public sealed partial class SessionRuntimeCoordinatorTests
 				string.Empty,
 				false,
 				PromptIsEmpty: true,
+				StablePromptIsEmpty: true,
 				IsBusy: true,
 				VerdictState: TerminalScreenVerdictState.Busy),
 			TestContext.CurrentContext.CancellationToken);

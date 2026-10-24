@@ -39,6 +39,10 @@
 
 No behaviour change; diagnosis only, so that Task 6 fixes a known cause.
 
+> **Done (see ledger).** Two causes were found and fixed right away, not in Task 6: readiness now
+> accepts a settled empty composer (a fresh agent shows no Done marker), and a terminal created
+> hidden starts at the size the host picked for its process. Task 6 keeps both rules.
+
 **Files:**
 - Modify: `src/Pact.App.Avalonia/Controllers/ReviewLaunchService.cs` (trace lines through the shell's `AppendDiagnosticLog`, passed in as `Action<string>`), `src/Pact.Presentation/Services/SessionRuntimeCoordinator.cs` (`WaitForSessionReadyAsync`, through the existing `DeliveryTrace` sink: one trace line per outcome with elapsed time, whether initial output arrived, whether any screen state was read, its last verdict/busy/question), `AvaloniaMainShellController.cs` (pass the trace).
 - Test: `tests/Pact.Presentation.Tests/Services/SessionRuntimeCoordinatorTests.cs` — `Readiness_wait_traces_its_outcome` (fake facts; never-ready → trace contains `ready=false` and `screenStates=0`).
@@ -244,7 +248,7 @@ No behaviour change; diagnosis only, so that Task 6 fixes a known cause.
       Task<string> CreateReviewerAsync(string projectId, ReviewProfile profile, CancellationToken ct);   // creates the visible unselected tab; returns its session id
       Task<ReviewerStart> StartReviewerAsync(string reviewerSessionId, CancellationToken ct);           // starts it and waits ready; cancellable
       Task<PromptDeliveryResult> DeliverTriggerAsync(string sessionId, string text, CancellationToken ct);
-      bool IsReadyForTrigger(string sessionId);                                  // stable verdict Done, no question
+      bool IsReadyForTrigger(string sessionId);                                  // settled screen: verdict Done or empty composer; not busy, no question
       Task CloseSessionAsync(string sessionId);
       Task OpenProjectDocumentAsync(string projectId, string relativePath);
       void Trace(string line);                                                    // app log, no message text
@@ -307,16 +311,15 @@ No behaviour change; diagnosis only, so that Task 6 fixes a known cause.
 **Interfaces:**
 - Consumes: Task 5 `IReviewRelayHost`, Task 2 `OpenProjectDocumentAsync`, `SessionLauncher.ActivateAsync`, `SessionRuntimeCoordinator.WaitForSessionReadyAsync`/`DeliverPromptAsync(..., submit:true, PromptSender.Outsider, startIfNotRunning:false, ct)`, `AgentControlArgumentTemplates.For(kind)` with `ReadAgentControlEnabled()` for `HasAgentControl`.
 
-- [ ] **Step 1: Bring Task 0's root cause in.** Read the Task 0 ruling in the ledger; the fix goes into `ReviewRelayHost` (or wherever the cause lives), not into the deleted `ReviewLaunchService`.
+- [ ] **Step 1: Keep Task 0's fixes.** Both causes are already fixed in `SessionRuntimeCoordinator` and the terminal host; `ReviewRelayHost` uses `WaitForSessionReadyAsync` and `CreateTerminalAsync` as they are and adds no readiness rule of its own.
 - [ ] **Step 2: Write failing tests:**
   ```csharp
   [Test] public async Task Reviewer_is_a_visible_unselected_tab_of_the_project() // workspace.Sessions contains it, SelectedSession unchanged, PresentedSurface unchanged
   [Test] public async Task Closing_a_reviewer_tab_tells_the_relay_first()
   [Test] public async Task Session_tools_list_includes_the_turn_tools()          // pact_get_review_turn, pact_submit_review_turn (required turnId,text; approved boolean)
-  // plus one regression test that fails for the root cause found in Task 0
   ```
 - [ ] **Step 3: Run** App + Presentation tests → FAIL.
-- [ ] **Step 4: Implement** `ReviewRelayHost` (UI work through `IUiTaskDispatcher.InvokeAsync`, `CreateSessionAsync(..., select:false)`, `CreateTerminalAsync`, `ActivateAsync(startIfNeeded:true, preferResumeCommand:false)`, readiness wait) and the root-cause fix; delete `ReviewLaunchService`.
+- [ ] **Step 4: Implement** `ReviewRelayHost` (UI work through `IUiTaskDispatcher.InvokeAsync`, `CreateSessionAsync(..., select:false)`, `CreateTerminalAsync`, `ActivateAsync(startIfNeeded:true, preferResumeCommand:false)`, readiness wait); delete `ReviewLaunchService`.
 - [ ] **Step 5: Run** all suites → PASS.
 - [ ] **Step 6: Live check** with the user on `artifacts/local-diag`: a Codex author asks a Claude reviewer; reviewer tab appears unselected, turns pass, approval closes the tab and opens the log.
 - [ ] **Step 7: Commit** `feat: run agent-requested reviews through the relay`.

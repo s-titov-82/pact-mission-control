@@ -533,7 +533,8 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 	/// cannot be blocked for a multiple of it. Readiness is a positive fact: "no question" is not
 	/// enough, because a starting TUI shows no question either and discards what it is given. A
 	/// fresh agent shows no completion marker, so its empty composer, read from the Dim styling of
-	/// the screen, is the fact that it can take a prompt.
+	/// a settled screen, is the fact that it can take a prompt; a composer seen only while the
+	/// screen is still repainting does not count.
 	/// </remarks>
 	public async Task<SessionReadiness> WaitForSessionReadyAsync(
 		string sessionId,
@@ -597,7 +598,7 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 
 				// A finished turn is ready, and so is a fresh agent: it shows no completion
 				// marker, but its recognized empty composer says it can take a prompt.
-				if ((state.VerdictState == TerminalScreenVerdictState.Done || state.PromptIsEmpty == true)
+				if ((state.VerdictState == TerminalScreenVerdictState.Done || state.StablePromptIsEmpty == true)
 					&& state.VerdictState != TerminalScreenVerdictState.Busy
 					&& !state.IsBusy
 					&& !state.InputRequested)

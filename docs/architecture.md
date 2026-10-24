@@ -247,8 +247,9 @@ structural boundaries; text-only or incomplete observations remain unknown. A
 freshly launched reviewer reaches readiness through one bounded budget covering
 its first output, a settle delay, and the folder-trust dialog, which Pact
 answers with Enter exactly once. Readiness requires a stable screen with the
-classifier verdict `Done` or a recognized empty composer (a fresh agent shows no
-completion marker), and no activity or question; composer content does not
+classifier verdict `Done` or an empty composer recognized on that settled screen
+(a fresh agent shows no completion marker; a repainting frame does not count),
+and no activity or question; composer content does not
 determine activity. A fresh capture
 is checked for a question immediately before Enter. Delivery is confirmed only
 when a fresh capture after Enter shows an empty composer; Pact's own Enter is
