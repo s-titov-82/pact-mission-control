@@ -242,12 +242,12 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			_runtimeCoordinator.StartAndWaitReadyAsync);
 		_orchestratorDispatcher = new OrchestratorDispatcher(orchestratorHost);
 		AgentControlToolRouter toolRouter = new(
-			agentControlDispatcher,
-			_orchestratorDispatcher,
-			ViewModel,
-			_reviewProfileProvider,
-			_uiTaskDispatcher,
-			ReportStatusAsync);
+			SessionTools.Create(
+				agentControlDispatcher,
+				() => ViewModel.ScenarioDefinitionsSnapshot,
+				() => _reviewProfileProvider.Current,
+				status => _uiTaskDispatcher.InvokeAsync(() => ReportStatusAsync(status))),
+			OrchestratorTools.Create(_orchestratorDispatcher));
 		AgentControlJsonRpc agentControlRpc = new(
 			caller => toolRouter.BuildToolsList(caller.IsOrchestrator),
 			toolRouter.InvokeAsync);

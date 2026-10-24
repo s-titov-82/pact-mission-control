@@ -335,8 +335,12 @@ releases the data-root mutex.
 
 The shell controller composes and routes; subsystems it used to hold live in
 their own App-layer classes, each given only the services and delegates it
-uses. `AgentControlToolRouter` parses MCP tool arguments and routes session and
-orchestrator calls to their dispatchers. `SessionLauncher` starts session
+uses. `AgentControlToolRouter` sends each MCP request to the session or
+orchestrator tool set (`SessionTools`, `OrchestratorTools` in Presentation),
+where each tool's name, description, schema, argument parsing and dispatcher call
+live in one `AgentControlTool`; listing reads settings snapshots
+(`ScenarioDefinitionsSnapshot`, `ReviewProfileProvider.Current`) and never waits
+for the UI thread. `SessionLauncher` starts session
 processes: the launch command and MCP injection for regular sessions, and one
 `StartProcessAsync` core that wires output, submit, input and viewport handlers
 for every process, the orchestrator included. `OrchestratorSupervisor` owns

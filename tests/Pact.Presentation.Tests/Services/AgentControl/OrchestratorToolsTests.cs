@@ -1,14 +1,18 @@
 using System.Text.Json.Nodes;
 using Pact.Infrastructure.AgentControl;
+using Pact.Infrastructure.Orchestrator;
+using Pact.Presentation.Services.AgentControl;
+using Pact.Presentation.Services.Orchestrator;
+using Pact.Presentation.Tests.Services.Orchestrator;
 
-namespace Pact.Infrastructure.Tests.AgentControl;
+namespace Pact.Presentation.Tests.Services.AgentControl;
 
-public sealed class OrchestratorToolCatalogTests
+public sealed class OrchestratorToolsTests
 {
 	[Test]
-	public void Catalog_lists_all_fifteen_orchestrator_tools()
+	public void Tools_list_all_fifteen_orchestrator_tools()
 	{
-		var result = OrchestratorToolCatalog.BuildToolsListResult();
+		var result = CreateTools().BuildToolsList();
 
 		ToolNames(result).ShouldBe(
 			[
@@ -90,7 +94,7 @@ public sealed class OrchestratorToolCatalogTests
 	[TestCase("pact_resume_review")]
 	public void Review_run_tools_require_a_run_id(string toolName)
 	{
-		var result = OrchestratorToolCatalog.BuildToolsListResult();
+		var result = CreateTools().BuildToolsList();
 
 		var tool = result["tools"]!.AsArray()
 			.Single(entry => (string?)entry!["name"] == toolName);
@@ -104,7 +108,7 @@ public sealed class OrchestratorToolCatalogTests
 	[Test]
 	public void Get_session_offers_message_and_screen_content_modes()
 	{
-		var result = OrchestratorToolCatalog.BuildToolsListResult();
+		var result = CreateTools().BuildToolsList();
 
 		var tool = result["tools"]!.AsArray()
 			.Single(entry => (string?)entry!["name"] == "pact_get_session");
@@ -119,7 +123,7 @@ public sealed class OrchestratorToolCatalogTests
 	[Test]
 	public async Task Rpc_lists_orchestrator_tools_only_for_the_orchestrator()
 	{
-		var rpc = CreateRpcWithBothCatalogs();
+		var rpc = CreateRpcWithBothToolSets();
 
 		var ordinary = await ListToolsAsync(
 			rpc,
@@ -134,10 +138,10 @@ public sealed class OrchestratorToolCatalogTests
 		ToolNames(orchestrator).ShouldNotContain("pact_request_review");
 	}
 
-	private static AgentControlJsonRpc CreateRpcWithBothCatalogs() => new(
+	private static AgentControlJsonRpc CreateRpcWithBothToolSets() => new(
 		caller => caller.IsOrchestrator
-			? OrchestratorToolCatalog.BuildToolsListResult()
-			: AgentControlToolCatalog.BuildToolsListResult([], []),
+			? CreateTools().BuildToolsList()
+			: CreateSessionTools().BuildToolsList(),
 		(_, _) => Task.FromResult(new AgentControlResultData("ok", IsError: false)));
 
 	private static async Task<JsonNode> ListToolsAsync(
@@ -155,7 +159,27 @@ public sealed class OrchestratorToolCatalogTests
 		.Select(tool => (string?)tool!["name"])
 		.ToArray();
 
+	[Test]
+	public void Hermes_soul_documents_every_orchestrator_tool()
+	{
+		foreach (var toolName in ToolNames(CreateTools().BuildToolsList()))
+		{
+			HermesTemplates.SoulMarkdown.ShouldContain(toolName!);
+		}
+	}
+
+	private static AgentControlToolSet CreateTools() =>
+		OrchestratorTools.Create(
+			new OrchestratorDispatcher(new OrchestratorDispatcherTests.FakeOrchestratorHost()));
+
+	private static AgentControlToolSet CreateSessionTools() =>
+		SessionTools.Create(
+			new AgentControlDispatcher(new AgentControlDispatcherTests.FakeAgentControlHost()),
+			() => [],
+			() => [],
+			_ => Task.CompletedTask);
+
 	private static JsonNode FindTool(string toolName) =>
-		OrchestratorToolCatalog.BuildToolsListResult()["tools"]!.AsArray()
+		CreateTools().BuildToolsList()["tools"]!.AsArray()
 			.Single(entry => (string?)entry!["name"] == toolName)!;
 }

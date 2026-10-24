@@ -186,6 +186,8 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 
 	/// <summary>Configured scenario definitions.</summary>
 	public ObservableCollection<ScenarioDefinition> ScenarioDefinitions { get; } = [];
+
+	private ScenarioDefinition[] _scenarioDefinitionsSnapshot = [];
 	/// <summary>Chosen selection action, or <see langword="null"/> when none is selected.</summary>
 	public SelectionActionChoiceViewModel? SelectedSelectionAction
 	{
@@ -737,12 +739,19 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 	{
 		ArgumentNullException.ThrowIfNull(scenarioDefinitions);
 
+		ScenarioDefinition[] snapshot = [.. scenarioDefinitions];
 		ScenarioDefinitions.Clear();
-		foreach (var scenarioDefinition in scenarioDefinitions)
+		foreach (var scenarioDefinition in snapshot)
 		{
 			ScenarioDefinitions.Add(scenarioDefinition);
 		}
+
+		Volatile.Write(ref _scenarioDefinitionsSnapshot, snapshot);
 	}
+
+	/// <summary>The configured scenario definitions, safe to read from any thread.</summary>
+	public IReadOnlyList<ScenarioDefinition> ScenarioDefinitionsSnapshot =>
+		Volatile.Read(ref _scenarioDefinitionsSnapshot);
 
 	/// <summary>
 	/// Creates a session with a generated id and persists it under the project. Selection may be

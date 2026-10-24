@@ -815,6 +815,7 @@ public sealed class MainWindowViewModelTests
 		viewModel.ReplaceScenarioDefinitions(scenarioDefinitions);
 
 		viewModel.ScenarioDefinitions.ShouldBe(scenarioDefinitions);
+		viewModel.ScenarioDefinitionsSnapshot.ShouldBe(scenarioDefinitions);
 	}
 
 	[Test]

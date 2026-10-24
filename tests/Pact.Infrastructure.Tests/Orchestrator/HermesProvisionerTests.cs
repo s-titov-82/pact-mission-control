@@ -1,5 +1,4 @@
 using Pact.Infrastructure.Orchestrator;
-using Pact.Infrastructure.AgentControl;
 using YamlDotNet.Serialization;
 
 namespace Pact.Infrastructure.Tests.Orchestrator;
@@ -189,22 +188,6 @@ public sealed class HermesProvisionerTests
 			"skills",
 			"pact-status-report",
 			"SKILL.md")).ShouldBeTrue();
-	}
-
-	[Test]
-	public async Task Provisioned_soul_documents_every_orchestrator_tool()
-	{
-		HermesProvisioner provisioner = new(new FakeHermesCli(_home));
-
-		await Provision(provisioner);
-
-		string soul = await File.ReadAllTextAsync(SoulPath());
-		var toolNames = OrchestratorToolCatalog.BuildToolsListResult()["tools"]!.AsArray()
-			.Select(tool => tool!["name"]!.GetValue<string>());
-		foreach (var toolName in toolNames)
-		{
-			soul.ShouldContain(toolName);
-		}
 	}
 
 	[Test]

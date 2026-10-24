@@ -464,7 +464,7 @@ public sealed class OrchestratorDispatcherTests
 		host.Sent.ShouldBeEmpty();
 	}
 
-	private sealed class FakeOrchestratorHost : IOrchestratorHost
+	internal sealed class FakeOrchestratorHost : IOrchestratorHost
 	{
 		private readonly ReviewRunDetails _review = new(
 			new ActiveRunSummary(

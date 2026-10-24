@@ -271,7 +271,7 @@ public sealed class AgentControlDispatcherTests
 		result.Failure.Message.ShouldContain("claude-opus");
 	}
 
-	private sealed class FakeAgentControlHost : IAgentControlHost
+	internal sealed class FakeAgentControlHost : IAgentControlHost
 	{
 		public List<(string ProjectId, string Text)> AppendedNotes { get; } = [];
 
