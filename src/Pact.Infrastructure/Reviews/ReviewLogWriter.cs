@@ -103,6 +103,8 @@ public sealed class ReviewLogWriter : IDisposable
 		await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
 		try
 		{
+			// The folder may have been cleaned away during the review.
+			Directory.CreateDirectory(Path.GetDirectoryName(path)!);
 			if (append)
 			{
 				await File.AppendAllTextAsync(path, text, Utf8, cancellationToken).ConfigureAwait(false);

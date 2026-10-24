@@ -298,7 +298,10 @@ public sealed class ReviewRelay
 
 			_host.Trace($"review phase=turn-accepted review={review.Id} role={answered!.Role} iteration={answered.Iteration} approved={approved}");
 			await DrainTriggerAsync(review).ConfigureAwait(false);
-			await _log.AppendTurnAsync(review.LogPath!, answered.Role, answered.Iteration, _time.GetLocalNow(), text, CancellationToken.None)
+			await WriteLogAsync(
+				review,
+				"turn",
+				path => _log.AppendTurnAsync(path, answered.Role, answered.Iteration, _time.GetLocalNow(), text, CancellationToken.None))
 				.ConfigureAwait(false);
 			if (conversation.State == ReviewState.Running)
 			{
@@ -338,11 +341,19 @@ public sealed class ReviewRelay
 		lock (_gate)
 		{
 			review = _active.Concat(_finished.Values)
-				.FirstOrDefault(candidate => candidate.Trigger is { WaitingForReady: true } pending
+				.FirstOrDefault(candidate => candidate.Trigger is { } pending
+					&& (pending.WaitingForReady || pending.Running)
 					&& string.Equals(pending.SessionId, sessionId, StringComparison.Ordinal));
 			trigger = review?.Trigger;
-			if (trigger is null || review!.Shutdown || !_host.IsReadyForTrigger(sessionId))
+			if (trigger is null || review!.Quiet || !_host.IsReadyForTrigger(sessionId))
 			{
+				return;
+			}
+
+			if (trigger.Running)
+			{
+				// The delivery is still finishing; it retries on its own if it wrote nothing.
+				trigger.RetryRequested = true;
 				return;
 			}
 
@@ -360,32 +371,29 @@ public sealed class ReviewRelay
 	public Task NotifySessionDiedAsync(string sessionId) =>
 		EndFromOutsideAsync(sessionId, ReviewState.Failed, "process exited");
 
+	/// <summary>Aborts a project's reviews quietly when the project is paused or closed.</summary>
+	/// <remarks>
+	/// The log gets its footer, but no tab closes, no document opens and the author is not told:
+	/// the project is stopping and the user is in the middle of that.
+	/// </remarks>
+	public Task EndProjectReviewsAsync(string projectId) =>
+		EndQuietlyAsync(
+			review => string.Equals(review.Project.ProjectId, projectId, StringComparison.Ordinal),
+			"The project was paused or closed.");
+
 	/// <summary>Aborts every review while Pact closes; nothing is delivered and no document opens.</summary>
-	public async Task ShutdownAsync()
+	public Task ShutdownAsync()
 	{
-		List<Review> running = [];
 		lock (_gate)
 		{
 			foreach (var finished in _finished.Values)
 			{
-				finished.Shutdown = true;
+				finished.Quiet = true;
 				finished.Trigger?.Cancellation.Cancel();
 			}
-
-			foreach (var review in _active.ToArray())
-			{
-				review.Shutdown = true;
-				if (TryBeginEnd(review, ReviewState.Aborted, "Pact is shutting down.") && review.Conversation is not null)
-				{
-					running.Add(review);
-				}
-			}
 		}
 
-		foreach (var review in running)
-		{
-			await EndRunningAsync(review).ConfigureAwait(false);
-		}
+		return EndQuietlyAsync(static _ => true, "Pact is shutting down.");
 	}
 
 	/// <summary>Reviews that are starting or running.</summary>
@@ -437,6 +445,27 @@ public sealed class ReviewRelay
 		await EndRunningAsync(review).ConfigureAwait(false);
 	}
 
+	private async Task EndQuietlyAsync(Func<Review, bool> applies, string reason)
+	{
+		List<Review> running = [];
+		lock (_gate)
+		{
+			foreach (var review in _active.Where(applies).ToArray())
+			{
+				review.Quiet = true;
+				if (TryBeginEnd(review, ReviewState.Aborted, reason) && review.Conversation is not null)
+				{
+					running.Add(review);
+				}
+			}
+		}
+
+		foreach (var review in running)
+		{
+			await EndRunningAsync(review).ConfigureAwait(false);
+		}
+	}
+
 	private async Task EndRunningAsync(Review review)
 	{
 		await review.Transition.WaitAsync(CancellationToken.None).ConfigureAwait(false);
@@ -458,21 +487,25 @@ public sealed class ReviewRelay
 		var conversation = review.Conversation!;
 		var state = conversation.State;
 		var reason = conversation.EndReason ?? review.EndReason;
-		await _log.WriteFooterAsync(review.LogPath!, state, reason, _time.GetLocalNow(), CancellationToken.None)
+		Retire(review);
+		await WriteLogAsync(
+			review,
+			"footer",
+			path => _log.WriteFooterAsync(path, state, reason, _time.GetLocalNow(), CancellationToken.None))
 			.ConfigureAwait(false);
 		_host.Trace($"review phase=ended review={review.Id} state={state}");
-		Retire(review);
-		if (review.Shutdown)
+		if (review.Quiet)
 		{
 			return;
 		}
 
 		if (state is ReviewState.Completed or ReviewState.MaxIterationsReached)
 		{
-			await _host.CloseSessionAsync(review.ReviewerSessionId!).ConfigureAwait(false);
+			await RunHostStepAsync(review, "close-reviewer", () => _host.CloseSessionAsync(review.ReviewerSessionId!))
+				.ConfigureAwait(false);
 		}
 
-		await OpenLogAsync(review).ConfigureAwait(false);
+		await RunHostStepAsync(review, "open-log", () => OpenLogAsync(review)).ConfigureAwait(false);
 		if (review.TellAuthor)
 		{
 			StartTrigger(review, review.AuthorSessionId, "final");
@@ -487,16 +520,15 @@ public sealed class ReviewRelay
 		}
 
 		_host.Trace($"review phase=start-ended review={review.Id} state={review.EndState}");
-		if (review.LogPath is not null)
-		{
-			await _log.WriteFooterAsync(review.LogPath, review.EndState, review.EndReason, _time.GetLocalNow(), CancellationToken.None)
-				.ConfigureAwait(false);
-		}
-
 		Retire(review);
-		if (!review.Shutdown && review.LogPath is not null)
+		await WriteLogAsync(
+			review,
+			"footer",
+			path => _log.WriteFooterAsync(path, review.EndState, review.EndReason, _time.GetLocalNow(), CancellationToken.None))
+			.ConfigureAwait(false);
+		if (!review.Quiet && review.LogPath is not null)
 		{
-			await OpenLogAsync(review).ConfigureAwait(false);
+			await RunHostStepAsync(review, "open-log", () => OpenLogAsync(review)).ConfigureAwait(false);
 		}
 
 		return AgentControlResult.Refused(
@@ -504,16 +536,57 @@ public sealed class ReviewRelay
 			$"The review did not start: {review.EndReason} The reviewer tab, if it was created, stays open.");
 	}
 
-	private Task WriteHeaderAsync(Review review)
+	// The log is the user's record of the review; failing to write it never stops the review.
+	private async Task WriteLogAsync(Review review, string step, Func<string, Task> write)
+	{
+		if (review.LogPath is not { } path)
+		{
+			return;
+		}
+
+		try
+		{
+			await write(path).ConfigureAwait(false);
+		}
+		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+		{
+			_host.Trace($"review phase=log-failed review={review.Id} step={step} error={exception.GetType().Name}");
+		}
+	}
+
+	// Closing the reviewer tab and opening the log are courtesies at the end; a failure is traced
+	// and the end goes on, so the agent's accepted answer is never reported as an error.
+	private async Task RunHostStepAsync(Review review, string step, Func<Task> action)
+	{
+		try
+		{
+			await action().ConfigureAwait(false);
+		}
+		catch (Exception exception) when (exception is not OperationCanceledException)
+		{
+			_host.Trace($"review phase=host-failed review={review.Id} step={step} error={exception.GetType().Name}");
+		}
+	}
+
+	private async Task WriteHeaderAsync(Review review)
 	{
 		var reviewerSessionId = review.ReviewerSessionId!;
 		var reviewer = _host.TryGetProject(reviewerSessionId, out var reviewerProject)
 			? (reviewerProject.SessionTitle, Kind: reviewerProject.Kind.ToString())
 			: (SessionTitle: review.Profile.DisplayName, Kind: review.Profile.Kind.ToString());
 		var startedAt = _time.GetLocalNow();
-		review.LogPath = ReviewLogWriter.CreatePath(review.Project.RootPath, startedAt, review.Template.Id, review.Id);
-		return _log.WriteHeaderAsync(
-			review.LogPath,
+		try
+		{
+			review.LogPath = ReviewLogWriter.CreatePath(review.Project.RootPath, startedAt, review.Template.Id, review.Id);
+		}
+		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+		{
+			_host.Trace($"review phase=log-failed review={review.Id} step=create error={exception.GetType().Name}");
+			return;
+		}
+
+		await WriteLogAsync(review, "header", path => _log.WriteHeaderAsync(
+			path,
 			new ReviewLogHeader(
 				review.Template.Name,
 				review.Target,
@@ -523,7 +596,7 @@ public sealed class ReviewRelay
 				reviewer.Kind,
 				review.MaxIterations,
 				startedAt),
-			CancellationToken.None);
+			CancellationToken.None)).ConfigureAwait(false);
 	}
 
 	private Task OpenLogAsync(Review review) =>
@@ -536,7 +609,7 @@ public sealed class ReviewRelay
 		Trigger trigger = new(sessionId, label);
 		lock (_gate)
 		{
-			if (review.Shutdown || (review.Ended && label != "final"))
+			if (review.Quiet || (review.Ended && label != "final"))
 			{
 				return;
 			}
@@ -560,16 +633,12 @@ public sealed class ReviewRelay
 			trigger.Idle = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 		}
 
+		var nothingWritten = false;
 		try
 		{
 			var result = await _host.DeliverTriggerAsync(trigger.SessionId, TriggerText, trigger.Cancellation.Token)
 				.ConfigureAwait(false);
-			var nothingWritten = !result.WriteAttempted && !result.IsSent;
-			lock (_gate)
-			{
-				trigger.WaitingForReady = nothingWritten && !trigger.Cancellation.IsCancellationRequested;
-			}
-
+			nothingWritten = !result.WriteAttempted && !result.IsSent;
 			_host.Trace(
 				$"review phase=trigger review={review.Id} turn={trigger.Label} session={trigger.SessionId} "
 				+ $"outcome={result.Outcome} written={result.WriteAttempted} retry={nothingWritten}");
@@ -584,10 +653,22 @@ public sealed class ReviewRelay
 		}
 		finally
 		{
+			bool retryNow;
 			lock (_gate)
 			{
+				// The pending state and the end of the run change together, so a status change
+				// seen while the delivery was finishing is never lost.
+				var pending = nothingWritten && !trigger.Cancellation.IsCancellationRequested;
+				retryNow = pending && trigger.RetryRequested && !review.Quiet;
+				trigger.RetryRequested = false;
+				trigger.WaitingForReady = pending && !retryNow;
 				trigger.Running = false;
 				trigger.Idle.TrySetResult();
+			}
+
+			if (retryNow)
+			{
+				_ = RunTriggerAsync(review, trigger);
 			}
 		}
 	}
@@ -714,7 +795,7 @@ public sealed class ReviewRelay
 		public bool Ended { get; set; }
 		public ReviewState EndState { get; set; } = ReviewState.Running;
 		public string EndReason { get; set; } = string.Empty;
-		public bool Shutdown { get; set; }
+		public bool Quiet { get; set; }
 		public bool TellAuthor { get; set; } = true;
 	}
 
@@ -726,6 +807,7 @@ public sealed class ReviewRelay
 		public CancellationTokenSource Cancellation { get; } = new();
 		public bool Running { get; set; }
 		public bool WaitingForReady { get; set; }
+		public bool RetryRequested { get; set; }
 		public TaskCompletionSource? Idle { get; set; }
 	}
 }

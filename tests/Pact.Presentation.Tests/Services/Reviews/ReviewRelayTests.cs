@@ -328,6 +328,61 @@ public sealed class ReviewRelayTests : IDisposable
 	}
 
 	[Test]
+	public async Task A_log_that_cannot_be_written_does_not_strand_the_review()
+	{
+		var (relay, host) = Create();
+		var reviewId = (await relay.RequestAsync(Author, Request(), CancellationToken.None)).Payload!;
+		var logPath = relay.Find(reviewId)!.LogPath;
+		File.Delete(logPath);
+		Directory.CreateDirectory(logPath);
+		var turnId = (string)Turn(relay, Reviewer)["turnId"]!;
+
+		var result = await relay.SubmitAsync(Reviewer, turnId, "All good.", approved: true, CancellationToken.None);
+
+		result.Succeeded.ShouldBeTrue();
+		relay.Find(reviewId).ShouldBeNull();
+		host.ClosedSessions.ShouldBe([Reviewer]);
+		host.Deliveries.Select(delivery => delivery.SessionId).ShouldBe([Reviewer, Author]);
+		host.Traces.ShouldContain(line => line.Contains("log-failed", StringComparison.Ordinal));
+	}
+
+	[Test]
+	public async Task Ending_a_project_s_reviews_is_quiet()
+	{
+		var (relay, host) = Create();
+		await relay.RequestAsync(Author, Request(), CancellationToken.None);
+
+		await relay.EndProjectReviewsAsync("project-1");
+
+		((string?)Turn(relay, Author)["state"]).ShouldBe("Aborted");
+		host.Deliveries.Count.ShouldBe(1);
+		host.OpenedDocuments.ShouldBeEmpty();
+		host.ClosedSessions.ShouldBeEmpty();
+		(await ReadLogAsync(host)).ShouldContain("Ended: Aborted");
+	}
+
+	[Test]
+	public async Task A_status_change_while_the_trigger_is_still_finishing_is_not_lost()
+	{
+		var (relay, host) = Create();
+		host.NextResults.Enqueue(new PromptDeliveryResult(PromptDeliveryOutcome.RefusedQuestion, "Allow?", WriteAttempted: false));
+		host.OnTrace = line =>
+		{
+			if (line.Contains("retry=True", StringComparison.Ordinal))
+			{
+				host.OnTrace = null;
+				host.ReadySessions.Add(Reviewer);
+				relay.NotifyStatusChanged(Reviewer);
+			}
+		};
+
+		await relay.RequestAsync(Author, Request(), CancellationToken.None);
+		await host.WaitForDeliveriesAsync(2);
+
+		host.Deliveries.Select(delivery => delivery.SessionId).ShouldBe([Reviewer, Reviewer]);
+	}
+
+	[Test]
 	public async Task Submitting_without_a_review_is_refused()
 	{
 		var (relay, _) = Create();
@@ -495,12 +550,16 @@ public sealed class ReviewRelayTests : IDisposable
 			return Task.CompletedTask;
 		}
 
+		public Action<string>? OnTrace { get; set; }
+
 		public void Trace(string line)
 		{
 			lock (_gate)
 			{
 				Traces.Add(line);
 			}
+
+			OnTrace?.Invoke(line);
 		}
 	}
 }

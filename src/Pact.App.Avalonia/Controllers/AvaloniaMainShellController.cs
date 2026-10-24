@@ -2227,13 +2227,8 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		ReportStatusAsync($"Web page navigation failed: {message}");
 
 	// A paused or closed project's tabs stop without a process exit the relay would hear about.
-	private async Task EndWorkspaceReviewsAsync(WorkspaceViewModel workspace)
-	{
-		foreach (var session in workspace.Sessions.ToArray())
-		{
-			await _reviewRelay.NotifySessionClosedAsync(session.Record.Id);
-		}
-	}
+	private Task EndWorkspaceReviewsAsync(WorkspaceViewModel workspace) =>
+		_reviewRelay.EndProjectReviewsAsync(workspace.Id);
 
 	// Older Pact versions exchanged review files in .pact-reviews; reviews now go through MCP.
 	private async Task CleanupAbandonedReviewExchangesAsync(CancellationToken cancellationToken)
