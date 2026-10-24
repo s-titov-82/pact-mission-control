@@ -439,6 +439,14 @@ public sealed class SettingsFileStore
 	/// <summary>Builds the built-in prompt templates used to seed <c>prompt-templates.json</c>.</summary>
 	public static IReadOnlyList<PromptTemplateRecord> CreateDefaultPromptTemplates() => [
 			new PromptTemplateRecord(
+				"request-review",
+				"Request review",
+				"Request a cross-agent review of the current work through Pact (`pact_request_review`). "
+					+ "If the review template, reviewer profile or target is not clear from our conversation, ask me first. "
+					+ "While the review runs, answer each Pact turn with `pact_get_review_turn` and `pact_submit_review_turn`.",
+				SendByDefault: false,
+				PromptActionType.Prompt),
+			new PromptTemplateRecord(
 				"handoff-summary",
 				"Prepare handoff summary",
 				"Summarize the current state for another coding agent. Include files touched, decisions made, open risks, and exact next commands.",

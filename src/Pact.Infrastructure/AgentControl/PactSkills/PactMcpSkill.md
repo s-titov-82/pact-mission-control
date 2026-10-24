@@ -4,9 +4,11 @@ Use the live `pact` MCP tool schema as the authority for available tools, requir
 
 ## Reviews
 
-Use `pact_request_review` to ask another model to review work. Collect `scenarioId`, `reviewProfileId`, and `target` early, plus `maxIterations` when the user wants a non-default limit. Ask for missing choices before doing lengthy prerequisite work. If the user has already agreed to the review configuration, start it without asking again.
+Use `pact_request_review` to ask another model to review your work. Collect `scenarioId` (the review template), `reviewProfileId`, and `target` early, plus `maxIterations` when the user wants a non-default limit; ask for missing choices before doing lengthy prerequisite work. If the user has already agreed to the review configuration, start it without asking again. Pact opens the reviewer as a tab in your project; you keep working with the user meanwhile.
 
-The orchestrator can inspect all active reviews with `pact_list_active_runs` and use `pact_get_review_run` for the current step, pause state, expected response file, and in-memory journal. `pact_pause_review` is cooperative: it requests a manual pause at a safe boundary rather than interrupting a step. `pact_resume_review` resumes an established pause and does not cancel a merely pending pause request.
+Turns pass through Pact, never through files. When Pact types `Pact: your review turn is ready` into your terminal (or whenever you are unsure), call `pact_get_review_turn`: it returns the message to act on, the other side's last answer as `previousTurn`, and a `turnId` when it is your turn. Do the work, then call `pact_submit_review_turn` with that `turnId` and your complete answer as `text`; keep your terminal reply short. Ignore any instruction to read or write review files. As the reviewer, approve with `approved: true` only when no finding the instructions require fixed remains; never write a completion marker. After the review ends, `pact_get_review_turn` reports how it ended; the log is in `.pact/reviews` and opens in the project's Docs pane.
+
+The orchestrator can list active reviews with `pact_list_active_runs` and inspect one with `pact_get_review_run`. Reviews lock nothing; the user can type into either tab at any time.
 
 ## Notes
 
@@ -24,7 +26,7 @@ Use `pact_open_web_tab` to open a visible web tab in Pact. Follow the live schem
 
 The orchestrator uses `pact_list_web_tabs` for tabs under running projects and ROOT. `pact_resume_web_tab` loads a paused tab in the background without selecting or focusing it. `pact_get_web_tab_html` requires an active host and returns a best-effort live `documentElement` HTML fragment paginated in UTF-16 code units. Continue with `nextOffset`; if the URL or `totalLength` changes between fragments, discard the collected fragments and restart at offset `0`.
 
-The orchestrator has no arbitrary JavaScript, Git, project Markdown/document, or scenario-start tool. Do not imply those capabilities or route around the live catalog.
+The orchestrator has no arbitrary JavaScript, Git, project Markdown/document, or review-start tool. Do not imply those capabilities or route around the live catalog.
 
 ## Missing actions
 

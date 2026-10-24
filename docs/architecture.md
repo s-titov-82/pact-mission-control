@@ -33,7 +33,7 @@ Infrastructure, or the application head.
 Each live terminal session owns one `TerminalController`, one bundled ConPTY
 backend, and one xterm.js instance. Selecting another session changes which
 xterm instance is presented; it does not stop background processes or rebuild
-their terminal state. Prompt and scenario actions always target these already
+their terminal state. Prompt actions and review triggers always target these already
 live, user-visible sessions. The application is not a headless API proxy for
 subscription TUI tools.
 
@@ -79,7 +79,7 @@ another writer. Enter and Esc are encoded once, by `AgentKeyEncoder`, from the
 session's agent kind and win32-input-mode state; the status engine uses the
 same encoder to recognize a submit. A prompt delivery
 (`SessionRuntimeCoordinator.DeliverPromptAsync`, the one sender for manual
-actions, MCP, Pact notices, and scenarios) also holds a per-session delivery
+actions, MCP, Pact notices, and review triggers) also holds a per-session delivery
 gate for its whole cycle, so two programmatic senders never interleave; typed
 input does not wait for it. The delivery confirms itself from
 `ITerminalWebViewHost.CaptureScreenAsync`, a capture taken after pending output
@@ -89,7 +89,7 @@ request may publish a viewport.
 
 The right panel's selected-tab details are an event-driven projection of those
 existing runtime facts. Terminal details use classifier verdict, composer and
-content-free structural composer evidence, activity, viewport, lifecycle, and scenario-lock metadata; web details use the
+content-free structural composer evidence, activity, viewport, and lifecycle metadata; web details use the
 saved resume URL plus the live monitor registration, matched rule, observation,
 schedule, navigation, unread, and sanitized failure metadata. The projection
 does not expose or persist a raw terminal-screen snapshot. External process
@@ -147,7 +147,7 @@ remain authenticated POSTs. Initialize responses issue an opaque
 `Mcp-Session-Id` bound to the bearer credential; supplied ids are validated
 before routing. Claude's authenticated GET without that session header remains
 accepted for client compatibility. After a Settings reload, a change to the
-live scenario-id or review-profile-id set publishes
+live review-template-id or review-profile-id set publishes
 `notifications/tools/list_changed`, allowing connected ordinary sessions to
 re-list tools without a terminal restart. There is no settings file watcher,
 and display text, commands, ordering, and unrelated settings do not change the
@@ -156,10 +156,8 @@ such notification.
 
 A single pinned Hermes orchestrator tier sits above ROOT. Its durable
 credential exposes a separate cross-session MCP catalog for reading workspace,
-session, screen, usage, and detailed active-review state, including the current
-step, pause state, expected exchange file, and in-memory journal. It can submit
-prompts to already-live unlocked sessions and cooperatively request or resume a
-review pause.
+session, screen, usage, and active-review state (participants, iteration, whose
+turn, log file). It can submit prompts to already-live sessions.
 
 The orchestrator has no project ownership, but its bounded resource tools can
 read/append or revision-safely replace Notes for running projects. It can list
@@ -167,10 +165,10 @@ active and paused web tabs under running projects and ROOT, resume a tab in the
 background without selecting it, and read an already-active host's live
 `documentElement` HTML in bounded UTF-16 fragments. Paused projects are
 excluded. There is no orchestrator Git, project Markdown/document, arbitrary
-JavaScript, or scenario-start tool. Ordinary session credentials cannot
+JavaScript, or review-start tool. Ordinary session credentials cannot
 enumerate or invoke this catalog. The pinned row uses the same selected-terminal
 highlight as ordinary terminal rows. Stable terminal screens, extracted last
-messages, and review journals are retained in memory only.
+messages are retained in memory only.
 
 ## Projects, documents, and storage
 
@@ -181,7 +179,7 @@ notes live under `Settings/Notes`.
 `Settings/root-tabs.json` separately owns project-independent terminal and web
 tabs, their last selected item, and explicit per-item pause state. ROOT is not a
 sentinel project: it has no project close/pause lifecycle, Git panel, documents,
-notes, or scenario ownership. Its unpaused terminals may still participate in
+notes, or reviews. Its unpaused terminals may still participate in
 manual prompt and selection actions.
 
 `Settings/agent-control.json` owns the fixed loopback endpoint port.
@@ -220,27 +218,53 @@ The process lease is a named operating-system mutex derived from the normalized
 data-root path. No lock file is stored under `Settings` or elsewhere in the
 profile.
 
-## Scenario transport
+## Agent reviews
 
-The scenario coordinator owns the single active review slot per project,
-including reservations while an agent-requested reviewer terminal is starting.
-The shell owns creation and rollback of that terminal; the view model owns
-neither lifecycle. Runs reach terminals through `RuntimeScenarioGateway`, which
-calls `SessionRuntimeCoordinator` directly (delivery as the scenario owner,
-Esc, liveness from the runtime's controller) and never waits for the UI thread.
-A run's state is one `ScenarioPauseState` value with pure transitions in
-`Pact.Core.Scenarios.ScenarioPauseMachine`: the run state, the pause kind
-(manual or attention), the attention reason (nothing sent, unconfirmed,
-watchdog), the stuck session, and which bound sessions are unlocked.
+An agent asks another agent to review its work over MCP; `ReviewRelay`
+(Presentation) runs the review and owns its state. A session takes part in at
+most one active review, so the session token alone identifies it. The relay
+reserves the author before any await, creates the reviewer as a visible but
+unselected tab of the author's project, starts it, and waits for readiness;
+closing either tab, its process exiting or Pact shutting down while the
+reviewer starts ends the review before the first turn.
 
-Scenario journals are in memory. Each review-loop step atomically publishes
-one immutable task file below
-`.pact-reviews/<run>/pass-NNN-<role>-task.md`. The terminal receives only the
-short task-path instruction as one paste and then a separate Enter. The paste is
+Turns pass through Pact, never through files. `ReviewConversation` (Core) holds
+the turn rules: the reviewer goes first; a reviewer answer either approves
+(`approved: true`, Completed) or hands the turn to the author; an author answer
+starts the next iteration or, at the limit, ends the review as
+MaxIterationsReached. Each turn has an id; a retried submit of an accepted turn
+returns its stored result and relays nothing, even after the end. Agents pull
+their turn with `pact_get_review_turn`, which returns the message rendered from
+the review template, the other side's last answer verbatim as `previousTurn`,
+and the `turnId`; they hand it back with `pact_submit_review_turn`. Review
+templates are the `scenarios.json` definitions; `ReviewMessageRenderer`
+renders them and appends Pact's protocol paragraph, and the old response-file
+placeholders render as a pointer to `previousTurn`.
+
+The side whose turn it is gets one short trigger line typed into its terminal
+through `DeliverPromptAsync`. A trigger belongs to its turn: accepting the
+turn's answer, or ending the review, cancels the trigger and waits for its
+delivery to finish before anything is relayed, so a trigger never arrives after
+its turn moved on. A delivery that wrote nothing (a question was pending, or the
+session was not running) is retried when the session's status next says it can
+take a prompt; one that wrote anything is never retyped, since the agent can
+always pull its turn. Nothing is locked: the user can type into either tab.
+
+Every review keeps a Markdown log in `.pact/reviews/` of the author's project
+(header, each accepted turn as submitted, footer), appended after each turn;
+`.pact/.gitignore` ignores the folder. On Completed or MaxIterationsReached the
+reviewer tab closes the way the user would close it; on Failed or Aborted it
+stays. Every end opens the log in the project's Docs pane and tells the author
+with a last trigger, except during shutdown. Pausing or closing a project ends
+the reviews its sessions take part in. Startup removes `.pact-reviews`
+directories left by older versions; generic `.reviews` directories are never
+owned by Pact.
+
+The trigger uses the same delivery as every other prompt. The paste is
 bracketed, or, for a client that captures the mouse, a clipboard paste the
 client makes itself on a right click, after a left click at the end of the
 composer draft that clears a history selection; Enter then waits until the output shows
-it. Only a pending question refuses a run's write; a busy agent queues the
+it. Only a pending question refuses a write; a busy agent queues the
 trigger, and text already in the composer does not block it. Codex and Claude
 distinguish composer suggestions and drafts using captured Dim metadata and
 structural boundaries; text-only or incomplete observations remain unknown. A
@@ -250,39 +274,18 @@ answers with Enter exactly once. Readiness requires a stable screen with the
 classifier verdict `Done` or an empty composer recognized on that settled screen
 (a fresh agent shows no completion marker; a repainting frame does not count),
 and no activity or question; composer content does not
-determine activity. A fresh capture
+determine activity. Each launch starts without the previous process's
+readiness evidence. A fresh capture
 is checked for a question immediately before Enter. Delivery is confirmed only
 when a fresh capture after Enter shows an empty composer; Pact's own Enter is
 never evidence. If a capture still shows the text, Pact repeats Enter once; it
 never pastes twice. Sessions whose profile reads no composer (PowerShell,
 custom commands) end as submitted once the paste showed and Enter was written.
 
-Bounded application logs retain metadata-only scenario delivery decisions and
-transport exceptions so a later retry stall can be reconstructed. Entries name
-the run, step, iteration, role, session, attempt, outcome, and whether write or
-submit was attempted; they never include prompt, response, status-line, or
-terminal-screen text. Identical consecutive delivery outcomes are coalesced.
-
-The response observer starts before delivery and remains active through every
-watchdog and pause state. A delivery that wrote nothing (a question was already
-pending, or the session was not running) is retried once the terminal is safe.
-Once anything reached the terminal, an unconfirmed delivery pauses for attention
-and is never resent; the response file decides. The step watchdog likewise only
-pauses for attention and keeps waiting. A complete footer-valid response is
-authoritative: it cancels any delivery still in progress before the run may
-use it, ends an attention pause, re-locks the terminals, and advances the run.
-
-Manual Pause releases every involved terminal and suppresses all new automatic
-writes until explicit Resume, but it does not stop response observation. A
-response completed during manual Pause is read, stops the delivery, and is kept
-(`ScenarioIterationContext.AcceptResponseAsync`); the run advances with it only
-after Resume. Watchdog attention releases only the terminal that needs
-attention. Paused runs retain their files; the run
-state and journal remain in memory rather than introducing a second durable
-state file. The final result and journal are rendered as read-only Markdown
-views. Completion, maximum-iteration, abort, and failure states remove only that
-run's Pact-owned directory, and startup removes abandoned `.pact-reviews`.
-Generic `.reviews` directories are never owned by Pact.
+Bounded application logs retain metadata-only review facts: start, readiness,
+each trigger delivery outcome and whether anything was written, each accepted
+turn and the end state. They never include prompt, answer, status-line, or
+terminal-screen text.
 
 ## Update and soft-restart boundary
 
@@ -329,7 +332,7 @@ The application bootstrap owns startup cancellation and the close-during-start
 boundary. The shell controller owns terminal/session shutdown; runtime
 coordinators own their controllers; dependency injection owns registered
 singletons such as web monitoring. Shutdown drains observed event tasks,
-aborts scenarios, flushes documents, captures agent resume commands under one
+aborts active reviews, flushes documents, captures agent resume commands under one
 shared deadline, stops session backends, disposes WebViews, and finally
 releases the data-root mutex.
 
@@ -354,8 +357,7 @@ operations. `ResumeCaptureService` captures resume commands
 before sessions stop.
 
 What the center pane shows is one `PresentedSurface` value on the shell
-controller: a terminal, a paused ROOT item, notes, a scenario journal, the
-browser, or nothing. The controller assigns it whole, and the terminal case
+controller: a terminal, a paused ROOT item, notes, the browser, or nothing. The controller assigns it whole, and the terminal case
 also carries its loading state and a focus request that waits for loading to
 clear, so showing anything else drops both. `MainWindow` draws the panes from
 that value through `CenterPaneVisibility`. Selection stays in the view model.
@@ -364,5 +366,5 @@ that value through `CenterPaneVisibility`. Selection stays in the view model.
 
 - A cross-platform product head.
 - A hidden or headless agent API.
-- Durable terminal transcripts or scenario journals.
+- Durable terminal transcripts.
 - Windows Terminal rendering parity.

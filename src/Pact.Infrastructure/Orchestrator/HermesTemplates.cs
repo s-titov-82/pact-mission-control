@@ -14,13 +14,11 @@ internal static class HermesTemplates
 
 		- `pact_list_workspaces`: list projects, ROOT, and their sessions.
 		- `pact_get_session`: read a session's last agent message or stable screen.
-		- `pact_send_message`: submit a prompt to another live, unlocked session.
+		- `pact_send_message`: submit a prompt to another live session.
 		- `pact_start_session`: start a stopped session and wait until it can take a prompt.
 		- `pact_get_subscription_usage`: report configured agent usage budgets.
-		- `pact_list_active_runs`: list active automated review runs.
-		- `pact_get_review_run`: inspect one run's step, pause state, expected file, and journal.
-		- `pact_pause_review`: cooperatively request a manual pause at a safe boundary.
-		- `pact_resume_review`: resume an established manual or attention pause.
+		- `pact_list_active_runs`: list reviews in progress between two agents.
+		- `pact_get_review_run`: inspect one review: participants, iteration, whose turn, log file.
 		- `pact_get_project_notes`: read exact Notes text and revision for a running project.
 		- `pact_replace_project_notes`: revision-safely replace or delete project Notes.
 		- `pact_append_project_note`: append text to a running project's Notes.
@@ -34,7 +32,7 @@ internal static class HermesTemplates
 		read that requires an active host; continue with `nextOffset`, and if URL or
 		`totalLength` changes between fragments, discard them and restart at offset `0`.
 
-		You have no arbitrary JavaScript, Git, project Markdown/document, or scenario-start
+		You have no arbitrary JavaScript, Git, project Markdown/document, or review-start
 		tool. Do not imply those capabilities or route around the live Pact catalog.
 		""";
 
@@ -47,7 +45,7 @@ internal static class HermesTemplates
 
 		Call `pact_list_workspaces` and `pact_list_active_runs`. Inspect relevant sessions
 		with `pact_get_session` using `content: message`. Select sessions that are finished
-		or awaiting an answer, account for sessions controlled by active review runs, and
+		or awaiting an answer, mention sessions taking part in an active review, and
 		return a short report grouped by project. Do not send messages unless asked.
 		""";
 }

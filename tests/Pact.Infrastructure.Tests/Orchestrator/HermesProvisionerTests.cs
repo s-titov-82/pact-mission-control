@@ -190,6 +190,14 @@ public sealed class HermesProvisionerTests
 			"SKILL.md")).ShouldBeTrue();
 	}
 
+	[TestCase("pact_pause_review")]
+	[TestCase("pact_resume_review")]
+	public void Templates_name_no_removed_review_tool(string toolName)
+	{
+		HermesTemplates.SoulMarkdown.ShouldNotContain(toolName);
+		HermesTemplates.StatusReportSkill.ShouldNotContain(toolName);
+	}
+
 	[Test]
 	public async Task Provision_reports_every_step_separately()
 	{

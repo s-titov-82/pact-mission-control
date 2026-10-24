@@ -200,6 +200,11 @@ public sealed class SettingsFileStoreTests
 			&& template.EffectiveType == PromptActionType.TerminalCommand);
 		promptTemplates.ShouldContain(template => template.Id == "restore-briefing"
 			&& template.EffectiveType == PromptActionType.Prompt);
+		promptTemplates.ShouldContain(template => template.Id == "request-review"
+			&& template.Name == "Request review"
+			&& template.Body.Contains("pact_request_review", StringComparison.Ordinal)
+			&& template.Body.Contains("pact_submit_review_turn", StringComparison.Ordinal)
+			&& template.EffectiveType == PromptActionType.Prompt);
 		promptTemplates
 			.Where(template => template.EffectiveType == PromptActionType.Prompt)
 			.ShouldAllBe(template => !template.SendByDefault);
