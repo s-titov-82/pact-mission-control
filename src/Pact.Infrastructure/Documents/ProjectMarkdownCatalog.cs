@@ -1,12 +1,14 @@
 namespace Pact.Infrastructure.Documents;
 
 /// <summary>
-/// Splits project Markdown into the Common group (everything outside <c>docs</c>)
-/// and the Docs group (the <c>docs</c> tree, including <c>docs/superpowers</c>).
+/// Splits project Markdown into the Common group (everything outside <c>docs</c>), the Docs
+/// group (the <c>docs</c> tree, including <c>docs/superpowers</c>) and the Reviews group (the
+/// review logs in <c>.pact/reviews</c>, newest first).
 /// </summary>
 public sealed record ProjectMarkdownCatalog(
 	IReadOnlyList<ProjectMarkdownFileEntry> Common,
-	IReadOnlyList<ProjectMarkdownFileEntry> Docs)
+	IReadOnlyList<ProjectMarkdownFileEntry> Docs,
+	IReadOnlyList<ProjectMarkdownFileEntry> Reviews)
 {
 	private static readonly HashSet<string> IgnoredDirectoryNames = new(
 		[".git", ".worktrees", ".pact-reviews", "bin", "obj", "node_modules"],
@@ -22,7 +24,7 @@ public sealed record ProjectMarkdownCatalog(
 		var root = Path.GetFullPath(projectRootPath);
 		if (!Directory.Exists(root))
 		{
-			return new ProjectMarkdownCatalog([], []);
+			return new ProjectMarkdownCatalog([], [], []);
 		}
 
 		List<string> markdownPaths = [];
@@ -31,9 +33,16 @@ public sealed record ProjectMarkdownCatalog(
 		// The supplied project root is trusted even when it is a junction; only
 		// descendants are rejected for being reparse points.
 
+		var reviewsRoot = Path.Combine(root, ".pact", "reviews");
+		bool IsReviewLog(string path)
+		{
+			return string.Equals(Path.GetDirectoryName(path), reviewsRoot, StringComparison.OrdinalIgnoreCase);
+		}
+
 		return new ProjectMarkdownCatalog(
-			ToEntries(root, markdownPaths.Where(path => !IsUnderDirectory(path, docsRoot))),
-			ToEntries(root, markdownPaths.Where(path => IsUnderDirectory(path, docsRoot))));
+			ToEntries(root, markdownPaths.Where(path => !IsUnderDirectory(path, docsRoot) && !IsReviewLog(path))),
+			ToEntries(root, markdownPaths.Where(path => IsUnderDirectory(path, docsRoot))),
+			[.. ToEntries(root, markdownPaths.Where(IsReviewLog)).Reverse()]);
 	}
 
 	private static void AddMarkdownTree(string directory, List<string> paths)

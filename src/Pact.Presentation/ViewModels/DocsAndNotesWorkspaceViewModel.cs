@@ -15,7 +15,10 @@ public enum DocsAndNotesSection
 	Common,
 
 	/// <summary>Markdown under <c>docs</c>, including <c>docs/superpowers</c>.</summary>
-	Docs
+	Docs,
+
+	/// <summary>Review logs in <c>.pact/reviews</c>, newest first.</summary>
+	Reviews
 }
 
 /// <summary>Folder or document node rendered by the documentation tree.</summary>
@@ -88,6 +91,7 @@ public sealed class MarkdownTreeNodeViewModel : INotifyPropertyChanged
 /// </summary>
 public sealed class DocsAndNotesWorkspaceViewModel : INotifyPropertyChanged
 {
+	private const string ReviewsPrefix = ".pact/reviews/";
 	private static readonly DocumentSaveStatus CleanSaveStatus =
 		new(DocumentSaveState.Clean);
 	private readonly string _projectRootPath;
@@ -195,17 +199,20 @@ public sealed class DocsAndNotesWorkspaceViewModel : INotifyPropertyChanged
 	/// <summary>Tree of Markdown under <c>docs</c>, rooted at the <c>docs</c> children.</summary>
 	public IReadOnlyList<MarkdownTreeNodeViewModel> DocsTree { get; private set; } = [];
 
+	/// <summary>Flat list of review logs, newest first.</summary>
+	public IReadOnlyList<MarkdownTreeNodeViewModel> ReviewsTree { get; private set; } = [];
+
 	/// <summary>Tree shown for the selected section; empty for Notes.</summary>
 	public IReadOnlyList<MarkdownTreeNodeViewModel> VisibleTree => SelectedSection switch
 	{
 		DocsAndNotesSection.Common => CommonTree,
 		DocsAndNotesSection.Docs => DocsTree,
+		DocsAndNotesSection.Reviews => ReviewsTree,
 		_ => []
 	};
 
 	/// <summary>Whether the right panel must show the documentation tree.</summary>
-	public bool ShowsDocumentTree => SelectedSection is DocsAndNotesSection.Common
-		or DocsAndNotesSection.Docs;
+	public bool ShowsDocumentTree => SelectedSection is not DocsAndNotesSection.Notes;
 
 	/// <summary>Refreshes discovery while retaining document buffers, expansion, and selection.</summary>
 	public async Task RefreshAsync(CancellationToken cancellationToken)
@@ -213,10 +220,12 @@ public sealed class DocsAndNotesWorkspaceViewModel : INotifyPropertyChanged
 		var catalog = ProjectMarkdownCatalog.Scan(_projectRootPath);
 		CommonTree = BuildNodes(MarkdownTreeNode.Build(catalog.Common));
 		DocsTree = BuildNodes(MarkdownTreeNode.Build(catalog.Docs, "docs/"));
+		ReviewsTree = BuildNodes(MarkdownTreeNode.Build(catalog.Reviews, ReviewsPrefix).Reverse().ToArray());
 		await NotesDocument.LoadAsync(cancellationToken);
 		await ActivateSelectedSectionAsync(cancellationToken);
 		OnPropertyChanged(nameof(CommonTree));
 		OnPropertyChanged(nameof(DocsTree));
+		OnPropertyChanged(nameof(ReviewsTree));
 		OnPropertyChanged(nameof(VisibleTree));
 		OnPropertyChanged(nameof(ShowsDocumentTree));
 	}
@@ -263,20 +272,27 @@ public sealed class DocsAndNotesWorkspaceViewModel : INotifyPropertyChanged
 	}
 
 	/// <summary>
-	/// Shows a project Markdown file: selects Docs for a file under <c>docs/</c> and Common
-	/// otherwise, expands its folders and opens it. Rescans once when the file is not in the
-	/// tree yet, as for one written after the last refresh.
+	/// Shows a project Markdown file: selects Reviews for a review log, Docs for a file under
+	/// <c>docs/</c> and Common otherwise, expands its folders and opens it. Rescans once when
+	/// the file is not in the tree yet, as for one written after the last refresh.
 	/// </summary>
 	/// <returns><see langword="false"/> when the pane does not list the file.</returns>
 	public async Task<bool> OpenDocumentAsync(string relativePath, CancellationToken cancellationToken)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(relativePath);
-		var section = relativePath.StartsWith("docs/", StringComparison.OrdinalIgnoreCase)
-			? DocsAndNotesSection.Docs
-			: DocsAndNotesSection.Common;
+		var section = relativePath.StartsWith(ReviewsPrefix, StringComparison.OrdinalIgnoreCase)
+			? DocsAndNotesSection.Reviews
+			: relativePath.StartsWith("docs/", StringComparison.OrdinalIgnoreCase)
+				? DocsAndNotesSection.Docs
+				: DocsAndNotesSection.Common;
 		IReadOnlyList<MarkdownTreeNodeViewModel> Tree()
 		{
-			return section == DocsAndNotesSection.Docs ? DocsTree : CommonTree;
+			return section switch
+			{
+				DocsAndNotesSection.Reviews => ReviewsTree,
+				DocsAndNotesSection.Docs => DocsTree,
+				_ => CommonTree
+			};
 		}
 
 		var node = FindDocument(Tree(), relativePath);
@@ -412,6 +428,12 @@ public sealed class DocsAndNotesWorkspaceViewModel : INotifyPropertyChanged
 				break;
 			case DocsAndNotesSection.Docs:
 				await ActivateSectionAsync(DocsTree, null, cancellationToken);
+				break;
+			case DocsAndNotesSection.Reviews:
+				await ActivateSectionAsync(
+					ReviewsTree,
+					ReviewsTree.Count > 0 ? ReviewsTree[0].RelativePath : null,
+					cancellationToken);
 				break;
 		}
 	}

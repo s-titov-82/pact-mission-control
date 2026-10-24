@@ -91,6 +91,51 @@ public sealed class DocsAndNotesWorkspaceViewModelTests : IDisposable
 	}
 
 	[Test]
+	public async Task Opening_a_review_log_selects_the_reviews_section()
+	{
+		Write(".pact/reviews/2026-10-24-1422-code-review-bbbb.md", "# Code review");
+		var workspace = CreateWorkspace();
+		await workspace.RefreshAsync(CancellationToken.None);
+
+		(await workspace.OpenDocumentAsync(".pact/reviews/2026-10-24-1422-code-review-bbbb.md", CancellationToken.None))
+			.ShouldBeTrue();
+
+		workspace.SelectedSection.ShouldBe(DocsAndNotesSection.Reviews);
+		workspace.VisibleTree.Single().Title.ShouldBe("2026-10-24-1422-code-review-bbbb.md");
+		(workspace.ActiveDocument?.Text).ShouldBe("# Code review");
+		workspace.CommonTree.ShouldBeEmpty();
+	}
+
+	[Test]
+	public async Task Reviews_lists_logs_flat_and_opens_the_newest_on_first_activation()
+	{
+		Write(".pact/reviews/2026-10-23-0910-code-review-aaaa.md", "# Older");
+		Write(".pact/reviews/2026-10-24-1422-code-review-bbbb.md", "# Newer");
+		var workspace = CreateWorkspace();
+		await workspace.RefreshAsync(CancellationToken.None);
+
+		await workspace.SelectSectionAsync(DocsAndNotesSection.Reviews, CancellationToken.None);
+
+		workspace.ShowsDocumentTree.ShouldBeTrue();
+		workspace.ReviewsTree.Select(node => node.Title).ShouldBe([
+			"2026-10-24-1422-code-review-bbbb.md",
+			"2026-10-23-0910-code-review-aaaa.md"
+		]);
+		(workspace.ActiveDocument?.Text).ShouldBe("# Newer");
+	}
+
+	[Test]
+	public async Task Reviews_opens_nothing_when_there_are_no_logs()
+	{
+		var workspace = CreateWorkspace();
+		await workspace.RefreshAsync(CancellationToken.None);
+
+		await workspace.SelectSectionAsync(DocsAndNotesSection.Reviews, CancellationToken.None);
+
+		workspace.ActiveDocument.ShouldBeNull();
+	}
+
+	[Test]
 	public async Task Opening_a_file_written_after_the_last_refresh_finds_it()
 	{
 		var workspace = CreateWorkspace();
