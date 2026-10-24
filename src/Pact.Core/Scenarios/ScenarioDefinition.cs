@@ -34,7 +34,7 @@ public sealed record ScenarioReviewerInstruction(
 /// Pact appends its own protocol paragraph to every rendered template, so the text an agent
 /// reads is never exactly the template body.
 /// </remarks>
-/// <param name="Id">Stable key; also used to persist <paramref name="DefaultTarget"/>.</param>
+/// <param name="Id">Stable key named by a review request.</param>
 /// <param name="Kind">Scenario program to run.</param>
 /// <param name="Name">Label shown in the scenarios list.</param>
 /// <param name="MaxIterations">
@@ -45,20 +45,18 @@ public sealed record ScenarioReviewerInstruction(
 /// Completion marker named by older templates. Approval is now an explicit flag on
 /// <c>pact_submit_review_turn</c>; the marker only keeps reviewer instructions readable.
 /// </param>
-/// <param name="DefaultTarget">Review target used when a request names none.</param>
 /// <param name="StartPromptTemplate">Pass 1 brief for the reviewer.</param>
 /// <param name="FirstFeedbackTemplate">Pass 1 findings sent to the author.</param>
 /// <param name="AuthorReturnTemplate">Author's reply returned to the reviewer in passes 2..N.</param>
 /// <param name="FeedbackTemplate">Follow-up findings sent to the author in passes 2..N.</param>
 /// <param name="ReviewerInstructions">Selectable reviewer instruction presets.</param>
-/// <param name="DefaultReviewerInstructionId">Preset selected when the dialog opens.</param>
+/// <param name="DefaultReviewerInstructionId">Preset appended to the reviewer's messages.</param>
 public sealed record ScenarioDefinition(
 	string Id,
 	ScenarioKind Kind,
 	string Name,
 	int MaxIterations,
 	string StopMarker,
-	string DefaultTarget,
 	string StartPromptTemplate,
 	string FirstFeedbackTemplate,
 	string AuthorReturnTemplate,

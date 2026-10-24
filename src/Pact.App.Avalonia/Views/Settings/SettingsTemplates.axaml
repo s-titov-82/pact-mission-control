@@ -463,7 +463,7 @@
   <DataTemplate x:Key="ScenarioItemTemplate" DataType="s:ScenarioItemViewModel">
     <ScrollViewer VerticalScrollBarVisibility="Auto">
       <StackPanel Margin="0,10,20,0" Spacing="6">
-        <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto">
+        <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto">
           <TextBlock Grid.Row="0" Grid.Column="0" Classes="SettingsFieldLabel" Text="Id" />
           <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Id}" />
           <TextBlock Grid.Row="1" Grid.Column="0" Classes="SettingsFieldLabel" Text="Name" />
@@ -474,16 +474,14 @@
           <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding MaxIterationsText}" />
           <TextBlock Grid.Row="4" Grid.Column="0" Classes="SettingsFieldLabel" Text="Stop marker" />
           <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding StopMarker}" />
-          <TextBlock Grid.Row="5" Grid.Column="0" Classes="SettingsFieldLabel" Text="Default target" />
-          <TextBox Grid.Row="5" Grid.Column="1" Text="{Binding DefaultTarget}" />
-          <TextBlock Grid.Row="6" Grid.Column="0" Classes="SettingsFieldLabel" Text="Start prompt template" />
-          <TextBox Grid.Row="6" Grid.Column="1" Classes="SettingsMultiline" Text="{Binding StartPromptTemplate}" />
-          <TextBlock Grid.Row="7" Grid.Column="0" Classes="SettingsFieldLabel" Text="First feedback template" />
-          <TextBox Grid.Row="7" Grid.Column="1" Classes="SettingsMultiline" Text="{Binding FirstFeedbackTemplate}" />
-          <TextBlock Grid.Row="8" Grid.Column="0" Classes="SettingsFieldLabel" Text="Author return template" />
-          <TextBox Grid.Row="8" Grid.Column="1" Classes="SettingsMultiline" Text="{Binding AuthorReturnTemplate}" />
-          <TextBlock Grid.Row="9" Grid.Column="0" Classes="SettingsFieldLabel" Text="Feedback template" />
-          <TextBox Grid.Row="9" Grid.Column="1" Classes="SettingsMultiline" Text="{Binding FeedbackTemplate}" />
+          <TextBlock Grid.Row="5" Grid.Column="0" Classes="SettingsFieldLabel" Text="Start prompt template" />
+          <TextBox Grid.Row="5" Grid.Column="1" Classes="SettingsMultiline" Text="{Binding StartPromptTemplate}" />
+          <TextBlock Grid.Row="6" Grid.Column="0" Classes="SettingsFieldLabel" Text="First feedback template" />
+          <TextBox Grid.Row="6" Grid.Column="1" Classes="SettingsMultiline" Text="{Binding FirstFeedbackTemplate}" />
+          <TextBlock Grid.Row="7" Grid.Column="0" Classes="SettingsFieldLabel" Text="Author return template" />
+          <TextBox Grid.Row="7" Grid.Column="1" Classes="SettingsMultiline" Text="{Binding AuthorReturnTemplate}" />
+          <TextBlock Grid.Row="8" Grid.Column="0" Classes="SettingsFieldLabel" Text="Feedback template" />
+          <TextBox Grid.Row="8" Grid.Column="1" Classes="SettingsMultiline" Text="{Binding FeedbackTemplate}" />
         </Grid>
         <TextBlock Margin="0,14,0,6" FontWeight="SemiBold" Text="Reviewer instructions" />
         <Grid ColumnDefinitions="180,*">

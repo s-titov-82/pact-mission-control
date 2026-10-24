@@ -81,7 +81,6 @@ public sealed class ScenariosSectionViewModelTests : IDisposable
 		item.Name = "New scenario";
 		item.MaxIterationsText = "3";
 		item.StopMarker = "DONE";
-		item.DefaultTarget = "target";
 		item.StartPromptTemplate = "start {target}";
 		item.FirstFeedbackTemplate = "first {reviewerOutput}";
 		item.AuthorReturnTemplate = "author {authorOutput}";

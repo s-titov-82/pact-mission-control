@@ -21,14 +21,16 @@ public sealed record ReviewLogHeader(
 /// </summary>
 public sealed class ReviewLogWriter : IDisposable
 {
+	private const int KeptLogs = 10;
 	private static readonly UTF8Encoding Utf8 = new(encoderShouldEmitUTF8Identifier: false);
 
 	// A turn and the end of the review can be written from different threads.
 	private readonly SemaphoreSlim _gate = new(1, 1);
 
 	/// <summary>
-	/// Picks the log file for a review in <c>.pact/reviews</c> and keeps the <c>.pact</c> folder
-	/// out of Git by writing <c>.pact/.gitignore</c> when it is missing.
+	/// Picks the log file for a review in <c>.pact/reviews</c>, removes the oldest logs so ten remain
+	/// with the new one, and keeps the <c>.pact</c> folder out of Git by writing
+	/// <c>.pact/.gitignore</c> when it is missing.
 	/// </summary>
 	public static string CreatePath(
 		string projectRoot,
@@ -47,6 +49,14 @@ public sealed class ReviewLogWriter : IDisposable
 		if (!File.Exists(gitignore))
 		{
 			File.WriteAllText(gitignore, "*\n", Utf8);
+		}
+
+		// Names start with the start time, so name order is age order; the new log makes ten.
+		foreach (var old in Directory.GetFiles(reviewsDirectory, "*.md")
+			.Order(StringComparer.Ordinal)
+			.SkipLast(KeptLogs - 1))
+		{
+			File.Delete(old);
 		}
 
 		var shortId = reviewId.Length > 8 ? reviewId[..8] : reviewId;

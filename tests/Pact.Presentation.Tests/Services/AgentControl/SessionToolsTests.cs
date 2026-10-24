@@ -209,7 +209,6 @@ public sealed class SessionToolsTests
 		"Code review",
 		MaxIterations: 3,
 		StopMarker: "DONE",
-		DefaultTarget: string.Empty,
 		StartPromptTemplate: string.Empty,
 		FirstFeedbackTemplate: string.Empty,
 		AuthorReturnTemplate: string.Empty,

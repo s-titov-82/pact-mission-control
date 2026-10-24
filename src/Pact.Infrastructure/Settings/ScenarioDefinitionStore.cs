@@ -18,8 +18,7 @@ public sealed class ScenarioDefinitionStore
 		"startPromptTemplate",
 		"firstFeedbackTemplate",
 		"authorReturnTemplate",
-		"feedbackTemplate",
-		"defaultTarget"
+		"feedbackTemplate"
 	];
 
 	private readonly string _path;

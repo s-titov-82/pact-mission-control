@@ -69,7 +69,6 @@ public sealed class ScenarioItemViewModel : SettingsItemViewModelBase
 	private string _name;
 	private string _maxIterationsText;
 	private string _stopMarker;
-	private string _defaultTarget;
 	private string _startPromptTemplate;
 	private string _firstFeedbackTemplate;
 	private string _authorReturnTemplate;
@@ -89,7 +88,6 @@ public sealed class ScenarioItemViewModel : SettingsItemViewModelBase
 			? parsed.ToString()
 			: string.Empty;
 		_stopMarker = (string?)node["stopMarker"] ?? string.Empty;
-		_defaultTarget = (string?)node["defaultTarget"] ?? string.Empty;
 		_startPromptTemplate = (string?)node["startPromptTemplate"] ?? string.Empty;
 		_firstFeedbackTemplate = (string?)node["firstFeedbackTemplate"] ?? string.Empty;
 		_authorReturnTemplate = (string?)node["authorReturnTemplate"] ?? string.Empty;
@@ -165,19 +163,6 @@ public sealed class ScenarioItemViewModel : SettingsItemViewModelBase
 		set
 		{
 			if (SetField(ref _stopMarker, value))
-			{
-				RaiseChanged();
-			}
-		}
-	}
-
-	/// <summary>Review target prefilled in the setup dialog.</summary>
-	public string DefaultTarget
-	{
-		get => _defaultTarget;
-		set
-		{
-			if (SetField(ref _defaultTarget, value))
 			{
 				RaiseChanged();
 			}
@@ -332,7 +317,6 @@ public sealed class ScenarioItemViewModel : SettingsItemViewModelBase
 		_node["name"] = Name;
 		_node["maxIterations"] = int.TryParse(MaxIterationsText, out var maxIterations) ? maxIterations : 0;
 		_node["stopMarker"] = StopMarker;
-		_node["defaultTarget"] = DefaultTarget;
 		_node["startPromptTemplate"] = StartPromptTemplate;
 		_node["firstFeedbackTemplate"] = FirstFeedbackTemplate;
 		_node["authorReturnTemplate"] = AuthorReturnTemplate;

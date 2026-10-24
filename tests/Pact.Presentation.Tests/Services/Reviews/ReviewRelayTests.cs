@@ -383,6 +383,20 @@ public sealed class ReviewRelayTests : IDisposable
 	}
 
 	[Test]
+	public async Task A_closed_tab_forgets_its_finished_review()
+	{
+		var (relay, _) = Create();
+		await relay.RequestAsync(Author, Request(), CancellationToken.None);
+		await relay.SubmitAsync(Reviewer, (string)Turn(relay, Reviewer)["turnId"]!, "All good.", approved: true, CancellationToken.None);
+
+		await relay.NotifySessionClosedAsync(Reviewer);
+		await relay.NotifySessionClosedAsync(Author);
+
+		relay.GetTurn(Reviewer).Failure!.Code.ShouldBe("no-review");
+		relay.GetTurn(Author).Failure!.Code.ShouldBe("no-review");
+	}
+
+	[Test]
 	public async Task Submitting_without_a_review_is_refused()
 	{
 		var (relay, _) = Create();
@@ -432,7 +446,6 @@ public sealed class ReviewRelayTests : IDisposable
 		"Code review loop",
 		MaxIterations: 3,
 		StopMarker: "AGENT_TERMINAL_DONE",
-		DefaultTarget: string.Empty,
 		StartPromptTemplate: "Review {target}.",
 		FirstFeedbackTemplate: "Findings: {reviewerOutput}",
 		AuthorReturnTemplate: "Answer: {authorOutput}",

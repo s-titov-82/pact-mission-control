@@ -140,7 +140,7 @@ public static class SettingsHelpContent
 
         The reviewer approves by submitting its turn with approved: true; the Stop marker is kept only so older reviewer instructions still read sensibly. When the author answers the last of Max iterations, the review ends without approval.
 
-        Reviewer instructions are free-form text presets; add or remove them with the +/− buttons next to the list, and edit each preset's Id, Name, and Text. Default reviewer instruction picks the preset appended to the reviewer's messages. Default target is used when a request names none.
+        Reviewer instructions are free-form text presets; add or remove them with the +/− buttons next to the list, and edit each preset's Id, Name, and Text. Default reviewer instruction picks the preset appended to the reviewer's messages. The review target is always given by the agent that asks for the review.
 
         Nothing is locked: you can type into either tab at any time. Every review is logged to .pact/reviews in the project (the folder ignores itself in Git), and the log opens in Docs when the review ends. The reviewer tab closes itself after approval or the last iteration and stays open when the review fails or is aborted.
         """;

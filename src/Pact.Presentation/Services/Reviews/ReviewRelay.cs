@@ -363,9 +363,16 @@ public sealed class ReviewRelay
 		_ = RunTriggerAsync(review, trigger);
 	}
 
-	/// <summary>Aborts the review a closed tab took part in.</summary>
-	public Task NotifySessionClosedAsync(string sessionId) =>
-		EndFromOutsideAsync(sessionId, ReviewState.Aborted, "tab closed");
+	/// <summary>Aborts the review a closed tab took part in and forgets the tab's finished review.</summary>
+	public async Task NotifySessionClosedAsync(string sessionId)
+	{
+		await EndFromOutsideAsync(sessionId, ReviewState.Aborted, "tab closed").ConfigureAwait(false);
+		lock (_gate)
+		{
+			// Nobody can ask about it any more once the tab is gone.
+			_finished.Remove(sessionId);
+		}
+	}
 
 	/// <summary>Fails the review a session whose process exited took part in.</summary>
 	public Task NotifySessionDiedAsync(string sessionId) =>

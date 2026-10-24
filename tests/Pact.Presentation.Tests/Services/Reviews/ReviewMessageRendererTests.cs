@@ -115,7 +115,6 @@ public sealed class ReviewMessageRendererTests
 		"Code review",
 		MaxIterations: 3,
 		StopMarker: "AGENT_TERMINAL_DONE",
-		DefaultTarget: string.Empty,
 		StartPromptTemplate: start,
 		FirstFeedbackTemplate: firstFeedback,
 		AuthorReturnTemplate: authorReturn,

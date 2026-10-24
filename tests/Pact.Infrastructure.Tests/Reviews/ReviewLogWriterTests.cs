@@ -18,6 +18,25 @@ public sealed class ReviewLogWriterTests : IDisposable
 	}
 
 	[Test]
+	public void A_new_log_keeps_only_the_ten_newest()
+	{
+		var reviews = Path.Combine(_project.Path, ".pact", "reviews");
+		Directory.CreateDirectory(reviews);
+		for (var day = 1; day <= 10; day++)
+		{
+			File.WriteAllText(Path.Combine(reviews, $"2026-10-{day:00}-0900-code-review-{day:00000000}.md"), "# old");
+		}
+
+		var path = ReviewLogWriter.CreatePath(_project.Path, StartedAt, "code-review", "7edcec18b3a74c8f");
+		File.WriteAllText(path, "# new");
+
+		var kept = Directory.GetFiles(reviews, "*.md").Select(Path.GetFileName).Order(StringComparer.Ordinal).ToArray();
+		kept.Length.ShouldBe(10);
+		kept.ShouldNotContain("2026-10-01-0900-code-review-00000001.md");
+		kept.ShouldContain(Path.GetFileName(path));
+	}
+
+	[Test]
 	public void An_existing_pact_gitignore_is_kept()
 	{
 		Directory.CreateDirectory(Path.Combine(_project.Path, ".pact"));

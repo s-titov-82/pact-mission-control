@@ -113,7 +113,8 @@ wrappers:
 | `authorReturnTemplate` | the reviewer's message carrying the author's answer |
 | `feedbackTemplate` | the author's message carrying later findings |
 | reviewer instructions + default id | appended to the reviewer's messages as today |
-| `maxIterations`, `defaultTarget` | defaults |
+| `maxIterations` | default iteration limit |
+| `defaultTarget` | dropped (2026-10-24): the agent that asks for a review always names its scope; an old value in the file is ignored |
 | `stopMarker` | no longer needed: approval is an explicit flag (see below). Kept in the file, ignored. |
 
 The reviewer-instruction composition stays as the engine renders it today

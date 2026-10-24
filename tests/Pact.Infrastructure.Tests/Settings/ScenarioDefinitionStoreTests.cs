@@ -19,10 +19,6 @@ public sealed class ScenarioDefinitionStoreTests
 		planReview.Kind.ShouldBe(ScenarioKind.ReviewLoop);
 		planReview.MaxIterations.ShouldBe(5);
 		planReview.StopMarker.ShouldBe("AGENT_TERMINAL_DONE");
-		string.IsNullOrWhiteSpace(planReview.DefaultTarget).ShouldBeFalse();
-		planReview.DefaultTarget.ShouldNotContain(
-			"docs/superpowers",
-			Case.Insensitive);
 		// The other side's answer travels in previousTurn, which Pact returns with each
 		// message; the completion-marker policy is appended by Pact, not template-carried.
 		planReview.StartPromptTemplate.ShouldContain("{target}");
@@ -142,6 +138,36 @@ public sealed class ScenarioDefinitionStoreTests
 	}
 
 	[Test]
+	public async Task LoadAsync_keeps_an_entry_without_a_default_target()
+	{
+		using var temporaryDirectory = TemporaryDirectory.Create();
+		var path = Path.Combine(temporaryDirectory.Path, "scenarios.json");
+		var json = /*lang=json,strict*/ """
+        [
+          {
+            "id": "custom-review",
+            "kind": "reviewLoop",
+            "name": "Custom review",
+            "maxIterations": 3,
+            "stopMarker": "DONE",
+            "startPromptTemplate": "review {target}",
+            "firstFeedbackTemplate": "feedback {target}",
+            "authorReturnTemplate": "author return {authorOutput}",
+            "feedbackTemplate": "feedback {reviewerOutput}",
+            "reviewerInstructions": [ { "id": "strict", "name": "Strict", "text": "All." } ],
+            "defaultReviewerInstructionId": "strict"
+          }
+        ]
+        """;
+		await File.WriteAllTextAsync(path, json, CancellationToken.None);
+		ScenarioDefinitionStore store = new(path);
+
+		var definitions = await store.LoadAsync(CancellationToken.None);
+
+		definitions.Select(definition => definition.Id).ToArray().ShouldBe(["custom-review"]);
+	}
+
+	[Test]
 	public async Task LoadAsync_entry_missing_reviewer_instructions_returns_defaults_and_rewrites_the_file_on_disk()
 	{
 		using var temporaryDirectory = TemporaryDirectory.Create();
@@ -156,7 +182,6 @@ public sealed class ScenarioDefinitionStoreTests
             "name": "Code Review",
             "maxIterations": 3,
             "stopMarker": "DONE",
-            "defaultTarget": "target",
             "startPromptTemplate": "review {target}",
             "firstFeedbackTemplate": "feedback {target}",
             "authorReturnTemplate": "author return {authorOutput}",
@@ -189,7 +214,6 @@ public sealed class ScenarioDefinitionStoreTests
             "name": "Code Review",
             "maxIterations": 3,
             "stopMarker": "DONE",
-            "defaultTarget": "target",
             "startPromptTemplate": "review {target}",
             "firstFeedbackTemplate": "feedback {target}",
             "authorReturnTemplate": "author return {authorOutput}",
@@ -210,7 +234,7 @@ public sealed class ScenarioDefinitionStoreTests
 	}
 
 	[Test]
-	public async Task SaveAsync_RoundTripsTargetAndReviewerInstructionId()
+	public async Task SaveAsync_RoundTripsReviewerInstructionId()
 	{
 		using var temporaryDirectory = TemporaryDirectory.Create();
 		var root = temporaryDirectory.Path;
@@ -219,14 +243,12 @@ public sealed class ScenarioDefinitionStoreTests
 		var definition = ScenarioDefinitionStore.LoadDefaultDefinitions()
 			.Single(scenario => scenario.Id == "code-review") with
 		{
-			DefaultTarget = "review last 3 commits",
 			DefaultReviewerInstructionId = "allow-minors"
 		};
 
 		await store.SaveAsync([definition], CancellationToken.None);
 		var loaded = await store.LoadAsync(CancellationToken.None);
 
-		loaded.Single().DefaultTarget.ShouldBe("review last 3 commits");
 		loaded.Single().DefaultReviewerInstructionId.ShouldBe("allow-minors");
 	}
 
@@ -238,10 +260,7 @@ public sealed class ScenarioDefinitionStoreTests
 		var path = Path.Combine(root, "scenarios.json");
 		ScenarioDefinitionStore store = new(path);
 		var definition = ScenarioDefinitionStore.LoadDefaultDefinitions()
-			.Single(scenario => scenario.Id == "code-review") with
-		{
-			DefaultTarget = "saved target"
-		};
+			.Single(scenario => scenario.Id == "code-review");
 
 		await store.SaveAsync([definition], CancellationToken.None);
 		var json = await File.ReadAllTextAsync(path, CancellationToken.None);
@@ -272,7 +291,6 @@ public sealed class ScenarioDefinitionStoreTests
 		var expectedCodeReview = definitions.Single(definition => definition.Id == "code-review");
 		var actualCodeReview = loaded.Single(definition => definition.Id == "code-review");
 		actualCodeReview.Kind.ShouldBe(expectedCodeReview.Kind);
-		actualCodeReview.DefaultTarget.ShouldBe(expectedCodeReview.DefaultTarget);
 		actualCodeReview.StartPromptTemplate.ShouldBe(expectedCodeReview.StartPromptTemplate);
 		actualCodeReview.FirstFeedbackTemplate.ShouldBe(expectedCodeReview.FirstFeedbackTemplate);
 		actualCodeReview.AuthorReturnTemplate.ShouldBe(expectedCodeReview.AuthorReturnTemplate);
@@ -292,7 +310,6 @@ public sealed class ScenarioDefinitionStoreTests
 			name,
 			maxIterations,
 			stopMarker,
-			DefaultTarget: "target",
 			StartPromptTemplate: "review {target} {reviewerInstruction} {stopMarkerPrefix} {stopMarkerSuffix}",
 			FirstFeedbackTemplate: "feedback {target} {reviewerOutput}",
 			AuthorReturnTemplate: "author return {authorOutput}",

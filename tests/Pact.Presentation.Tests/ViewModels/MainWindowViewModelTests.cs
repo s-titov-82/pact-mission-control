@@ -796,7 +796,6 @@ public sealed class MainWindowViewModelTests
 				"Custom Review",
 				MaxIterations: 3,
 				StopMarker: "DONE",
-				DefaultTarget: "start",
 				StartPromptTemplate: "review {target}",
 				FirstFeedbackTemplate: "feedback {reviewerOutput}",
 				AuthorReturnTemplate: "author return {authorOutput}",
