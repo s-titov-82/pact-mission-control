@@ -117,6 +117,7 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 		cancellationToken.ThrowIfCancellationRequested();
 		await Dispatcher.UIThread.InvokeAsync(() =>
 		{
+			HiddenFocus.Release(_webView);
 			_isPresented = false;
 			ApplyNativeVisibility();
 			RecordDiagnostic("hidden");

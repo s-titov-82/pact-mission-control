@@ -1279,6 +1279,18 @@ internal sealed partial class MainWindow : Window, IDisposable
 			EngineProbeController.PresentedSurface,
 			selectedWebPage is not null);
 		BrowserPane.Page = selectedWebPage;
+		// Both panes hold a WebView2; one that keeps the focus while hidden crashes the next
+		// window activation.
+		if (!visibility.Terminal)
+		{
+			HiddenFocus.Release(TerminalPane);
+		}
+
+		if (!visibility.Browser)
+		{
+			HiddenFocus.Release(BrowserPane);
+		}
+
 		TerminalPane.IsVisible = visibility.Terminal;
 		TerminalLoadingSurface.IsVisible = visibility.TerminalLoading;
 		NotesPane.IsVisible = visibility.Notes;
