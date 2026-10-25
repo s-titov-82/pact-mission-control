@@ -35,6 +35,7 @@ public sealed class WorkspaceViewModel : INotifyPropertyChanged
 
 		Record = record;
 		_isGitRepository = isGitRepository;
+		IsExpanded = !record.IsCollapsed;
 		IsGitRepository = _isGitRepository(Record.RootPath);
 		Sessions.CollectionChanged += OnTreeItemCollectionChanged;
 		WebPages.CollectionChanged += OnTreeItemCollectionChanged;
@@ -66,6 +67,12 @@ public sealed class WorkspaceViewModel : INotifyPropertyChanged
 	/// </summary>
 	public bool IsGitRepository { get; private set; }
 
+	/// <summary>
+	/// Whether the project is open in the tree. Starts from the saved state and is left alone by
+	/// <see cref="UpdateRecord"/>, so a save that lands late cannot flip what the user sees.
+	/// </summary>
+	public bool IsExpanded { get; private set; }
+
 	/// <summary>Terminal sessions in this project.</summary>
 	public ObservableCollection<SessionViewModel> Sessions { get; } = [];
 
@@ -83,6 +90,18 @@ public sealed class WorkspaceViewModel : INotifyPropertyChanged
 	/// as the single collection the tree binds to.
 	/// </summary>
 	public ObservableCollection<object> TreeItems { get; } = [];
+
+	/// <summary>Opens or closes the project in the tree.</summary>
+	public void SetExpanded(bool isExpanded)
+	{
+		if (IsExpanded == isExpanded)
+		{
+			return;
+		}
+
+		IsExpanded = isExpanded;
+		OnPropertyChanged(nameof(IsExpanded));
+	}
 
 	/// <summary>
 	/// Replaces the persisted state and raises change notifications for the derived properties.

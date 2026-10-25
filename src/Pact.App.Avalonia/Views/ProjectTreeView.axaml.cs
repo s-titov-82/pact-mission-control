@@ -32,10 +32,41 @@ internal sealed partial class ProjectTreeView : UserControl
 		ProjectTree.AddHandler(InputElement.PointerPressedEvent, OnProjectTreePointerPressed, RoutingStrategies.Tunnel);
 		ProjectTree.AddHandler(InputElement.KeyDownEvent, OnProjectTreeKeyDown, RoutingStrategies.Tunnel);
 		ProjectTree.SelectionChanged += OnSelectionChanged;
+		ProjectTree.ContainerPrepared += OnProjectContainerPrepared;
+		ProjectTree.ContainerClearing += OnProjectContainerClearing;
 		RootTree.AddHandler(InputElement.PointerPressedEvent, OnProjectTreePointerPressed, RoutingStrategies.Tunnel);
 		RootTree.AddHandler(InputElement.KeyDownEvent, OnProjectTreeKeyDown, RoutingStrategies.Tunnel);
 		RootTree.SelectionChanged += OnSelectionChanged;
 		DataContextChanged += OnDataContextChanged;
+	}
+
+	// A project row opens as it was left; the user opening or closing it is reported so it is
+	// remembered. Only the project rows are ProjectTree's own containers.
+	private void OnProjectContainerPrepared(object? sender, ContainerPreparedEventArgs e)
+	{
+		if (e.Container is TreeViewItem item && ProjectTree.ItemFromContainer(item) is WorkspaceViewModel workspace)
+		{
+			item.IsExpanded = workspace.IsExpanded;
+			item.PropertyChanged += OnProjectContainerPropertyChanged;
+		}
+	}
+
+	private void OnProjectContainerClearing(object? sender, ContainerClearingEventArgs e)
+	{
+		if (e.Container is TreeViewItem item)
+		{
+			item.PropertyChanged -= OnProjectContainerPropertyChanged;
+		}
+	}
+
+	private void OnProjectContainerPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+	{
+		if (e.Property == TreeViewItem.IsExpandedProperty
+			&& sender is TreeViewItem { DataContext: WorkspaceViewModel workspace } item
+			&& workspace.IsExpanded != item.IsExpanded)
+		{
+			ProjectExpansionChanged?.Invoke(this, (workspace, item.IsExpanded));
+		}
 	}
 
 	internal string AdvanceBusySpinnerFrame()
@@ -82,6 +113,7 @@ internal sealed partial class ProjectTreeView : UserControl
 	public event EventHandler<WorkspaceViewModel>? EditProjectRequested;
 	public event EventHandler<SessionViewModel>? EditSessionRequested;
 	public event EventHandler<SessionViewModel>? ReviewLogRequested;
+	public event EventHandler<(WorkspaceViewModel Workspace, bool IsExpanded)>? ProjectExpansionChanged;
 	public event EventHandler<WebPageViewModel>? EditWebPageRequested;
 	public event EventHandler<TreeItemDropRequest>? TreeItemDropRequested;
 

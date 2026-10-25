@@ -175,6 +175,20 @@ public sealed class JsonProjectStoreTests
 	}
 
 	[Test]
+	public async Task A_collapsed_project_stays_collapsed_after_a_reload()
+	{
+		using var temporaryDirectory = TemporaryDirectory.Create();
+		JsonProjectStore store = new(temporaryDirectory.Path);
+
+		await store.SaveAsync(
+			new ProjectsDocument(1, [CreateProjectRecord("p1") with { IsCollapsed = true }, CreateProjectRecord("p2")]),
+			CancellationToken.None);
+		var loaded = await store.LoadAsync(CancellationToken.None);
+
+		loaded.Projects.Select(project => project.IsCollapsed).ShouldBe([true, false]);
+	}
+
+	[Test]
 	public async Task Load_ProjectsJsonWithoutNotesTab_LoadsNull()
 	{
 		using var temporaryDirectory = TemporaryDirectory.Create();

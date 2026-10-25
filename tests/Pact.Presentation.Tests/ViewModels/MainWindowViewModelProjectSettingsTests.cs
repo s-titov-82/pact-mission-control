@@ -91,6 +91,42 @@ public sealed class MainWindowViewModelProjectSettingsTests
 	}
 
 	[Test]
+	public async Task A_collapsed_project_loads_collapsed_after_a_restart()
+	{
+		InMemoryProjectStore store = new(ProjectsDocument.CreateDefault() with
+		{
+			Projects = [CreateProjectRecord("project-1", "One"), CreateProjectRecord("project-2", "Two")]
+		});
+		var viewModel = MainWindowViewModelTestFactory.Create(store);
+		await viewModel.LoadAsync(CancellationToken.None);
+		viewModel.Workspaces.ShouldAllBe(workspace => workspace.IsExpanded);
+
+		await viewModel.SetProjectExpandedAsync("project-1", isExpanded: false, CancellationToken.None);
+		var restarted = MainWindowViewModelTestFactory.Create(store);
+		await restarted.LoadAsync(CancellationToken.None);
+
+		restarted.Workspaces.Select(workspace => (workspace.Id, workspace.IsExpanded))
+			.ShouldBe([("project-1", false), ("project-2", true)], ignoreOrder: true);
+	}
+
+	[Test]
+	public async Task Expanding_a_project_again_is_remembered_too()
+	{
+		InMemoryProjectStore store = new(ProjectsDocument.CreateDefault() with
+		{
+			Projects = [CreateProjectRecord("project-1", "One") with { IsCollapsed = true }]
+		});
+		var viewModel = MainWindowViewModelTestFactory.Create(store);
+		await viewModel.LoadAsync(CancellationToken.None);
+		viewModel.Workspaces.Single().IsExpanded.ShouldBeFalse();
+
+		await viewModel.SetProjectExpandedAsync("project-1", isExpanded: true, CancellationToken.None);
+
+		store.Document.Projects.Single().IsCollapsed.ShouldBeFalse();
+		viewModel.Workspaces.Single().IsExpanded.ShouldBeTrue();
+	}
+
+	[Test]
 	public async Task Clear_flag_nulls_the_GitLab_field()
 	{
 		var project = CreateProjectRecord(

@@ -3,6 +3,8 @@ using Avalonia.Controls;
 using Avalonia.Headless.NUnit;
 using Avalonia.Media;
 using Avalonia.Styling;
+using Avalonia.Themes.Fluent;
+using Avalonia.Threading;
 using Pact.App.Avalonia.Views;
 using Pact.Core.Agents;
 using Pact.Core.Projects;
@@ -106,6 +108,48 @@ public sealed class ProjectTreeViewHeadlessTests
 			border,
 			new Thickness(1));
 		window.Close();
+	}
+
+	[AvaloniaTest]
+	public void Project_rows_open_as_saved_and_report_the_user_opening_or_closing_them()
+	{
+		MainWindowViewModel viewModel = new(new EmptyProjectStore(), new EmptyNotesStore());
+		var now = DateTimeOffset.UtcNow;
+		WorkspaceViewModel collapsed = new(
+			new ProjectRecord("project-1", "One", "C:\\one", now, now, null) { IsCollapsed = true },
+			static _ => false);
+		WorkspaceViewModel expanded = new(new ProjectRecord("project-2", "Two", "C:\\two", now, now, null), static _ => false);
+		viewModel.Workspaces.Add(collapsed);
+		viewModel.Workspaces.Add(expanded);
+		ProjectTreeView view = new() { DataContext = viewModel };
+		List<(WorkspaceViewModel Workspace, bool IsExpanded)> changes = [];
+		view.ProjectExpansionChanged += (_, change) => changes.Add(change);
+		// The headless app has no theme; the tree needs one to create its rows.
+		FluentTheme theme = new();
+		Application.Current!.Styles.Add(theme);
+		Window window = new() { Content = view, Width = 600, Height = 800 };
+		try
+		{
+			window.Show();
+			Dispatcher.UIThread.RunJobs();
+			var tree = view.FindControl<TreeView>("ProjectTree").ShouldNotBeNull();
+			var collapsedRow = tree.ContainerFromItem(collapsed).ShouldBeOfType<TreeViewItem>();
+			var expandedRow = tree.ContainerFromItem(expanded).ShouldBeOfType<TreeViewItem>();
+
+			collapsedRow.IsExpanded.ShouldBeFalse();
+			expandedRow.IsExpanded.ShouldBeTrue();
+			changes.ShouldBeEmpty();
+
+			expandedRow.IsExpanded = false;
+			collapsedRow.IsExpanded = true;
+
+			changes.ShouldBe([(expanded, false), (collapsed, true)]);
+		}
+		finally
+		{
+			window.Close();
+			Application.Current.Styles.Remove(theme);
+		}
 	}
 
 	private static void AssertTierStyle(

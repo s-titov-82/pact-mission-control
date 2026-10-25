@@ -883,6 +883,34 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 		viewModel?.UpdateRecord(updatedProject);
 	}
 
+	/// <summary>Opens or closes a project in the tree and remembers it for the next start.</summary>
+	public async Task SetProjectExpandedAsync(
+		string projectId,
+		bool isExpanded,
+		CancellationToken cancellationToken)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(projectId);
+		if (FindWorkspaceViewModel(projectId) is not { } workspace)
+		{
+			return;
+		}
+
+		workspace.SetExpanded(isExpanded);
+		if (workspace.Record.IsCollapsed != isExpanded)
+		{
+			return;
+		}
+
+		var updatedProject = await _persistence.UpdateProjectAsync(
+			projectId,
+			project => project with { IsCollapsed = !isExpanded },
+			cancellationToken);
+		if (updatedProject is not null)
+		{
+			workspace.UpdateRecord(updatedProject);
+		}
+	}
+
 	/// <summary>Applies a partial session edit and persists it.</summary>
 	public async Task UpdateSessionSettingsAsync(
 		string sessionId,

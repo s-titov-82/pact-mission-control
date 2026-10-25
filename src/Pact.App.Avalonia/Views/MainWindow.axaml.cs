@@ -345,6 +345,14 @@ internal sealed partial class MainWindow : Window, IDisposable
 			handler => ProjectTree.EditSessionRequested -= handler,
 			"edit-session",
 			OpenSessionSettingsAsync);
+		ObserveEvent<(WorkspaceViewModel Workspace, bool IsExpanded)>(
+			handler => ProjectTree.ProjectExpansionChanged += handler,
+			handler => ProjectTree.ProjectExpansionChanged -= handler,
+			"project-expansion",
+			change => EngineProbeController.ViewModel.SetProjectExpandedAsync(
+				change.Workspace.Id,
+				change.IsExpanded,
+				CancellationToken.None));
 		ObserveEvent<SessionViewModel>(
 			handler => ProjectTree.ReviewLogRequested += handler,
 			handler => ProjectTree.ReviewLogRequested -= handler,

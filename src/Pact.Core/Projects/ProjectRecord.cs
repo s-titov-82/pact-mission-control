@@ -33,6 +33,9 @@ public sealed record ProjectRecord(
 	/// </summary>
 	public string? ActiveItemId { get; init; }
 
+	/// <summary>Whether the user collapsed the project in the tree; restored on the next start.</summary>
+	public bool IsCollapsed { get; init; }
+
 	/// <summary>Terminal sessions belonging to this project.</summary>
 	public IReadOnlyList<SessionRecord> Sessions { get; init; } = [];
 
