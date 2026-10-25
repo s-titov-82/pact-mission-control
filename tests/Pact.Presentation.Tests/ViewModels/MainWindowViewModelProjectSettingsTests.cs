@@ -127,6 +127,61 @@ public sealed class MainWindowViewModelProjectSettingsTests
 	}
 
 	[Test]
+	public async Task Toggling_back_while_the_first_save_waits_keeps_the_final_choice()
+	{
+		GatedProjectStore store = new(ProjectsDocument.CreateDefault() with
+		{
+			Projects = [CreateProjectRecord("project-1", "One")]
+		});
+		var viewModel = MainWindowViewModelTestFactory.Create(store);
+		await viewModel.LoadAsync(CancellationToken.None);
+		store.HoldNextUpdate();
+
+		var collapse = viewModel.SetProjectExpandedAsync("project-1", isExpanded: false, CancellationToken.None);
+		await viewModel.SetProjectExpandedAsync("project-1", isExpanded: true, CancellationToken.None);
+		store.Release();
+		await collapse;
+
+		store.Document.Projects.Single().IsCollapsed.ShouldBeFalse();
+		viewModel.Workspaces.Single().IsExpanded.ShouldBeTrue();
+	}
+
+	// Holds one update before it applies, as a slow write would, while later updates go through.
+	private sealed class GatedProjectStore(ProjectsDocument document) : IProjectStore
+	{
+		private TaskCompletionSource? _held;
+		private TaskCompletionSource? _gate;
+
+		public ProjectsDocument Document { get; private set; } = document;
+
+		public void HoldNextUpdate() => _held = _gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+		public void Release() => _gate?.TrySetResult();
+
+		public Task<ProjectsDocument> LoadAsync(CancellationToken cancellationToken) => Task.FromResult(Document);
+
+		public Task SaveAsync(ProjectsDocument document, CancellationToken cancellationToken)
+		{
+			Document = document;
+			return Task.CompletedTask;
+		}
+
+		public async Task<ProjectsDocument> UpdateAsync(
+			Func<ProjectsDocument, ProjectsDocument> update,
+			CancellationToken cancellationToken)
+		{
+			if (_held is { } held)
+			{
+				_held = null;
+				await held.Task;
+			}
+
+			Document = update(Document);
+			return Document;
+		}
+	}
+
+	[Test]
 	public async Task Clear_flag_nulls_the_GitLab_field()
 	{
 		var project = CreateProjectRecord(

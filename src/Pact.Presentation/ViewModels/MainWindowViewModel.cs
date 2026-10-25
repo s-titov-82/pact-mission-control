@@ -896,14 +896,14 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 		}
 
 		workspace.SetExpanded(isExpanded);
-		if (workspace.Record.IsCollapsed != isExpanded)
-		{
-			return;
-		}
 
+		// Each save writes what the row shows when the save runs, so a save that waited behind a
+		// later toggle cannot store the earlier choice.
 		var updatedProject = await _persistence.UpdateProjectAsync(
 			projectId,
-			project => project with { IsCollapsed = !isExpanded },
+			project => project.IsCollapsed == !workspace.IsExpanded
+				? project
+				: project with { IsCollapsed = !workspace.IsExpanded },
 			cancellationToken);
 		if (updatedProject is not null)
 		{
