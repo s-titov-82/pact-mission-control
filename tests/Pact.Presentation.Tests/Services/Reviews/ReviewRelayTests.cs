@@ -31,6 +31,38 @@ public sealed class ReviewRelayTests : IDisposable
 	}
 
 	[Test]
+	public async Task Changed_is_raised_as_the_review_starts_moves_and_ends()
+	{
+		var (relay, _) = Create();
+		List<string> seen = [];
+		relay.Changed += (_, _) =>
+		{
+			var active = relay.ListActive();
+			seen.Add(active.Count == 0 ? "none" : $"{active[0].Turn?.ToString() ?? "starting"} {active[0].Iteration}/{active[0].MaxIterations}");
+		};
+
+		await relay.RequestAsync(Author, Request(maxIterations: 2), CancellationToken.None);
+		await relay.SubmitAsync(Reviewer, (string)Turn(relay, Reviewer)["turnId"]!, "1. finding", false, CancellationToken.None);
+		await relay.SubmitAsync(Author, (string)Turn(relay, Author)["turnId"]!, "fixed", false, CancellationToken.None);
+		await relay.SubmitAsync(Reviewer, (string)Turn(relay, Reviewer)["turnId"]!, "All good.", true, CancellationToken.None);
+
+		seen.Distinct().ShouldBe(["starting 0/2", "Reviewer 1/2", "Author 1/2", "Reviewer 2/2", "none"]);
+	}
+
+	[Test]
+	public async Task A_running_review_s_log_opens_on_request()
+	{
+		var (relay, host) = Create();
+		var reviewId = (await relay.RequestAsync(Author, Request(), CancellationToken.None)).Payload!;
+
+		(await relay.OpenLogAsync(reviewId)).ShouldBeTrue();
+		(await relay.OpenLogAsync("no-such-review")).ShouldBeFalse();
+
+		host.OpenedDocuments.ShouldHaveSingleItem().ProjectId.ShouldBe("project-1");
+		host.OpenedDocuments[0].RelativePath.ShouldStartWith(".pact/reviews/");
+	}
+
+	[Test]
 	public async Task Request_from_root_is_refused()
 	{
 		var (relay, host) = Create();

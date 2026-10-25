@@ -1,5 +1,7 @@
 using Pact.Core.Agents;
+using Pact.Core.Reviews;
 using Pact.Core.Sessions;
+using Pact.Presentation.Services.Reviews;
 using Pact.Presentation.ViewModels;
 
 namespace Pact.Presentation.Tests.ViewModels;
@@ -109,6 +111,59 @@ public sealed class SessionViewModelTests
 
 		session.CanResetAgentSession.ShouldBe(expected);
 	}
+
+	[Test]
+	public void A_review_badge_shows_the_session_s_side_and_whose_turn_it_is()
+	{
+		SessionViewModel session = new(CreateSessionRecord());
+		List<string?> changedProperties = [];
+		session.PropertyChanged += (_, args) => changedProperties.Add(args.PropertyName);
+
+		session.ApplyReviews([Summary("author-1", "session-1", ReviewRole.Reviewer, iteration: 1)]);
+
+		session.Review.ShouldNotBeNull();
+		session.Review.IsOwnTurn.ShouldBeTrue();
+		session.Review.ToolTip.ShouldBe("Review · reviewer · iteration 1 of 3 · your turn. Click to open the log.");
+		changedProperties.ShouldContain(nameof(SessionViewModel.Review));
+		changedProperties.ShouldContain(nameof(SessionViewModel.HasReview));
+	}
+
+	[Test]
+	public void An_author_waiting_on_its_reviewer_gets_a_dim_badge()
+	{
+		SessionViewModel session = new(CreateSessionRecord());
+
+		session.ApplyReviews([Summary("session-1", "reviewer-1", ReviewRole.Reviewer, iteration: 2)]);
+
+		session.Review!.IsOwnTurn.ShouldBeFalse();
+		session.Review.ToolTip.ShouldBe("Review · author · iteration 2 of 3 · reviewer's turn. Click to open the log.");
+	}
+
+	[Test]
+	public void A_review_still_starting_says_so()
+	{
+		SessionViewModel session = new(CreateSessionRecord());
+
+		session.ApplyReviews([Summary("session-1", string.Empty, turn: null, iteration: 0)]);
+
+		session.Review!.IsOwnTurn.ShouldBeFalse();
+		session.Review.ToolTip.ShouldBe("Review · author · starting the reviewer. Click to open the log.");
+	}
+
+	[Test]
+	public void The_badge_goes_away_when_the_session_s_review_ends()
+	{
+		SessionViewModel session = new(CreateSessionRecord());
+		session.ApplyReviews([Summary("session-1", "reviewer-1", ReviewRole.Author, iteration: 1)]);
+
+		session.ApplyReviews([Summary("author-2", "reviewer-2", ReviewRole.Author, iteration: 1)]);
+
+		session.Review.ShouldBeNull();
+		session.HasReview.ShouldBeFalse();
+	}
+
+	private static ReviewSummary Summary(string author, string reviewer, ReviewRole? turn, int iteration) =>
+		new("review-1", "project-1", author, reviewer, ReviewState.Running, iteration, turn, @"D:\Work\.pact\reviews\log.md", MaxIterations: 3);
 
 	private static SessionRecord CreateSessionRecord()
 	{

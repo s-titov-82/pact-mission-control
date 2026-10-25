@@ -17,7 +17,8 @@ public sealed record ReviewSummary(
 	ReviewState State,
 	int Iteration,
 	ReviewRole? Turn,
-	string LogPath);
+	string LogPath,
+	int MaxIterations);
 
 /// <summary>
 /// Runs reviews between two agents through Pact: starts the reviewer, hands turns from one side
@@ -58,6 +59,11 @@ public sealed class ReviewRelay
 		_log = log ?? throw new ArgumentNullException(nameof(log));
 		_time = time ?? throw new ArgumentNullException(nameof(time));
 	}
+
+	/// <summary>
+	/// Raised, never under a lock and on any thread, when a review starts, its turn passes or it ends.
+	/// </summary>
+	public event EventHandler? Changed;
 
 	/// <summary>
 	/// Starts a review of the caller's work: creates and starts the reviewer, then gives it the
@@ -125,6 +131,8 @@ public sealed class ReviewRelay
 			_active.Add(review);
 		}
 
+		OnChanged();
+
 		_host.Trace($"review phase=requested review={review.Id} author={authorSessionId} template={template.Id} profile={profile.Id}");
 		using var start = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, review.StartCancellation.Token);
 		try
@@ -134,6 +142,8 @@ public sealed class ReviewRelay
 			{
 				review.ReviewerSessionId = reviewerSessionId;
 			}
+
+			OnChanged();
 
 			await WriteHeaderAsync(review).ConfigureAwait(false);
 			var started = await _host.StartReviewerAsync(reviewerSessionId, start.Token).ConfigureAwait(false);
@@ -168,6 +178,7 @@ public sealed class ReviewRelay
 					return await FailStartAsync(review, review.EndState, review.EndReason).ConfigureAwait(false);
 				}
 
+				OnChanged();
 				StartTrigger(review, reviewerSessionId, first.TurnId);
 			}
 			finally
@@ -305,6 +316,7 @@ public sealed class ReviewRelay
 				.ConfigureAwait(false);
 			if (conversation.State == ReviewState.Running)
 			{
+				OnChanged();
 				var next = conversation.CurrentTurn!;
 				StartTrigger(
 					review,
@@ -431,6 +443,27 @@ public sealed class ReviewRelay
 		}
 	}
 
+	/// <summary>Shows an active review's log in its project's Docs pane.</summary>
+	/// <returns><see langword="false"/> when the review is not active or has no log yet.</returns>
+	public async Task<bool> OpenLogAsync(string reviewId)
+	{
+		Review? review;
+		lock (_gate)
+		{
+			review = _active.FirstOrDefault(candidate => !candidate.Ended
+				&& candidate.LogPath is not null
+				&& string.Equals(candidate.Id, reviewId, StringComparison.Ordinal));
+		}
+
+		if (review is null)
+		{
+			return false;
+		}
+
+		await OpenLogAsync(review).ConfigureAwait(false);
+		return true;
+	}
+
 	private async Task EndFromOutsideAsync(string sessionId, ReviewState state, string what)
 	{
 		Review? review;
@@ -497,6 +530,7 @@ public sealed class ReviewRelay
 	// Runs once per review, after its end has begun and while the transition gate is held.
 	private async Task FinishAsync(Review review)
 	{
+		OnChanged();
 		await DrainTriggerAsync(review).ConfigureAwait(false);
 		var conversation = review.Conversation!;
 		var state = conversation.State;
@@ -529,6 +563,7 @@ public sealed class ReviewRelay
 			TryBeginEnd(review, state, reason);
 		}
 
+		OnChanged();
 		_host.Trace($"review phase=start-ended review={review.Id} state={review.EndState}");
 		await WriteFooterThenRetireAsync(review, review.EndState, review.EndReason).ConfigureAwait(false);
 		PruneLogs(review);
@@ -789,6 +824,8 @@ public sealed class ReviewRelay
 		}
 	}
 
+	private void OnChanged() => Changed?.Invoke(this, EventArgs.Empty);
+
 	private static ReviewSummary Summarize(Review review) => new(
 		review.Id,
 		review.Project.ProjectId,
@@ -797,7 +834,8 @@ public sealed class ReviewRelay
 		review.Conversation?.State ?? ReviewState.Running,
 		review.Conversation?.CurrentTurn?.Iteration ?? 0,
 		review.Conversation?.CurrentTurn?.Role,
-		review.LogPath ?? string.Empty);
+		review.LogPath ?? string.Empty,
+		review.MaxIterations);
 
 	private static AgentControlResult AlreadyActive() =>
 		AgentControlResult.Refused(

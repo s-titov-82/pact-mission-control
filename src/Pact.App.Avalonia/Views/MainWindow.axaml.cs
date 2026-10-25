@@ -345,6 +345,11 @@ internal sealed partial class MainWindow : Window, IDisposable
 			handler => ProjectTree.EditSessionRequested -= handler,
 			"edit-session",
 			OpenSessionSettingsAsync);
+		ObserveEvent<SessionViewModel>(
+			handler => ProjectTree.ReviewLogRequested += handler,
+			handler => ProjectTree.ReviewLogRequested -= handler,
+			"open-review-log",
+			EngineProbeController.OpenReviewLogAsync);
 		ObserveEvent<WebPageViewModel>(
 			handler => ProjectTree.EditWebPageRequested += handler,
 			handler => ProjectTree.EditWebPageRequested -= handler,

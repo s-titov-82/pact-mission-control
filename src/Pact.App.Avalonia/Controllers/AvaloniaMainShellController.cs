@@ -216,6 +216,8 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			() => _reviewProfileProvider.Current,
 			_reviewLog,
 			_timeProvider);
+		// Badges read the relay when they run, so posts that pile up all show the latest state.
+		_reviewRelay.Changed += (_, _) => Dispatcher.UIThread.Post(ShowReviewBadges);
 		_resumeCapture = new ResumeCaptureService(
 			_runtimeCoordinator,
 			ViewModel,
@@ -695,6 +697,26 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		var workspace = ViewModel.GetOrCreateDocsAndNotesWorkspace(note);
 		await workspace.RefreshAsync(cancellationToken);
 		Present(new PresentedSurface.Notes(note, workspace, document));
+	}
+
+	/// <summary>Opens the log of the review a session takes part in.</summary>
+	public Task OpenReviewLogAsync(SessionViewModel session)
+	{
+		ArgumentNullException.ThrowIfNull(session);
+		return session.Review is { } review ? _reviewRelay.OpenLogAsync(review.ReviewId) : Task.CompletedTask;
+	}
+
+	private void ShowReviewBadges()
+	{
+		var reviews = _reviewRelay.ListActive();
+		foreach (var session in ViewModel.Workspaces
+			.Concat(ViewModel.PausedWorkspaces)
+			.SelectMany(workspace => workspace.Sessions)
+			.Concat(ViewModel.Sessions)
+			.Distinct())
+		{
+			session.ApplyReviews(reviews);
+		}
 	}
 
 	/// <summary>

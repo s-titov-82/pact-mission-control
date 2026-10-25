@@ -76,6 +76,14 @@
           <Style Selector="TextBlock.terminal-status.failed">
             <Setter Property="Foreground" Value="{DynamicResource AppDangerBrush}" />
           </Style>
+          <Style Selector="Button.review-badge">
+            <Setter Property="Foreground" Value="{DynamicResource AppTextMutedBrush}" />
+            <Setter Property="Opacity" Value="0.55" />
+          </Style>
+          <Style Selector="Button.review-badge.ownturn">
+            <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" />
+            <Setter Property="Opacity" Value="1" />
+          </Style>
         </TreeView.Styles>
         <TreeView.DataTemplates>
           <DataTemplate DataType="vm:SessionViewModel">
@@ -102,6 +110,13 @@
                             Data="{StaticResource AppPauseIcon}"
                             IsVisible="{Binding ShowPausedIndicator}" />
                 </Grid>
+                <Button Grid.Column="1" Classes="review-badge" Classes.ownturn="{Binding Review.IsOwnTurn}"
+                        Width="18" Height="18" Margin="0,0,4,0" Padding="0" VerticalAlignment="Top"
+                        Background="Transparent" BorderThickness="0"
+                        IsVisible="{Binding HasReview}" ToolTip.Tip="{Binding Review.ToolTip}"
+                        Click="OnReviewBadgeClicked">
+                  <TextBlock Text="⇄" FontFamily="Cascadia Mono, Consolas, monospace" />
+                </Button>
                 <StackPanel Grid.Column="2">
                   <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                     <TextBlock FontWeight="SemiBold" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
@@ -292,6 +307,14 @@
       <Style Selector="TextBlock.terminal-status.failed">
         <Setter Property="Foreground" Value="{DynamicResource AppDangerBrush}" />
       </Style>
+      <Style Selector="Button.review-badge">
+        <Setter Property="Foreground" Value="{DynamicResource AppTextMutedBrush}" />
+        <Setter Property="Opacity" Value="0.55" />
+      </Style>
+      <Style Selector="Button.review-badge.ownturn">
+        <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" />
+        <Setter Property="Opacity" Value="1" />
+      </Style>
     </TreeView.Styles>
     <TreeView.DataTemplates>
       <TreeDataTemplate DataType="vm:WorkspaceViewModel" ItemsSource="{Binding TreeItems}">
@@ -339,6 +362,13 @@
                         Data="{StaticResource AppPauseIcon}"
                         IsVisible="{Binding ShowPausedIndicator}" />
             </Grid>
+            <Button Grid.Column="1" Classes="review-badge" Classes.ownturn="{Binding Review.IsOwnTurn}"
+                    Width="18" Height="18" Margin="0,0,4,0" Padding="0" VerticalAlignment="Top"
+                    Background="Transparent" BorderThickness="0"
+                    IsVisible="{Binding HasReview}" ToolTip.Tip="{Binding Review.ToolTip}"
+                    Click="OnReviewBadgeClicked">
+              <TextBlock Text="⇄" FontFamily="Cascadia Mono, Consolas, monospace" />
+            </Button>
             <StackPanel Grid.Column="2">
               <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                 <TextBlock FontWeight="SemiBold" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />

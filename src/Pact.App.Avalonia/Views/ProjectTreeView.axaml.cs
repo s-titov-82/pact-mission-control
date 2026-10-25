@@ -81,6 +81,7 @@ internal sealed partial class ProjectTreeView : UserControl
 	public event EventHandler<ProjectNoteViewModel>? CloseNoteRequested;
 	public event EventHandler<WorkspaceViewModel>? EditProjectRequested;
 	public event EventHandler<SessionViewModel>? EditSessionRequested;
+	public event EventHandler<SessionViewModel>? ReviewLogRequested;
 	public event EventHandler<WebPageViewModel>? EditWebPageRequested;
 	public event EventHandler<TreeItemDropRequest>? TreeItemDropRequested;
 
@@ -311,6 +312,15 @@ internal sealed partial class ProjectTreeView : UserControl
 		if (sender is Control { DataContext: WorkspaceViewModel workspace })
 		{
 			EditProjectRequested?.Invoke(this, workspace);
+		}
+	}
+
+	private void OnReviewBadgeClicked(object? sender, RoutedEventArgs e)
+	{
+		e.Handled = true;
+		if (sender is Control { DataContext: SessionViewModel session })
+		{
+			ReviewLogRequested?.Invoke(this, session);
 		}
 	}
 

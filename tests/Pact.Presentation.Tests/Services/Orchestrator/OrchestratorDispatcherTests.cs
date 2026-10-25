@@ -442,7 +442,8 @@ public sealed class OrchestratorDispatcherTests
 			ReviewState.Running,
 			Iteration: 2,
 			ReviewRole.Reviewer,
-			".pact/reviews/review-1.md");
+			".pact/reviews/review-1.md",
+			MaxIterations: 3);
 		private readonly Dictionary<string, WebTabSummary> _webTabs = new(
 			StringComparer.Ordinal)
 		{

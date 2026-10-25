@@ -2,12 +2,13 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using Pact.Core.Sessions;
 using Pact.Presentation.Services;
+using Pact.Presentation.Services.Reviews;
 
 namespace Pact.Presentation.ViewModels;
 
 /// <summary>
-/// A terminal session row in the project tree, carrying its derived tab indicator and scenario
-/// lock state.
+/// A terminal session row in the project tree, carrying its derived tab indicator and the review
+/// it takes part in.
 /// </summary>
 public sealed class SessionViewModel : INotifyPropertyChanged
 {
@@ -100,6 +101,12 @@ public sealed class SessionViewModel : INotifyPropertyChanged
 	/// <summary>Whether this tab is the selected item.</summary>
 	public bool IsCurrentTerminal { get; private set; }
 
+	/// <summary>The review this session takes part in, or <see langword="null"/>.</summary>
+	public SessionReviewBadge? Review { get; private set; }
+
+	/// <summary>Whether the row shows its review badge.</summary>
+	public bool HasReview => Review is not null;
+
 	/// <summary>Whether this agent supports a conversation-reset command.</summary>
 	public bool CanResetAgentSession =>
 		!IsManuallyPaused && AgentResetCommands.TryGetResetCommand(Record.Kind, out _);
@@ -133,6 +140,24 @@ public sealed class SessionViewModel : INotifyPropertyChanged
 		OnPropertyChanged(nameof(Indicator));
 		OnPropertyChanged(nameof(ShowStatusIndicator));
 		OnPropertyChanged(nameof(ShowPausedIndicator));
+	}
+
+	/// <summary>Shows the review among <paramref name="reviews"/> that this session takes part in.</summary>
+	public void ApplyReviews(IEnumerable<ReviewSummary> reviews)
+	{
+		var review = SessionReviewBadge.For(reviews, Record.Id);
+		if (Review == review)
+		{
+			return;
+		}
+
+		var hadReview = HasReview;
+		Review = review;
+		OnPropertyChanged(nameof(Review));
+		if (hadReview != HasReview)
+		{
+			OnPropertyChanged(nameof(HasReview));
+		}
 	}
 
 	/// <summary>Sets whether this tab is the selected item.</summary>
