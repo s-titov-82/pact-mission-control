@@ -33,6 +33,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 	private readonly IUiTaskDispatcher _uiTaskDispatcher;
 	private readonly AvaloniaUpdateController? _updateController;
 	private readonly List<Action> _eventDetachments = [];
+	private readonly List<Action> _windowLifetimeDetachments = [];
 	private bool _closeApproved;
 	private bool _closePromptRunning;
 	private bool _gracefulShutdownRunning;
@@ -180,10 +181,12 @@ internal sealed partial class MainWindow : Window, IDisposable
 		EngineProbeController.StatusMessage += OnControllerStatusMessage;
 		EngineProbeController.TerminalLoadingChanged += OnTerminalLoadingChanged;
 		EngineProbeController.ViewModel.PropertyChanged += OnViewModelPropertyChanged;
-		_eventDetachments.Add(() => EngineProbeController.PropertyChanged -= OnControllerPropertyChanged);
-		_eventDetachments.Add(() =>
+		// Closing needs these until the window goes: the resume capture switches terminals, and the
+		// overlay shows progress and offers Force close.
+		_windowLifetimeDetachments.Add(() => EngineProbeController.PropertyChanged -= OnControllerPropertyChanged);
+		_windowLifetimeDetachments.Add(() =>
 			EngineProbeController.BusyOverlayActionRequested -= OnControllerBusyOverlayActionRequested);
-		_eventDetachments.Add(() => EngineProbeController.StatusMessage -= OnControllerStatusMessage);
+		_windowLifetimeDetachments.Add(() => EngineProbeController.StatusMessage -= OnControllerStatusMessage);
 		_eventDetachments.Add(() =>
 			EngineProbeController.TerminalLoadingChanged -= OnTerminalLoadingChanged);
 		_eventDetachments.Add(() =>
@@ -1192,6 +1195,17 @@ internal sealed partial class MainWindow : Window, IDisposable
 
 	private void OnControllerPropertyChanged(object? sender, PropertyChangedEventArgs e)
 	{
+		if (_eventProducersDetached)
+		{
+			// Closing: only which pane shows still matters.
+			if (e.PropertyName == nameof(AvaloniaMainShellController.PresentedSurface))
+			{
+				Dispatcher.UIThread.Post(RefreshPaneVisibility);
+			}
+
+			return;
+		}
+
 		if (e.PropertyName is nameof(AvaloniaMainShellController.IsSelectionActionsOpen)
 			or nameof(AvaloniaMainShellController.SelectionActionsAnchor))
 		{
@@ -1365,6 +1379,12 @@ internal sealed partial class MainWindow : Window, IDisposable
 	public void Dispose()
 	{
 		DetachEventProducers();
+		foreach (var detach in _windowLifetimeDetachments)
+		{
+			detach();
+		}
+
+		_windowLifetimeDetachments.Clear();
 		_usageRefreshCancellation.Dispose();
 		_usageRefreshGate.Dispose();
 	}

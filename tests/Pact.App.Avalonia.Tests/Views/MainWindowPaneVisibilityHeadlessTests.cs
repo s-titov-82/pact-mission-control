@@ -1,3 +1,4 @@
+using System.Reflection;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless.NUnit;
@@ -370,6 +371,28 @@ public sealed class MainWindowPaneVisibilityHeadlessTests
 
 		window.IsTerminalPaneVisible.ShouldBeTrue();
 		window.IsTerminalLoadingSurfaceVisible.ShouldBeFalse();
+	}
+
+	[AvaloniaTest]
+	public async Task Closing_still_shows_the_terminal_the_resume_capture_switches_to()
+	{
+		await using WindowFixture fixture = new(includeSession: true);
+		using MainWindow window = new(fixture.Controller);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		await fixture.Controller.SelectWebPageAsync(fixture.ViewModel.WebPages[0]);
+		Dispatcher.UIThread.RunJobs();
+		window.IsTerminalPaneVisible.ShouldBeFalse();
+
+		typeof(MainWindow).GetMethod("BeginShellShutdown", BindingFlags.Instance | BindingFlags.NonPublic)!
+			.Invoke(window, null);
+		var showTerminal = (Task)typeof(AvaloniaMainShellController)
+			.GetMethod("ShowSessionTerminalUnderBusyAsync", BindingFlags.Instance | BindingFlags.NonPublic)!
+			.Invoke(fixture.Controller, [fixture.ViewModel.Sessions[0]])!;
+		await showTerminal;
+		Dispatcher.UIThread.RunJobs();
+
+		window.IsTerminalPaneVisible.ShouldBeTrue();
+		window.IsBrowserPaneVisible.ShouldBeFalse();
 	}
 
 	[AvaloniaTest]
