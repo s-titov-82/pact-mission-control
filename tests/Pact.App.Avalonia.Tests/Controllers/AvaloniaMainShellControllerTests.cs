@@ -5,6 +5,7 @@ using Pact.App.Avalonia.Lifecycle;
 using Pact.App.Avalonia.SelectionActions;
 using Pact.App.Avalonia.Tests.Fakes;
 using Pact.Core.Agents;
+using Pact.Core.Git;
 using Pact.Core.Platform;
 using Pact.Core.Presentation;
 using Pact.Core.Projects;
@@ -269,6 +270,111 @@ public sealed class AvaloniaMainShellControllerTests
 		notes.Workspace.SelectedSection.ShouldBe(DocsAndNotesSection.Docs);
 		notes.Workspace.SelectedNode.ShouldNotBeNull().RelativePath.ShouldBe("docs/plans/p.md");
 		workspace.Notes.ShouldHaveSingleItem();
+	}
+
+	[Test]
+	public async Task Clicking_a_project_row_opens_its_screen_on_overview()
+	{
+		await using ControllerFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var workspace = fixture.ViewModel.Workspaces.Single();
+
+		await fixture.Controller.SelectItemAsync(workspace, TestContext.CurrentContext.CancellationToken);
+
+		var project = fixture.Controller.PresentedSurface.ShouldBeOfType<PresentedSurface.Project>();
+		project.Screen.Workspace.ShouldBeSameAs(workspace);
+		project.Screen.SelectedTab.ShouldBe(ProjectScreenTab.Overview);
+		fixture.Controller.CurrentProjectScreen.ShouldBeSameAs(project.Screen);
+	}
+
+	[Test]
+	public async Task Opening_the_git_popup_does_not_open_the_project_screen()
+	{
+		await using ControllerFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+
+		await fixture.Controller.SelectWorkspaceAsync(fixture.ViewModel.Workspaces.Single());
+
+		fixture.Controller.PresentedSurface.ShouldNotBeOfType<PresentedSurface.Project>();
+	}
+
+	[Test]
+	public async Task A_review_log_path_opens_the_review_logs_tab_with_that_log()
+	{
+		await using ControllerFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var workspace = fixture.ViewModel.Workspaces.Single();
+		var log = Path.Combine(fixture.Root, ".pact", "reviews", "2026-10-26-1200-code-review-a.md");
+		Directory.CreateDirectory(Path.GetDirectoryName(log)!);
+		await File.WriteAllTextAsync(log, "# Review", TestContext.CurrentContext.CancellationToken);
+
+		(await fixture.Controller.OpenProjectDocumentAsync(
+				workspace.Id,
+				".pact/reviews/2026-10-26-1200-code-review-a.md",
+				TestContext.CurrentContext.CancellationToken))
+			.ShouldBeTrue();
+
+		var screen = fixture.Controller.PresentedSurface.ShouldBeOfType<PresentedSurface.Project>().Screen;
+		screen.SelectedTab.ShouldBe(ProjectScreenTab.ReviewLogs);
+		screen.SelectedReviewLog.ShouldBe(".pact/reviews/2026-10-26-1200-code-review-a.md");
+		screen.ReviewLogText.ShouldBe("# Review");
+		workspace.Notes.ShouldBeEmpty();
+	}
+
+	[Test]
+	public async Task Current_changes_follow_the_project_of_the_shown_session()
+	{
+		await using ControllerFixture fixture = new(gitRepository: true);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var workspace = fixture.ViewModel.Workspaces.Single();
+
+		await fixture.Controller.SelectSessionAsync(
+			fixture.ViewModel.Sessions[0],
+			startIfNeeded: true,
+			cancellationToken: TestContext.CurrentContext.CancellationToken);
+
+		var changes = fixture.Controller.CurrentChanges.ShouldNotBeNull();
+		fixture.Reader.ChangeReads.ShouldBeGreaterThan(0);
+		await fixture.Controller.OpenProjectScreenAsync(
+			workspace,
+			ProjectScreenTab.Changes,
+			TestContext.CurrentContext.CancellationToken);
+		fixture.Controller.CurrentProjectScreen.ShouldNotBeNull().Changes.ShouldBeSameAs(changes);
+		fixture.Controller.CurrentProjectScreen!.SelectedTab.ShouldBe(ProjectScreenTab.Changes);
+	}
+
+	[Test]
+	public async Task Pausing_a_project_without_sessions_while_its_screen_is_shown_leaves_the_screen()
+	{
+		ManualTimeProvider time = new();
+		await using ControllerFixture fixture = new(withSessions: false, gitRepository: true, timeProvider: time);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var workspace = fixture.ViewModel.Workspaces.Single();
+		await fixture.Controller.SelectItemAsync(workspace, TestContext.CurrentContext.CancellationToken);
+		fixture.Controller.CurrentChanges.ShouldNotBeNull();
+
+		await fixture.Controller.PauseWorkspaceAsync(workspace, TestContext.CurrentContext.CancellationToken);
+
+		fixture.Controller.PresentedSurface.ShouldNotBeOfType<PresentedSurface.Project>();
+		fixture.Controller.CurrentChanges.ShouldBeNull();
+		var reads = fixture.Reader.ChangeReads;
+		time.Advance(ProjectChangesViewModel.ReconcileInterval);
+		time.Advance(ProjectChangesViewModel.ReconcileInterval);
+		fixture.Reader.ChangeReads.ShouldBe(reads);
+	}
+
+	[Test]
+	public async Task Closing_a_project_while_its_screen_is_shown_leaves_the_screen()
+	{
+		await using ControllerFixture fixture = new(gitRepository: true);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var workspace = fixture.ViewModel.Workspaces.Single();
+		await fixture.Controller.SelectItemAsync(workspace, TestContext.CurrentContext.CancellationToken);
+
+		await fixture.Controller.CloseWorkspaceAsync(workspace, TestContext.CurrentContext.CancellationToken);
+
+		fixture.Controller.PresentedSurface.ShouldNotBeOfType<PresentedSurface.Project>();
+		fixture.Controller.CurrentChanges.ShouldBeNull();
 	}
 
 	[Test]
@@ -3008,8 +3114,14 @@ public sealed class AvaloniaMainShellControllerTests
 			string projectId = "project-1",
 			IProcessTreeSnapshotReader? processTreeSnapshotReader = null,
 			int? terminalProcessId = null,
-			IWebProcessMetricsSnapshotReader? webProcessMetricsSnapshotReader = null)
+			IWebProcessMetricsSnapshotReader? webProcessMetricsSnapshotReader = null,
+			bool gitRepository = false)
 		{
+			if (gitRepository)
+			{
+				Directory.CreateDirectory(Path.Combine(Root, ".git"));
+			}
+
 			var now = DateTimeOffset.UtcNow;
 			SessionRecord first = new(
 				"session-1",
@@ -3154,7 +3266,10 @@ public sealed class AvaloniaMainShellControllerTests
 				_builder.WithWebProcessMetricsSnapshotReader(webProcessMetricsSnapshotReader);
 			}
 			Controller = _builder.Build();
+			Controller.WorkingTreeReader = Reader;
 		}
+
+		public CountingWorkingTreeReader Reader { get; } = new();
 
 		public InMemoryProjectStore Store { get; }
 		public InMemoryRootTabsStore RootStore { get; }
@@ -3181,6 +3296,26 @@ public sealed class AvaloniaMainShellControllerTests
 
 		private static SessionRecord Session(string id, string title, DateTimeOffset now) =>
 			new(id, AgentKind.Pwsh, title, Path.GetTempPath(), "pwsh", null, SessionStatus.Stopped, now, now);
+	}
+
+	private sealed class CountingWorkingTreeReader : IGitWorkingTreeReader
+	{
+		private int _changeReads;
+
+		public int ChangeReads => Volatile.Read(ref _changeReads);
+
+		public Task<WorkingTreeChanges?> ReadChangesAsync(string root, CancellationToken cancellationToken)
+		{
+			Interlocked.Increment(ref _changeReads);
+			return Task.FromResult<WorkingTreeChanges?>(new WorkingTreeChanges("head", "main", [], 0, 0));
+		}
+
+		public Task<FileDiff> ReadDiffAsync(
+			string root,
+			GitFileEntry entry,
+			string? headCommit,
+			CancellationToken cancellationToken) =>
+			Task.FromResult(new FileDiff(null, []));
 	}
 
 	private static Task WaitForEventTasksAsync(ControllerFixture fixture) =>

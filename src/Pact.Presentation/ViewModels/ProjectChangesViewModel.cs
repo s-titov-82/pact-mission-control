@@ -25,7 +25,17 @@ public enum DiffRowKind
 /// <param name="OldNumber">Old line number as text, empty when the line has none.</param>
 /// <param name="NewNumber">New line number as text, empty when the line has none.</param>
 /// <param name="Text">Line text, or the hunk header.</param>
-public sealed record DiffRowViewModel(DiffRowKind Kind, string OldNumber, string NewNumber, string Text);
+public sealed record DiffRowViewModel(DiffRowKind Kind, string OldNumber, string NewNumber, string Text)
+{
+	/// <summary>Whether the row opens a hunk.</summary>
+	public bool IsHunkHeader => Kind == DiffRowKind.HunkHeader;
+
+	/// <summary>Whether the row is an added line.</summary>
+	public bool IsAdded => Kind == DiffRowKind.Added;
+
+	/// <summary>Whether the row is a removed line.</summary>
+	public bool IsRemoved => Kind == DiffRowKind.Removed;
+}
 
 /// <summary>One changed file in the Changes list.</summary>
 public sealed class ChangedFileViewModel

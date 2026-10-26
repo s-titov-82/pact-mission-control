@@ -108,6 +108,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 			eventTasks,
 			exception => EngineProbeController.ReportUiFailureAsync("Notes", exception),
 			EngineProbeController.ReportDocumentSaveFailureAsync);
+		ProjectScreen.ConfigureLifecycle(eventTasks);
 		_folderPicker = windowServices.FolderPicker;
 		_settingsFileStore = windowServices.SettingsFileStore;
 		_projectSettingsEditor = windowServices.ProjectSettingsEditor;
@@ -156,6 +157,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 			_eventTasks,
 			exception => EngineProbeController.ReportUiFailureAsync("Notes", exception),
 			EngineProbeController.ReportDocumentSaveFailureAsync);
+		ProjectScreen.ConfigureLifecycle(_eventTasks);
 		_folderPicker = folderPicker;
 		_settingsFileStore = settingsFileStore;
 		_projectSettingsEditor = projectSettingsEditor;
@@ -598,6 +600,11 @@ internal sealed partial class MainWindow : Window, IDisposable
 			handler => RightActions.RestartAndUpdateRequested -= handler,
 			"restart-and-update",
 			() => RequestRestartAndUpdateAsync(CancellationToken.None));
+		ObserveEvent(
+			handler => RightActions.ChangesEntryRequested += handler,
+			handler => RightActions.ChangesEntryRequested -= handler,
+			"open-changes",
+			() => EngineProbeController.OpenCurrentChangesAsync());
 	}
 
 	private void WireSelectionActionsEvents()
@@ -1222,6 +1229,11 @@ internal sealed partial class MainWindow : Window, IDisposable
 			RefreshSelectedTabDetails();
 		}
 
+		if (e.PropertyName == nameof(AvaloniaMainShellController.CurrentChanges))
+		{
+			RightActions.Changes = EngineProbeController.CurrentChanges;
+		}
+
 		if (e.PropertyName == nameof(AvaloniaMainShellController.CurrentDocsAndNotes))
 		{
 			NotesPane.Workspace = EngineProbeController.CurrentDocsAndNotes;
@@ -1321,6 +1333,8 @@ internal sealed partial class MainWindow : Window, IDisposable
 		TerminalPane.IsVisible = visibility.Terminal;
 		TerminalLoadingSurface.IsVisible = visibility.TerminalLoading;
 		NotesPane.IsVisible = visibility.Notes;
+		ProjectScreen.DataContext = EngineProbeController.CurrentProjectScreen;
+		ProjectScreen.IsVisible = visibility.Project;
 		PausedPane.IsVisible = visibility.Paused;
 		PausedCaption.Text = PausedPlaceholderText.For(EngineProbeController.PresentedSurface);
 		BrowserPane.IsVisible = visibility.Browser;
@@ -1448,6 +1462,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 		SelectionActions.DetachEventProducers();
 		NotesPane.DetachEventProducers();
 		RightActions.Workspace = null;
+		RightActions.Changes = null;
 		if (_gitFlyout?.Content is GitPanelView gitPanel)
 		{
 			gitPanel.DetachEventProducers();

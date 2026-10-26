@@ -1,0 +1,92 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:md="https://github.com/whistyun/Markdown.Avalonia"
+             x:Class="Pact.App.Avalonia.Views.ProjectScreenView"
+             x:CompileBindings="False">
+  <UserControl.Styles>
+    <Style Selector="Border.diff-row.added">
+      <Setter Property="Background" Value="#2216A34A" />
+    </Style>
+    <Style Selector="Border.diff-row.removed">
+      <Setter Property="Background" Value="#22DC2626" />
+    </Style>
+    <Style Selector="Border.diff-row.header">
+      <Setter Property="Background" Value="#14808080" />
+    </Style>
+  </UserControl.Styles>
+  <Grid RowDefinitions="Auto,*" Background="{DynamicResource AppPaneBackgroundBrush}">
+    <Border Padding="10,8" BorderBrush="{StaticResource AppPanelBorderBrush}" BorderThickness="0,0,0,1">
+      <StackPanel Orientation="Horizontal" Spacing="6">
+        <ToggleButton x:Name="OverviewTab" Height="32" Content="Overview" Click="OnOverviewTabClicked" />
+        <ToggleButton x:Name="ChangesTab" Height="32" Click="OnChangesTabClicked"
+                      Content="{Binding Changes.TabHeader}" IsVisible="{Binding HasChanges}" />
+        <ToggleButton x:Name="ReviewLogsTab" Height="32" Content="Review logs" Click="OnReviewLogsTabClicked" />
+      </StackPanel>
+    </Border>
+
+    <StackPanel x:Name="OverviewPanel" Grid.Row="1" Margin="20,18" Spacing="6">
+      <TextBlock FontSize="20" FontWeight="SemiBold" Text="{Binding Name}" />
+      <SelectableTextBlock Foreground="{DynamicResource AppTextMutedBrush}" Text="{Binding RootPath}" />
+      <TextBlock Text="{Binding Branch}" IsVisible="{Binding HasChanges}" />
+    </StackPanel>
+
+    <Grid x:Name="ChangesPanel" Grid.Row="1" ColumnDefinitions="280,5,*" IsVisible="False">
+      <ListBox x:Name="ChangedFilesList" ItemsSource="{Binding Changes.Files}"
+               SelectionChanged="OnChangedFileSelectionChanged">
+        <ListBox.ItemTemplate>
+          <DataTemplate>
+            <Grid ColumnDefinitions="18,*,Auto" ToolTip.Tip="{Binding Path}">
+              <TextBlock FontFamily="Cascadia Mono, Consolas, monospace" FontWeight="SemiBold"
+                         Text="{Binding StatusLetter}" />
+              <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                <TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis" />
+                <TextBlock Foreground="{DynamicResource AppTextMutedBrush}" FontSize="11"
+                           VerticalAlignment="Center" Text="{Binding Folder}" TextTrimming="CharacterEllipsis" />
+              </StackPanel>
+              <TextBlock Grid.Column="2" Margin="6,0,0,0" FontSize="10" VerticalAlignment="Center"
+                         Foreground="{DynamicResource AppTextMutedBrush}" Text="staged"
+                         IsVisible="{Binding IsStaged}" />
+            </Grid>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+      <GridSplitter Grid.Column="1" ResizeDirection="Columns" />
+      <Grid Grid.Column="2" RowDefinitions="Auto,*,Auto">
+        <TextBlock x:Name="DiffPlaceholderText" Margin="12" Opacity="0.7"
+                   Text="{Binding Changes.DiffPlaceholder}" IsVisible="False" />
+        <ScrollViewer x:Name="DiffScroller" Grid.Row="1"
+                      HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+          <ItemsControl x:Name="DiffRowsList" ItemsSource="{Binding Changes.DiffRows}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Border Classes="diff-row" Classes.added="{Binding IsAdded}"
+                        Classes.removed="{Binding IsRemoved}" Classes.header="{Binding IsHunkHeader}">
+                  <Grid ColumnDefinitions="44,44,*">
+                    <TextBlock FontFamily="Cascadia Mono, Consolas, monospace" FontSize="12"
+                               Foreground="{DynamicResource AppTextMutedBrush}" TextAlignment="Right"
+                               Margin="0,0,6,0" Text="{Binding OldNumber}" />
+                    <TextBlock Grid.Column="1" FontFamily="Cascadia Mono, Consolas, monospace" FontSize="12"
+                               Foreground="{DynamicResource AppTextMutedBrush}" TextAlignment="Right"
+                               Margin="0,0,8,0" Text="{Binding NewNumber}" />
+                    <TextBlock Grid.Column="2" FontFamily="Cascadia Mono, Consolas, monospace" FontSize="12"
+                               Text="{Binding Text}" />
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+        <Button x:Name="ShowAllButton" Grid.Row="2" Margin="12,6" HorizontalAlignment="Left"
+                Content="{Binding Changes.ShowAllText}" IsVisible="False" Click="OnShowAllClicked" />
+      </Grid>
+    </Grid>
+
+    <Grid x:Name="ReviewLogsPanel" Grid.Row="1" ColumnDefinitions="260,5,*" IsVisible="False">
+      <ListBox x:Name="ReviewLogList" ItemsSource="{Binding ReviewLogs}"
+               SelectionChanged="OnReviewLogSelectionChanged" />
+      <GridSplitter Grid.Column="1" ResizeDirection="Columns" />
+      <md:MarkdownScrollViewer x:Name="ReviewLogPreview" Grid.Column="2" Margin="10"
+                               SelectionEnabled="True" Markdown="{Binding ReviewLogText}" />
+    </Grid>
+  </Grid>
+</UserControl>

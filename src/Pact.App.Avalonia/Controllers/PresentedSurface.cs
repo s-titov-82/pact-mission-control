@@ -27,6 +27,9 @@ internal abstract record PresentedSurface
 		DocsAndNotesWorkspaceViewModel Workspace,
 		ProjectNoteDocument Document) : PresentedSurface;
 
+	/// <summary>A project's screen: overview, changes and review logs.</summary>
+	public sealed record Project(ProjectScreenViewModel Screen) : PresentedSurface;
+
 	/// <summary>The browser, showing the view model's selected web page.</summary>
 	public sealed record Web : PresentedSurface;
 

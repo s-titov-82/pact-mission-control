@@ -18,6 +18,8 @@ internal sealed partial class MainWindow
 			UpdateTerminalPresentationVisibility();
 			_hasTaskbarCompletionAttention = false;
 			UpdateTaskbarAttention();
+			// Coming back to the window is a good moment to re-read the change list.
+			EngineProbeController.CurrentChanges?.RequestRefresh();
 		}
 
 		void OnDeactivated(object? sender, EventArgs args)

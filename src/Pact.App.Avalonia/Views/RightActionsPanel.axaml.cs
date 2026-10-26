@@ -26,6 +26,52 @@ internal sealed partial class RightActionsPanel : UserControl
 	public event EventHandler? SettingsRequested;
 	public event EventHandler? RestartAndUpdateRequested;
 
+	/// <summary>Raised when the user clicks the Changes entry.</summary>
+	public event EventHandler? ChangesEntryRequested;
+
+	/// <summary>Change list shown by the Changes entry; <see langword="null"/> hides the entry.</summary>
+	public ProjectChangesViewModel? Changes
+	{
+		get;
+		set
+		{
+			if (ReferenceEquals(field, value))
+			{
+				return;
+			}
+
+			field?.PropertyChanged -= OnChangesPropertyChanged;
+			field = value;
+			field?.PropertyChanged += OnChangesPropertyChanged;
+			RefreshChangesEntry();
+		}
+	}
+
+	private void OnChangesPropertyChanged(object? sender, PropertyChangedEventArgs e)
+	{
+		if (e.PropertyName is nameof(ProjectChangesViewModel.EntryTitle)
+			or nameof(ProjectChangesViewModel.EntrySubtitle)
+			or nameof(ProjectChangesViewModel.IsAvailable)
+			or nameof(ProjectChangesViewModel.FileCount))
+		{
+			RefreshChangesEntry();
+		}
+	}
+
+	private void RefreshChangesEntry()
+	{
+		var changes = Changes;
+		ChangesSection.IsVisible = changes is { IsAvailable: true };
+		var dirty = changes?.FileCount > 0;
+		ChangesEntry.IsVisible = dirty;
+		NoChangesText.IsVisible = !dirty;
+		ChangesEntryTitle.Text = changes?.EntryTitle;
+		ChangesEntrySubtitle.Text = changes?.EntrySubtitle;
+	}
+
+	private void OnChangesEntryClicked(object? sender, RoutedEventArgs e) =>
+		ChangesEntryRequested?.Invoke(this, EventArgs.Empty);
+
 	/// <summary>Documentation workspace whose tree this panel renders, if any.</summary>
 	public DocsAndNotesWorkspaceViewModel? Workspace
 	{
@@ -84,6 +130,10 @@ internal sealed partial class RightActionsPanel : UserControl
 		DefaultActionsPanel.RowDefinitions[1].Height = showsTree
 			? new GridLength(1, GridUnitType.Star)
 			: new GridLength(0);
+		// Without the tree, the free space sits between the Changes entry and the tab details.
+		DefaultActionsPanel.RowDefinitions[4].Height = showsTree
+			? new GridLength(0)
+			: new GridLength(1, GridUnitType.Star);
 		_syncingSelection = true;
 		try
 		{

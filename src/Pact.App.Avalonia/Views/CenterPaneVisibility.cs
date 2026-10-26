@@ -9,7 +9,8 @@ internal readonly record struct CenterPaneVisibility(
 	bool Paused,
 	bool Notes,
 	bool Browser,
-	bool Empty)
+	bool Empty,
+	bool Project = false)
 {
 	/// <summary>
 	/// Maps the shown surface to exactly one visible pane. Without a surface of its own, the
@@ -25,6 +26,7 @@ internal readonly record struct CenterPaneVisibility(
 			PresentedSurface.Terminal => new(false, true, false, false, false, false),
 			PresentedSurface.PausedSession or PresentedSurface.PausedWebPage => new(false, false, true, false, false, false),
 			PresentedSurface.Notes => new(false, false, false, true, false, false),
+			PresentedSurface.Project => new(false, false, false, false, false, false, true),
 			_ => new(false, false, false, false, hasSelectedWebPage, !hasSelectedWebPage)
 		};
 	}

@@ -12,10 +12,9 @@
               Margin="0,0,8,0" Padding="8,0" IsVisible="False"
               HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
               Click="OnRestartAndUpdateClicked" />
-      <TextBlock FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource AppTextPrimaryBrush}"
-                 VerticalAlignment="Center" Text="Actions" />
+      <Panel />
     </DockPanel>
-    <Grid x:Name="DefaultActionsPanel" Grid.Row="1" RowDefinitions="Auto,0,Auto,*,Auto">
+    <Grid x:Name="DefaultActionsPanel" Grid.Row="1" RowDefinitions="Auto,0,Auto,Auto,*,Auto,Auto">
       <Grid x:Name="DocumentsSection" Grid.Row="1" Margin="0,20,0,0"
             RowDefinitions="Auto,*" IsVisible="False">
         <TextBlock FontWeight="SemiBold" Text="Documents" />
@@ -51,7 +50,20 @@
           </ItemsControl>
         </ScrollViewer>
       </StackPanel>
-      <Grid x:Name="SelectedTabDetailsSection" Grid.Row="3" Margin="0,24,0,0"
+      <StackPanel x:Name="ChangesSection" Grid.Row="3" IsVisible="False">
+        <Separator Margin="0,14,0,10" />
+        <Button x:Name="ChangesEntry" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                Padding="10,6" Click="OnChangesEntryClicked">
+          <StackPanel Spacing="2">
+            <TextBlock x:Name="ChangesEntryTitle" FontWeight="SemiBold" />
+            <TextBlock x:Name="ChangesEntrySubtitle" FontSize="11"
+                       Foreground="{DynamicResource AppTextMutedBrush}" />
+          </StackPanel>
+        </Button>
+        <TextBlock x:Name="NoChangesText" Foreground="{DynamicResource AppTextMutedBrush}"
+                   Text="No uncommitted changes" IsVisible="False" />
+      </StackPanel>
+      <Grid x:Name="SelectedTabDetailsSection" Grid.Row="5" Margin="0,24,0,0" MaxHeight="360"
             RowDefinitions="Auto,Auto,*" IsVisible="False">
         <SelectableTextBlock FontWeight="SemiBold" Text="{Binding Heading}" />
         <SelectableTextBlock Grid.Row="1" Margin="0,4,0,0"
@@ -74,7 +86,7 @@
           </ItemsControl>
         </ScrollViewer>
       </Grid>
-      <TextBlock x:Name="StatusText" Grid.Row="4" Margin="0,16,0,0" IsVisible="False"
+      <TextBlock x:Name="StatusText" Grid.Row="6" Margin="0,16,0,0" IsVisible="False"
                  Foreground="{DynamicResource AppTextFaintBrush}" TextWrapping="Wrap" />
     </Grid>
   </Grid>

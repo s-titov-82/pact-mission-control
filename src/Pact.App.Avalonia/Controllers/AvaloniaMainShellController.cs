@@ -33,7 +33,7 @@ using Pact.Presentation.ViewModels;
 
 namespace Pact.App.Avalonia.Controllers;
 
-internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsyncDisposable
+internal sealed partial class AvaloniaMainShellController : INotifyPropertyChanged, IAsyncDisposable
 {
 	private static readonly TimeSpan NativeCopyWindow = TimeSpan.FromSeconds(1);
 	private static readonly TimeSpan NativeCopyPollInterval = TimeSpan.FromMilliseconds(50);
@@ -128,6 +128,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			terminalHost,
 			() => new TerminalController(backendFactory()));
 		_gitCliRunner = gitCliRunner ?? throw new ArgumentNullException(nameof(gitCliRunner));
+		WorkingTreeReader = new GitWorkingTreeReader(_gitCliRunner);
 		_executableLocator = executableLocator ?? throw new ArgumentNullException(nameof(executableLocator));
 		_uiTaskDispatcher = uiTaskDispatcher ?? throw new ArgumentNullException(nameof(uiTaskDispatcher));
 		_timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
@@ -555,9 +556,16 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		SessionViewModel session => SelectSessionAsync(session, startIfNeeded: true, cancellationToken: cancellationToken),
 		WebPageViewModel webPage => SelectWebPageAsync(webPage, cancellationToken),
 		ProjectNoteViewModel note => SelectNoteAsync(note, cancellationToken),
-		WorkspaceViewModel workspace => SelectWorkspaceAsync(workspace),
+		WorkspaceViewModel workspace => SelectProjectRowAsync(workspace, cancellationToken),
 		_ => Task.CompletedTask
 	};
+
+	// A user click on a project row: the git popup's selection plus the project's screen.
+	private async Task SelectProjectRowAsync(WorkspaceViewModel workspace, CancellationToken cancellationToken)
+	{
+		await SelectWorkspaceAsync(workspace);
+		await OpenProjectScreenAsync(workspace, ProjectScreenTab.Overview, cancellationToken);
+	}
 
 	public async Task SelectSessionAsync(
 		SessionViewModel session,
@@ -735,6 +743,11 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 				StringComparison.Ordinal)) is not { } workspace)
 		{
 			return false;
+		}
+
+		if (IsReviewLogPath(relativePath))
+		{
+			return await OpenReviewLogOnScreenAsync(workspace, relativePath, cancellationToken);
 		}
 
 		var note = await ViewModel.ShowNotesTabAsync(workspace.Id, cancellationToken);
@@ -1311,6 +1324,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		var activeItemId = selectedItemId is not null && OwnsItem(workspace, selectedItemId)
 			? selectedItemId
 			: workspace.Record.ActiveItemId;
+		ReleaseProjectScreen(workspace);
 		InvalidateSelectionOwner(workspace);
 		await EndWorkspaceReviewsAsync(workspace);
 		await UnloadWorkspaceWebPagesAsync(
@@ -1651,6 +1665,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 
 	public async Task CloseWorkspaceAsync(WorkspaceViewModel workspace, CancellationToken cancellationToken = default)
 	{
+		ReleaseProjectScreen(workspace);
 		InvalidateSelectionOwner(workspace);
 		await EndWorkspaceReviewsAsync(workspace);
 		await UnloadWorkspaceWebPagesAsync(
@@ -2025,6 +2040,7 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 		}
 		finally
 		{
+			DisposeProjectScreens();
 			_processMetricsMonitor.MetricsChanged -= OnProcessMetricsChanged;
 			_processMetricsMonitor.Dispose();
 			_webProcessMetricsMonitor.MetricsChanged -= OnWebProcessMetricsChanged;
@@ -2960,6 +2976,8 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			nameof(IsPausedItemVisible));
 		RaiseIfChanged(previousDocs, nextDocs, nameof(CurrentDocsAndNotes));
 		RaiseIfChanged((previous as PresentedSurface.Notes)?.Document, CurrentNoteDocument, nameof(CurrentNoteDocument));
+		RaiseIfChanged((previous as PresentedSurface.Project)?.Screen, CurrentProjectScreen, nameof(CurrentProjectScreen));
+		UpdateCurrentChanges();
 	}
 
 	private void RaiseIfChanged(bool previous, bool current, string propertyName)
