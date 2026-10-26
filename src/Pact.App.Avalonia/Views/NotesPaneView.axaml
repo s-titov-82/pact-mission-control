@@ -8,9 +8,7 @@
         <StackPanel Orientation="Horizontal" Spacing="6">
           <ToggleButton x:Name="NotesTab" Height="32" Content="Notes" Click="OnNotesTabClicked" />
           <ToggleButton x:Name="CommonTab" Height="32" Content="Common MD's" Click="OnCommonTabClicked" />
-          <ToggleButton x:Name="DocsTab" Height="32" Content="Docs" Click="OnDocsTabClicked" />
-          <ToggleButton x:Name="ReviewsTab" Height="32" Content="Reviews" Click="OnReviewsTabClicked" />
-        </StackPanel>
+          <ToggleButton x:Name="DocsTab" Height="32" Content="Docs" Click="OnDocsTabClicked" />        </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="0">
           <ToggleButton x:Name="PreviewModeButton" Height="32" Padding="9,4"
                         ToolTip.Tip="Show rendered Markdown"

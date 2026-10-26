@@ -34,19 +34,16 @@ public sealed class ProjectMarkdownCatalogTests : IDisposable
 	}
 
 	[Test]
-	public void Scan_puts_review_logs_in_their_own_group_newest_first()
+	public void Scan_leaves_review_logs_out_of_common_and_docs()
 	{
 		Write(".pact/reviews/2026-10-23-0910-code-review-aaaa.md");
-		Write(".pact/reviews/2026-10-24-1422-plan-review-bbbb.md");
 		Write(".pact/notes.md");
+		Write("README.md");
 
 		var catalog = ProjectMarkdownCatalog.Scan(_root);
 
-		catalog.Reviews.Select(file => file.RelativePath).ShouldBe([
-			".pact/reviews/2026-10-24-1422-plan-review-bbbb.md",
-			".pact/reviews/2026-10-23-0910-code-review-aaaa.md"
-		]);
-		catalog.Common.Select(file => file.RelativePath).ShouldBe([".pact/notes.md"]);
+		catalog.Common.Select(file => file.RelativePath).ShouldBe([".pact/notes.md", "README.md"], ignoreOrder: true);
+		catalog.Docs.ShouldBeEmpty();
 	}
 
 	[Test]
