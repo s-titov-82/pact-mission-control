@@ -75,6 +75,24 @@ public sealed class ReviewRelayTests : IDisposable
 	}
 
 	[Test]
+	public async Task A_review_ending_while_Pact_closes_neither_closes_tabs_nor_opens_the_log()
+	{
+		var (relay, host) = Create();
+		await relay.RequestAsync(Author, Request(), CancellationToken.None);
+		var turnId = (string)Turn(relay, Reviewer)["turnId"]!;
+
+		relay.BeginShutdown();
+		var approved = await relay.SubmitAsync(Reviewer, turnId, "All good.", approved: true, CancellationToken.None);
+		var another = await relay.RequestAsync(Author, Request(), CancellationToken.None);
+
+		approved.Succeeded.ShouldBeTrue();
+		host.ClosedSessions.ShouldBeEmpty();
+		host.OpenedDocuments.ShouldBeEmpty();
+		host.Deliveries.Select(delivery => delivery.SessionId).ShouldBe([Reviewer]);
+		another.Failure!.Code.ShouldBe("pact-shutting-down");
+	}
+
+	[Test]
 	public async Task Request_from_root_is_refused()
 	{
 		var (relay, host) = Create();

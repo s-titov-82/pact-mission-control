@@ -44,6 +44,7 @@ public sealed class ReviewRelay
 	private readonly Lock _gate = new();
 	private readonly List<Review> _active = [];
 	private readonly Dictionary<string, Review> _finished = new(StringComparer.Ordinal);
+	private bool _shuttingDown;
 
 	/// <summary>Creates a relay over the shell operations and the live settings.</summary>
 	public ReviewRelay(
@@ -123,6 +124,11 @@ public sealed class ReviewRelay
 		Review review;
 		lock (_gate)
 		{
+			if (_shuttingDown)
+			{
+				return AgentControlResult.Refused("pact-shutting-down", "Pact is closing, so no review can start.");
+			}
+
 			if (FindActive(authorSessionId) is not null)
 			{
 				return AlreadyActive();
@@ -418,18 +424,28 @@ public sealed class ReviewRelay
 			review => string.Equals(review.Project.ProjectId, projectId, StringComparison.Ordinal),
 			"The project was paused or closed.");
 
-	/// <summary>Aborts every review while Pact closes; nothing is delivered and no document opens.</summary>
-	public Task ShutdownAsync()
+	/// <summary>
+	/// Silences every review the moment Pact starts closing: from here a review that ends, even
+	/// on an answer still in flight, closes no tab, opens no document and tells no one, and no
+	/// new review starts.
+	/// </summary>
+	public void BeginShutdown()
 	{
 		lock (_gate)
 		{
-			foreach (var finished in _finished.Values)
+			_shuttingDown = true;
+			foreach (var review in _active.Concat(_finished.Values))
 			{
-				finished.Quiet = true;
-				finished.Trigger?.Cancellation.Cancel();
+				review.Quiet = true;
+				review.Trigger?.Cancellation.Cancel();
 			}
 		}
+	}
 
+	/// <summary>Aborts every review while Pact closes; nothing is delivered and no document opens.</summary>
+	public Task ShutdownAsync()
+	{
+		BeginShutdown();
 		return EndQuietlyAsync(static _ => true, "Pact is shutting down.");
 	}
 

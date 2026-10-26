@@ -1943,6 +1943,8 @@ internal sealed class AvaloniaMainShellController : INotifyPropertyChanged, IAsy
 			_shutdownBegun = true;
 			Interlocked.Exchange(ref _acceptingInput, 0);
 			_runtimeCoordinator.CancelActivation();
+			// MCP handlers still drain for a while; a review they end must stay quiet.
+			_reviewRelay.BeginShutdown();
 			DetachEventProducers();
 			_eventDrainTask = _eventTasks.CompleteAndDrainAsync();
 		}
