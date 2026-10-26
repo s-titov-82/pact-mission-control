@@ -47,6 +47,16 @@ public sealed class ProjectDocumentPathTests : IDisposable
 	}
 
 	[Test]
+	public void An_absolute_path_outside_the_root_is_refused()
+	{
+		var outside = WriteExternal("plan.md");
+
+		ProjectDocumentPath.TryResolve(Root, outside, out _, out var failure).ShouldBeFalse();
+
+		failure!.Code.ShouldBe("outside-project");
+	}
+
+	[Test]
 	public void Junction_escaping_the_root_is_refused()
 	{
 		WriteExternal("plan.md");

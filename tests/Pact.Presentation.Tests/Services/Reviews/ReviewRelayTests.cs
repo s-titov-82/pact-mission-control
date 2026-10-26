@@ -93,6 +93,25 @@ public sealed class ReviewRelayTests : IDisposable
 	}
 
 	[Test]
+	public async Task Closing_the_reviewer_at_the_end_tells_the_relay_without_spoiling_the_end()
+	{
+		var (relay, host) = Create();
+		host.ClosesThrough = relay;
+		await relay.RequestAsync(Author, Request(), CancellationToken.None);
+		var turnId = (string)Turn(relay, Reviewer)["turnId"]!;
+
+		await relay.SubmitAsync(Reviewer, turnId, "All good.", approved: true, CancellationToken.None)
+			.WaitAsync(TimeSpan.FromSeconds(10));
+
+		host.ClosedSessions.ShouldBe([Reviewer]);
+		host.OpenedDocuments.ShouldHaveSingleItem();
+		await host.WaitForDeliveriesAsync(2);
+		host.Deliveries.Select(delivery => delivery.SessionId).ShouldBe([Reviewer, Author]);
+		((string?)Turn(relay, Author)["state"]).ShouldBe("Completed");
+		relay.GetTurn(Reviewer).Failure!.Code.ShouldBe("no-review");
+	}
+
+	[Test]
 	public async Task Request_from_root_is_refused()
 	{
 		var (relay, host) = Create();
@@ -690,10 +709,16 @@ public sealed class ReviewRelayTests : IDisposable
 
 		public bool IsReadyForTrigger(string sessionId) => ReadySessions.Contains(sessionId);
 
-		public Task CloseSessionAsync(string sessionId)
+		// Set to close tabs the way the shell does: closing one tells the relay right away.
+		public ReviewRelay? ClosesThrough { get; set; }
+
+		public async Task CloseSessionAsync(string sessionId)
 		{
 			ClosedSessions.Add(sessionId);
-			return Task.CompletedTask;
+			if (ClosesThrough is { } relay)
+			{
+				await relay.NotifySessionClosedAsync(sessionId);
+			}
 		}
 
 		public Task OpenProjectDocumentAsync(string projectId, string relativePath)
