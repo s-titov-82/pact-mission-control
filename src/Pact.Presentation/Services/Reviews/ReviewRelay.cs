@@ -222,17 +222,19 @@ public sealed class ReviewRelay
 			if (review.Ended || conversation is null || conversation.State != ReviewState.Running)
 			{
 				var state = conversation?.State is { } finalState and not ReviewState.Running ? finalState : review.EndState;
+				var last = review.Ended ? conversation?.LastAnswer : null;
 				return AgentControlResult.Ok(JsonSerializer.Serialize(
 					new TurnView(
 						review.Id,
 						review.Ended ? state.ToString() : "Starting",
-						conversation?.CurrentTurn?.Iteration ?? 0,
+						last?.Iteration ?? conversation?.CurrentTurn?.Iteration ?? 0,
 						YourTurn: false,
 						Message: null,
 						PreviousTurn: null,
 						TurnId: null,
 						EndReason: review.Ended ? conversation?.EndReason ?? review.EndReason : null,
-						FinalText: review.Ended ? conversation?.LastText(ReviewRole.Reviewer) : null),
+						FinalText: last?.Text,
+						FinalFrom: last is null ? null : last.Role == ReviewRole.Author ? "author" : "reviewer"),
 					JsonOptions));
 			}
 
@@ -250,7 +252,8 @@ public sealed class ReviewRelay
 					previousTurn,
 					yourTurn ? turn.TurnId : null,
 					EndReason: null,
-					FinalText: null),
+					FinalText: null,
+					FinalFrom: null),
 				JsonOptions));
 		}
 	}
@@ -854,7 +857,8 @@ public sealed class ReviewRelay
 		string? PreviousTurn,
 		string? TurnId,
 		string? EndReason,
-		string? FinalText);
+		string? FinalText,
+		string? FinalFrom);
 
 	private sealed record SubmitView(string ReviewId, string State, bool Repeated);
 

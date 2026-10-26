@@ -97,7 +97,7 @@ public static class SessionTools
 			new AgentControlTool(
 				"pact_get_review_turn",
 				"Your review turn: the message to act on, the other side's last answer as previousTurn and "
-					+ "the turnId to answer with. After the review has ended, how it ended and its final text.",
+					+ "the turnId to answer with. After the review has ended, how it ended and the last answer (finalText) with the side that gave it (finalFrom).",
 				() => AgentControlSchema.Object(new()),
 				async (call, _) => await CompleteAsync(
 					relay.GetTurn(call.SessionId ?? string.Empty),

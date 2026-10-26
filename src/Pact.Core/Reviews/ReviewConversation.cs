@@ -65,6 +65,13 @@ public sealed class ReviewConversation
 		}
 	}
 
+	/// <summary>The last answer taken from either side, or <see langword="null"/> before the first.</summary>
+	public ReviewAnswer? LastAnswer
+	{
+		get { lock (_gate) { return field; } }
+		private set;
+	}
+
 	/// <summary>Whether the session takes part in this review.</summary>
 	public bool IsParticipant(string sessionId) =>
 		string.Equals(sessionId, _authorSessionId, StringComparison.Ordinal)
@@ -135,6 +142,7 @@ public sealed class ReviewConversation
 			}
 
 			_lastTexts[role] = text;
+			LastAnswer = new ReviewAnswer(role, turn.Iteration, text);
 			if (role == ReviewRole.Reviewer)
 			{
 				if (approved)

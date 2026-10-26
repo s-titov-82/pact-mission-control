@@ -6,6 +6,12 @@ namespace Pact.Core.Reviews;
 /// <param name="Iteration">One-based iteration; a reviewer turn and the author's answer share one.</param>
 public sealed record ReviewTurn(string TurnId, ReviewRole Role, int Iteration);
 
+/// <summary>An answer a side of a review handed back.</summary>
+/// <param name="Role">The side that answered.</param>
+/// <param name="Iteration">The iteration the answer belongs to.</param>
+/// <param name="Text">The answer as the agent wrote it.</param>
+public sealed record ReviewAnswer(ReviewRole Role, int Iteration, string Text);
+
 /// <summary>What happened to a submitted turn.</summary>
 /// <param name="Accepted">Whether the answer was taken.</param>
 /// <param name="Repeated">Whether it repeats a turn taken before, so nothing is relayed again.</param>

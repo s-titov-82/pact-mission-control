@@ -278,6 +278,24 @@ public sealed class ReviewRelayTests : IDisposable
 	}
 
 	[Test]
+	public async Task A_review_ended_on_the_author_s_answer_reports_that_answer_and_its_iteration()
+	{
+		var (relay, _) = Create();
+		await relay.RequestAsync(Author, Request(maxIterations: 2), CancellationToken.None);
+		await relay.SubmitAsync(Reviewer, (string)Turn(relay, Reviewer)["turnId"]!, "1. finding", false, CancellationToken.None);
+		await relay.SubmitAsync(Author, (string)Turn(relay, Author)["turnId"]!, "fixed", false, CancellationToken.None);
+		await relay.SubmitAsync(Reviewer, (string)Turn(relay, Reviewer)["turnId"]!, "2. finding", false, CancellationToken.None);
+
+		await relay.SubmitAsync(Author, (string)Turn(relay, Author)["turnId"]!, "fixed again", false, CancellationToken.None);
+
+		var ended = Turn(relay, Reviewer);
+		((string?)ended["state"]).ShouldBe("MaxIterationsReached");
+		((int)ended["iteration"]!).ShouldBe(2);
+		((string?)ended["finalText"]).ShouldBe("fixed again");
+		((string?)ended["finalFrom"]).ShouldBe("author");
+	}
+
+	[Test]
 	public async Task Max_iterations_close_the_reviewer_too()
 	{
 		var (relay, host) = Create();

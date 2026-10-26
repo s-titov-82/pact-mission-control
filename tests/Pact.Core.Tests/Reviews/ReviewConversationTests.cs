@@ -48,6 +48,20 @@ public sealed class ReviewConversationTests
 	}
 
 	[Test]
+	public void The_last_answer_is_remembered_with_its_side_and_iteration()
+	{
+		var conversation = Create(maxIterations: 1);
+		conversation.LastAnswer.ShouldBeNull();
+		var first = conversation.Start();
+		conversation.Submit(Reviewer, first.TurnId, "findings", approved: false);
+
+		conversation.Submit(Author, "r1-2", "fixed", approved: false);
+
+		conversation.State.ShouldBe(ReviewState.MaxIterationsReached);
+		conversation.LastAnswer.ShouldBe(new ReviewAnswer(ReviewRole.Author, 1, "fixed"));
+	}
+
+	[Test]
 	public void Reviewer_approval_completes_the_review()
 	{
 		var conversation = Create();
