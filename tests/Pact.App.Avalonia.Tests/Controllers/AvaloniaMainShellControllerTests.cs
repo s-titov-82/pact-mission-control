@@ -378,6 +378,73 @@ public sealed class AvaloniaMainShellControllerTests
 	}
 
 	[Test]
+	public async Task Switching_browser_pages_moves_current_changes_between_projects()
+	{
+		var now = DateTimeOffset.UtcNow;
+		var rootTabs = RootTabsRecord.CreateDefault() with
+		{
+			WebPages = [new WebPageRecord("web-root", "Root page", "https://root.example.test", "https://root.example.test", now, now)]
+		};
+		await using ControllerFixture fixture = new(gitRepository: true, secondGitProject: true, rootTabs: rootTabs);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var token = TestContext.CurrentContext.CancellationToken;
+		WebPageViewModel Page(string id)
+		{
+			return fixture.ViewModel.Workspaces.SelectMany(workspace => workspace.WebPages)
+				.Concat(fixture.ViewModel.RootTabs.WebPages)
+				.Single(page => page.Record.Id == id);
+		}
+
+		await fixture.Controller.SelectWebPageAsync(Page("web-1"), token);
+		fixture.Controller.CurrentChanges.ShouldNotBeNull().ProjectRoot.ShouldBe(fixture.Root);
+
+		await fixture.Controller.SelectWebPageAsync(Page("web-second"), token);
+		fixture.Controller.CurrentChanges.ShouldNotBeNull().ProjectRoot.ShouldBe(fixture.SecondRoot);
+
+		await fixture.Controller.SelectWebPageAsync(Page("web-root"), token);
+		fixture.Controller.CurrentChanges.ShouldBeNull();
+
+		await fixture.Controller.SelectWebPageAsync(Page("web-1"), token);
+		fixture.Controller.CurrentChanges.ShouldNotBeNull().ProjectRoot.ShouldBe(fixture.Root);
+	}
+
+	[Test]
+	public async Task Moving_a_project_to_another_repository_reads_the_new_one()
+	{
+		await using ControllerFixture fixture = new(gitRepository: true);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var workspace = fixture.ViewModel.Workspaces.Single();
+		await fixture.Controller.SelectItemAsync(workspace, TestContext.CurrentContext.CancellationToken);
+		var before = fixture.Controller.CurrentChanges.ShouldNotBeNull();
+		var other = Path.Combine(fixture.Root, "other");
+		Directory.CreateDirectory(Path.Combine(other, ".git"));
+
+		workspace.UpdateRecord(workspace.Record with { RootPath = other });
+
+		var after = fixture.Controller.CurrentChanges.ShouldNotBeNull();
+		after.ShouldNotBeSameAs(before);
+		after.ProjectRoot.ShouldBe(other);
+		fixture.Controller.CurrentProjectScreen.ShouldNotBeNull().Changes.ShouldBeSameAs(after);
+	}
+
+	[Test]
+	public async Task Pausing_after_a_resume_capture_leaves_no_change_list_running()
+	{
+		await using ControllerFixture fixture = new(firstResumeCommand: string.Empty, gitRepository: true);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var workspace = fixture.ViewModel.Workspaces.Single();
+		await fixture.Controller.SelectSessionAsync(
+			fixture.ViewModel.Sessions[0],
+			startIfNeeded: true,
+			cancellationToken: TestContext.CurrentContext.CancellationToken);
+		fixture.Controller.CurrentChanges.ShouldNotBeNull();
+
+		await fixture.Controller.PauseWorkspaceAsync(workspace, TestContext.CurrentContext.CancellationToken);
+
+		fixture.Controller.CurrentChanges.ShouldBeNull();
+	}
+
+	[Test]
 	public async Task Leaving_notes_unsubscribes_and_invalidates_a_notes_selection()
 	{
 		await using ControllerFixture fixture = new();
@@ -3115,7 +3182,8 @@ public sealed class AvaloniaMainShellControllerTests
 			IProcessTreeSnapshotReader? processTreeSnapshotReader = null,
 			int? terminalProcessId = null,
 			IWebProcessMetricsSnapshotReader? webProcessMetricsSnapshotReader = null,
-			bool gitRepository = false)
+			bool gitRepository = false,
+			bool secondGitProject = false)
 		{
 			if (gitRepository)
 			{
@@ -3213,6 +3281,29 @@ public sealed class AvaloniaMainShellControllerTests
 					}
 				]
 				: [project];
+			if (secondGitProject)
+			{
+				Directory.CreateDirectory(Path.Combine(SecondRoot, ".git"));
+				projects =
+				[
+					.. projects,
+					new ProjectRecord("project-2", "Second", SecondRoot, now, now, null)
+					{
+						ActiveItemId = "web-second",
+						WebPages =
+						[
+							new WebPageRecord(
+								"web-second",
+								"Second docs",
+								"https://second.example.test",
+								"https://second.example.test",
+								now,
+								now)
+						]
+					}
+				];
+			}
+
 			Store = new InMemoryProjectStore(new ProjectsDocument(1, projects));
 			Statuses = new TerminalTabStatusCoordinator(action => action());
 			RootStore = new InMemoryRootTabsStore(rootTabs ?? RootTabsRecord.CreateDefault());
@@ -3274,6 +3365,7 @@ public sealed class AvaloniaMainShellControllerTests
 		public InMemoryProjectStore Store { get; }
 		public InMemoryRootTabsStore RootStore { get; }
 		public string Root => _temporaryDirectory.Path;
+		public string SecondRoot => Path.Combine(_temporaryDirectory.Path, "second");
 		public RecentDirectoryStore RecentDirectoryStore { get; }
 		public AppPaths Paths { get; }
 		public SettingsFileStore SettingsFileStore { get; }

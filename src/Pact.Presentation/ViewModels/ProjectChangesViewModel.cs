@@ -94,7 +94,6 @@ public sealed class ProjectChangesViewModel : INotifyPropertyChanged, IDisposabl
 	/// <summary>Diff lines shown before the rest is hidden behind "Show all".</summary>
 	public const int MaxShownLines = 3000;
 
-	private readonly string _root;
 	private readonly IGitWorkingTreeReader _reader;
 	private readonly TimeProvider _time;
 	private readonly Action<Action> _postToUi;
@@ -108,6 +107,7 @@ public sealed class ProjectChangesViewModel : INotifyPropertyChanged, IDisposabl
 	private bool _disposed;
 	private volatile ChangedFileViewModel[] _files = [];
 	private volatile string? _selectedPath;
+	private int _selectionVersion;
 	private FileDiff? _selectedDiff;
 	private bool _showAll;
 
@@ -119,7 +119,7 @@ public sealed class ProjectChangesViewModel : INotifyPropertyChanged, IDisposabl
 		Action<Action> postToUi)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(projectRoot);
-		_root = projectRoot;
+		ProjectRoot = projectRoot;
 		_reader = reader ?? throw new ArgumentNullException(nameof(reader));
 		_time = time ?? throw new ArgumentNullException(nameof(time));
 		_postToUi = postToUi ?? throw new ArgumentNullException(nameof(postToUi));
@@ -128,6 +128,9 @@ public sealed class ProjectChangesViewModel : INotifyPropertyChanged, IDisposabl
 
 	/// <inheritdoc />
 	public event PropertyChangedEventHandler? PropertyChanged;
+
+	/// <summary>The repository root this list reads.</summary>
+	public string ProjectRoot { get; }
 
 	/// <summary>Changed files, in git status order.</summary>
 	public IReadOnlyList<ChangedFileViewModel> Files { get; private set; } = [];
@@ -198,7 +201,8 @@ public sealed class ProjectChangesViewModel : INotifyPropertyChanged, IDisposabl
 
 		if (first)
 		{
-			StartRefresh();
+			// A project shown again right after a read still waits out the minimum interval.
+			RequestRefresh();
 		}
 
 		return new Observation(this);
@@ -237,6 +241,7 @@ public sealed class ProjectChangesViewModel : INotifyPropertyChanged, IDisposabl
 	/// <summary>Selects a file and reads its diff.</summary>
 	public async Task SelectFileAsync(ChangedFileViewModel? file, CancellationToken cancellationToken)
 	{
+		var version = Interlocked.Increment(ref _selectionVersion);
 		_selectedPath = file?.Path;
 		_showAll = false;
 		SelectedFile = file;
@@ -247,10 +252,11 @@ public sealed class ProjectChangesViewModel : INotifyPropertyChanged, IDisposabl
 			return;
 		}
 
-		var diff = await _reader.ReadDiffAsync(_root, file.Entry, HeadCommit, cancellationToken).ConfigureAwait(false);
+		var diff = await _reader.ReadDiffAsync(ProjectRoot, file.Entry, HeadCommit, cancellationToken).ConfigureAwait(false);
 		_postToUi(() =>
 		{
-			if (string.Equals(_selectedPath, file.Path, StringComparison.Ordinal))
+			// A later pick, even of the same file, has its own read in flight.
+			if (Volatile.Read(ref _selectionVersion) == version)
 			{
 				ApplyDiff(diff);
 			}
@@ -319,14 +325,15 @@ public sealed class ProjectChangesViewModel : INotifyPropertyChanged, IDisposabl
 	{
 		try
 		{
-			var changes = await _reader.ReadChangesAsync(_root, cancellationToken).ConfigureAwait(false);
+			var selectionVersion = Volatile.Read(ref _selectionVersion);
+			var changes = await _reader.ReadChangesAsync(ProjectRoot, cancellationToken).ConfigureAwait(false);
 			var files = changes?.Files.Select(entry => new ChangedFileViewModel(entry)).ToArray() ?? [];
 			var selected = Reselect(_files, files, _selectedPath);
 			var diff = selected is null
 				? null
-				: await _reader.ReadDiffAsync(_root, selected.Entry, changes!.HeadCommit, cancellationToken)
+				: await _reader.ReadDiffAsync(ProjectRoot, selected.Entry, changes!.HeadCommit, cancellationToken)
 					.ConfigureAwait(false);
-			_postToUi(() => Apply(changes, files, selected, diff));
+			_postToUi(() => Apply(changes, files, selected, diff, selectionVersion));
 		}
 		catch (Exception exception) when (exception is OperationCanceledException or ObjectDisposedException
 			or IOException or InvalidOperationException or UnauthorizedAccessException)
@@ -372,7 +379,8 @@ public sealed class ProjectChangesViewModel : INotifyPropertyChanged, IDisposabl
 		WorkingTreeChanges? changes,
 		ChangedFileViewModel[] files,
 		ChangedFileViewModel? selected,
-		FileDiff? diff)
+		FileDiff? diff,
+		int selectionVersion)
 	{
 		lock (_gate)
 		{
@@ -382,6 +390,9 @@ public sealed class ProjectChangesViewModel : INotifyPropertyChanged, IDisposabl
 			}
 		}
 
+		// The user picked a file while this read ran: their pick and its diff stand, and only the
+		// list and the counts are taken from the read.
+		var picked = Volatile.Read(ref _selectionVersion) != selectionVersion;
 		IsAvailable = changes is not null;
 		Branch = changes?.Branch ?? string.Empty;
 		HeadCommit = changes?.HeadCommit;
@@ -399,7 +410,13 @@ public sealed class ProjectChangesViewModel : INotifyPropertyChanged, IDisposabl
 				: Array.Find(_files, file => string.Equals(file.Path, selected.Path, StringComparison.Ordinal));
 		}
 
-		if (!string.Equals(selected?.Path, _selectedPath, StringComparison.Ordinal))
+		if (picked)
+		{
+			var path = _selectedPath;
+			selected = Array.Find(_files, file => string.Equals(file.Path, path, StringComparison.Ordinal))
+				?? SelectedFile;
+		}
+		else if (!string.Equals(selected?.Path, _selectedPath, StringComparison.Ordinal))
 		{
 			_showAll = false;
 		}
@@ -409,7 +426,10 @@ public sealed class ProjectChangesViewModel : INotifyPropertyChanged, IDisposabl
 		Raise(nameof(IsAvailable), nameof(Branch), nameof(HeadCommit), nameof(AddedLines), nameof(RemovedLines),
 			nameof(Files), nameof(FileCount), nameof(SelectedFile), nameof(EntryTitle), nameof(EntrySubtitle),
 			nameof(TabHeader));
-		ApplyDiff(diff);
+		if (!picked)
+		{
+			ApplyDiff(diff);
+		}
 	}
 
 	private void ApplyDiff(FileDiff? diff)

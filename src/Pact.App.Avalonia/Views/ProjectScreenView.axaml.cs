@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using Pact.App.Avalonia.Lifecycle;
 using Pact.Presentation.ViewModels;
 
@@ -14,10 +15,26 @@ internal sealed partial class ProjectScreenView : UserControl
 	private ProjectChangesViewModel? _changes;
 	private bool _syncing;
 
+	private static readonly TimeSpan LogReloadInterval = TimeSpan.FromSeconds(2);
+	private readonly DispatcherTimer _logReloadTimer;
+
 	public ProjectScreenView()
 	{
 		InitializeComponent();
 		DataContextChanged += (_, _) => Attach(DataContext as ProjectScreenViewModel);
+		// A review still running appends turns to the open log; re-read it while it is on screen.
+		_logReloadTimer = new DispatcherTimer { Interval = LogReloadInterval };
+		_logReloadTimer.Tick += OnLogReloadTick;
+		AttachedToVisualTree += (_, _) => _logReloadTimer.Start();
+		DetachedFromVisualTree += (_, _) => _logReloadTimer.Stop();
+	}
+
+	private void OnLogReloadTick(object? sender, EventArgs e)
+	{
+		if (IsEffectivelyVisible && _screen is { SelectedTab: ProjectScreenTab.ReviewLogs } screen)
+		{
+			_eventTasks.TryRun("project-screen-log-reload", () => screen.ReloadReviewLogAsync(CancellationToken.None), static _ => Task.CompletedTask);
+		}
 	}
 
 	internal void ConfigureLifecycle(ObservedTaskGroup eventTasks) =>

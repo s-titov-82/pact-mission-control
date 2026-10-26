@@ -20,6 +20,7 @@ public enum ProjectScreenTab
 public sealed class ProjectScreenViewModel : INotifyPropertyChanged
 {
 	private readonly IProjectMarkdownFileStore _fileStore;
+	private int _logVersion;
 
 	/// <summary>Creates the screen of one project; <paramref name="changes"/> is null outside git.</summary>
 	public ProjectScreenViewModel(
@@ -67,8 +68,8 @@ public sealed class ProjectScreenViewModel : INotifyPropertyChanged
 	public string ReviewLogText { get; private set; } = string.Empty;
 
 	/// <summary>
-	/// Shows a tab. Changes is ignored outside git; Review logs re-lists the logs and opens the
-	/// newest when none is selected.
+	/// Shows a tab. Changes is ignored outside git; Review logs re-lists the logs and re-reads the
+	/// open one, or opens the newest when none is selected.
 	/// </summary>
 	public async Task SelectTabAsync(ProjectScreenTab tab, CancellationToken cancellationToken)
 	{
@@ -81,25 +82,61 @@ public sealed class ProjectScreenViewModel : INotifyPropertyChanged
 		if (tab == ProjectScreenTab.ReviewLogs)
 		{
 			RefreshReviewLogs();
-			if (SelectedReviewLog is null || !ReviewLogs.Contains(SelectedReviewLog))
-			{
-				await SelectReviewLogAsync(ReviewLogs.Count > 0 ? ReviewLogs[0] : null, cancellationToken)
-					.ConfigureAwait(true);
-			}
+			var log = SelectedReviewLog is not null && ReviewLogs.Contains(SelectedReviewLog)
+				? SelectedReviewLog
+				: ReviewLogs.Count > 0 ? ReviewLogs[0] : null;
+			await SelectReviewLogAsync(log, cancellationToken).ConfigureAwait(true);
 		}
 	}
 
-	/// <summary>Shows one log's text, or clears it for <see langword="null"/>.</summary>
+	/// <summary>
+	/// Shows one log's text, or clears it for <see langword="null"/>. Of several picks in flight,
+	/// only the last one publishes its text.
+	/// </summary>
 	public async Task SelectReviewLogAsync(string? relativePath, CancellationToken cancellationToken)
 	{
-		SelectedReviewLog = relativePath;
-		ReviewLogText = relativePath is null
-			? string.Empty
-			: (await _fileStore.LoadAsync(
-				Path.Combine(RootPath, relativePath.Replace('/', Path.DirectorySeparatorChar)),
-				cancellationToken).ConfigureAwait(true)).Text;
-		Raise(nameof(SelectedReviewLog));
-		Raise(nameof(ReviewLogText));
+		var version = ++_logVersion;
+		if (!string.Equals(SelectedReviewLog, relativePath, StringComparison.Ordinal))
+		{
+			SelectedReviewLog = relativePath;
+			Raise(nameof(SelectedReviewLog));
+		}
+
+		var text = relativePath is null ? string.Empty : await LoadLogAsync(relativePath, cancellationToken);
+		if (version == _logVersion)
+		{
+			SetLogText(text);
+		}
+	}
+
+	/// <summary>Re-reads the open log while Review logs is shown, so turns appended to it appear.</summary>
+	public async Task ReloadReviewLogAsync(CancellationToken cancellationToken)
+	{
+		if (SelectedTab != ProjectScreenTab.ReviewLogs || SelectedReviewLog is not { } log)
+		{
+			return;
+		}
+
+		var version = _logVersion;
+		var text = await LoadLogAsync(log, cancellationToken);
+		if (version == _logVersion)
+		{
+			SetLogText(text);
+		}
+	}
+
+	private async Task<string> LoadLogAsync(string relativePath, CancellationToken cancellationToken) =>
+		(await _fileStore.LoadAsync(
+			Path.Combine(RootPath, relativePath.Replace('/', Path.DirectorySeparatorChar)),
+			cancellationToken).ConfigureAwait(true)).Text;
+
+	private void SetLogText(string text)
+	{
+		if (!string.Equals(ReviewLogText, text, StringComparison.Ordinal))
+		{
+			ReviewLogText = text;
+			Raise(nameof(ReviewLogText));
+		}
 	}
 
 	/// <summary>Switches to Review logs and shows the given log.</summary>

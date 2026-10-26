@@ -1338,6 +1338,8 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		}
 		_gitPanelViewModels.Remove(workspace.Id);
 		await ViewModel.PauseWorkspaceAsync(workspace.Id, activeItemId, cancellationToken);
+		// Resume capture shows each session's terminal, which takes up the project's change list again.
+		ReleaseProjectScreen(workspace);
 	}
 
 	private static bool OwnsItem(WorkspaceViewModel workspace, string itemId) =>
@@ -1678,6 +1680,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		}
 		_gitPanelViewModels.Remove(workspace.Id);
 		await ViewModel.RemoveWorkspaceAsync(workspace.Id, cancellationToken);
+		ReleaseProjectScreen(workspace);
 		await RestoreSelectedHostAsync(cancellationToken);
 	}
 
@@ -2948,6 +2951,9 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		var previous = PresentedSurface;
 		if (previous == next)
 		{
+			// The browser surface carries no page, so switching pages presents an equal value
+			// while the page, and the project it belongs to, changed.
+			UpdateCurrentChanges();
 			return;
 		}
 

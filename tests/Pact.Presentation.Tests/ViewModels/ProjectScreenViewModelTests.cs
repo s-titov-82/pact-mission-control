@@ -74,13 +74,60 @@ public sealed class ProjectScreenViewModelTests : IDisposable
 		screen.HasChanges.ShouldBeTrue();
 	}
 
+	[Test]
+	public async Task A_log_that_loads_late_does_not_replace_the_one_picked_after_it()
+	{
+		WriteLog("2026-10-24-1400-code-review-a.md", "# A");
+		WriteLog("2026-10-25-0900-code-review-b.md", "# B");
+		GatedStore store = new();
+		var screen = Create(git: false, store);
+		await screen.SelectTabAsync(ProjectScreenTab.ReviewLogs, CancellationToken.None);
+		TaskCompletionSource lateA = new();
+		store.Gates["2026-10-24-1400-code-review-a.md"] = lateA;
+
+		var pickA = screen.SelectReviewLogAsync(".pact/reviews/2026-10-24-1400-code-review-a.md", CancellationToken.None);
+		await screen.SelectReviewLogAsync(".pact/reviews/2026-10-25-0900-code-review-b.md", CancellationToken.None);
+		lateA.SetResult();
+		await pickA;
+
+		screen.SelectedReviewLog.ShouldBe(".pact/reviews/2026-10-25-0900-code-review-b.md");
+		screen.ReviewLogText.ShouldBe("# B");
+	}
+
+	[Test]
+	public async Task Returning_to_review_logs_shows_turns_appended_meanwhile()
+	{
+		WriteLog("2026-10-24-1400-code-review-a.md", "# Turn 1");
+		var screen = Create(git: false);
+		await screen.SelectTabAsync(ProjectScreenTab.ReviewLogs, CancellationToken.None);
+		await screen.SelectTabAsync(ProjectScreenTab.Overview, CancellationToken.None);
+
+		WriteLog("2026-10-24-1400-code-review-a.md", "# Turn 1\n# Turn 2");
+		await screen.SelectTabAsync(ProjectScreenTab.ReviewLogs, CancellationToken.None);
+
+		screen.ReviewLogText.ShouldBe("# Turn 1\n# Turn 2");
+	}
+
+	[Test]
+	public async Task Reloading_the_open_log_picks_up_an_appended_turn()
+	{
+		WriteLog("2026-10-24-1400-code-review-a.md", "# Turn 1");
+		var screen = Create(git: false);
+		await screen.SelectTabAsync(ProjectScreenTab.ReviewLogs, CancellationToken.None);
+
+		WriteLog("2026-10-24-1400-code-review-a.md", "# Turn 1\n# Turn 2");
+		await screen.ReloadReviewLogAsync(CancellationToken.None);
+
+		screen.ReviewLogText.ShouldBe("# Turn 1\n# Turn 2");
+	}
+
 	public void Dispose()
 	{
 		_changes.ForEach(changes => changes.Dispose());
 		_root.Dispose();
 	}
 
-	private ProjectScreenViewModel Create(bool git)
+	private ProjectScreenViewModel Create(bool git, IProjectMarkdownFileStore? store = null)
 	{
 		var now = DateTimeOffset.UtcNow;
 		WorkspaceViewModel workspace = new(new ProjectRecord("p1", "Pact", _root.Path, now, now, null), _ => git);
@@ -91,7 +138,38 @@ public sealed class ProjectScreenViewModelTests : IDisposable
 			_changes.Add(changes);
 		}
 
-		return new ProjectScreenViewModel(workspace, changes, new ProjectMarkdownFileStore());
+		return new ProjectScreenViewModel(workspace, changes, store ?? new ProjectMarkdownFileStore());
+	}
+
+	private sealed class GatedStore : IProjectMarkdownFileStore
+	{
+		private readonly ProjectMarkdownFileStore _inner = new();
+
+		public Dictionary<string, TaskCompletionSource> Gates { get; } = [];
+
+		public async Task<ProjectMarkdownFileSnapshot> LoadAsync(string path, CancellationToken cancellationToken)
+		{
+			var snapshot = await _inner.LoadAsync(path, cancellationToken);
+			if (Gates.Remove(Path.GetFileName(path), out var gate))
+			{
+				await gate.Task;
+			}
+
+			return snapshot;
+		}
+
+		public Task<ProjectMarkdownSaveResult> TrySaveAsync(
+			string path,
+			string text,
+			string expectedRevision,
+			CancellationToken cancellationToken) =>
+			_inner.TrySaveAsync(path, text, expectedRevision, cancellationToken);
+
+		public Task<ProjectMarkdownFileSnapshot> OverwriteAsync(
+			string path,
+			string text,
+			CancellationToken cancellationToken) =>
+			_inner.OverwriteAsync(path, text, cancellationToken);
 	}
 
 	private void WriteLog(string name, string text)

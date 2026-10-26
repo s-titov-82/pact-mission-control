@@ -243,6 +243,59 @@ public sealed class ProjectChangesViewModelTests
 		raised.ShouldContain(nameof(ProjectChangesViewModel.FileCount));
 	}
 
+	[Test]
+	public async Task A_refresh_that_finishes_late_keeps_the_file_the_user_picked_meanwhile()
+	{
+		_reader.Current = Changes("a", "b");
+		_reader.Diffs["a"] = Diff("a-line");
+		_reader.Diffs["b"] = Diff("b-line");
+		using var changes = Create();
+		using var observation = changes.Observe();
+		await changes.SelectFileAsync(changes.Files[0], CancellationToken.None);
+		TaskCompletionSource<FileDiff> lateA = new();
+		_reader.DiffGates["a"] = lateA;
+
+		_time.Advance(ProjectChangesViewModel.ReconcileInterval);
+		await changes.SelectFileAsync(changes.Files[1], CancellationToken.None);
+		lateA.SetResult(Diff("a-line"));
+
+		changes.SelectedFile!.Path.ShouldBe("b");
+		changes.DiffRows[^1].Text.ShouldBe("b-line");
+	}
+
+	[Test]
+	public async Task An_older_diff_read_does_not_replace_a_newer_one_for_the_same_file()
+	{
+		_reader.Current = Changes("a", "b");
+		_reader.Diffs["a"] = Diff("fresh");
+		using var changes = Create();
+		using var observation = changes.Observe();
+		TaskCompletionSource<FileDiff> stale = new();
+		_reader.DiffGates["a"] = stale;
+		var first = changes.SelectFileAsync(changes.Files[0], CancellationToken.None);
+		await changes.SelectFileAsync(changes.Files[1], CancellationToken.None);
+		await changes.SelectFileAsync(changes.Files[0], CancellationToken.None);
+
+		stale.SetResult(Diff("stale"));
+		await first;
+
+		changes.DiffRows[^1].Text.ShouldBe("fresh");
+	}
+
+	[Test]
+	public void Observing_again_right_after_a_read_waits_for_the_minimum_interval()
+	{
+		using var changes = Create();
+		changes.Observe().Dispose();
+		_reader.ChangeReads.ShouldBe(1);
+
+		using var observation = changes.Observe();
+		_reader.ChangeReads.ShouldBe(1);
+
+		_time.Advance(ProjectChangesViewModel.MinRefreshInterval);
+		_reader.ChangeReads.ShouldBe(2);
+	}
+
 	private ProjectChangesViewModel Create() => new("C:\\repo", _reader, _time, action => action());
 
 	private static WorkingTreeChanges Changes(params string[] paths) =>
@@ -271,11 +324,15 @@ public sealed class ProjectChangesViewModelTests
 			return Gate?.Task ?? Task.FromResult(Current);
 		}
 
+		public Dictionary<string, TaskCompletionSource<FileDiff>> DiffGates { get; } = [];
+
 		public Task<FileDiff> ReadDiffAsync(
 			string root,
 			GitFileEntry entry,
 			string? headCommit,
 			CancellationToken cancellationToken) =>
-			Task.FromResult(Diffs.GetValueOrDefault(entry.Path) ?? new FileDiff(null, []));
+			DiffGates.Remove(entry.Path, out var gate)
+				? gate.Task
+				: Task.FromResult(Diffs.GetValueOrDefault(entry.Path) ?? new FileDiff(null, []));
 	}
 }

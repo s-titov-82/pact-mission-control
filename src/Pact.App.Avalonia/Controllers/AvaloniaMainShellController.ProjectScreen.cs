@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using Pact.Infrastructure.Documents;
 using Pact.Infrastructure.Storage;
 using Pact.Presentation.ViewModels;
@@ -9,6 +10,7 @@ internal sealed partial class AvaloniaMainShellController
 {
 	private readonly Dictionary<string, ProjectScreenViewModel> _projectScreens = new(StringComparer.Ordinal);
 	private readonly Dictionary<string, ProjectChangesViewModel> _projectChanges = new(StringComparer.Ordinal);
+	private readonly HashSet<WorkspaceViewModel> _watchedWorkspaces = [];
 	private IDisposable? _changesObservation;
 	private ProjectFileChangeSignal? _changesSignal;
 
@@ -84,6 +86,7 @@ internal sealed partial class AvaloniaMainShellController
 			GetOrCreateProjectChanges(workspace),
 			new ProjectMarkdownFileStore());
 		_projectScreens[workspace.Id] = screen;
+		WatchWorkspace(workspace);
 		return screen;
 	}
 
@@ -102,9 +105,63 @@ internal sealed partial class AvaloniaMainShellController
 				_timeProvider,
 				_uiTaskDispatcher.Post);
 			_projectChanges.Add(workspace.Id, changes);
+			WatchWorkspace(workspace);
 		}
 
 		return changes;
+	}
+
+	private void WatchWorkspace(WorkspaceViewModel workspace)
+	{
+		if (_watchedWorkspaces.Add(workspace))
+		{
+			workspace.PropertyChanged += OnWatchedWorkspacePropertyChanged;
+		}
+	}
+
+	private void UnwatchWorkspace(WorkspaceViewModel workspace)
+	{
+		if (_watchedWorkspaces.Remove(workspace))
+		{
+			workspace.PropertyChanged -= OnWatchedWorkspacePropertyChanged;
+		}
+	}
+
+	// A settings edit can move the project to another folder or in and out of git: the change
+	// list reads a fixed root, so it is rebuilt, and a shown screen is shown again with it.
+	private void OnWatchedWorkspacePropertyChanged(object? sender, PropertyChangedEventArgs e)
+	{
+		if (_disposed
+			|| sender is not WorkspaceViewModel workspace
+			|| e.PropertyName is not (nameof(WorkspaceViewModel.RootPath) or nameof(WorkspaceViewModel.IsGitRepository)))
+		{
+			return;
+		}
+
+		var hasChanges = _projectChanges.TryGetValue(workspace.Id, out var changes);
+		var current = hasChanges
+			? workspace.IsGitRepository
+				&& string.Equals(changes!.ProjectRoot, workspace.RootPath, StringComparison.OrdinalIgnoreCase)
+			: !workspace.IsGitRepository;
+		if (current)
+		{
+			return;
+		}
+
+		var shownTab = CurrentProjectScreen is { } shown && ReferenceEquals(shown.Workspace, workspace)
+			? shown.SelectedTab
+			: (ProjectScreenTab?)null;
+		DropProject(workspace);
+		if (shownTab is { } tab)
+		{
+			var screen = GetOrCreateProjectScreen(workspace);
+			Present(new PresentedSurface.Project(screen));
+			_eventTasks.TryRun("project-screen-rebuild", () => screen.SelectTabAsync(tab, CancellationToken.None));
+		}
+		else
+		{
+			UpdateCurrentChanges();
+		}
 	}
 
 	// Called after every surface change: the change list follows the project of what is shown.
@@ -163,6 +220,13 @@ internal sealed partial class AvaloniaMainShellController
 			Present(new PresentedSurface.None());
 		}
 
+		DropProject(workspace);
+		UnwatchWorkspace(workspace);
+	}
+
+	// Disposes the project's change list and forgets its screen; the current list lets go first.
+	private void DropProject(WorkspaceViewModel workspace)
+	{
 		if (_projectChanges.TryGetValue(workspace.Id, out var changes))
 		{
 			if (ReferenceEquals(changes, CurrentChanges))
@@ -193,5 +257,9 @@ internal sealed partial class AvaloniaMainShellController
 
 		_projectChanges.Clear();
 		_projectScreens.Clear();
+		foreach (var workspace in _watchedWorkspaces.ToArray())
+		{
+			UnwatchWorkspace(workspace);
+		}
 	}
 }
