@@ -155,8 +155,9 @@ public sealed class AgentControlCompositionTests
 		var log = Directory.GetFiles(Path.Combine(fixture.RootOf(CompositionFixture.ProjectA), ".pact", "reviews"), "*.md")
 			.ShouldHaveSingleItem();
 		(await File.ReadAllTextAsync(log)).ShouldContain("Looks right.");
-		var notes = fixture.Controller.PresentedSurface.ShouldBeOfType<PresentedSurface.Notes>();
-		notes.Workspace.SelectedNode.ShouldNotBeNull().RelativePath.ShouldStartWith(".pact/reviews/");
+		var screen = fixture.Controller.PresentedSurface.ShouldBeOfType<PresentedSurface.Project>().Screen;
+		screen.SelectedTab.ShouldBe(ProjectScreenTab.ReviewLogs);
+		screen.SelectedReviewLog.ShouldNotBeNull().ShouldStartWith(".pact/reviews/");
 	}
 
 	[Test]
