@@ -247,6 +247,42 @@ public sealed partial class SessionRuntimeCoordinatorTests
 	}
 
 	[Test]
+	public async Task A_delivery_cancelled_after_its_paste_still_presses_enter()
+	{
+		var (coordinator, backend, host, _, controller) = await CreateDeliverySessionAsync();
+		await using var _ = controller;
+		using CancellationTokenSource cancel = new();
+		var echo = backend.InputWritten;
+		backend.InputWritten = input =>
+		{
+			echo?.Invoke(input);
+			if (input.StartsWith("\u001b[200~", StringComparison.Ordinal))
+			{
+				// The text is in the composer now; leaving it there would strand it.
+				cancel.Cancel();
+			}
+		};
+		host.CaptureScreen = _ => ComposerScreen(empty: backend.InputWrites.Contains(PlainEnter));
+
+		try
+		{
+			await coordinator.DeliverPromptAsync(
+				"session-1",
+				"review this",
+				submit: true,
+				PromptSender.Outsider,
+				startIfNotRunning: false,
+				cancel.Token);
+		}
+		catch (OperationCanceledException)
+		{
+			// Cancelling after Enter may still end the wait for confirmation.
+		}
+
+		backend.InputWrites.ShouldBe([Pasted, PlainEnter]);
+	}
+
+	[Test]
 	public async Task A_session_without_a_composer_model_is_submitted()
 	{
 		var (coordinator, backend, host, _, controller) = await CreateDeliverySessionAsync(kind: AgentKind.Pwsh);

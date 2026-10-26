@@ -794,7 +794,11 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 		var first = await runtime.RunInputExclusiveAsync<PromptDeliveryResult?>(
 			async () =>
 			{
-				if (!await WritePasteAsync(runtime, controller, text, trace, cancellationToken).ConfigureAwait(false))
+				// Once the paste is written the text sits in the composer, so the steps up to Enter
+				// ignore cancellation: each is bounded by its own timeout, and stopping between them
+				// would strand the text there.
+				var untilEnter = CancellationToken.None;
+				if (!await WritePasteAsync(runtime, controller, text, trace, untilEnter).ConfigureAwait(false))
 				{
 					return new PromptDeliveryResult(PromptDeliveryOutcome.PasteNotShown, WriteAttempted: true);
 				}
@@ -806,14 +810,14 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 
 				if (_scenarioSubmitSettleDelay > TimeSpan.Zero)
 				{
-					await Task.Delay(_scenarioSubmitSettleDelay, cancellationToken).ConfigureAwait(false);
+					await Task.Delay(_scenarioSubmitSettleDelay, untilEnter).ConfigureAwait(false);
 				}
 
 				// The paste can take seconds to show, and an agent that was already working may
 				// open a question meanwhile; Enter would answer it instead of submitting.
 				if (profile.ReadsComposer)
 				{
-					var check = await CaptureAsync(sessionId, profile, _preEnterCaptureTimeout, cancellationToken)
+					var check = await CaptureAsync(sessionId, profile, _preEnterCaptureTimeout, untilEnter)
 						.ConfigureAwait(false);
 					if (check is not { } beforeEnter)
 					{
