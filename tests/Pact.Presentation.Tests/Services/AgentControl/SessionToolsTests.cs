@@ -26,9 +26,24 @@ public sealed class SessionToolsTests
 					"pact_open_web_tab",
 					"pact_get_notes",
 					"pact_replace_notes",
-					"pact_open_document"
+					"pact_open_document",
+					"pact_get_subscription_usage"
 				],
 				ignoreOrder: true);
+	}
+
+	[Test]
+	public async Task Subscription_usage_returns_what_pact_shows()
+	{
+		var tools = CreateTools(usage: () => AgentControlResult.Ok("""[{"profileId":"claude-opus","fiveHourResetsAt":"2026-10-26T18:00:00+03:00"}]"""));
+
+		var result = await tools.InvokeAsync(
+			new AgentControlToolCall("session-1", IsOrchestrator: false, "pact_get_subscription_usage", new JsonObject()),
+			CancellationToken.None);
+
+		result.IsError.ShouldBeFalse(result.Text);
+		result.Text.ShouldContain("claude-opus");
+		result.Text.ShouldContain("fiveHourResetsAt");
 	}
 
 	[Test]
@@ -178,13 +193,15 @@ public sealed class SessionToolsTests
 		IReadOnlyList<ScenarioDefinition>? scenarios = null,
 		IReadOnlyList<ReviewProfile>? profiles = null,
 		Func<string, Task>? reportStatusAsync = null,
-		ReviewRelay? relay = null) =>
+		ReviewRelay? relay = null,
+		Func<AgentControlResult>? usage = null) =>
 		SessionTools.Create(
 			new AgentControlDispatcher(new AgentControlDispatcherTests.FakeAgentControlHost()),
 			relay ?? CreateRelay(Path.GetTempPath(), scenarios ?? [], profiles ?? []),
 			() => scenarios ?? [],
 			() => profiles ?? [],
-			reportStatusAsync ?? (_ => Task.CompletedTask));
+			reportStatusAsync ?? (_ => Task.CompletedTask),
+			usage ?? (() => AgentControlResult.Ok("[]")));
 
 	private static ReviewRelay CreateRelay(
 		string root,

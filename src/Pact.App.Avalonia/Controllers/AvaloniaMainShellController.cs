@@ -244,7 +244,8 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 				_reviewRelay,
 				() => ViewModel.ScenarioDefinitionsSnapshot,
 				() => _reviewProfileProvider.Current,
-				status => _uiTaskDispatcher.InvokeAsync(() => ReportStatusAsync(status))),
+				status => _uiTaskDispatcher.InvokeAsync(() => ReportStatusAsync(status)),
+				_orchestratorDispatcher.GetSubscriptionUsage),
 			OrchestratorTools.Create(_orchestratorDispatcher));
 		AgentControlJsonRpc agentControlRpc = new(
 			caller => toolRouter.BuildToolsList(caller.IsOrchestrator),

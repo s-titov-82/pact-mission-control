@@ -181,7 +181,8 @@ public sealed class OrchestratorToolsTests
 				TimeProvider.System),
 			() => [],
 			() => [],
-			_ => Task.CompletedTask);
+			_ => Task.CompletedTask,
+			() => AgentControlResult.Ok("[]"));
 
 	private static readonly Pact.Infrastructure.Reviews.ReviewLogWriter SharedLog = new();
 

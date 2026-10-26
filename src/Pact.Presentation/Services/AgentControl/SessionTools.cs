@@ -16,13 +16,16 @@ public static class SessionTools
 	/// <param name="scenarios">Current review scenarios; read on any thread when listing.</param>
 	/// <param name="profiles">Current reviewer profiles; read on any thread when listing.</param>
 	/// <param name="reportStatusAsync">Reports a successful action in the status bar.</param>
+	/// <param name="subscriptionUsage">Reads the subscription usage Pact shows, as for the orchestrator.</param>
 	public static AgentControlToolSet Create(
 		AgentControlDispatcher dispatcher,
 		ReviewRelay relay,
 		Func<IReadOnlyList<ScenarioDefinition>> scenarios,
 		Func<IReadOnlyList<ReviewProfile>> profiles,
-		Func<string, Task> reportStatusAsync)
+		Func<string, Task> reportStatusAsync,
+		Func<AgentControlResult> subscriptionUsage)
 	{
+		ArgumentNullException.ThrowIfNull(subscriptionUsage);
 		ArgumentNullException.ThrowIfNull(dispatcher);
 		ArgumentNullException.ThrowIfNull(relay);
 		ArgumentNullException.ThrowIfNull(scenarios);
@@ -238,7 +241,14 @@ public static class SessionTools
 						new ReplaceNoteRequest(text, expectedRevision),
 						cancellationToken);
 					return await CompleteAsync(result, "Notes replaced.", "Agent action: notes replaced");
-				})
+				}),
+			new AgentControlTool(
+				"pact_get_subscription_usage",
+				"Subscription usage per agent profile, as the text Pact shows for the 5-hour and weekly "
+					+ "limits (used percent and when each resets). Use it to plan work or to schedule a "
+					+ "wake-up after a reset.",
+				() => AgentControlSchema.Object(new()),
+				(_, _) => CompleteAsync(subscriptionUsage(), "[]", statusText: null))
 		]);
 	}
 }
