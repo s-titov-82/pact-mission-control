@@ -63,6 +63,18 @@ public sealed class ReviewRelayTests : IDisposable
 	}
 
 	[Test]
+	public async Task An_unknown_profile_or_template_is_refused_with_the_ones_that_exist()
+	{
+		var (relay, _) = Create();
+
+		var profile = await relay.RequestAsync(Author, new RequestReviewRequest("code-review", "renamed", "main..HEAD", null), CancellationToken.None);
+		var template = await relay.RequestAsync(Author, new RequestReviewRequest("gone", "codex-high", "main..HEAD", null), CancellationToken.None);
+
+		profile.Failure!.Message.ShouldBe("Unknown reviewer profile 'renamed'. Available: codex-high.");
+		template.Failure!.Message.ShouldBe("Unknown review template 'gone'. Available: code-review.");
+	}
+
+	[Test]
 	public async Task Request_from_root_is_refused()
 	{
 		var (relay, host) = Create();

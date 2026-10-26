@@ -83,18 +83,26 @@ public sealed class ReviewRelay
 				"This session is a ROOT tab and has no project, so it cannot start a review.");
 		}
 
-		var template = _templates().FirstOrDefault(candidate =>
+		// The ids in an agent's tool schema can be older than the settings, so a refusal names the
+		// ones that exist now.
+		var templates = _templates();
+		var template = templates.FirstOrDefault(candidate =>
 			string.Equals(candidate.Id, request.ScenarioId, StringComparison.Ordinal));
 		if (template is null)
 		{
-			return AgentControlResult.Refused("invalid-argument", $"Unknown review template '{request.ScenarioId}'.");
+			return AgentControlResult.Refused(
+				"invalid-argument",
+				$"Unknown review template '{request.ScenarioId}'. Available: {string.Join(", ", templates.Select(candidate => candidate.Id))}.");
 		}
 
-		var profile = _profiles().FirstOrDefault(candidate =>
+		var profiles = _profiles();
+		var profile = profiles.FirstOrDefault(candidate =>
 			string.Equals(candidate.Id, request.ReviewProfileId, StringComparison.Ordinal));
 		if (profile is null)
 		{
-			return AgentControlResult.Refused("invalid-argument", $"Unknown reviewer profile '{request.ReviewProfileId}'.");
+			return AgentControlResult.Refused(
+				"invalid-argument",
+				$"Unknown reviewer profile '{request.ReviewProfileId}'. Available: {string.Join(", ", profiles.Select(candidate => candidate.Id))}.");
 		}
 
 		if (AgentControlRequestValidator.Validate(new AgentControlOwner(IsRoot: false, project.ProjectId), request)
