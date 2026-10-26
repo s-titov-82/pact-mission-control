@@ -167,4 +167,27 @@ public sealed class GitStatusParserTests
 		snapshot.Untracked.ShouldBe(snapshot.Files.Count(file => file.Kind == GitChangeKind.Untracked));
 		snapshot.Conflicted.ShouldBe(snapshot.Files.Count(file => file.Kind == GitChangeKind.Conflicted));
 	}
+
+	[Test]
+	public void Entries_changed_in_the_index_are_marked_staged()
+	{
+		var snapshot = GitStatusParser.Parse(
+			"1 M. N... 100644 100644 100644 a b src/a.cs\n" +
+			"1 .M N... 100644 100644 100644 a b src/b.cs\n" +
+			"1 MM N... 100644 100644 100644 a b src/c.cs\n" +
+			"? new.txt\n");
+
+		snapshot.Files.Single(file => file.Path == "src/a.cs").IsStaged.ShouldBeTrue();
+		snapshot.Files.Single(file => file.Path == "src/b.cs").IsStaged.ShouldBeFalse();
+		snapshot.Files.Single(file => file.Path == "src/c.cs").IsStaged.ShouldBeTrue();
+		snapshot.Files.Single(file => file.Path == "new.txt").IsStaged.ShouldBeFalse();
+	}
+
+	[Test]
+	public void A_staged_rename_is_marked_staged()
+	{
+		var snapshot = GitStatusParser.Parse("2 R. N... 100644 100644 100644 a b R100 new.cs\told.cs\n");
+
+		snapshot.Files.ShouldHaveSingleItem().IsStaged.ShouldBeTrue();
+	}
 }

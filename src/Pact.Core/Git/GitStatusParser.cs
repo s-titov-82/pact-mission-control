@@ -126,7 +126,7 @@ public static class GitStatusParser
 			return;
 		}
 
-		files.Add(new GitFileEntry(path, null, kind.Value));
+		files.Add(new GitFileEntry(path, null, kind.Value, IsStagedColumn(line)));
 	}
 
 	private static void AddRenamedEntry(List<GitFileEntry> files, string line)
@@ -149,9 +149,12 @@ public static class GitStatusParser
 
 		if (!string.IsNullOrEmpty(path))
 		{
-			files.Add(new GitFileEntry(path, originalPath, kind.Value));
+			files.Add(new GitFileEntry(path, originalPath, kind.Value, IsStagedColumn(line)));
 		}
 	}
+
+	// The X column of "1"/"2" lines is the index state; "." means the index matches HEAD.
+	private static bool IsStagedColumn(string line) => line[2] != '.';
 
 	private static GitChangeKind? Classify(string xy)
 	{

@@ -55,7 +55,8 @@ public sealed record GitStatusSnapshot(
 /// Previous path for a rename or copy; <see langword="null"/> otherwise.
 /// </param>
 /// <param name="Kind">How the path changed.</param>
-public sealed record GitFileEntry(string Path, string? OriginalPath, GitChangeKind Kind);
+/// <param name="IsStaged">Whether the index differs from HEAD for this path.</param>
+public sealed record GitFileEntry(string Path, string? OriginalPath, GitChangeKind Kind, bool IsStaged = false);
 
 /// <summary>
 /// How one path changed, collapsing git's staged and unstaged states into the single
