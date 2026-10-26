@@ -282,6 +282,54 @@ public sealed class ProjectChangesViewModelTests
 		changes.DiffRows[^1].Text.ShouldBe("fresh");
 	}
 
+	[TestCase(true)]
+	[TestCase(false)]
+	public async Task A_pick_whose_file_left_the_list_does_not_overwrite_the_refresh(bool neighbourRemains)
+	{
+		_reader.Current = Changes("a", "b");
+		_reader.Diffs["b"] = Diff("b-line");
+		using var changes = Create();
+		using var observation = changes.Observe();
+		TaskCompletionSource<FileDiff> lateA = new();
+		_reader.DiffGates["a"] = lateA;
+		var pickA = changes.SelectFileAsync(changes.Files[0], CancellationToken.None);
+
+		_reader.Current = neighbourRemains ? Changes("b") : Changes();
+		_time.Advance(ProjectChangesViewModel.ReconcileInterval);
+		lateA.SetResult(Diff("a-line"));
+		await pickA;
+
+		if (neighbourRemains)
+		{
+			changes.SelectedFile!.Path.ShouldBe("b");
+			changes.DiffRows[^1].Text.ShouldBe("b-line");
+		}
+		else
+		{
+			changes.SelectedFile.ShouldBeNull();
+			changes.DiffRows.ShouldBeEmpty();
+		}
+	}
+
+	[Test]
+	public async Task A_pick_read_older_than_the_refresh_of_the_same_file_does_not_overwrite_it()
+	{
+		_reader.Current = Changes("a");
+		_reader.Diffs["a"] = Diff("fresh");
+		using var changes = Create();
+		using var observation = changes.Observe();
+		TaskCompletionSource<FileDiff> stale = new();
+		_reader.DiffGates["a"] = stale;
+		var pickA = changes.SelectFileAsync(changes.Files[0], CancellationToken.None);
+
+		_time.Advance(ProjectChangesViewModel.ReconcileInterval);
+		changes.DiffRows[^1].Text.ShouldBe("fresh");
+		stale.SetResult(Diff("stale"));
+		await pickA;
+
+		changes.DiffRows[^1].Text.ShouldBe("fresh");
+	}
+
 	[Test]
 	public void Observing_again_right_after_a_read_waits_for_the_minimum_interval()
 	{

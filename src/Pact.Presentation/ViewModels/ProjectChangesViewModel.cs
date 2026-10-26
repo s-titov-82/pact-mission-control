@@ -428,6 +428,9 @@ public sealed class ProjectChangesViewModel : INotifyPropertyChanged, IDisposabl
 			nameof(TabHeader));
 		if (!picked)
 		{
+			// The refresh's selection and diff are now the newest: reads of earlier picks still in
+			// flight must not land on top of them.
+			Interlocked.Increment(ref _selectionVersion);
 			ApplyDiff(diff);
 		}
 	}
