@@ -8,6 +8,10 @@ using Avalonia.Threading;
 using Pact.App.Avalonia.Views;
 using Pact.Core.Git;
 using Pact.Core.Projects;
+using Pact.Core.Remarks;
+using Pact.Core.Sessions;
+using Pact.Infrastructure.Remarks;
+using Pact.Presentation.Services.Remarks;
 using Pact.Infrastructure.Storage;
 using Pact.Presentation.ViewModels;
 
@@ -297,6 +301,79 @@ public sealed class RightActionsPanelHeadlessTests
 			window.Close();
 		}
 	}
+
+	[AvaloniaTest]
+	public async Task The_changes_entry_shows_open_remarks()
+	{
+		using var root = TemporaryDirectory.Create();
+		using var changes = Changes(Files("a.cs"), added: 1, removed: 0, root.Path);
+		using RemarkBook book = new(root.Path, new RemarkFileStore(root.Path), TimeProvider.System);
+		using ChangesRemarksViewModel remarks = Remarks(changes, book);
+		RightActionsPanel panel = new() { Changes = changes, Remarks = remarks };
+		Window window = new() { Content = panel };
+		window.Show();
+		try
+		{
+			var line = panel.FindControl<TextBlock>("ChangesEntryRemarks")!;
+			line.IsVisible.ShouldBeFalse();
+
+			await book.AddAsync(OldAnchor("a.cs"), null, "why?", CancellationToken.None);
+
+			await EventuallyAsync(() => line.IsVisible && line.Text == "remarks: 1");
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[AvaloniaTest]
+	public async Task A_file_row_shows_its_open_remarks()
+	{
+		using var root = TemporaryDirectory.Create();
+		using var changes = Changes(Files("a.cs", "b.cs"), added: 1, removed: 0, root.Path);
+		using RemarkBook book = new(root.Path, new RemarkFileStore(root.Path), TimeProvider.System);
+		using ChangesRemarksViewModel remarks = Remarks(changes, book);
+		var screen = Screen(root.Path, changes);
+		await screen.SelectTabAsync(ProjectScreenTab.Changes, CancellationToken.None);
+		RightActionsPanel panel = new() { ProjectScreen = screen };
+		// List rows build their content from the theme's item template.
+		FluentTheme theme = new();
+		Application.Current!.Styles.Add(theme);
+		Window window = new() { Content = panel, Height = 800 };
+		window.Show();
+		try
+		{
+			await book.AddAsync(OldAnchor("b.cs"), null, "one", CancellationToken.None);
+			await book.AddAsync(OldAnchor("b.cs"), null, "two", CancellationToken.None);
+			window.UpdateLayout();
+
+			var list = panel.FindControl<ListBox>("ChangedFilesList")!;
+			await EventuallyAsync(() => RowTexts(list, 1).Contains("2 remarks"));
+			RowTexts(list, 0).ShouldNotContain(text => text != null && text.Contains("remark", StringComparison.Ordinal));
+		}
+		finally
+		{
+			window.Close();
+			Application.Current.Styles.Remove(theme);
+		}
+	}
+
+	private static List<string?> RowTexts(ListBox list, int index) =>
+		list.ContainerFromIndex(index)?.GetLogicalDescendants().OfType<TextBlock>()
+			.Where(text => text.IsEffectivelyVisible)
+			.Select(text => text.Text)
+			.ToList() ?? [];
+
+	private static ChangesRemarksViewModel Remarks(ProjectChangesViewModel changes, RemarkBook book) =>
+		new(
+			changes,
+			book,
+			() => [],
+			(_, _, _) => Task.FromResult(new PromptDeliveryResult(PromptDeliveryOutcome.Confirmed, WriteAttempted: true, SubmitAttempted: true)),
+			action => Dispatcher.UIThread.Post(action));
+
+	private static RemarkAnchor OldAnchor(string path) => new(path, RemarkSide.Old, 1, "x", [], [], "head", null);
 
 	private static ProjectScreenViewModel Screen(string root, ProjectChangesViewModel? changes)
 	{

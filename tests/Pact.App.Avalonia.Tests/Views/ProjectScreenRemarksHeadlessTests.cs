@@ -146,8 +146,82 @@ public sealed class ProjectScreenRemarksHeadlessTests
 		});
 	}
 
-	private static async Task WithScreenAsync(Func<Fixture, Task> act)
+	[AvaloniaTest]
+	public async Task The_bar_counts_drafts_and_sends_to_the_only_session()
 	{
+		await WithScreenAsync(async fixture =>
+		{
+			await fixture.Remarks.AddRemarkAsync(fixture.Shown, 3, "why?", CancellationToken.None);
+			var barText = fixture.View.FindControl<TextBlock>("RemarkBarText")!;
+			await EventuallyAsync(fixture.Window, () => barText.Text == "1 remark to send");
+
+			fixture.View.FindControl<Button>("SendRemarksButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+			await EventuallyAsync(fixture.Window, () => fixture.DeliveredTo.Count == 1);
+			fixture.DeliveredTo.ShouldBe(["s1"]);
+		});
+	}
+
+	[AvaloniaTest]
+	public async Task With_several_sessions_send_asks_which_one()
+	{
+		await WithScreenAsync(
+			async fixture =>
+			{
+				await fixture.Remarks.AddRemarkAsync(fixture.Shown, 3, "why?", CancellationToken.None);
+				await EventuallyAsync(fixture.Window, () => fixture.Remarks.CanSend);
+
+				fixture.View.FindControl<Button>("SendRemarksButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+				var items = fixture.View.SendMenu.ShouldNotBeNull().Items.OfType<MenuItem>().ToArray();
+				items.Select(item => item.Header as string).ShouldBe(["Claude", "Codex"]);
+				fixture.DeliveredTo.ShouldBeEmpty();
+				items[1].RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+				await EventuallyAsync(fixture.Window, () => fixture.DeliveredTo.Count == 1);
+				fixture.DeliveredTo.ShouldBe(["s2"]);
+			},
+			[new SessionTarget("s1", "Claude"), new SessionTarget("s2", "Codex")]);
+	}
+
+	[AvaloniaTest]
+	public async Task Send_is_disabled_without_a_session()
+	{
+		await WithScreenAsync(
+			async fixture =>
+			{
+				await fixture.Remarks.AddRemarkAsync(fixture.Shown, 3, "why?", CancellationToken.None);
+				var send = fixture.View.FindControl<Button>("SendRemarksButton")!;
+
+				await EventuallyAsync(fixture.Window, () => fixture.Remarks.DraftCount == 1);
+
+				send.IsEnabled.ShouldBeFalse();
+				ToolTip.GetTip(send).ShouldBe("No session in this project to send to");
+			},
+			[]);
+	}
+
+	[AvaloniaTest]
+	public async Task Other_remarks_lists_outdated_threads()
+	{
+		await WithScreenAsync(async fixture =>
+		{
+			await fixture.Book.AddAsync(
+				new Pact.Core.Remarks.RemarkAnchor("src/gone.cs", Pact.Core.Remarks.RemarkSide.New, 1, "x", [], [], "head1", null),
+				"x\n",
+				"where did it go?",
+				CancellationToken.None);
+			var other = fixture.View.FindControl<Button>("OtherRemarksButton")!;
+
+			await EventuallyAsync(fixture.Window, () => other.IsVisible && (other.Content as string) == "Other remarks (1)");
+
+			fixture.View.FindControl<ItemsControl>("OtherRemarksList")!.ItemsSource.ShouldBeSameAs(fixture.Remarks.Elsewhere);
+			fixture.Remarks.Elsewhere.Single().IsOutdated.ShouldBeTrue();
+		});
+	}
+
+	private static async Task WithScreenAsync(Func<Fixture, Task> act, IReadOnlyList<SessionTarget>? sessions = null)
+	{
+		List<string> deliveredTo = [];
 		FluentTheme theme = new();
 		StyleInclude editorStyle = new(new Uri("avares://Pact.App.Avalonia.Tests/"))
 		{
@@ -167,8 +241,12 @@ public sealed class ProjectScreenRemarksHeadlessTests
 		using ChangesRemarksViewModel remarks = new(
 			changes,
 			book,
-			() => [new SessionTarget("s1", "Claude")],
-			(_, _, _) => Task.FromResult(new PromptDeliveryResult(PromptDeliveryOutcome.Confirmed, WriteAttempted: true, SubmitAttempted: true)),
+			() => sessions ?? [new SessionTarget("s1", "Claude")],
+			(session, _, _) =>
+			{
+				deliveredTo.Add(session);
+				return Task.FromResult(new PromptDeliveryResult(PromptDeliveryOutcome.Confirmed, WriteAttempted: true, SubmitAttempted: true));
+			},
 			action => global::Avalonia.Threading.Dispatcher.UIThread.Post(action));
 		ProjectScreenViewModel screen = new(workspace, changes, new ProjectMarkdownFileStore(), remarks: remarks);
 		ProjectScreenView view = new() { DataContext = screen };
@@ -179,7 +257,7 @@ public sealed class ProjectScreenRemarksHeadlessTests
 			await screen.SelectTabAsync(ProjectScreenTab.Changes, CancellationToken.None);
 			await changes.SelectFileAsync(changes.Files[0], CancellationToken.None);
 			window.UpdateLayout();
-			await act(new Fixture(window, view, book, remarks, changes.ShownDiff!));
+			await act(new Fixture(window, view, book, remarks, changes.ShownDiff!, deliveredTo));
 		}
 		finally
 		{
@@ -201,7 +279,13 @@ public sealed class ProjectScreenRemarksHeadlessTests
 		condition().ShouldBeTrue();
 	}
 
-	private sealed record Fixture(Window Window, ProjectScreenView View, RemarkBook Book, ChangesRemarksViewModel Remarks, ShownDiff Shown)
+	private sealed record Fixture(
+		Window Window,
+		ProjectScreenView View,
+		RemarkBook Book,
+		ChangesRemarksViewModel Remarks,
+		ShownDiff Shown,
+		List<string> DeliveredTo)
 	{
 		public TextEditor Editor => View.FindControl<TextEditor>("DiffEditor")!;
 

@@ -104,9 +104,18 @@ public sealed class ChangedFileViewModel : INotifyPropertyChanged
 			{
 				field = value;
 				PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(OpenRemarks)));
+				PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(RemarksText)));
 			}
 		}
 	}
+
+	/// <summary><c>1 remark</c> or <c>N remarks</c> for the open threads; empty without any.</summary>
+	public string RemarksText => OpenRemarks switch
+	{
+		0 => string.Empty,
+		1 => "1 remark",
+		_ => string.Create(CultureInfo.InvariantCulture, $"{OpenRemarks} remarks")
+	};
 }
 
 /// <summary>

@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
@@ -88,6 +89,7 @@ internal sealed partial class ProjectScreenView : UserControl
 		CloseOverlay();
 		RefreshTab();
 		RefreshChanges();
+		RefreshRemarkBar();
 	}
 
 	private void OnScreenPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -120,6 +122,8 @@ internal sealed partial class ProjectScreenView : UserControl
 			RefreshRemarkMarks();
 			RefreshOverlay();
 		}
+
+		RefreshRemarkBar();
 	}
 
 	private void RefreshTab()
@@ -318,6 +322,64 @@ internal sealed partial class ProjectScreenView : UserControl
 	{
 		e.Handled = true;
 		_eventTasks.TryRun(e.Name, () => e.Action(CancellationToken.None), static _ => Task.CompletedTask);
+	}
+
+	/// <summary>The menu of sessions Send opened when there were several; for tests.</summary>
+	internal MenuFlyout? SendMenu { get; private set; }
+
+	private void RefreshRemarkBar()
+	{
+		if (_remarks is not { } remarks)
+		{
+			RemarkBar.IsVisible = false;
+			return;
+		}
+
+		var others = remarks.Elsewhere;
+		RemarkBarText.Text = remarks.BarText;
+		RemarkStatusText.Text = remarks.StatusText;
+		OtherRemarksButton.IsVisible = others.Count > 0;
+		OtherRemarksButton.Content = string.Create(CultureInfo.InvariantCulture, $"Other remarks ({others.Count})");
+		OtherRemarksList.ItemsSource = others;
+		SendRemarksButton.IsEnabled = remarks.CanSend;
+		ToolTip.SetTip(SendRemarksButton, remarks.SendBlockedReason);
+		RemarkBar.IsVisible = remarks.OpenCount > 0 || others.Count > 0 || remarks.StatusText is not null;
+	}
+
+	// One session takes the remarks at once; with several, the user picks one.
+	private void OnSendRemarksClicked(object? sender, RoutedEventArgs e)
+	{
+		if (_remarks is not { } remarks)
+		{
+			return;
+		}
+
+		var targets = remarks.SendTargets;
+		if (targets.Count == 1)
+		{
+			SendRemarks(remarks, targets[0].SessionId);
+			return;
+		}
+
+		MenuFlyout menu = new();
+		foreach (var target in targets)
+		{
+			MenuItem item = new() { Header = target.Title };
+			item.Click += (_, _) => SendRemarks(remarks, target.SessionId);
+			menu.Items.Add(item);
+		}
+
+		SendMenu = menu;
+		if (targets.Count > 1)
+		{
+			menu.ShowAt(SendRemarksButton);
+		}
+	}
+
+	private void SendRemarks(ChangesRemarksViewModel remarks, string sessionId)
+	{
+		SendMenu?.Hide();
+		_eventTasks.TryRun("remarks-send", () => remarks.SendAsync(sessionId, CancellationToken.None), static _ => Task.CompletedTask);
 	}
 
 	private void OnOverviewTabClicked(object? sender, RoutedEventArgs e) => SelectTab(ProjectScreenTab.Overview);

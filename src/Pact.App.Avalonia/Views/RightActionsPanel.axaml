@@ -65,9 +65,13 @@
                   <TextBlock Foreground="{DynamicResource AppTextMutedBrush}" FontSize="11"
                              Text="{Binding Folder}" TextTrimming="CharacterEllipsis" />
                 </StackPanel>
-                <TextBlock Grid.Column="2" Margin="6,0,0,0" FontSize="10" VerticalAlignment="Center"
-                           Foreground="{DynamicResource AppTextMutedBrush}" Text="staged"
-                           IsVisible="{Binding IsStaged}" />
+                <StackPanel Grid.Column="2" Margin="6,0,0,0" VerticalAlignment="Center">
+                  <TextBlock FontSize="10" HorizontalAlignment="Right"
+                             Foreground="{DynamicResource AppTextMutedBrush}" Text="staged"
+                             IsVisible="{Binding IsStaged}" />
+                  <TextBlock FontSize="10" HorizontalAlignment="Right" Text="{Binding RemarksText}"
+                             IsVisible="{Binding RemarksText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                </StackPanel>
               </Grid>
             </DataTemplate>
           </ListBox.ItemTemplate>
@@ -106,6 +110,8 @@
           <StackPanel Spacing="2">
             <TextBlock x:Name="ChangesEntryTitle" FontWeight="SemiBold" />
             <TextBlock x:Name="ChangesEntrySubtitle" FontSize="11"
+                       Foreground="{DynamicResource AppTextMutedBrush}" />
+            <TextBlock x:Name="ChangesEntryRemarks" FontSize="11" IsVisible="False"
                        Foreground="{DynamicResource AppTextMutedBrush}" />
           </StackPanel>
         </Button>

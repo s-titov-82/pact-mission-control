@@ -305,6 +305,22 @@ public sealed class ChangesRemarksViewModelTests : IDisposable
 	}
 
 	[Test]
+	public async Task A_typed_reply_goes_out_with_send()
+	{
+		var remarks = await OpenAsync();
+		await remarks.AddRemarkAsync(_changes!.ShownDiff!, 3, "why?", CancellationToken.None);
+		await remarks.SendAsync("s1", CancellationToken.None);
+		await EventuallyAsync(() => remarks.ThreadsByRow?.ByRow.ContainsKey(3) == true);
+		remarks.ThreadsByRow!.ByRow[3][0].DraftText = "and also";
+
+		await remarks.SendAsync("s1", CancellationToken.None);
+
+		_delivered.Count.ShouldBe(2);
+		_delivered[1].Text.ShouldContain("you: and also");
+		_book!.Threads.Single().Unsent.ShouldBeEmpty();
+	}
+
+	[Test]
 	public async Task Typing_survives_a_book_change()
 	{
 		var remarks = await OpenAsync();

@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Globalization;
 using Avalonia.Controls;
 using Avalonia.Data.Converters;
 using Avalonia.Input;
@@ -69,6 +70,39 @@ internal sealed partial class RightActionsPanel : UserControl
 		NoChangesText.IsVisible = !dirty;
 		ChangesEntryTitle.Text = changes?.EntryTitle;
 		ChangesEntrySubtitle.Text = changes?.EntrySubtitle;
+	}
+
+	/// <summary>Remark threads of the same project as <see cref="Changes"/>; their open count goes under the entry.</summary>
+	public ChangesRemarksViewModel? Remarks
+	{
+		get;
+		set
+		{
+			if (ReferenceEquals(field, value))
+			{
+				return;
+			}
+
+			field?.PropertyChanged -= OnRemarksPropertyChanged;
+			field = value;
+			field?.PropertyChanged += OnRemarksPropertyChanged;
+			RefreshRemarksLine();
+		}
+	}
+
+	private void OnRemarksPropertyChanged(object? sender, PropertyChangedEventArgs e)
+	{
+		if (e.PropertyName == nameof(ChangesRemarksViewModel.OpenCount))
+		{
+			RefreshRemarksLine();
+		}
+	}
+
+	private void RefreshRemarksLine()
+	{
+		var open = Remarks?.OpenCount ?? 0;
+		ChangesEntryRemarks.IsVisible = open > 0;
+		ChangesEntryRemarks.Text = open > 0 ? string.Create(CultureInfo.InvariantCulture, $"remarks: {open}") : null;
 	}
 
 	private void OnChangesEntryClicked(object? sender, RoutedEventArgs e) =>

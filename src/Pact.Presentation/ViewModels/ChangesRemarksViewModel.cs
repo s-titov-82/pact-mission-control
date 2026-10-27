@@ -185,8 +185,15 @@ public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposabl
 		RemarkBatch? batch = null;
 		var delivering = false;
 		string? status;
+		// A reply typed but not saved goes out too: Send means what is on screen.
+		var typed = _threads.Values.Where(thread => thread.HasUnsavedDraft).ToArray();
 		try
 		{
+			foreach (var thread in typed)
+			{
+				await thread.SaveDraftAsync(cancellationToken).ConfigureAwait(false);
+			}
+
 			batch = await _book.BeginSendAsync(sessionId, cancellationToken).ConfigureAwait(false);
 			if (batch is null)
 			{
