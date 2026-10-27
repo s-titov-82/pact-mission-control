@@ -1,9 +1,9 @@
 using Pact.Core.Sessions;
 
-namespace Pact.App.Avalonia.Controllers;
+namespace Pact.Presentation.Services;
 
 /// <summary>Words an undelivered prompt for a status message.</summary>
-internal static class PromptDeliveryText
+public static class PromptDeliveryText
 {
 	/// <summary>Why a delivery did not land, or null when it did.</summary>
 	public static string? DescribeUndelivered(PromptDeliveryResult result) => result.Outcome switch

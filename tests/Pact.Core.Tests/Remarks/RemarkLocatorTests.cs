@@ -26,6 +26,16 @@ public sealed class RemarkLocatorTests
 		RemarkLocator.LocateNew(Anchor(3, "q", ["p"], ["r"]), captured, ["x", "p", "q", "r", "y"]).ShouldBeNull();
 	}
 
+	// Remarks keep three lines of context; that wider window reaches past the repeated block and is
+	// unique, yet which copy went is just as unknowable.
+	[Test]
+	public void A_wide_context_does_not_hide_a_repeated_block()
+	{
+		string[] captured = ["x", "p", "q", "r", "p", "q", "r", "y"];
+
+		RemarkLocator.LocateNew(Anchor(3, "q", ["x", "p"], ["r", "p", "q"]), captured, ["x", "p", "q", "r", "y"]).ShouldBeNull();
+	}
+
 	[Test]
 	public void Deleting_an_unrelated_line_keeps_a_remark_in_a_repeated_block()
 	{

@@ -52,7 +52,7 @@ public sealed record DiffRowViewModel(DiffRowKind Kind, string OldNumber, string
 public sealed record ShownDiff(string Path, string? HeadCommit, IReadOnlyList<DiffRowViewModel> Rows, IReadOnlyList<string>? NewLines);
 
 /// <summary>One changed file in the Changes list.</summary>
-public sealed class ChangedFileViewModel
+public sealed class ChangedFileViewModel : INotifyPropertyChanged
 {
 	/// <summary>Wraps a git status entry.</summary>
 	public ChangedFileViewModel(GitFileEntry entry)
@@ -90,6 +90,23 @@ public sealed class ChangedFileViewModel
 
 	/// <summary>Whether the index differs from HEAD for this file.</summary>
 	public bool IsStaged => Entry.IsStaged;
+
+	/// <inheritdoc />
+	public event PropertyChangedEventHandler? PropertyChanged;
+
+	/// <summary>Remark threads on this file that are not resolved.</summary>
+	public int OpenRemarks
+	{
+		get;
+		set
+		{
+			if (field != value)
+			{
+				field = value;
+				PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(OpenRemarks)));
+			}
+		}
+	}
 }
 
 /// <summary>

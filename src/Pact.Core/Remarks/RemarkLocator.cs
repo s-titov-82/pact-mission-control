@@ -6,6 +6,8 @@ namespace Pact.Core.Remarks;
 /// </summary>
 public static class RemarkLocator
 {
+	private const int RepeatContext = 1;
+
 	/// <summary>Splits text into lines without line endings; a final newline adds no empty line.</summary>
 	public static IReadOnlyList<string> SplitLines(string text)
 	{
@@ -52,8 +54,11 @@ public static class RemarkLocator
 			return null;
 		}
 
-		var start = Math.Max(0, index - anchor.Before.Count);
-		var end = Math.Min(captured.Count - 1, index + anchor.After.Count);
+		// The repeat test looks at the line with one neighbour each side, however much context the
+		// anchor keeps: a wider window would reach past a repeated block and look unique, while which
+		// copy of the block went stays just as unknowable.
+		var start = Math.Max(0, index - Math.Min(RepeatContext, anchor.Before.Count));
+		var end = Math.Min(captured.Count - 1, index + Math.Min(RepeatContext, anchor.After.Count));
 		var occurrences = Occurrences(captured, start, end - start + 1);
 		if (occurrences.Count > 1)
 		{
