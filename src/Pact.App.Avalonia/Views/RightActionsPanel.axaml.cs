@@ -169,6 +169,18 @@ internal sealed partial class RightActionsPanel : UserControl
 		RunSelection(() => screen.SelectReviewLogAsync(log, CancellationToken.None));
 	}
 
+	/// <summary>Raised with a log's project-relative path when its delete button is clicked.</summary>
+	public event EventHandler<string>? DeleteReviewLogRequested;
+
+	private void OnDeleteReviewLogClicked(object? sender, RoutedEventArgs e)
+	{
+		e.Handled = true;
+		if (sender is Control { DataContext: string log })
+		{
+			DeleteReviewLogRequested?.Invoke(this, log);
+		}
+	}
+
 	internal void ConfigureLifecycle(ObservedTaskGroup eventTasks) =>
 		_eventTasks = eventTasks ?? throw new ArgumentNullException(nameof(eventTasks));
 

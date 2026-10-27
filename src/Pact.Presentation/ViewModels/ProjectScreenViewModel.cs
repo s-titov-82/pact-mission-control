@@ -16,21 +16,41 @@ public enum ProjectScreenTab
 	ReviewLogs
 }
 
+/// <summary>How a request to delete a review log ended.</summary>
+public enum ReviewLogDeletion
+{
+	/// <summary>The log is gone.</summary>
+	Deleted,
+
+	/// <summary>A running review still writes the log; it stays.</summary>
+	InUse,
+
+	/// <summary>The log is not in the folder.</summary>
+	NotFound
+}
+
 /// <summary>The project screen shown in the center pane: overview, changes and review logs.</summary>
 public sealed class ProjectScreenViewModel : INotifyPropertyChanged
 {
 	private readonly IProjectMarkdownFileStore _fileStore;
+	private readonly Func<string, bool> _isLogInUse;
 	private int _logVersion;
 
 	/// <summary>Creates the screen of one project; <paramref name="changes"/> is null outside git.</summary>
+	/// <param name="workspace">The project.</param>
+	/// <param name="changes">The project's change list.</param>
+	/// <param name="fileStore">Reads the review logs.</param>
+	/// <param name="isLogInUse">Whether a running review writes the log at a project-relative path.</param>
 	public ProjectScreenViewModel(
 		WorkspaceViewModel workspace,
 		ProjectChangesViewModel? changes,
-		IProjectMarkdownFileStore fileStore)
+		IProjectMarkdownFileStore fileStore,
+		Func<string, bool>? isLogInUse = null)
 	{
 		Workspace = workspace ?? throw new ArgumentNullException(nameof(workspace));
 		Changes = changes;
 		_fileStore = fileStore ?? throw new ArgumentNullException(nameof(fileStore));
+		_isLogInUse = isLogInUse ?? (static _ => false);
 		changes?.PropertyChanged += OnChangesPropertyChanged;
 	}
 
@@ -154,6 +174,36 @@ public sealed class ProjectScreenViewModel : INotifyPropertyChanged
 		SetTab(ProjectScreenTab.ReviewLogs);
 		await SelectReviewLogAsync(match, cancellationToken).ConfigureAwait(true);
 		return true;
+	}
+
+	/// <summary>
+	/// Deletes a review log unless a running review still writes it. A deleted shown log gives way
+	/// to the one after it, or the one before it when it was the oldest.
+	/// </summary>
+	public async Task<ReviewLogDeletion> DeleteReviewLogAsync(string relativePath, CancellationToken cancellationToken)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(relativePath);
+		RefreshReviewLogs();
+		var index = ReviewLogs.ToList().IndexOf(relativePath);
+		if (index < 0)
+		{
+			return ReviewLogDeletion.NotFound;
+		}
+
+		if (_isLogInUse(relativePath))
+		{
+			return ReviewLogDeletion.InUse;
+		}
+
+		ReviewLogFiles.Delete(RootPath, relativePath);
+		RefreshReviewLogs();
+		if (string.Equals(SelectedReviewLog, relativePath, StringComparison.Ordinal))
+		{
+			var next = ReviewLogs.Count == 0 ? null : ReviewLogs[Math.Min(index, ReviewLogs.Count - 1)];
+			await SelectReviewLogAsync(next, cancellationToken).ConfigureAwait(true);
+		}
+
+		return ReviewLogDeletion.Deleted;
 	}
 
 	private void RefreshReviewLogs()

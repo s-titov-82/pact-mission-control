@@ -66,8 +66,14 @@
                  SelectionChanged="OnReviewLogSelectionChanged">
           <ListBox.ItemTemplate>
             <DataTemplate>
-              <TextBlock Text="{Binding Converter={x:Static local:RightActionsPanel.FileNameOnly}}"
-                         TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding}" />
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                           Text="{Binding Converter={x:Static local:RightActionsPanel.FileNameOnly}}" />
+                <Button Grid.Column="1" Classes="compact-icon" Margin="6,0,0,0"
+                        ToolTip.Tip="Delete review log" Click="OnDeleteReviewLogClicked">
+                  <PathIcon Width="12" Height="12" Data="{StaticResource AppDeleteIcon}" />
+                </Button>
+              </Grid>
             </DataTemplate>
           </ListBox.ItemTemplate>
         </ListBox>

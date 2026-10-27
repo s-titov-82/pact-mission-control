@@ -41,6 +41,50 @@ public sealed class ProjectScreenViewModelTests : IDisposable
 	}
 
 	[Test]
+	public async Task Deleting_the_shown_log_removes_it_and_shows_the_next_one()
+	{
+		WriteLog("2026-10-24-1400-code-review-a.md", "# First");
+		WriteLog("2026-10-25-0900-code-review-b.md", "# Second");
+		var screen = Create(git: false);
+		await screen.SelectTabAsync(ProjectScreenTab.ReviewLogs, CancellationToken.None);
+
+		(await screen.DeleteReviewLogAsync(".pact/reviews/2026-10-25-0900-code-review-b.md", CancellationToken.None))
+			.ShouldBe(ReviewLogDeletion.Deleted);
+
+		screen.ReviewLogs.ShouldBe([".pact/reviews/2026-10-24-1400-code-review-a.md"]);
+		screen.SelectedReviewLog.ShouldBe(".pact/reviews/2026-10-24-1400-code-review-a.md");
+		screen.ReviewLogText.ShouldBe("# First");
+	}
+
+	[Test]
+	public async Task Deleting_the_last_log_clears_the_view()
+	{
+		WriteLog("2026-10-24-1400-code-review-a.md", "# First");
+		var screen = Create(git: false);
+		await screen.SelectTabAsync(ProjectScreenTab.ReviewLogs, CancellationToken.None);
+
+		await screen.DeleteReviewLogAsync(".pact/reviews/2026-10-24-1400-code-review-a.md", CancellationToken.None);
+
+		screen.ReviewLogs.ShouldBeEmpty();
+		screen.SelectedReviewLog.ShouldBeNull();
+		screen.ReviewLogText.ShouldBeEmpty();
+	}
+
+	[Test]
+	public async Task A_log_a_running_review_writes_is_not_deleted()
+	{
+		WriteLog("2026-10-24-1400-code-review-a.md", "# First");
+		var screen = Create(git: false, logInUse: path => path.EndsWith("code-review-a.md", StringComparison.Ordinal));
+		await screen.SelectTabAsync(ProjectScreenTab.ReviewLogs, CancellationToken.None);
+
+		(await screen.DeleteReviewLogAsync(".pact/reviews/2026-10-24-1400-code-review-a.md", CancellationToken.None))
+			.ShouldBe(ReviewLogDeletion.InUse);
+
+		File.Exists(Path.Combine(_root.Path, ".pact", "reviews", "2026-10-24-1400-code-review-a.md")).ShouldBeTrue();
+		screen.ReviewLogs.Count.ShouldBe(1);
+	}
+
+	[Test]
 	public async Task Opening_an_unknown_log_reports_false_and_changes_nothing()
 	{
 		WriteLog("2026-10-24-1400-code-review-a.md", "# First");
@@ -127,7 +171,7 @@ public sealed class ProjectScreenViewModelTests : IDisposable
 		_root.Dispose();
 	}
 
-	private ProjectScreenViewModel Create(bool git, IProjectMarkdownFileStore? store = null)
+	private ProjectScreenViewModel Create(bool git, IProjectMarkdownFileStore? store = null, Func<string, bool>? logInUse = null)
 	{
 		var now = DateTimeOffset.UtcNow;
 		WorkspaceViewModel workspace = new(new ProjectRecord("p1", "Pact", _root.Path, now, now, null), _ => git);
@@ -138,7 +182,7 @@ public sealed class ProjectScreenViewModelTests : IDisposable
 			_changes.Add(changes);
 		}
 
-		return new ProjectScreenViewModel(workspace, changes, store ?? new ProjectMarkdownFileStore());
+		return new ProjectScreenViewModel(workspace, changes, store ?? new ProjectMarkdownFileStore(), logInUse);
 	}
 
 	private sealed class GatedStore : IProjectMarkdownFileStore

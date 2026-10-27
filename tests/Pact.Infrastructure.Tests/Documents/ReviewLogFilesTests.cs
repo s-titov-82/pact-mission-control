@@ -21,6 +21,30 @@ public sealed class ReviewLogFilesTests
 	}
 
 	[Test]
+	public void Deleting_a_log_removes_its_file()
+	{
+		using var root = TemporaryDirectory.Create();
+		var folder = Path.Combine(root.Path, ".pact", "reviews");
+		Directory.CreateDirectory(folder);
+		var log = Path.Combine(folder, "2026-10-24-1400-code-review-a.md");
+		File.WriteAllText(log, "a");
+
+		ReviewLogFiles.Delete(root.Path, ".pact/reviews/2026-10-24-1400-code-review-a.md");
+
+		File.Exists(log).ShouldBeFalse();
+	}
+
+	[TestCase("docs/plan.md")]
+	[TestCase(".pact/reviews/../../plan.md")]
+	[TestCase(".pact/reviews/old/2026-10-26-0000-code-review-c.md")]
+	public void Deleting_refuses_anything_but_a_log_in_the_folder(string relativePath)
+	{
+		using var root = TemporaryDirectory.Create();
+
+		Should.Throw<ArgumentException>(() => ReviewLogFiles.Delete(root.Path, relativePath));
+	}
+
+	[Test]
 	public void A_missing_reviews_folder_lists_nothing()
 	{
 		using var root = TemporaryDirectory.Create();

@@ -71,6 +71,30 @@ internal sealed partial class AvaloniaMainShellController
 		return true;
 	}
 
+	/// <summary>Deletes a review log of the shown project screen, unless a running review writes it.</summary>
+	public async Task DeleteReviewLogAsync(string relativePath, CancellationToken cancellationToken = default)
+	{
+		if (CurrentProjectScreen is not { } screen)
+		{
+			return;
+		}
+
+		var result = await screen.DeleteReviewLogAsync(relativePath, cancellationToken);
+		if (result == ReviewLogDeletion.InUse)
+		{
+			await ReportStatusAsync("This review is still running; its log stays until it ends.");
+		}
+	}
+
+	// A running review appends to its log, which would come back half-written after a delete.
+	private bool IsReviewLogInUse(WorkspaceViewModel workspace, string relativePath)
+	{
+		var path = Path.GetFullPath(Path.Combine(workspace.RootPath, relativePath.Replace('/', Path.DirectorySeparatorChar)));
+		return _reviewRelay.ListActive().Any(review =>
+			review.LogPath.Length > 0
+			&& string.Equals(Path.GetFullPath(review.LogPath), path, StringComparison.OrdinalIgnoreCase));
+	}
+
 	private static bool IsReviewLogPath(string relativePath) =>
 		relativePath.StartsWith(ReviewLogFiles.Folder + "/", StringComparison.OrdinalIgnoreCase);
 
@@ -85,7 +109,8 @@ internal sealed partial class AvaloniaMainShellController
 		screen = new ProjectScreenViewModel(
 			workspace,
 			GetOrCreateProjectChanges(workspace),
-			new ProjectMarkdownFileStore());
+			new ProjectMarkdownFileStore(),
+			relativePath => IsReviewLogInUse(workspace, relativePath));
 		_projectScreens[workspace.Id] = screen;
 		WatchWorkspace(workspace);
 		return screen;

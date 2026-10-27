@@ -607,6 +607,27 @@ internal sealed partial class MainWindow : Window, IDisposable
 			handler => RightActions.ChangesEntryRequested -= handler,
 			"open-changes",
 			() => EngineProbeController.OpenCurrentChangesAsync());
+		ObserveEvent<string>(
+			handler => RightActions.DeleteReviewLogRequested += handler,
+			handler => RightActions.DeleteReviewLogRequested -= handler,
+			"delete-review-log",
+			DeleteReviewLogAsync);
+	}
+
+	private async Task DeleteReviewLogAsync(string relativePath)
+	{
+		MessageDialogRequest request = new(
+			"Delete review log",
+			$"Delete {Path.GetFileName(relativePath)}? The file is removed from the project.",
+			MessageDialogButtons.YesNo,
+			MessageDialogResult.No);
+		var result = ShowMessageDialogAsyncOverride is not null
+			? await ShowMessageDialogAsyncOverride(request)
+			: await MessageDialogWindow.ShowOwnedAsync(this, request);
+		if (result == MessageDialogResult.Yes)
+		{
+			await EngineProbeController.DeleteReviewLogAsync(relativePath);
+		}
 	}
 
 	private void WireSelectionActionsEvents()

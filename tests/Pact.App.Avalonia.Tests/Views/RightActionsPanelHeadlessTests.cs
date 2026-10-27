@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Headless.NUnit;
 using Avalonia.Interactivity;
 using Avalonia.LogicalTree;
+using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
 using Pact.App.Avalonia.Views;
 using Pact.Core.Git;
@@ -179,6 +180,42 @@ public sealed class RightActionsPanelHeadlessTests
 		finally
 		{
 			window.Close();
+		}
+	}
+
+	[AvaloniaTest]
+	public async Task A_log_row_shows_its_name_and_asks_to_delete_it()
+	{
+		using var root = TemporaryDirectory.Create();
+		var folder = Path.Combine(root.Path, ".pact", "reviews");
+		Directory.CreateDirectory(folder);
+		await File.WriteAllTextAsync(Path.Combine(folder, "2026-10-26-1200-a.md"), "# A");
+		var screen = Screen(root.Path, changes: null);
+		await screen.SelectTabAsync(ProjectScreenTab.ReviewLogs, CancellationToken.None);
+		RightActionsPanel panel = new() { ProjectScreen = screen };
+		List<string> requested = [];
+		panel.DeleteReviewLogRequested += (_, log) => requested.Add(log);
+		FluentTheme theme = new();
+		Application.Current!.Styles.Add(theme);
+		Window window = new() { Content = panel, Height = 800 };
+		window.Show();
+		try
+		{
+			window.UpdateLayout();
+			var row = panel.FindControl<ListBox>("ReviewLogList")!.ContainerFromIndex(0).ShouldNotBeNull();
+			var texts = row.GetLogicalDescendants().OfType<TextBlock>().Select(text => text.Text).ToList();
+
+			texts.ShouldContain("2026-10-26-1200-a");
+			texts.ShouldNotContain(text => text != null && text.Contains(".pact", StringComparison.Ordinal));
+			row.GetLogicalDescendants().OfType<Button>().Single()
+				.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+			requested.ShouldBe([".pact/reviews/2026-10-26-1200-a.md"]);
+		}
+		finally
+		{
+			window.Close();
+			Application.Current.Styles.Remove(theme);
 		}
 	}
 

@@ -25,4 +25,25 @@ public static class ReviewLogFiles
 			.Select(name => $"{Folder}/{name}")
 			.ToArray();
 	}
+
+	/// <summary>Deletes one log, named by its project-relative path as <see cref="List"/> gives it.</summary>
+	/// <exception cref="ArgumentException">The path is not a Markdown file directly in the folder.</exception>
+	public static void Delete(string projectRoot, string relativePath)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(projectRoot);
+		ArgumentException.ThrowIfNullOrWhiteSpace(relativePath);
+		var prefix = Folder + "/";
+		var name = relativePath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+			? relativePath[prefix.Length..]
+			: string.Empty;
+		if (name.Length == 0
+			|| name.IndexOfAny(['/', '\\']) >= 0
+			|| name.Contains("..", StringComparison.Ordinal)
+			|| !name.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
+		{
+			throw new ArgumentException($"Not a review log: {relativePath}", nameof(relativePath));
+		}
+
+		File.Delete(Path.Combine(projectRoot, ".pact", "reviews", name));
+	}
 }
