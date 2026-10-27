@@ -184,6 +184,54 @@ public sealed class ProjectScreenRemarksHeadlessTests
 	}
 
 	[AvaloniaTest]
+	public async Task A_typed_reply_enables_the_send_button()
+	{
+		await WithScreenAsync(async fixture =>
+		{
+			await fixture.Remarks.AddRemarkAsync(fixture.Shown, 4, "why?", CancellationToken.None);
+			await fixture.Remarks.SendAsync("s1", CancellationToken.None);
+			await EventuallyAsync(fixture.Window, () => fixture.Margin.MarkOf(5) == "thread");
+			var send = fixture.View.FindControl<Button>("SendRemarksButton")!;
+			fixture.ClickMargin(5);
+			var draftBox = fixture.Overlay.GetLogicalDescendants().OfType<RemarkThreadView>().Single().FindControl<TextBox>("DraftBox")!;
+			send.IsEnabled.ShouldBeFalse();
+
+			draftBox.Text = "and also";
+
+			await EventuallyAsync(fixture.Window, () => send.IsEnabled);
+			send.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+			await EventuallyAsync(fixture.Window, () => fixture.DeliveredTo.Count == 2);
+			fixture.Book.Threads.Single().Messages.ShouldContain(message => message.Text == "and also");
+		});
+	}
+
+	[AvaloniaTest]
+	public async Task A_long_thread_in_a_short_window_stays_inside_the_diff()
+	{
+		await WithScreenAsync(
+			async fixture =>
+			{
+				await fixture.Remarks.AddRemarkAsync(fixture.Shown, 6, "why?", CancellationToken.None);
+				await fixture.Remarks.SendAsync("s1", CancellationToken.None);
+				var answer = string.Join('\n', Enumerable.Range(1, 12).Select(index => $"reason {index}"));
+				for (var reply = 0; reply < 4; reply++)
+				{
+					await fixture.Book.AgentReplyAsync("C1", answer, resolve: false, CancellationToken.None);
+				}
+
+				await EventuallyAsync(fixture.Window, () => fixture.Margin.MarkOf(7) == "thread");
+
+				fixture.ClickMargin(7);
+				await EventuallyAsync(fixture.Window, () => fixture.Overlay.Bounds.Height > 0);
+
+				var top = Canvas.GetTop(fixture.Overlay);
+				top.ShouldBeGreaterThanOrEqualTo(-1);
+				(top + fixture.Overlay.Bounds.Height).ShouldBeLessThanOrEqualTo(fixture.Layer.Bounds.Height + 1);
+			},
+			height: 320);
+	}
+
+	[AvaloniaTest]
 	public async Task Send_is_disabled_without_a_session()
 	{
 		await WithScreenAsync(
@@ -219,7 +267,7 @@ public sealed class ProjectScreenRemarksHeadlessTests
 		});
 	}
 
-	private static async Task WithScreenAsync(Func<Fixture, Task> act, IReadOnlyList<SessionTarget>? sessions = null)
+	private static async Task WithScreenAsync(Func<Fixture, Task> act, IReadOnlyList<SessionTarget>? sessions = null, double height = 500)
 	{
 		List<string> deliveredTo = [];
 		FluentTheme theme = new();
@@ -250,7 +298,7 @@ public sealed class ProjectScreenRemarksHeadlessTests
 			action => global::Avalonia.Threading.Dispatcher.UIThread.Post(action));
 		ProjectScreenViewModel screen = new(workspace, changes, new ProjectMarkdownFileStore(), remarks: remarks);
 		ProjectScreenView view = new() { DataContext = screen };
-		Window window = new() { Content = view, Width = 900, Height = 500 };
+		Window window = new() { Content = view, Width = 900, Height = height };
 		window.Show();
 		try
 		{

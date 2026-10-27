@@ -56,7 +56,7 @@ public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposabl
 		_postToUi = postToUi ?? throw new ArgumentNullException(nameof(postToUi));
 		_changes.PropertyChanged += OnChangesPropertyChanged;
 		_book.Changed += OnBookChanged;
-		_ = _book.EnsureLoadedAsync(CancellationToken.None);
+		_ = LoadAsync();
 		Recompute();
 	}
 
@@ -168,7 +168,8 @@ public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposabl
 				lines.Skip(index + 1).Take(ContextLines).ToArray(),
 				shown.HeadCommit,
 				null);
-			captured = string.Join('\n', lines);
+			// A final newline, so the copy splits back into the same lines, a last blank line included.
+			captured = lines.Count == 0 ? string.Empty : string.Join('\n', lines) + "\n";
 		}
 
 		var thread = await _book.AddAsync(anchor, captured, text, cancellationToken).ConfigureAwait(true);
@@ -252,6 +253,39 @@ public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposabl
 
 	private void OnBookChanged(object? sender, EventArgs e) => _postToUi(Recompute);
 
+	// A failed read is reported; the remarks stay empty rather than silently broken.
+	private async Task LoadAsync()
+	{
+		try
+		{
+			await _book.EnsureLoadedAsync(CancellationToken.None).ConfigureAwait(false);
+		}
+		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+		{
+			_postToUi(() => SetStatus($"The remarks could not be read: {exception.Message}"));
+		}
+	}
+
+	// Open threads with something to send: a stored draft or a reply typed into the box.
+	private int CountDrafts(IReadOnlyList<RemarkThread> threads) =>
+		threads.Count(thread => !thread.IsResolved
+			&& (thread.Unsent.Count > 0 || (_threads.TryGetValue(thread.Id, out var view) && view.HasUnsavedDraft)));
+
+	private void OnThreadPropertyChanged(object? sender, PropertyChangedEventArgs e)
+	{
+		if (_disposed || e.PropertyName != nameof(RemarkThreadViewModel.HasUnsavedDraft))
+		{
+			return;
+		}
+
+		var count = CountDrafts(_book.Threads);
+		if (count != DraftCount)
+		{
+			DraftCount = count;
+			Raise(nameof(DraftCount), nameof(BarText), nameof(CanSend));
+		}
+	}
+
 	// On the UI thread: refreshes the thread view models and counts at once, then places the
 	// threads off the UI thread and publishes the result only if nothing newer replaced it.
 	private void Recompute()
@@ -270,11 +304,14 @@ public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposabl
 
 		foreach (var gone in _threads.Keys.Except(threads.Select(thread => thread.Id), StringComparer.Ordinal).ToArray())
 		{
-			_threads.Remove(gone);
+			if (_threads.Remove(gone, out var removed))
+			{
+				removed.PropertyChanged -= OnThreadPropertyChanged;
+			}
 		}
 
 		OpenCount = threads.Count(thread => !thread.IsResolved);
-		DraftCount = threads.Count(thread => !thread.IsResolved && thread.Unsent.Count > 0);
+		DraftCount = CountDrafts(threads);
 		foreach (var file in _changes.Files)
 		{
 			file.OpenRemarks = threads.Count(thread => !thread.IsResolved && string.Equals(thread.Anchor.Path, file.Path, StringComparison.Ordinal));
@@ -352,6 +389,7 @@ public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposabl
 		}
 
 		view = new RemarkThreadViewModel(_book, thread);
+		view.PropertyChanged += OnThreadPropertyChanged;
 		_threads[thread.Id] = view;
 		return view;
 	}

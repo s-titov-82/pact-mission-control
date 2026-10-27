@@ -305,6 +305,101 @@ public sealed class ChangesRemarksViewModelTests : IDisposable
 	}
 
 	[Test]
+	public async Task A_reply_typed_during_a_failed_delivery_keeps_the_returned_message()
+	{
+		var thread = await FailedDeliveryWhileTypingAsync("B");
+
+		await thread.SaveDraftAsync(CancellationToken.None);
+
+		_book!.Threads.Single().Unsent.Select(message => message.Text).ShouldBe(["A", "B"]);
+	}
+
+	[Test]
+	public async Task Discarding_a_reply_typed_during_a_failed_delivery_keeps_the_returned_message()
+	{
+		var thread = await FailedDeliveryWhileTypingAsync("B");
+
+		await thread.DiscardDraftAsync(CancellationToken.None);
+
+		_book!.Threads.Single().Unsent.Select(message => message.Text).ShouldBe(["A"]);
+		thread.DraftText.ShouldBeEmpty();
+	}
+
+	[Test]
+	public async Task A_remark_on_a_final_empty_line_keeps_its_place()
+	{
+		var remarks = await OpenAsync("a\n\n", FileDiff.AllAdded("a\n\n"));
+		var shown = _changes!.ShownDiff!;
+		shown.NewLines.ShouldBe(["a", ""]);
+
+		await remarks.AddRemarkAsync(shown, 2, "why blank?", CancellationToken.None);
+
+		var thread = _book!.Threads.Single();
+		(await _book.LoadSnapshotLinesAsync(thread.Anchor.SnapshotId!, CancellationToken.None)).ShouldBe(["a", ""]);
+		await EventuallyAsync(() => remarks.ThreadsByRow?.ByRow.ContainsKey(2) == true);
+	}
+
+	[Test]
+	public async Task A_remarks_file_that_cannot_be_read_is_reported()
+	{
+		var folder = Path.Combine(_root.Path, ".pact", "remarks");
+		Directory.CreateDirectory(folder);
+		var path = Path.Combine(folder, "remarks.json");
+		await File.WriteAllTextAsync(path, """{"version":1,"nextNumber":1,"threads":[]}""");
+		using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None))
+		{
+			var remarks = await OpenAsync(loadBook: false);
+
+			await EventuallyAsync(() => remarks.StatusText is not null);
+			remarks.StatusText.ShouldStartWith("The remarks could not be read");
+		}
+	}
+
+	[Test]
+	public async Task Typing_a_reply_makes_it_sendable()
+	{
+		var remarks = await OpenAsync();
+		await remarks.AddRemarkAsync(_changes!.ShownDiff!, 3, "why?", CancellationToken.None);
+		await remarks.SendAsync("s1", CancellationToken.None);
+		await EventuallyAsync(() => remarks.ThreadsByRow?.ByRow.ContainsKey(3) == true);
+		remarks.CanSend.ShouldBeFalse();
+		List<string?> raised = [];
+		remarks.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+		remarks.ThreadsByRow!.ByRow[3][0].DraftText = "and also";
+
+		remarks.CanSend.ShouldBeTrue();
+		remarks.BarText.ShouldBe("1 remark to send");
+		raised.ShouldContain(nameof(ChangesRemarksViewModel.CanSend));
+	}
+
+	private async Task<RemarkThreadViewModel> FailedDeliveryWhileTypingAsync(string typed)
+	{
+		TaskCompletionSource<PromptDeliveryResult> gate = new();
+		TaskCompletionSource started = new();
+		_deliver = (_, _, _) =>
+		{
+			started.TrySetResult();
+			return gate.Task;
+		};
+		var remarks = await OpenAsync();
+		await remarks.AddRemarkAsync(_changes!.ShownDiff!, 3, "A", CancellationToken.None);
+		await EventuallyAsync(() => remarks.ThreadsByRow?.ByRow.ContainsKey(3) == true);
+		var thread = remarks.ThreadsByRow!.ByRow[3][0];
+
+		var send = remarks.SendAsync("s1", CancellationToken.None);
+		await started.Task;
+		await EventuallyAsync(() => thread.DraftText.Length == 0);
+		thread.DraftText = typed;
+		gate.SetResult(new PromptDeliveryResult(PromptDeliveryOutcome.NotRunning, "Not running"));
+		await send;
+		await EventuallyAsync(() => _book!.Threads.Single().Unsent.Count == 1 && thread.Messages.Count == 1);
+
+		thread.DraftText.ShouldBe(typed);
+		return thread;
+	}
+
+	[Test]
 	public async Task A_typed_reply_goes_out_with_send()
 	{
 		var remarks = await OpenAsync();
@@ -358,7 +453,11 @@ public sealed class ChangesRemarksViewModelTests : IDisposable
 			new DiffLine(DiffLineKind.Context, 3, 3, "c")
 		])]);
 
-	private async Task<ChangesRemarksViewModel> OpenAsync(string text = "a\nb\nc\n", FileDiff? diff = null, Action<Action>? post = null)
+	private async Task<ChangesRemarksViewModel> OpenAsync(
+		string text = "a\nb\nc\n",
+		FileDiff? diff = null,
+		Action<Action>? post = null,
+		bool loadBook = true)
 	{
 		await WriteFileAsync(text);
 		_reader.Texts[Path1] = text;
@@ -377,7 +476,11 @@ public sealed class ChangesRemarksViewModelTests : IDisposable
 				return _deliver?.Invoke(session, prompt, cancellationToken) ?? Task.FromResult(Confirmed);
 			},
 			post ?? (action => action()));
-		await _book.EnsureLoadedAsync(CancellationToken.None);
+		if (loadBook)
+		{
+			await _book.EnsureLoadedAsync(CancellationToken.None);
+		}
+
 		return _remarks;
 	}
 

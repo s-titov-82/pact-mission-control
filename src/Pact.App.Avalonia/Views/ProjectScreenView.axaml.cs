@@ -24,6 +24,7 @@ internal sealed partial class ProjectScreenView : UserControl
 		new Dictionary<int, IReadOnlyList<RemarkThreadViewModel>>();
 	private const double DiffLineHeightFactor = 1.3;
 	private const double OverlayMaxWidth = 640;
+	private const double OverlayMinHeight = 80;
 	private readonly DispatcherTimer _logReloadTimer;
 
 	private readonly DiffLineNumberMargin _diffNumbers = new();
@@ -268,13 +269,30 @@ internal sealed partial class ProjectScreenView : UserControl
 
 		var width = Math.Max(160, Math.Min(OverlayMaxWidth, RemarkLayer.Bounds.Width - origin.X - 12));
 		RemarkOverlay.Width = width;
+		RemarkOverlay.MaxHeight = double.PositiveInfinity;
 		RemarkOverlay.Measure(new Size(width, double.PositiveInfinity));
 		var height = RemarkOverlay.DesiredSize.Height;
-		var y = origin.Y + lineBottom;
-		if (y + height > RemarkLayer.Bounds.Height && origin.Y + lineTop - height >= 0)
+		var layerHeight = RemarkLayer.Bounds.Height;
+		var below = layerHeight - (origin.Y + lineBottom);
+		var above = origin.Y + lineTop;
+		double y;
+		if (height <= below)
+		{
+			y = origin.Y + lineBottom;
+		}
+		else if (height <= above)
 		{
 			y = origin.Y + lineTop - height;
 		}
+		else
+		{
+			// Fits neither side whole: it takes the roomier side and scrolls inside.
+			RemarkOverlay.MaxHeight = Math.Max(OverlayMinHeight, Math.Max(below, above) - 4);
+			height = Math.Min(height, RemarkOverlay.MaxHeight);
+			y = below >= above ? origin.Y + lineBottom : origin.Y + lineTop - height;
+		}
+
+		y = Math.Clamp(y, 0, Math.Max(0, layerHeight - height));
 
 		Canvas.SetLeft(RemarkOverlay, origin.X);
 		Canvas.SetTop(RemarkOverlay, y);

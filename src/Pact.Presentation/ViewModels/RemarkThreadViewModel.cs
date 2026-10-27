@@ -19,6 +19,9 @@ public sealed class RemarkThreadViewModel : INotifyPropertyChanged
 {
 	private readonly RemarkBook _book;
 	private string _storedDraft = string.Empty;
+
+	// The unsent message the draft box edits, or null for a new reply not stored yet.
+	private string? _draftId;
 	private int? _placedLine;
 
 	/// <summary>Wraps a thread of <paramref name="book"/>.</summary>
@@ -74,7 +77,7 @@ public sealed class RemarkThreadViewModel : INotifyPropertyChanged
 			if (!string.Equals(field, value, StringComparison.Ordinal))
 			{
 				field = value ?? string.Empty;
-				Raise(nameof(DraftText));
+				Raise(nameof(DraftText), nameof(HasUnsavedDraft));
 			}
 		}
 	} = string.Empty;
@@ -91,15 +94,15 @@ public sealed class RemarkThreadViewModel : INotifyPropertyChanged
 	/// <summary>Whether a message waits for <c>Send again</c> or <c>Mark as sent</c>.</summary>
 	public bool CanRetry => State == RemarkThreadState.DeliveryUncertain;
 
-	/// <summary>Saves the draft box; empty text removes the draft.</summary>
+	/// <summary>Saves the draft box into the message it edits, or as a new one; empty text removes it.</summary>
 	public Task SaveDraftAsync(CancellationToken cancellationToken) =>
-		_book.SaveDraftAsync(Id, DraftText, cancellationToken);
+		_book.SaveDraftAsync(Id, _draftId, DraftText, cancellationToken);
 
-	/// <summary>Empties the draft box and removes the draft.</summary>
+	/// <summary>Empties the draft box and removes the message it edits; a new reply only empties the box.</summary>
 	public Task DiscardDraftAsync(CancellationToken cancellationToken)
 	{
 		DraftText = string.Empty;
-		return _book.SaveDraftAsync(Id, string.Empty, cancellationToken);
+		return _draftId is null ? Task.CompletedTask : _book.SaveDraftAsync(Id, _draftId, string.Empty, cancellationToken);
 	}
 
 	/// <summary>Resolves the thread.</summary>
@@ -114,21 +117,44 @@ public sealed class RemarkThreadViewModel : INotifyPropertyChanged
 	/// <summary>Takes the uncertain messages as sent.</summary>
 	public Task MarkSentAsync(CancellationToken cancellationToken) => _book.MarkSentAsync(Id, cancellationToken);
 
-	/// <summary>Takes a newer copy of the thread; the draft box changes only while it still shows the stored draft.</summary>
+	/// <summary>
+	/// Takes a newer copy of the thread. An untouched draft box follows the newest unsent message;
+	/// one the user typed into keeps its text and the message it edits, so a message a failed
+	/// delivery hands back stays a separate, older one.
+	/// </summary>
 	public void Update(RemarkThread thread)
 	{
 		ArgumentNullException.ThrowIfNull(thread);
 		Thread = thread;
-		var draft = thread.EditableDraft;
-		var stored = draft?.Text ?? string.Empty;
-		if (string.Equals(DraftText, _storedDraft, StringComparison.Ordinal))
+		if (!HasUnsavedDraft)
 		{
-			DraftText = stored;
+			_draftId = thread.EditableDraft?.Id;
+			_storedDraft = thread.EditableDraft?.Text ?? string.Empty;
+			DraftText = _storedDraft;
+		}
+		else if (_draftId is null)
+		{
+			// A new reply just saved comes back as the newest unsent message with the typed text.
+			if (thread.EditableDraft is { } newest && string.Equals(newest.Text, DraftText, StringComparison.Ordinal))
+			{
+				_draftId = newest.Id;
+				_storedDraft = newest.Text;
+			}
+		}
+		else if (thread.Messages.FirstOrDefault(message => message.Id == _draftId && message.Delivery == RemarkDelivery.Draft) is { } edited)
+		{
+			_storedDraft = edited.Text;
+		}
+		else
+		{
+			// The message it edited went out or away: the typed text becomes a new reply.
+			_draftId = null;
+			_storedDraft = string.Empty;
 		}
 
-		_storedDraft = stored;
+		var editing = _draftId;
 		Messages = thread.Messages
-			.Where(message => draft is null || message.Id != draft.Id)
+			.Where(message => editing is null || message.Id != editing)
 			.Select(message => new RemarkMessageViewModel(
 				message.Author == RemarkAuthor.Agent ? "Agent" : "You",
 				message.Text,
@@ -140,7 +166,7 @@ public sealed class RemarkThreadViewModel : INotifyPropertyChanged
 					_ => null
 				}))
 			.ToArray();
-		Raise(nameof(Thread), nameof(State), nameof(StateText), nameof(Messages), nameof(CanResolve), nameof(CanReopen),
+		Raise(nameof(Thread), nameof(State), nameof(StateText), nameof(Messages), nameof(CanResolve), nameof(CanReopen), nameof(HasUnsavedDraft),
 			nameof(CanRetry), nameof(LocationText));
 	}
 

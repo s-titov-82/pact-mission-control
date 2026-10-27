@@ -72,6 +72,42 @@ public sealed class RemarkFileStoreTests
 		File.Exists(Path.Combine(folder, "remarks.json")).ShouldBeFalse();
 	}
 
+	[TestCase("""{"version":1,"nextNumber":2,"threads":[null]}""")]
+	[TestCase("""{"version":1,"nextNumber":2,"threads":[{"id":"C1","anchor":{"path":"a.cs","side":"new","line":1,"lineText":"x","before":[],"after":[]},"isResolved":false}]}""")]
+	[TestCase("""{"version":1,"nextNumber":2,"threads":[{"id":"C1","anchor":{"path":"a.cs","side":"new","line":1,"lineText":"x","before":[],"after":[]},"messages":[null],"isResolved":false}]}""")]
+	[TestCase("""{"version":1,"nextNumber":2,"threads":[{"id":"C1","messages":[],"isResolved":false}]}""")]
+	public async Task Threads_with_missing_parts_are_set_aside(string json)
+	{
+		using var root = TemporaryDirectory.Create();
+		var folder = Path.Combine(root.Path, ".pact", "remarks");
+		Directory.CreateDirectory(folder);
+		await File.WriteAllTextAsync(Path.Combine(folder, "remarks.json"), json);
+
+		var loaded = await new RemarkFileStore(root.Path).LoadAsync(CancellationToken.None);
+
+		loaded.Threads.ShouldBeEmpty();
+		loaded.SetAsideFile.ShouldNotBeNull();
+		(await File.ReadAllTextAsync(loaded.SetAsideFile)).ShouldBe(json);
+	}
+
+	[Test]
+	public async Task A_second_unreadable_file_in_the_same_second_keeps_the_first()
+	{
+		using var root = TemporaryDirectory.Create();
+		ManualTimeProvider time = new(DateTimeOffset.Parse("2026-10-27T12:00:00+00:00"));
+		var folder = Path.Combine(root.Path, ".pact", "remarks");
+		Directory.CreateDirectory(folder);
+		var taken = Path.Combine(folder, $"remarks.json.broken-{time.GetLocalNow():yyyyMMddHHmmss}");
+		await File.WriteAllTextAsync(taken, "first");
+		await File.WriteAllTextAsync(Path.Combine(folder, "remarks.json"), "{second");
+
+		var loaded = await new RemarkFileStore(root.Path, time).LoadAsync(CancellationToken.None);
+
+		loaded.SetAsideFile.ShouldNotBe(taken);
+		(await File.ReadAllTextAsync(taken)).ShouldBe("first");
+		(await File.ReadAllTextAsync(loaded.SetAsideFile!)).ShouldBe("{second");
+	}
+
 	[Test]
 	public async Task A_snapshot_is_stored_once_by_its_hash()
 	{

@@ -151,6 +151,30 @@ public sealed class RemarkBook : IDisposable
 			},
 			cancellationToken);
 
+	/// <summary>
+	/// Saves the text of one draft box: into the unsent message <paramref name="messageId"/> when it
+	/// still is one, otherwise as a new unsent message, never over another one. Whitespace removes
+	/// that message, with the same rule for a thread left empty.
+	/// </summary>
+	public Task SaveDraftAsync(string threadId, string? messageId, string text, CancellationToken cancellationToken) =>
+		ChangeThreadAsync(
+			threadId,
+			thread =>
+			{
+				var target = messageId is null
+					? null
+					: thread.Messages.FirstOrDefault(message => message.Id == messageId && message.Delivery == RemarkDelivery.Draft);
+				if (string.IsNullOrWhiteSpace(text))
+				{
+					return target is null ? thread : thread with { Messages = thread.Messages.Where(message => message.Id != target.Id).ToArray() };
+				}
+
+				return target is null
+					? thread with { Messages = [.. thread.Messages, NewMessage(RemarkAuthor.User, text, RemarkDelivery.Draft)] }
+					: WithMessages(thread, message => message.Id == target.Id ? message with { Text = text } : message);
+			},
+			cancellationToken);
+
 	/// <summary>Removes one unsent message, with the same rule for a thread left empty.</summary>
 	public Task DiscardUnsentAsync(string threadId, string messageId, CancellationToken cancellationToken) =>
 		ChangeThreadAsync(

@@ -32,11 +32,13 @@ public sealed class RemarkFileStore
 	};
 
 	private readonly string _projectRoot;
+	private readonly TimeProvider _time;
 	private readonly string _folder;
 
-	/// <summary>Creates the store of one project.</summary>
-	public RemarkFileStore(string projectRoot)
+	/// <summary>Creates the store of one project; <paramref name="time"/> stamps set-aside files.</summary>
+	public RemarkFileStore(string projectRoot, TimeProvider? time = null)
 	{
+		_time = time ?? TimeProvider.System;
 		ArgumentException.ThrowIfNullOrWhiteSpace(projectRoot);
 		_projectRoot = projectRoot;
 		_folder = Path.Combine(projectRoot, ".pact", "remarks");
@@ -61,7 +63,7 @@ public sealed class RemarkFileStore
 		try
 		{
 			var document = JsonSerializer.Deserialize<RemarkDocument>(json, JsonOptions);
-			if (document?.Threads is { } threads)
+			if (document?.Threads is { } threads && threads.All(IsComplete))
 			{
 				return new RemarkFile(Math.Max(1, document.NextNumber), threads);
 			}
@@ -71,10 +73,36 @@ public sealed class RemarkFileStore
 			// Set aside below.
 		}
 
-		var stamp = DateTime.Now.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
-		var aside = Path.Combine(_folder, $"remarks.json.broken-{stamp}");
-		File.Move(FilePath, aside, overwrite: true);
-		return new RemarkFile(1, [], aside);
+		return new RemarkFile(1, [], SetAside());
+	}
+
+	// JSON leaves a missing or null member null whatever the record says, so every part the
+	// threads are used through is checked before they are trusted.
+	private static bool IsComplete(RemarkThread? thread) =>
+		thread is { Id: not null, Anchor: { Path: not null, LineText: not null, Before: not null, After: not null } anchor, Messages: not null }
+		&& anchor.Before.All(line => line is not null)
+		&& anchor.After.All(line => line is not null)
+		&& thread.Messages.All(message => message is { Id: not null, Text: not null });
+
+	// Moves the unreadable file under a name nothing else holds, so an earlier one is never replaced.
+	private string SetAside()
+	{
+		var stamp = _time.GetLocalNow().ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
+		for (var attempt = 0; ; attempt++)
+		{
+			var aside = Path.Combine(
+				_folder,
+				attempt == 0 ? $"remarks.json.broken-{stamp}" : string.Create(CultureInfo.InvariantCulture, $"remarks.json.broken-{stamp}-{attempt}"));
+			try
+			{
+				File.Move(FilePath, aside, overwrite: false);
+				return aside;
+			}
+			catch (IOException) when (File.Exists(aside) && attempt < 100)
+			{
+				// Taken; try the next name.
+			}
+		}
 	}
 
 	/// <summary>Writes the threads atomically and keeps <c>.pact</c> out of Git.</summary>
