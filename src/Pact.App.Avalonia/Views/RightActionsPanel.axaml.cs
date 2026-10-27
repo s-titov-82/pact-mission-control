@@ -1,7 +1,9 @@
 using System.ComponentModel;
 using Avalonia.Controls;
+using Avalonia.Data.Converters;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Pact.App.Avalonia.Lifecycle;
 using Pact.Core.Prompting;
 using Pact.Presentation.ViewModels;
 
@@ -72,6 +74,109 @@ internal sealed partial class RightActionsPanel : UserControl
 	private void OnChangesEntryClicked(object? sender, RoutedEventArgs e) =>
 		ChangesEntryRequested?.Invoke(this, EventArgs.Empty);
 
+	/// <summary>Shows a review log path as its file name.</summary>
+	public static FuncValueConverter<string?, string?> FileNameOnly { get; } =
+		new(path => path is null ? null : Path.GetFileNameWithoutExtension(path));
+
+	/// <summary>Project screen whose tab list this panel shows: changed files or review logs.</summary>
+	public ProjectScreenViewModel? ProjectScreen
+	{
+		get;
+		set
+		{
+			if (ReferenceEquals(field, value))
+			{
+				return;
+			}
+
+			field?.PropertyChanged -= OnProjectScreenPropertyChanged;
+			_screenChanges?.PropertyChanged -= OnScreenChangesPropertyChanged;
+			field = value;
+			_screenChanges = value?.Changes;
+			field?.PropertyChanged += OnProjectScreenPropertyChanged;
+			_screenChanges?.PropertyChanged += OnScreenChangesPropertyChanged;
+			RefreshProjectList();
+		}
+	}
+
+	private ProjectChangesViewModel? _screenChanges;
+
+	private void OnProjectScreenPropertyChanged(object? sender, PropertyChangedEventArgs e)
+	{
+		if (e.PropertyName is nameof(ProjectScreenViewModel.SelectedTab)
+			or nameof(ProjectScreenViewModel.ReviewLogs)
+			or nameof(ProjectScreenViewModel.SelectedReviewLog))
+		{
+			RefreshProjectList();
+		}
+	}
+
+	private void OnScreenChangesPropertyChanged(object? sender, PropertyChangedEventArgs e)
+	{
+		if (e.PropertyName is nameof(ProjectChangesViewModel.Files)
+			or nameof(ProjectChangesViewModel.SelectedFile))
+		{
+			RefreshProjectList();
+		}
+	}
+
+	private void RefreshProjectList()
+	{
+		var tab = ProjectScreen?.SelectedTab;
+		var showsFiles = tab == ProjectScreenTab.Changes && _screenChanges is not null;
+		var showsLogs = tab == ProjectScreenTab.ReviewLogs;
+		ProjectListSection.IsVisible = showsFiles || showsLogs;
+		ProjectListTitle.Text = showsFiles ? "Changed files" : "Review logs";
+		ChangedFilesList.IsVisible = showsFiles;
+		ReviewLogList.IsVisible = showsLogs;
+		_syncingSelection = true;
+		try
+		{
+			ChangedFilesList.ItemsSource = showsFiles ? _screenChanges!.Files : null;
+			ChangedFilesList.SelectedItem = showsFiles ? _screenChanges!.SelectedFile : null;
+			ReviewLogList.ItemsSource = showsLogs ? ProjectScreen!.ReviewLogs : null;
+			ReviewLogList.SelectedItem = showsLogs ? ProjectScreen!.SelectedReviewLog : null;
+		}
+		finally
+		{
+			_syncingSelection = false;
+		}
+
+		RefreshListRows();
+	}
+
+	private void OnChangedFileSelectionChanged(object? sender, SelectionChangedEventArgs e)
+	{
+		if (_syncingSelection || _screenChanges is not { } changes
+			|| ChangedFilesList.SelectedItem is not ChangedFileViewModel file
+			|| ReferenceEquals(file, changes.SelectedFile))
+		{
+			return;
+		}
+
+		RunSelection(() => changes.SelectFileAsync(file, CancellationToken.None));
+	}
+
+	private void OnReviewLogSelectionChanged(object? sender, SelectionChangedEventArgs e)
+	{
+		if (_syncingSelection || ProjectScreen is not { } screen
+			|| ReviewLogList.SelectedItem is not string log
+			|| string.Equals(log, screen.SelectedReviewLog, StringComparison.Ordinal))
+		{
+			return;
+		}
+
+		RunSelection(() => screen.SelectReviewLogAsync(log, CancellationToken.None));
+	}
+
+	internal void ConfigureLifecycle(ObservedTaskGroup eventTasks) =>
+		_eventTasks = eventTasks ?? throw new ArgumentNullException(nameof(eventTasks));
+
+	private ObservedTaskGroup _eventTasks = new(static (_, _) => Task.CompletedTask);
+
+	private void RunSelection(Func<Task> selection) =>
+		_eventTasks.TryRun("right-panel-project-list", selection, static _ => Task.CompletedTask);
+
 	/// <summary>Documentation workspace whose tree this panel renders, if any.</summary>
 	public DocsAndNotesWorkspaceViewModel? Workspace
 	{
@@ -123,17 +228,8 @@ internal sealed partial class RightActionsPanel : UserControl
 
 	private void RefreshDocumentTree()
 	{
-		var showsTree = Workspace?.ShowsDocumentTree == true;
-		DocumentsSection.IsVisible = showsTree;
-		// A hidden child still leaves a star row occupying the remaining height,
-		// so the row itself has to collapse.
-		DefaultActionsPanel.RowDefinitions[1].Height = showsTree
-			? new GridLength(1, GridUnitType.Star)
-			: new GridLength(0);
-		// Without the tree, the free space sits between the Changes entry and the tab details.
-		DefaultActionsPanel.RowDefinitions[4].Height = showsTree
-			? new GridLength(0)
-			: new GridLength(1, GridUnitType.Star);
+		DocumentsSection.IsVisible = Workspace?.ShowsDocumentTree == true;
+		RefreshListRows();
 		_syncingSelection = true;
 		try
 		{
@@ -144,6 +240,20 @@ internal sealed partial class RightActionsPanel : UserControl
 		{
 			_syncingSelection = false;
 		}
+	}
+
+	// The docs tree and the project list share one row. A hidden child still leaves a star row
+	// occupying the remaining height, so the row itself has to collapse; without a list, the
+	// free space sits between the Changes entry and the tab details.
+	private void RefreshListRows()
+	{
+		var showsList = DocumentsSection.IsVisible || ProjectListSection.IsVisible;
+		DefaultActionsPanel.RowDefinitions[1].Height = showsList
+			? new GridLength(1, GridUnitType.Star)
+			: new GridLength(0);
+		DefaultActionsPanel.RowDefinitions[4].Height = showsList
+			? new GridLength(0)
+			: new GridLength(1, GridUnitType.Star);
 	}
 
 	private void OnDocumentTreeSelectionChanged(object? sender, SelectionChangedEventArgs e)

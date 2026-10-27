@@ -13,7 +13,6 @@ internal sealed partial class ProjectScreenView : UserControl
 	private ObservedTaskGroup _eventTasks = new(static (_, _) => Task.CompletedTask);
 	private ProjectScreenViewModel? _screen;
 	private ProjectChangesViewModel? _changes;
-	private bool _syncing;
 
 	private static readonly TimeSpan LogReloadInterval = TimeSpan.FromSeconds(2);
 	private readonly DispatcherTimer _logReloadTimer;
@@ -55,28 +54,19 @@ internal sealed partial class ProjectScreenView : UserControl
 		_changes?.PropertyChanged += OnChangesPropertyChanged;
 		RefreshTab();
 		RefreshChanges();
-		RefreshReviewLogSelection();
 	}
 
 	private void OnScreenPropertyChanged(object? sender, PropertyChangedEventArgs e)
 	{
-		switch (e.PropertyName)
+		if (e.PropertyName == nameof(ProjectScreenViewModel.SelectedTab))
 		{
-			case nameof(ProjectScreenViewModel.SelectedTab):
-				RefreshTab();
-				break;
-			case nameof(ProjectScreenViewModel.SelectedReviewLog):
-			case nameof(ProjectScreenViewModel.ReviewLogs):
-				RefreshReviewLogSelection();
-				break;
+			RefreshTab();
 		}
 	}
 
 	private void OnChangesPropertyChanged(object? sender, PropertyChangedEventArgs e)
 	{
-		if (e.PropertyName is nameof(ProjectChangesViewModel.SelectedFile)
-			or nameof(ProjectChangesViewModel.Files)
-			or nameof(ProjectChangesViewModel.DiffPlaceholder)
+		if (e.PropertyName is nameof(ProjectChangesViewModel.DiffPlaceholder)
 			or nameof(ProjectChangesViewModel.HiddenLineCount))
 		{
 			RefreshChanges();
@@ -96,31 +86,8 @@ internal sealed partial class ProjectScreenView : UserControl
 
 	private void RefreshChanges()
 	{
-		_syncing = true;
-		try
-		{
-			ChangedFilesList.SelectedItem = _changes?.SelectedFile;
-		}
-		finally
-		{
-			_syncing = false;
-		}
-
 		DiffPlaceholderText.IsVisible = _changes?.DiffPlaceholder is not null;
 		ShowAllButton.IsVisible = _changes?.HiddenLineCount > 0;
-	}
-
-	private void RefreshReviewLogSelection()
-	{
-		_syncing = true;
-		try
-		{
-			ReviewLogList.SelectedItem = _screen?.SelectedReviewLog;
-		}
-		finally
-		{
-			_syncing = false;
-		}
 	}
 
 	private void OnOverviewTabClicked(object? sender, RoutedEventArgs e) => SelectTab(ProjectScreenTab.Overview);
@@ -137,30 +104,6 @@ internal sealed partial class ProjectScreenView : UserControl
 		{
 			_eventTasks.TryRun("project-screen-tab", () => screen.SelectTabAsync(tab, CancellationToken.None), static _ => Task.CompletedTask);
 		}
-	}
-
-	private void OnChangedFileSelectionChanged(object? sender, SelectionChangedEventArgs e)
-	{
-		if (_syncing || _changes is not { } changes
-			|| ChangedFilesList.SelectedItem is not ChangedFileViewModel file
-			|| ReferenceEquals(file, changes.SelectedFile))
-		{
-			return;
-		}
-
-		_eventTasks.TryRun("project-screen-file", () => changes.SelectFileAsync(file, CancellationToken.None), static _ => Task.CompletedTask);
-	}
-
-	private void OnReviewLogSelectionChanged(object? sender, SelectionChangedEventArgs e)
-	{
-		if (_syncing || _screen is not { } screen
-			|| ReviewLogList.SelectedItem is not string log
-			|| string.Equals(log, screen.SelectedReviewLog, StringComparison.Ordinal))
-		{
-			return;
-		}
-
-		_eventTasks.TryRun("project-screen-log", () => screen.SelectReviewLogAsync(log, CancellationToken.None), static _ => Task.CompletedTask);
 	}
 
 	private void OnShowAllClicked(object? sender, RoutedEventArgs e) => _changes?.ShowAllLines();

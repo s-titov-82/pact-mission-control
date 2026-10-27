@@ -3,9 +3,11 @@ using Avalonia.Controls;
 using Avalonia.Headless.NUnit;
 using Avalonia.Interactivity;
 using Avalonia.LogicalTree;
-
+using Avalonia.Threading;
 using Pact.App.Avalonia.Views;
 using Pact.Core.Git;
+using Pact.Core.Projects;
+using Pact.Infrastructure.Storage;
 using Pact.Presentation.ViewModels;
 
 namespace Pact.App.Avalonia.Tests.Views;
@@ -117,15 +119,115 @@ public sealed class RightActionsPanelHeadlessTests
 		}
 	}
 
+	[AvaloniaTest]
+	public async Task The_changes_tab_lists_the_changed_files_above_quick_actions()
+	{
+		using var root = TemporaryDirectory.Create();
+		using var changes = Changes(Files("a.cs", "b.cs"), added: 1, removed: 1, root.Path);
+		var screen = Screen(root.Path, changes);
+		await screen.SelectTabAsync(ProjectScreenTab.Changes, CancellationToken.None);
+		RightActionsPanel panel = new() { Changes = changes, ProjectScreen = screen };
+		Window window = new() { Content = panel, Height = 800 };
+		window.Show();
+		try
+		{
+			window.UpdateLayout();
+			var list = panel.FindControl<ListBox>("ChangedFilesList")!;
+
+			list.IsEffectivelyVisible.ShouldBeTrue();
+			list.ItemCount.ShouldBe(2);
+			panel.FindControl<ListBox>("ReviewLogList")!.IsVisible.ShouldBeFalse();
+			Top(panel.FindControl<Control>("QuickActionsList")!, panel).ShouldBeGreaterThan(Top(list, panel));
+			panel.FindControl<Control>("ChangesEntry")!.IsVisible.ShouldBeTrue();
+
+			list.SelectedItem = changes.Files[1];
+
+			changes.SelectedFile.ShouldBeSameAs(changes.Files[1]);
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[AvaloniaTest]
+	public async Task The_review_logs_tab_lists_the_logs_and_opens_the_picked_one()
+	{
+		using var root = TemporaryDirectory.Create();
+		var folder = Path.Combine(root.Path, ".pact", "reviews");
+		Directory.CreateDirectory(folder);
+		await File.WriteAllTextAsync(Path.Combine(folder, "2026-10-26-1200-a.md"), "# A");
+		await File.WriteAllTextAsync(Path.Combine(folder, "2026-10-26-1300-b.md"), "# B");
+		var screen = Screen(root.Path, changes: null);
+		await screen.SelectTabAsync(ProjectScreenTab.ReviewLogs, CancellationToken.None);
+		RightActionsPanel panel = new() { ProjectScreen = screen };
+		Window window = new() { Content = panel, Height = 800 };
+		window.Show();
+		try
+		{
+			window.UpdateLayout();
+			var list = panel.FindControl<ListBox>("ReviewLogList")!;
+
+			list.IsEffectivelyVisible.ShouldBeTrue();
+			list.ItemCount.ShouldBe(2);
+			panel.FindControl<ListBox>("ChangedFilesList")!.IsVisible.ShouldBeFalse();
+
+			list.SelectedItem = ".pact/reviews/2026-10-26-1200-a.md";
+
+			await EventuallyAsync(() => screen.ReviewLogText == "# A");
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[AvaloniaTest]
+	public void The_overview_shows_no_project_list()
+	{
+		using var root = TemporaryDirectory.Create();
+		RightActionsPanel panel = new() { ProjectScreen = Screen(root.Path, changes: null) };
+		Window window = new() { Content = panel, Height = 800 };
+		window.Show();
+		try
+		{
+			window.UpdateLayout();
+
+			panel.FindControl<Control>("ProjectListSection")!.IsVisible.ShouldBeFalse();
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	private static ProjectScreenViewModel Screen(string root, ProjectChangesViewModel? changes)
+	{
+		var now = DateTimeOffset.UtcNow;
+		WorkspaceViewModel workspace = new(new ProjectRecord("p1", "Pact", root, now, now, null), _ => changes is not null);
+		return new ProjectScreenViewModel(workspace, changes, new ProjectMarkdownFileStore());
+	}
+
+	private static async Task EventuallyAsync(Func<bool> condition)
+	{
+		for (var attempt = 0; attempt < 100 && !condition(); attempt++)
+		{
+			await Task.Delay(20);
+			Dispatcher.UIThread.RunJobs();
+		}
+
+		condition().ShouldBeTrue();
+	}
+
 	private static double Top(Control control, Control root) =>
 		control.TranslatePoint(new Point(0, 0), root)!.Value.Y;
 
 	private static GitFileEntry[] Files(params string[] paths) =>
 		paths.Select(path => new GitFileEntry(path, null, GitChangeKind.Modified)).ToArray();
 
-	private static ProjectChangesViewModel Changes(GitFileEntry[] files, int added, int removed)
+	private static ProjectChangesViewModel Changes(GitFileEntry[] files, int added, int removed, string root = "C:\\repo")
 	{
-		ProjectChangesViewModel changes = new("C:\\repo", new FixedReader(files, added, removed), TimeProvider.System, action => action());
+		ProjectChangesViewModel changes = new(root, new FixedReader(files, added, removed), TimeProvider.System, action => action());
 		changes.Observe();
 		return changes;
 	}

@@ -109,6 +109,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 			exception => EngineProbeController.ReportUiFailureAsync("Notes", exception),
 			EngineProbeController.ReportDocumentSaveFailureAsync);
 		ProjectScreen.ConfigureLifecycle(eventTasks);
+		RightActions.ConfigureLifecycle(eventTasks);
 		_folderPicker = windowServices.FolderPicker;
 		_settingsFileStore = windowServices.SettingsFileStore;
 		_projectSettingsEditor = windowServices.ProjectSettingsEditor;
@@ -158,6 +159,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 			exception => EngineProbeController.ReportUiFailureAsync("Notes", exception),
 			EngineProbeController.ReportDocumentSaveFailureAsync);
 		ProjectScreen.ConfigureLifecycle(_eventTasks);
+		RightActions.ConfigureLifecycle(_eventTasks);
 		_folderPicker = folderPicker;
 		_settingsFileStore = settingsFileStore;
 		_projectSettingsEditor = projectSettingsEditor;
@@ -1334,6 +1336,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 		TerminalLoadingSurface.IsVisible = visibility.TerminalLoading;
 		NotesPane.IsVisible = visibility.Notes;
 		ProjectScreen.DataContext = EngineProbeController.CurrentProjectScreen;
+		RightActions.ProjectScreen = EngineProbeController.CurrentProjectScreen;
 		ProjectScreen.IsVisible = visibility.Project;
 		PausedPane.IsVisible = visibility.Paused;
 		PausedCaption.Text = PausedPlaceholderText.For(EngineProbeController.PresentedSurface);
@@ -1463,6 +1466,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 		NotesPane.DetachEventProducers();
 		RightActions.Workspace = null;
 		RightActions.Changes = null;
+		RightActions.ProjectScreen = null;
 		if (_gitFlyout?.Content is GitPanelView gitPanel)
 		{
 			gitPanel.DetachEventProducers();

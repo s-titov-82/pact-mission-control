@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:Pact.Presentation.ViewModels;assembly=Pact.Presentation"
+             xmlns:local="clr-namespace:Pact.App.Avalonia.Views"
              x:Class="Pact.App.Avalonia.Views.RightActionsPanel"
              x:CompileBindings="False">
   <Grid Margin="20,18" RowDefinitions="Auto,*">
@@ -38,6 +39,38 @@
             </TreeDataTemplate>
           </TreeView.ItemTemplate>
         </TreeView>
+      </Grid>
+      <Grid x:Name="ProjectListSection" Grid.Row="1" Margin="0,20,0,0"
+            RowDefinitions="Auto,*" IsVisible="False">
+        <TextBlock x:Name="ProjectListTitle" FontWeight="SemiBold" />
+        <ListBox x:Name="ChangedFilesList" Grid.Row="1" Margin="0,8,0,0"
+                 SelectionChanged="OnChangedFileSelectionChanged">
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <Grid ColumnDefinitions="16,*,Auto" ToolTip.Tip="{Binding Path}">
+                <TextBlock FontFamily="Cascadia Mono, Consolas, monospace" FontWeight="SemiBold"
+                           Text="{Binding StatusLetter}" />
+                <StackPanel Grid.Column="1">
+                  <TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Foreground="{DynamicResource AppTextMutedBrush}" FontSize="11"
+                             Text="{Binding Folder}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <TextBlock Grid.Column="2" Margin="6,0,0,0" FontSize="10" VerticalAlignment="Center"
+                           Foreground="{DynamicResource AppTextMutedBrush}" Text="staged"
+                           IsVisible="{Binding IsStaged}" />
+              </Grid>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+        <ListBox x:Name="ReviewLogList" Grid.Row="1" Margin="0,8,0,0"
+                 SelectionChanged="OnReviewLogSelectionChanged">
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <TextBlock Text="{Binding Converter={x:Static local:RightActionsPanel.FileNameOnly}}"
+                         TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding}" />
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
       </Grid>
       <StackPanel Grid.Row="2">
         <TextBlock Margin="0,20,0,0" FontWeight="SemiBold" Text="Quick actions" />
