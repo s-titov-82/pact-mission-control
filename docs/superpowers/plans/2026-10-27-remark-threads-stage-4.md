@@ -28,7 +28,7 @@
 
 ## Review Focus
 
-1. The diff on screen is older than the file on disk when the user adds a remark (an agent edited the file meanwhile): the remark must not capture a line the user did not see. Expected: refused with `The file changed; wait for the diff to refresh.` Pinned in Task 7 (`A_remark_on_a_line_the_file_no_longer_has_is_refused`).
+1. The diff on screen is older than the file on disk when the user adds a remark or a placement runs (an agent edited the file meanwhile, possibly deleting one of two identical blocks): the remark must anchor to exactly the revision the user saw, and a marker must never land on another row of the shown diff. Expected: anchors and on-screen placement use the file text the shown diff was built from (Task 6A), never the disk; a pick still loading takes no remark. Pinned in Task 6A and Task 7.
 2. `remarks.json` that cannot be parsed: remarks must not vanish silently. Expected: the file is set aside as `remarks.json.broken-<yyyyMMddHHmmss>`, the book starts empty, and the status line says so. Pinned in Task 3 and Task 7.
 3. An agent reply arrives while the user types a reply in the open overlay: the typed text must stay. Pinned in Task 8 (`An_agent_reply_keeps_the_text_being_typed`).
 4. A file with CRLF line endings: the snapshot and the current file are compared after removing `\r`, so line endings never outdate a remark. Pinned in Task 2.
@@ -49,7 +49,9 @@
   - `enum RemarkAuthor { User, Agent }`, `enum RemarkDelivery { Draft, Sending, Sent, Uncertain }` (agent messages are `Sent`).
   - `record RemarkMessage(string Id, RemarkAuthor Author, string Text, DateTimeOffset At, RemarkDelivery Delivery, string? SessionId)`.
   - `enum RemarkThreadState { Draft, Sent, DeliveryUncertain, Answered, Resolved }`.
-  - `record RemarkThread(string Id, RemarkAnchor Anchor, IReadOnlyList<RemarkMessage> Messages, bool IsResolved)` with `RemarkThreadState State`, `RemarkMessage? Draft` (the single user Draft message, if any) and `string? LastSessionId` (session of the newest sent user message).
+  - `record RemarkThread(string Id, RemarkAnchor Anchor, IReadOnlyList<RemarkMessage> Messages, bool IsResolved)` with `RemarkThreadState State`, `IReadOnlyList<RemarkMessage> Unsent` (every user Draft message, in order), `RemarkMessage? EditableDraft` (the newest Draft, the one the draft box edits) and `string? LastSessionId` (session of the newest sent user message).
+
+A thread may hold several Draft messages: a failed delivery hands its message back as a Draft while the user may already have typed a newer one. Nothing is merged or overwritten; every Draft goes out with the next send, in order.
 
 State rule, in this order: `IsResolved` → Resolved; an Uncertain user message with no agent message after it → DeliveryUncertain; a Draft message → Draft; the newest message by the agent → Answered; otherwise Sent.
 
@@ -61,6 +63,7 @@ State rule, in this order: `IsResolved` → Resolved; an Uncertain user message 
   - `Uncertain_delivery_shows_until_the_agent_answers` (user Uncertain → DeliveryUncertain; user Uncertain + agent → Answered).
   - `Resolved_wins_over_everything` (IsResolved with a Draft → Resolved).
   - `The_last_session_is_the_one_the_newest_sent_message_went_to`.
+  - `Several_drafts_are_all_unsent_and_the_newest_is_editable`.
 - [ ] **Step 2: Run, expect FAIL** (types missing). Filter `FullyQualifiedName~RemarkThreadTests`.
 - [ ] **Step 3: Implement the records and the derived properties.**
 - [ ] **Step 4: Run, expect PASS.**
@@ -147,14 +150,16 @@ State rule, in this order: `IsResolved` → Resolved; an Uncertain user message 
     - `string ProjectRoot`; `Task<IReadOnlyList<string>?> LoadSnapshotLinesAsync(string snapshotId, CancellationToken)` (passes through to the store).
     - `event EventHandler? Changed` — raised on the calling thread after a change is saved.
     - `IReadOnlyList<RemarkThread> Threads` — immutable snapshot; `string? SetAsideFile` from the load.
-    - `Task EnsureLoadedAsync(CancellationToken)` — loads once; every other method awaits it first.
+    - `Task EnsureLoadedAsync(CancellationToken)` — loads once; every other method awaits it first. A message stored as Sending is loaded as Uncertain and saved so: Pact stopped between the start and the end of a delivery, so the text may or may not have reached the terminal. It is never turned back into a Draft automatically; the user picks `Send again` or `Mark as sent`.
     - `Task<RemarkThread> AddAsync(RemarkAnchor anchor, string? capturedText, string text, CancellationToken)` — assigns `C{NextNumber}`, stores the snapshot for a New anchor and sets `SnapshotId`, and adds one user Draft message.
-    - `Task SaveDraftAsync(string threadId, string text, CancellationToken)` — creates or replaces the thread's single Draft; whitespace text removes the draft, and a thread left with no messages is removed (its id is not reused).
+    - `Task SaveDraftAsync(string threadId, string text, CancellationToken)` — replaces the text of the thread's `EditableDraft`, or adds a new Draft when it has none; whitespace text removes that one draft only, and a thread left with no messages is removed (its id is not reused). Older Drafts (handed back by a failed delivery) are never touched by it.
+    - `Task DiscardUnsentAsync(string threadId, string messageId, CancellationToken)` — removes one Draft message, with the same empty-thread rule.
     - `Task ResolveAsync(string threadId, CancellationToken)`, `Task ReopenAsync(string threadId, CancellationToken)`.
     - `Task<RemarkReply> AgentReplyAsync(string threadId, string text, bool resolve, CancellationToken)`; `record RemarkReply(bool Found, IReadOnlyList<string> OpenIds)`. Resolve sets `IsResolved`; without it a resolved thread is reopened by the answer.
-    - `Task<RemarkBatch?> BeginSendAsync(string sessionId, CancellationToken)` — every Draft message (of unresolved threads) becomes Sending with that session; null when there is none. `record RemarkBatch(string SessionId, IReadOnlyList<RemarkBatchItem> Items)`, `record RemarkBatchItem(RemarkThread Thread, RemarkMessage Message)` (the thread as it was before this message).
-    - `Task CompleteSendAsync(RemarkBatch batch, PromptDeliveryResult result, CancellationToken)` — changes only the batch's messages, by message id, and only while they are still Sending (the mapping is in Global Constraints).
-    - `Task RetryAsync(string threadId, CancellationToken)` (Uncertain → Draft), `Task MarkSentAsync(string threadId, CancellationToken)` (Uncertain → Sent).
+    - `Task<RemarkBatch?> BeginSendAsync(string sessionId, CancellationToken)` — every Draft message (of unresolved threads) becomes Sending with that session; null when there is none. `record RemarkBatch(string SessionId, IReadOnlyList<RemarkBatchItem> Items)`, `record RemarkBatchItem(RemarkThread Thread, IReadOnlyList<RemarkMessage> Messages)` — one item per thread, its batched messages in order, and the thread as it was before them.
+    - `Task CompleteSendAsync(RemarkBatch batch, PromptDeliveryResult result, CancellationToken)` — changes only the batch's messages, by message id, and only while they are still Sending (the mapping is in Global Constraints). A message handed back as Draft keeps its place in the thread, so a newer Draft typed meanwhile stays a separate, newer message.
+    - `Task AbandonSendAsync(RemarkBatch batch, bool mayHaveWritten, CancellationToken)` — for a send that ended by an exception: Sending → Draft when nothing can have been written, else → Uncertain.
+    - `Task RetryAsync(string threadId, CancellationToken)` (every Uncertain message → Draft, in place), `Task MarkSentAsync(string threadId, CancellationToken)` (Uncertain → Sent).
   - `sealed class RemarkBooks(TimeProvider time) { RemarkBook For(string projectRoot) }` — one book per full root path, case-insensitive, each over a `new RemarkFileStore(projectRoot)`.
 - All mutations run under one `SemaphoreSlim` and save before `Changed` is raised.
 
@@ -166,7 +171,11 @@ State rule, in this order: `IsResolved` → Resolved; an Uncertain user message 
   - `A_late_delivery_result_does_not_undo_a_resolve` (same with `resolve: true` → Resolved).
   - `A_reply_drafted_during_delivery_stays_a_draft` (begin send; draft a reply on the same thread; complete with Confirmed → the new reply is still Draft, the batched message is Sent).
   - `Nothing_written_puts_the_messages_back_to_draft` (`NotRunning`, `WriteAttempted: false`).
+  - `Nothing_written_keeps_a_newer_draft_separate` (begin send of A; draft B on the same thread; complete with nothing written → A and B are both Draft, A before B, `EditableDraft` is B; the next batch carries A then B).
   - `Written_but_not_submitted_is_delivery_uncertain_and_can_be_retried_or_marked_sent`.
+  - `Retrying_an_uncertain_message_keeps_a_newer_draft` (A Uncertain, B Draft; retry → both Draft, B still editable).
+  - `A_sending_message_left_by_a_stopped_pact_loads_as_uncertain` (begin send, then a new book over the same folder → Uncertain, and saved so).
+  - `An_abandoned_send_is_draft_before_writing_and_uncertain_after`.
   - `An_unknown_id_lists_the_open_ones` (`AgentReplyAsync("C9", ...)` → `Found: false`, `OpenIds` `["C1"]` when C1 is open and C2 resolved).
   - `Changes_are_saved_before_changed_is_raised` (in the handler, a new `RemarkFileStore` load sees the change).
 - [ ] **Step 2: Run, expect FAIL.**
@@ -185,8 +194,10 @@ State rule, in this order: `IsResolved` → Resolved; an Uncertain user message 
 **Interfaces:**
 - Consumes: Tasks 1–4.
 - Produces:
-  - `record RemarkPlacement(int? Line, bool IsOutdated)` (Presentation) and `static class RemarkPlacer` with `Task<RemarkPlacement> PlaceAsync(RemarkBook book, RemarkThread thread, string? headCommit, CancellationToken)`. New side: read the current file under `book.ProjectRoot` (missing → outdated) and the snapshot through `book.LoadSnapshotLinesAsync` (missing → outdated), then `LocateNew`. Old side: `IsOldValid` → its own line, else outdated.
-  - `record RemarkPromptEntry(RemarkThread Thread, RemarkMessage Message, int Line, bool IsOutdated)` and `static class RemarkPrompt { string Compose(IReadOnlyList<RemarkPromptEntry> entries) }` (Core). `Line` is the current line when placed, else the captured one.
+  - `record RemarkPlacement(int? Line, bool IsOutdated)` (Presentation) and `static class RemarkPlacer`:
+    - `Task<RemarkPlacement> PlaceInTextAsync(RemarkBook book, RemarkThread thread, IReadOnlyList<string>? newLines, string? headCommit, CancellationToken)` — New side: the snapshot through `book.LoadSnapshotLinesAsync` (missing → outdated) and `LocateNew` against `newLines` (null → outdated). Old side: `IsOldValid` against `headCommit` → its own line, else outdated.
+    - `Task<RemarkPlacement> PlaceOnDiskAsync(RemarkBook book, RemarkThread thread, string? headCommit, CancellationToken)` — the same against the current file under `book.ProjectRoot` (missing → outdated). Used for the prompt and MCP, which speak about the file as it is now; the diff on screen uses `PlaceInTextAsync` with the shown text (Task 7).
+  - `record RemarkPromptEntry(RemarkThread Thread, IReadOnlyList<RemarkMessage> NewMessages, int Line, bool IsOutdated)` and `static class RemarkPrompt { string Compose(IReadOnlyList<RemarkPromptEntry> entries) }` (Core). `Line` is the current line when placed, else the captured one.
 
 Prompt layout (wording is the builder's call; the head lines are fixed in Global Constraints):
 
@@ -203,11 +214,11 @@ agent: <earlier agent message>
 you: <new text>
 ```
 
-A reply has `reply` in place of the text in its head line, then the earlier messages (Draft ones excluded) and the new one. Lines after the first in a message are indented by two spaces. The empty tree reads `of the empty tree`.
+A thread whose only new message is its first one carries that text in its head line. Any other thread (a reply, or several new messages after a failed delivery) has `reply` in its head line, then the earlier messages (Draft ones excluded), then every new message as `you: …`, in order. Lines after the first in a message are indented by two spaces. The empty tree reads `of the empty tree`.
 
 - [ ] **Step 1: Write the failing tests**
-  - `RemarkPromptTests`: `A_first_remark_has_its_head_line_and_the_quoted_line`, `An_old_side_remark_names_the_commit`, `The_empty_tree_is_named`, `An_outdated_thread_is_labelled`, `A_reply_lists_the_earlier_messages_above_the_new_one`, `Multi_line_text_is_indented` — exact strings.
-  - `RemarkPlacerTests`: `A_new_side_remark_follows_its_line_in_the_current_file`, `A_deleted_file_outdates_a_new_side_remark`, `An_old_side_remark_outdates_when_head_moves` (the spec's "old side after a commit" case).
+  - `RemarkPromptTests`: `A_first_remark_has_its_head_line_and_the_quoted_line`, `An_old_side_remark_names_the_commit`, `The_empty_tree_is_named`, `An_outdated_thread_is_labelled`, `A_reply_lists_the_earlier_messages_above_the_new_one`, `Two_new_messages_go_out_together_in_order`, `Multi_line_text_is_indented` — exact strings.
+  - `RemarkPlacerTests`: `A_new_side_remark_follows_its_line_in_the_current_file`, `A_new_side_remark_follows_its_line_in_given_text`, `A_deleted_file_outdates_a_new_side_remark`, `An_old_side_remark_outdates_when_head_moves` (the spec's "old side after a commit" case).
 - [ ] **Step 2: Run, expect FAIL.**
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run, expect PASS.**
@@ -225,7 +236,7 @@ A reply has `reply` in place of the text in its head line, then the earlier mess
 - Test: `tests/Pact.Presentation.Tests/Services/AgentControl/SessionToolsTests.cs`, `tests/Pact.Presentation.Tests/Services/AgentControl/RemarkToolsTests.cs`, `tests/Pact.Infrastructure.Tests/AgentControl/PactSkillPublisherTests.cs`
 
 **Interfaces:**
-- Consumes: `RemarkBooks`, `RemarkBook`, `RemarkPlacer` (Tasks 4–5).
+- Consumes: `RemarkBooks`, `RemarkBook`, `RemarkPlacer.PlaceOnDiskAsync` (Tasks 4–5).
 - Produces: `sealed class RemarkTools(AgentControlDispatcher dispatcher, RemarkBooks books, Func<string, CancellationToken, Task<string?>> readHead, Func<string, Task> reportStatusAsync)` with `IReadOnlyList<AgentControlTool> Create()`. `readHead(projectRoot)` gives the HEAD commit, or null when unborn.
   - `pact_reply_remark` — required `id` and `text` strings, optional boolean `resolve`. An unknown id is refused with code `unknown-remark`: `No remark C9 in this project. Open remarks: C1, C3.` (or `There are no open remarks.`). Success text `Reply recorded.`; status `Agent action: remark answered`.
   - `pact_list_remarks` — optional `state` enum `open` (default, not resolved), `draft`, `sent`, `uncertain`, `answered`, `resolved`, `all`. Returns a JSON array of `{ id, path, side, line, lineText, baseCommit, outdated, state, messages: [{ author, text }] }`; Draft messages and threads that hold only a Draft are left out.
@@ -242,6 +253,36 @@ A reply has `reply` in place of the text in its head line, then the earlier mess
 
 ---
 
+### Task 6A: The shown diff carries the file text it was built from
+
+A remark must anchor to the revision the user saw, and markers must sit on the rows of the diff on screen, not on wherever the line is on disk by now. Today `SelectedFile` is published before its rows arrive, and nothing records which file text the rows describe.
+
+**Files:**
+- Modify: `src/Pact.Infrastructure/Git/GitWorkingTreeReader.cs` (interface and class)
+- Modify: `src/Pact.Presentation/ViewModels/ProjectChangesViewModel.cs`
+- Modify: every test fake of `IGitWorkingTreeReader` (`ProjectScreenViewHeadlessTests.OneFileReader`, the readers in `ProjectChangesViewModelTests`, `RightActionsPanelHeadlessTests`, the controller and composition fixtures): `ReadWorkingTextAsync` returns null unless the test sets text.
+- Test: `tests/Pact.Infrastructure.Tests/Git/GitWorkingTreeReaderTests.cs`, `tests/Pact.Presentation.Tests/ViewModels/ProjectChangesViewModelTests.cs`
+
+**Interfaces:**
+- Produces:
+  - `IGitWorkingTreeReader.ReadWorkingTextAsync(string root, string path, CancellationToken) → Task<string?>` — the working-tree file as UTF-8 text; null when missing, larger than `MaxFileBytes`, or binary (the same probe the untracked read uses).
+  - `sealed record ShownDiff(string Path, string? HeadCommit, IReadOnlyList<DiffRowViewModel> Rows, IReadOnlyList<string>? NewLines)` and `ProjectChangesViewModel.ShownDiff` (`ShownDiff?`). `Rows` is the very list published as `DiffRows` in the same `ApplyDiff`; `NewLines` (through `RemarkLocator.SplitLines`) is the text the diff was built from, or null for a deleted file, a placeholder, or a file that changed while it was read.
+  - Reading a diff becomes: text → diff → text again; the two texts differ → `NewLines` null (the file-change signal brings the next refresh).
+  - `SelectFileAsync` sets `ShownDiff` to null before it awaits, so the rows of the previous pick never count as the new file's; `ShowAllLines` keeps `NewLines`.
+
+- [ ] **Step 1: Write the failing tests**
+  - `Working_text_is_read_and_binary_or_missing_gives_null` (Infrastructure).
+  - `The_shown_diff_carries_the_text_it_was_built_from` (same rows reference as `DiffRows`, head, lines).
+  - `A_file_that_changes_while_it_is_read_shows_no_text` (the fake returns different text on its second read).
+  - `A_pick_still_loading_has_no_shown_diff` (gate `ReadDiffAsync` on a `TaskCompletionSource`; after `SelectFileAsync` starts and before release, `ShownDiff` is null while `DiffRows` still holds the previous file).
+  - `Show_all_keeps_the_text`.
+- [ ] **Step 2: Run, expect FAIL.**
+- [ ] **Step 3: Implement.**
+- [ ] **Step 4: Run `GitWorkingTreeReaderTests`, `ProjectChangesViewModelTests` and the existing headless tests that use the fakes; expect PASS.**
+- [ ] **Step 5: Commit** — `feat: keep the file text a shown diff was built from`
+
+---
+
 ### Task 7: ChangesRemarksViewModel
 
 **Files:**
@@ -250,27 +291,33 @@ A reply has `reply` in place of the text in its head line, then the earlier mess
 - Test: `tests/Pact.Presentation.Tests/ViewModels/ChangesRemarksViewModelTests.cs`
 
 **Interfaces:**
-- Consumes: Tasks 4–5, `ProjectChangesViewModel` (`Files`, `SelectedFile`, `DiffRows`, `HeadCommit`, `ProjectRoot`).
+- Consumes: Tasks 4–6A, `ProjectChangesViewModel` (`Files`, `ShownDiff`, `HeadCommit`, `ProjectRoot`).
 - Produces:
   - `record SessionTarget(string SessionId, string Title)`.
+  - `sealed record RowThreads(ShownDiff ForDiff, IReadOnlyDictionary<int, IReadOnlyList<RemarkThreadViewModel>> ByRow)`.
   - `sealed class ChangesRemarksViewModel(ProjectChangesViewModel changes, RemarkBook book, Func<IReadOnlyList<SessionTarget>> sessions, Func<string, string, CancellationToken, Task<PromptDeliveryResult>> deliver, Action<Action> postToUi) : INotifyPropertyChanged, IDisposable`:
-    - `IReadOnlyDictionary<int, IReadOnlyList<RemarkThreadViewModel>> ThreadsByRow` — threads placed on rows of the shown diff (row index in `DiffRows`); recomputed when the rows, the selected file, HEAD or the book change.
-    - `IReadOnlyList<RemarkThreadViewModel> Elsewhere` — threads of any file that are outdated or whose line is not in the shown rows, newest id first.
+    - `RowThreads? ThreadsByRow` — the shown file's threads placed with `PlaceInTextAsync(book, thread, ShownDiff.NewLines, ShownDiff.HeadCommit)` and put on the row whose `NewNumber` (New) or removed `OldNumber` (Old) matches; recomputed when `ShownDiff` or the book changes. A result is published only while `changes.ShownDiff` is still the `ForDiff` it was computed for; null while `ShownDiff` is null.
+    - `IReadOnlyList<RemarkThreadViewModel> Elsewhere` — threads that are outdated or not on a shown row, newest id first: the shown file's from the in-text placement, other files' from `PlaceOnDiskAsync` with `changes.HeadCommit`.
     - `int OpenCount` (threads not resolved), `int DraftCount`, `string BarText`, `string? StatusText`, `bool CanSend`, `string? SendBlockedReason`, `IReadOnlyList<SessionTarget> SendTargets`.
-    - `bool CanRemarkOn(int row)` — added and context rows (New side, line = `NewNumber`) and removed rows (Old side, line = `OldNumber`, `BaseCommit` = `HeadCommit`); never hunk headers.
-    - `Task<RemarkThreadViewModel?> AddRemarkAsync(int row, string text, CancellationToken)` — for New, reads the file from disk and refuses (`StatusText` = `The file changed; wait for the diff to refresh.`, returns null) unless line `NewNumber` equals the row's text; context is up to 3 lines each side from the file (New) or from the neighbouring rows that have an `OldNumber` (Old).
-    - `Task SendAsync(string sessionId, CancellationToken)` — `BeginSendAsync`, place each item, `RemarkPrompt.Compose`, `deliver`, `CompleteSendAsync`; `StatusText` from `PromptDeliveryText.DescribeUndelivered`, or `Delivery was not confirmed.` for Unconfirmed. `PromptDeliveryText` moves from `src/Pact.App.Avalonia/Controllers` to `src/Pact.Presentation/Services` (namespace `Pact.Presentation.Services`, now `public`); its App callers only change their `using`.
+    - `bool CanRemarkOn(ShownDiff shown, int row)` — false unless `shown` is `changes.ShownDiff`; added and context rows (New side, line = `NewNumber`) need `shown.NewLines`; removed rows (Old side, line = `OldNumber`, `BaseCommit` = `shown.HeadCommit`); never hunk headers.
+    - `Task<RemarkThreadViewModel?> AddRemarkAsync(ShownDiff shown, int row, string text, CancellationToken)` — refuses when `shown` is no longer `changes.ShownDiff` (`The diff changed; try again.`) or a New row has no `NewLines` (`The file is changing; wait for the diff to refresh.`). A New anchor's captured revision is `shown.NewLines` joined by `\n` and its context is up to 3 lines each side from them; an Old anchor's context comes from the neighbouring rows that have an `OldNumber`. The disk is never read here.
+    - `Task SendAsync(string sessionId, CancellationToken)` — `BeginSendAsync`, place each item with `PlaceOnDiskAsync`, `RemarkPrompt.Compose`, `deliver`, `CompleteSendAsync`. An exception before `deliver` is called → `AbandonSendAsync(batch, mayHaveWritten: false)`; an exception from `deliver` → `mayHaveWritten: true`; then it is reported in `StatusText` and not rethrown. `StatusText` from `PromptDeliveryText.DescribeUndelivered`, or `Delivery was not confirmed.` for Unconfirmed. `PromptDeliveryText` moves from `src/Pact.App.Avalonia/Controllers` to `src/Pact.Presentation/Services` (namespace `Pact.Presentation.Services`, now `public`); its App callers only change their `using`.
     - Sets `OpenRemarks` on every `ChangedFileViewModel` in `Files` whenever the files or the book change.
     - Reports `book.SetAsideFile` once in `StatusText`: `The remarks file could not be read; it was kept as <name>.`
-  - `sealed class RemarkThreadViewModel : INotifyPropertyChanged` — `Id`, `StateText`, `IsOutdated`, `LocationText` (`src/X.cs:121` or `src/X.cs, removed line 121`), `Messages` (`RemarkMessageViewModel(string AuthorText, string Text, string? DeliveryText)`; author `You`/`Agent`), `DraftText` (two-way), and `SaveDraftAsync`, `DiscardDraftAsync`, `ResolveAsync`, `ReopenAsync`, `RetryAsync`, `MarkSentAsync`, with `CanResolve`, `CanReopen`, `CanRetry`. One instance per thread id lives as long as the thread, so a refresh updates it in place and never resets `DraftText` while it differs from the stored draft.
+  - `sealed class RemarkThreadViewModel : INotifyPropertyChanged` — `Id`, `StateText`, `IsOutdated`, `LocationText` (`src/X.cs:121` or `src/X.cs, removed line 121`), `Messages` (`RemarkMessageViewModel(string AuthorText, string Text, string? DeliveryText)`; author `You`/`Agent`), `DraftText` (two-way, the `EditableDraft`; older Draft messages show in `Messages` with `DeliveryText` `Not sent yet` and go out with the next send), and `SaveDraftAsync`, `DiscardDraftAsync`, `ResolveAsync`, `ReopenAsync`, `RetryAsync`, `MarkSentAsync`, with `CanResolve`, `CanReopen`, `CanRetry`. One instance per thread id lives as long as the thread, so a refresh updates it in place and never resets `DraftText` while it differs from the stored draft.
   - `SendTargets` is the `sessions()` list; `CanSend` needs `DraftCount > 0` and at least one target, and `SendBlockedReason` is `No session in this project to send to` when there is none.
 
 - [ ] **Step 1: Write the failing tests** (fake reader from the stage 1 tests, temporary root, immediate UI poster, gated `deliver` built on a `TaskCompletionSource`):
   - `A_remark_on_an_added_line_is_placed_on_its_row`.
   - `A_remark_on_a_removed_line_is_old_side_against_head`.
   - `Hunk_headers_take_no_remark`.
-  - `A_remark_on_a_line_the_file_no_longer_has_is_refused`.
+  - `A_remark_anchors_to_the_shown_text_even_after_the_disk_moves_on` (shown text `x; p,q,r; p,q,r; y`; on disk the first block is deleted before the remark is added on the first `q`; the snapshot is the shown text; after the refresh the thread is outdated, not moved to the surviving `q`).
+  - `A_remark_on_a_replaced_shown_diff_is_refused`.
+  - `A_pick_still_loading_takes_no_remark` (gated diff read; `CanRemarkOn` false for the old rows).
+  - `Markers_stay_on_the_shown_rows_when_the_disk_moves_first` (a line is inserted above on disk and a book change arrives before the refresh → the thread stays on its shown row).
+  - `A_late_placement_does_not_land_on_a_newer_diff` (manual UI poster: a book change computes a placement; before the queue drains a new `ShownDiff` is applied; draining publishes nothing for the old diff and `ThreadsByRow.ForDiff` is the new one).
   - `An_outdated_thread_moves_to_elsewhere` (change the line on disk, refresh → the row has no thread, `Elsewhere` holds it with `IsOutdated`).
+  - `A_send_that_fails_before_delivery_returns_the_drafts` and `A_delivery_that_throws_is_uncertain`.
   - `Counts_follow_the_book` (`OpenCount`, `DraftCount`, `BarText` `2 remarks to send`, the file's `OpenRemarks`).
   - `Send_delivers_one_prompt_with_every_draft` (the delivered text holds both head lines; after Confirmed both threads are Sent).
   - `An_agent_answer_during_delivery_stays_answered` (gate the delivery, `AgentReplyAsync` meanwhile, release with Unconfirmed → Answered and `StatusText` `Delivery was not confirmed.`).
@@ -294,7 +341,7 @@ A reply has `reply` in place of the text in its head line, then the earlier mess
 **Interfaces:**
 - Consumes: `ChangesRemarksViewModel`, `RemarkThreadViewModel` (Task 7). The view gets the remarks through `ProjectScreenViewModel.Remarks` (new nullable constructor parameter, wired in Task 10).
 - Produces:
-  - `sealed class DiffRemarkMargin : AbstractMargin` with `SetMarks(Func<int, bool> canRemark, IReadOnlyDictionary<int, IReadOnlyList<RemarkThreadViewModel>> threads)`, `event EventHandler<int>? RowClicked` (row index = document line − 1) and `MarkOf(int line)` → `"+"` (hovered and remarkable), `"thread"`, or `""` for tests. The marker colour follows the worst state of the row: Uncertain (orange), Draft (muted), Sent (accent), Answered (green), Resolved (faint).
+  - `sealed class DiffRemarkMargin : AbstractMargin` with `SetMarks(Func<int, bool> canRemark, IReadOnlyDictionary<int, IReadOnlyList<RemarkThreadViewModel>> threads)` — `ProjectScreenView` passes the marks only while `ThreadsByRow.ForDiff.Rows` is the row list the editor shows and `canRemark` is `row => remarks.CanRemarkOn(shownDiff, row)`; otherwise no marks and no "+". The overlay keeps the `ShownDiff` it opened on and hands it to `AddRemarkAsync`. `event EventHandler<int>? RowClicked` (row index = document line − 1) and `MarkOf(int line)` → `"+"` (hovered and remarkable), `"thread"`, or `""` for tests. The marker colour follows the worst state of the row: Uncertain (orange), Draft (muted), Sent (accent), Answered (green), Resolved (faint).
   - The overlay is a `Canvas` in the same grid cell as `DiffEditor`, above it. `ProjectScreenView` places it at `top = TextView.GetVisualTopByDocumentLine(line + 1) - TextView.ScrollOffset.Y`, or above the line when it would cross the bottom; `left` is the text area's left edge, width `min(640, available)`. It follows `TextView.ScrollOffsetChanged` and hides while its line is scrolled out. It closes on ✕, Esc, a file switch, or when its row's thread disappears.
 
 - [ ] **Step 1: Write the failing headless tests** (FluentTheme plus the AvaloniaEdit style include, as in the existing editor tests):
