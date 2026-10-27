@@ -288,6 +288,42 @@ public sealed class AvaloniaMainShellControllerTests
 	}
 
 	[Test]
+	public async Task Clicking_a_project_row_selects_the_project_instead_of_the_previous_tab()
+	{
+		await using ControllerFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var workspace = fixture.ViewModel.Workspaces.Single();
+		var session = fixture.ViewModel.Sessions[0];
+		await fixture.Controller.SelectSessionAsync(session, startIfNeeded: true, cancellationToken: TestContext.CurrentContext.CancellationToken);
+		fixture.Controller.SelectedTabDetails.ShouldNotBeNull();
+
+		await fixture.Controller.SelectItemAsync(workspace, TestContext.CurrentContext.CancellationToken);
+
+		workspace.IsCurrentProject.ShouldBeTrue();
+		fixture.ViewModel.SelectedSession.ShouldBeNull();
+		session.IsCurrentTerminal.ShouldBeFalse();
+		fixture.ViewModel.VisibleQuickActions.ShouldBeEmpty();
+		fixture.Controller.SelectedTabDetails.ShouldBeNull();
+	}
+
+	[Test]
+	public async Task Selecting_a_tab_after_the_project_screen_unselects_the_project()
+	{
+		await using ControllerFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var workspace = fixture.ViewModel.Workspaces.Single();
+		await fixture.Controller.SelectItemAsync(workspace, TestContext.CurrentContext.CancellationToken);
+
+		await fixture.Controller.SelectSessionAsync(
+			fixture.ViewModel.Sessions[0],
+			startIfNeeded: true,
+			cancellationToken: TestContext.CurrentContext.CancellationToken);
+
+		workspace.IsCurrentProject.ShouldBeFalse();
+		fixture.ViewModel.Sessions[0].IsCurrentTerminal.ShouldBeTrue();
+	}
+
+	[Test]
 	public async Task Opening_the_git_popup_does_not_open_the_project_screen()
 	{
 		await using ControllerFixture fixture = new();

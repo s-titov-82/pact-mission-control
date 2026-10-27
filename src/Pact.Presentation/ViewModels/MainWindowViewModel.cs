@@ -324,6 +324,29 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 	}
 
 	/// <summary>
+	/// Selects a project row itself: no tab stays selected, so nothing that follows the selected
+	/// tab keeps showing it.
+	/// </summary>
+	public void SelectProject(WorkspaceViewModel workspace)
+	{
+		ArgumentNullException.ThrowIfNull(workspace);
+		SelectedSession = null;
+		SelectedWebPage = null;
+		SelectedProjectNote = null;
+		SelectedWorkspace = workspace;
+		RefreshCurrentProjectState(workspace);
+	}
+
+	/// <summary>Marks which project row is shown; <see langword="null"/> when a tab is.</summary>
+	public void RefreshCurrentProjectState(WorkspaceViewModel? current)
+	{
+		foreach (var workspace in Workspaces.Concat(PausedWorkspaces))
+		{
+			workspace.SetCurrentProject(ReferenceEquals(workspace, current));
+		}
+	}
+
+	/// <summary>
 	/// Project owning the selected item, kept in sync with whichever item is selected.
 	/// </summary>
 	public WorkspaceViewModel? SelectedWorkspace

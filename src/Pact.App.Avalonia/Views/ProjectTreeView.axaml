@@ -318,6 +318,7 @@
     </TreeView.Styles>
     <TreeView.DataTemplates>
       <TreeDataTemplate DataType="vm:WorkspaceViewModel" ItemsSource="{Binding TreeItems}">
+        <Border x:Name="ProjectRow" CornerRadius="4" Classes.current="{Binding IsCurrentProject}">
         <Grid Margin="2" RowDefinitions="Auto,Auto" HorizontalAlignment="Stretch">
           <StackPanel Grid.Row="0">
             <TextBlock FontWeight="SemiBold" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
@@ -337,6 +338,7 @@
             <Button Classes="compact-icon" ToolTip.Tip="Close project" Click="OnCloseProjectClicked"><PathIcon Width="12" Height="12" Data="{StaticResource AppCloseIcon}" /></Button>
           </StackPanel>
         </Grid>
+        </Border>
       </TreeDataTemplate>
       <DataTemplate DataType="vm:SessionViewModel">
         <Border Classes="leaf-row" Padding="4" CornerRadius="4"

@@ -50,6 +50,7 @@ internal sealed partial class AvaloniaMainShellController
 		ClearSelectionActions(restoreTerminalFocus: false);
 		await FlushCurrentNoteAsync(cancellationToken);
 		await HideActiveWebPageAsync(cancellationToken);
+		ViewModel.SelectProject(screen.Workspace);
 		Present(new PresentedSurface.Project(screen));
 	}
 

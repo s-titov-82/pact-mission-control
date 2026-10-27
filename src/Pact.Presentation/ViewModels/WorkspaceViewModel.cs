@@ -91,6 +91,21 @@ public sealed class WorkspaceViewModel : INotifyPropertyChanged
 	/// </summary>
 	public ObservableCollection<object> TreeItems { get; } = [];
 
+	/// <summary>Whether the project's own screen is what the shell shows.</summary>
+	public bool IsCurrentProject { get; private set; }
+
+	/// <summary>Marks the project row as the shown item.</summary>
+	public void SetCurrentProject(bool isCurrent)
+	{
+		if (IsCurrentProject == isCurrent)
+		{
+			return;
+		}
+
+		IsCurrentProject = isCurrent;
+		OnPropertyChanged(nameof(IsCurrentProject));
+	}
+
 	/// <summary>Opens or closes the project in the tree.</summary>
 	public void SetExpanded(bool isExpanded)
 	{

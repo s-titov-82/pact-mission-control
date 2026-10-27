@@ -5,6 +5,7 @@ using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Pact.App.Avalonia.Views;
 using Pact.Core.Agents;
 using Pact.Core.Projects;
@@ -144,6 +145,37 @@ public sealed class ProjectTreeViewHeadlessTests
 			collapsedRow.IsExpanded = true;
 
 			changes.ShouldBe([(expanded, false), (collapsed, true)]);
+		}
+		finally
+		{
+			window.Close();
+			Application.Current.Styles.Remove(theme);
+		}
+	}
+
+	[AvaloniaTest]
+	public void The_shown_project_row_is_marked_current()
+	{
+		MainWindowViewModel viewModel = new(new EmptyProjectStore(), new EmptyNotesStore());
+		var now = DateTimeOffset.UtcNow;
+		WorkspaceViewModel workspace = new(new ProjectRecord("project-1", "One", "C:\\one", now, now, null), static _ => false);
+		viewModel.Workspaces.Add(workspace);
+		ProjectTreeView view = new() { DataContext = viewModel };
+		FluentTheme theme = new();
+		Application.Current!.Styles.Add(theme);
+		Window window = new() { Content = view, Width = 600, Height = 800 };
+		try
+		{
+			window.Show();
+			Dispatcher.UIThread.RunJobs();
+			var tree = view.FindControl<TreeView>("ProjectTree").ShouldNotBeNull();
+			var row = tree.ContainerFromItem(workspace).ShouldBeOfType<TreeViewItem>()
+				.GetVisualDescendants().OfType<Border>().Single(border => border.Name == "ProjectRow");
+			row.Classes.ShouldNotContain("current");
+
+			viewModel.SelectProject(workspace);
+
+			row.Classes.ShouldContain("current");
 		}
 		finally
 		{

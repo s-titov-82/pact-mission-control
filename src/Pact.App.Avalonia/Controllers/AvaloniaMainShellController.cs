@@ -2984,6 +2984,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		RaiseIfChanged(previousDocs, nextDocs, nameof(CurrentDocsAndNotes));
 		RaiseIfChanged((previous as PresentedSurface.Notes)?.Document, CurrentNoteDocument, nameof(CurrentNoteDocument));
 		RaiseIfChanged((previous as PresentedSurface.Project)?.Screen, CurrentProjectScreen, nameof(CurrentProjectScreen));
+		ViewModel.RefreshCurrentProjectState(CurrentProjectScreen?.Workspace);
 		UpdateCurrentChanges();
 	}
 
