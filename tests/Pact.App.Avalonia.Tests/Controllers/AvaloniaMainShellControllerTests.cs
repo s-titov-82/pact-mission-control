@@ -3469,6 +3469,9 @@ public sealed class AvaloniaMainShellControllerTests
 
 	private sealed class CountingWorkingTreeReader : IGitWorkingTreeReader
 	{
+		public Task<string?> ReadWorkingTextAsync(string root, string path, CancellationToken cancellationToken) =>
+			Task.FromResult<string?>(null);
+
 		private int _changeReads;
 
 		public int ChangeReads => Volatile.Read(ref _changeReads);

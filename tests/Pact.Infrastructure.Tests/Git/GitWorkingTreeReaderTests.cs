@@ -171,6 +171,17 @@ public sealed class GitWorkingTreeReaderTests
 	}
 
 	[Test]
+	public async Task Working_text_is_read_and_binary_or_missing_gives_null()
+	{
+		await WriteAsync("src/кириллица.cs", "один\r\nдва\n");
+		await File.WriteAllBytesAsync(Path.Combine(Root, "blob.bin"), [1, 0, 2], Token);
+
+		(await Reader.ReadWorkingTextAsync(Root, "src/кириллица.cs", Token)).ShouldBe("один\r\nдва\n");
+		(await Reader.ReadWorkingTextAsync(Root, "blob.bin", Token)).ShouldBeNull();
+		(await Reader.ReadWorkingTextAsync(Root, "missing.txt", Token)).ShouldBeNull();
+	}
+
+	[Test]
 	public async Task A_folder_that_is_not_a_repository_reads_as_null()
 	{
 		(await Reader.ReadChangesAsync(Root, Token)).ShouldBeNull();

@@ -30,6 +30,12 @@ public interface IGitWorkingTreeReader
 		GitFileEntry entry,
 		string? headCommit,
 		CancellationToken cancellationToken);
+
+	/// <summary>
+	/// Reads a working-tree file as text; null when it is missing, larger than
+	/// <see cref="GitWorkingTreeReader.MaxFileBytes"/>, or binary.
+	/// </summary>
+	Task<string?> ReadWorkingTextAsync(string root, string path, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -106,28 +112,52 @@ public sealed class GitWorkingTreeReader(IGitCliRunner runner) : IGitWorkingTree
 			outputLine: null,
 			cancellationToken);
 
+	/// <inheritdoc />
+	public async Task<string?> ReadWorkingTextAsync(string root, string path, CancellationToken cancellationToken)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(root);
+		ArgumentException.ThrowIfNullOrWhiteSpace(path);
+		try
+		{
+			var (text, _) = await ReadTextAsync(Path.Combine(root, path.Replace('/', Path.DirectorySeparatorChar)), cancellationToken)
+				.ConfigureAwait(false);
+			return text;
+		}
+		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+		{
+			return null;
+		}
+	}
+
 	private static async Task<FileDiff> ReadUntrackedAsync(string path, CancellationToken cancellationToken)
+	{
+		var (text, placeholder) = await ReadTextAsync(path, cancellationToken).ConfigureAwait(false);
+		return text is null ? placeholder! : FileDiff.AllAdded(text);
+	}
+
+	// The text of a file, or why there is none: missing (an empty diff), too large or binary.
+	private static async Task<(string? Text, FileDiff? Placeholder)> ReadTextAsync(string path, CancellationToken cancellationToken)
 	{
 		FileInfo file = new(path);
 		if (!file.Exists)
 		{
-			return new FileDiff(null, []);
+			return (null, new FileDiff(null, []));
 		}
 
 		if (file.Length > MaxFileBytes)
 		{
-			return FileDiff.TooLarge;
+			return (null, FileDiff.TooLarge);
 		}
 
 		var bytes = await File.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false);
 		if (Array.IndexOf(bytes, (byte)0, 0, Math.Min(bytes.Length, BinaryProbeBytes)) >= 0)
 		{
-			return FileDiff.Binary;
+			return (null, FileDiff.Binary);
 		}
 
 		using MemoryStream stream = new(bytes);
 		using StreamReader reader = new(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-		return FileDiff.AllAdded(await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false));
+		return (await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false), null);
 	}
 
 	private static (int Added, int Removed) SumNumstat(string output)

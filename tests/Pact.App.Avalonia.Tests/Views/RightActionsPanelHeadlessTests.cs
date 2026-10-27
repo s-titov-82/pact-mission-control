@@ -331,6 +331,9 @@ public sealed class RightActionsPanelHeadlessTests
 
 	private sealed class FixedReader(GitFileEntry[] files, int added, int removed) : IGitWorkingTreeReader
 	{
+		public Task<string?> ReadWorkingTextAsync(string root, string path, CancellationToken cancellationToken) =>
+			Task.FromResult<string?>(null);
+
 		public Task<WorkingTreeChanges?> ReadChangesAsync(string root, CancellationToken cancellationToken) =>
 			Task.FromResult<WorkingTreeChanges?>(new WorkingTreeChanges("head", "main", files, added, removed));
 

@@ -331,6 +331,103 @@ public sealed class ProjectChangesViewModelTests
 	}
 
 	[Test]
+	public async Task The_shown_diff_carries_the_text_it_was_built_from()
+	{
+		_reader.Current = Changes("a");
+		_reader.Diffs["a"] = Diff("one", "two");
+		_reader.Texts["a"] = new(["one\r\ntwo\n"]);
+		using var changes = Create();
+		using var observation = changes.Observe();
+
+		await changes.SelectFileAsync(changes.Files[0], CancellationToken.None);
+
+		var shown = changes.ShownDiff.ShouldNotBeNull();
+		shown.Path.ShouldBe("a");
+		shown.HeadCommit.ShouldBe("head");
+		shown.Rows.ShouldBeSameAs(changes.DiffRows);
+		shown.NewLines.ShouldBe(["one", "two"]);
+	}
+
+	// The list is re-read every few seconds; a remark being written on the shown diff must not
+	// lose it to a read that changed nothing.
+	[Test]
+	public async Task The_shown_diff_survives_a_refresh_that_changed_nothing()
+	{
+		_reader.Current = Changes("a");
+		_reader.Diffs["a"] = Diff("one");
+		_reader.Texts["a"] = new(["one\n"]);
+		using var changes = Create();
+		using var observation = changes.Observe();
+		await changes.SelectFileAsync(changes.Files[0], CancellationToken.None);
+		var shown = changes.ShownDiff;
+
+		_time.Advance(ProjectChangesViewModel.ReconcileInterval);
+		changes.ShownDiff.ShouldBeSameAs(shown);
+
+		_reader.Diffs["a"] = Diff("two");
+		_reader.Texts["a"] = new(["two\n"]);
+		_time.Advance(ProjectChangesViewModel.ReconcileInterval);
+		changes.ShownDiff.ShouldNotBeSameAs(shown);
+		changes.ShownDiff!.NewLines.ShouldBe(["two"]);
+	}
+
+	[Test]
+	public async Task A_file_that_changes_while_it_is_read_shows_no_text()
+	{
+		_reader.Current = Changes("a");
+		_reader.Diffs["a"] = Diff("one");
+		_reader.Texts["a"] = new(["one\n", "one\nmore\n"]);
+		using var changes = Create();
+		using var observation = changes.Observe();
+
+		await changes.SelectFileAsync(changes.Files[0], CancellationToken.None);
+
+		changes.ShownDiff.ShouldNotBeNull().NewLines.ShouldBeNull();
+		changes.DiffRows.ShouldNotBeEmpty();
+	}
+
+	[Test]
+	public async Task A_pick_still_loading_has_no_shown_diff()
+	{
+		_reader.Current = Changes("a", "b");
+		_reader.Diffs["a"] = Diff("from a");
+		_reader.Texts["a"] = new(["from a\n"]);
+		using var changes = Create();
+		using var observation = changes.Observe();
+		await changes.SelectFileAsync(changes.Files[0], CancellationToken.None);
+		var gate = new TaskCompletionSource<FileDiff>();
+		_reader.DiffGates["b"] = gate;
+
+		var pick = changes.SelectFileAsync(changes.Files[1], CancellationToken.None);
+
+		changes.ShownDiff.ShouldBeNull();
+		changes.DiffRows[^1].Text.ShouldBe("from a");
+		gate.SetResult(Diff("from b"));
+		await pick;
+		changes.ShownDiff.ShouldNotBeNull().Path.ShouldBe("b");
+	}
+
+	[Test]
+	public async Task Show_all_keeps_the_text()
+	{
+		var lines = Enumerable.Range(0, ProjectChangesViewModel.MaxShownLines + 5)
+			.Select(index => index.ToString(System.Globalization.CultureInfo.InvariantCulture))
+			.ToArray();
+		_reader.Current = Changes("a");
+		_reader.Diffs["a"] = Diff(lines);
+		_reader.Texts["a"] = new([string.Join('\n', lines)]);
+		using var changes = Create();
+		using var observation = changes.Observe();
+		await changes.SelectFileAsync(changes.Files[0], CancellationToken.None);
+
+		changes.ShowAllLines();
+
+		var shown = changes.ShownDiff.ShouldNotBeNull();
+		shown.Rows.ShouldBeSameAs(changes.DiffRows);
+		shown.NewLines!.Count.ShouldBe(lines.Length);
+	}
+
+	[Test]
 	public void Observing_again_right_after_a_read_waits_for_the_minimum_interval()
 	{
 		using var changes = Create();
@@ -382,5 +479,13 @@ public sealed class ProjectChangesViewModelTests
 			DiffGates.Remove(entry.Path, out var gate)
 				? gate.Task
 				: Task.FromResult(Diffs.GetValueOrDefault(entry.Path) ?? new FileDiff(null, []));
+
+		// Each read takes the next text; the last one repeats.
+		public Dictionary<string, Queue<string>> Texts { get; } = [];
+
+		public Task<string?> ReadWorkingTextAsync(string root, string path, CancellationToken cancellationToken) =>
+			Task.FromResult(Texts.TryGetValue(path, out var texts)
+				? texts.Count > 1 ? texts.Dequeue() : texts.Peek()
+				: null);
 	}
 }

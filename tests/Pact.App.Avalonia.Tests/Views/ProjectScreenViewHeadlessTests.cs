@@ -225,6 +225,9 @@ public sealed class ProjectScreenViewHeadlessTests
 
 	private sealed class OneFileReader(FileDiff diff) : IGitWorkingTreeReader
 	{
+		public Task<string?> ReadWorkingTextAsync(string root, string path, CancellationToken cancellationToken) =>
+			Task.FromResult<string?>(null);
+
 		public Task<WorkingTreeChanges?> ReadChangesAsync(string root, CancellationToken cancellationToken) =>
 			Task.FromResult<WorkingTreeChanges?>(new WorkingTreeChanges(
 				"head",
