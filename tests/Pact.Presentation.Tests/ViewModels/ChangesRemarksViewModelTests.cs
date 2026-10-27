@@ -325,6 +325,51 @@ public sealed class ChangesRemarksViewModelTests : IDisposable
 		thread.DraftText.ShouldBeEmpty();
 	}
 
+	// The typed reply has the same text as the message handed back; text proves nothing about which is which.
+	[Test]
+	public async Task An_identical_reply_typed_during_a_failed_delivery_is_discarded_alone()
+	{
+		var thread = await FailedDeliveryWhileTypingAsync("A");
+
+		await thread.DiscardDraftAsync(CancellationToken.None);
+
+		_book!.Threads.Single().Unsent.Select(message => message.Text).ShouldBe(["A"]);
+	}
+
+	[Test]
+	public async Task Typing_on_while_a_new_reply_is_saved_updates_that_reply()
+	{
+		var remarks = await OpenAsync();
+		await remarks.AddRemarkAsync(_changes!.ShownDiff!, 3, "why?", CancellationToken.None);
+		await remarks.SendAsync("s1", CancellationToken.None);
+		await EventuallyAsync(() => remarks.ThreadsByRow?.ByRow.ContainsKey(3) == true);
+		var thread = remarks.ThreadsByRow!.ByRow[3][0];
+		thread.DraftText = "B";
+
+		var save = thread.SaveDraftAsync(CancellationToken.None);
+		thread.DraftText = "C";
+		await save;
+		await thread.SaveDraftAsync(CancellationToken.None);
+
+		_book!.Threads.Single().Unsent.Select(message => message.Text).ShouldBe(["C"]);
+	}
+
+	[Test]
+	public async Task A_thread_without_a_proper_id_sets_the_file_aside()
+	{
+		var folder = Path.Combine(_root.Path, ".pact", "remarks");
+		Directory.CreateDirectory(folder);
+		await File.WriteAllTextAsync(
+			Path.Combine(folder, "remarks.json"),
+			"""{"version":1,"nextNumber":2,"threads":[{"id":"","anchor":{"path":"other.cs","side":"old","line":1,"lineText":"x","before":[],"after":[],"baseCommit":"head1"},"messages":[{"id":"m1","author":"user","text":"why?","at":"2026-10-27T10:00:00+00:00","delivery":"sent","sessionId":"s1"}],"isResolved":false}]}""");
+
+		var remarks = await OpenAsync();
+
+		await EventuallyAsync(() => remarks.StatusText is not null);
+		remarks.StatusText.ShouldStartWith("The remarks file could not be read; it was kept as remarks.json.broken-");
+		_book!.Threads.ShouldBeEmpty();
+	}
+
 	[Test]
 	public async Task A_remark_on_a_final_empty_line_keeps_its_place()
 	{

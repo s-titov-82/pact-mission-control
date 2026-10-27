@@ -20,8 +20,9 @@ public sealed class RemarkThreadViewModel : INotifyPropertyChanged
 	private readonly RemarkBook _book;
 	private string _storedDraft = string.Empty;
 
-	// The unsent message the draft box edits, or null for a new reply not stored yet.
-	private string? _draftId;
+	// The id of the message the draft box owns: an unsent message it edits, or an id reserved for a
+	// new reply that the book stores under it. Ownership is never inferred from text.
+	private string _draftId = NewDraftId();
 	private int? _placedLine;
 
 	/// <summary>Wraps a thread of <paramref name="book"/>.</summary>
@@ -94,15 +95,27 @@ public sealed class RemarkThreadViewModel : INotifyPropertyChanged
 	/// <summary>Whether a message waits for <c>Send again</c> or <c>Mark as sent</c>.</summary>
 	public bool CanRetry => State == RemarkThreadState.DeliveryUncertain;
 
-	/// <summary>Saves the draft box into the message it edits, or as a new one; empty text removes it.</summary>
-	public Task SaveDraftAsync(CancellationToken cancellationToken) =>
-		_book.SaveDraftAsync(Id, _draftId, DraftText, cancellationToken);
+	/// <summary>Saves the draft box under the message id it owns; empty text removes that message.</summary>
+	public async Task SaveDraftAsync(CancellationToken cancellationToken)
+	{
+		var owned = _draftId;
+		var saved = await _book.SaveDraftAsync(Id, owned, DraftText, cancellationToken).ConfigureAwait(true);
+		if (saved is not null && saved != owned && _draftId == owned)
+		{
+			// The owned message had gone out meanwhile; the book stored the text under a fresh id.
+			_draftId = saved;
+			if (_book.Threads.FirstOrDefault(thread => thread.Id == Id) is { } current)
+			{
+				Update(current);
+			}
+		}
+	}
 
 	/// <summary>Empties the draft box and removes the message it edits; a new reply only empties the box.</summary>
 	public Task DiscardDraftAsync(CancellationToken cancellationToken)
 	{
 		DraftText = string.Empty;
-		return _draftId is null ? Task.CompletedTask : _book.SaveDraftAsync(Id, _draftId, string.Empty, cancellationToken);
+		return _book.SaveDraftAsync(Id, _draftId, string.Empty, cancellationToken);
 	}
 
 	/// <summary>Resolves the thread.</summary>
@@ -126,35 +139,45 @@ public sealed class RemarkThreadViewModel : INotifyPropertyChanged
 	{
 		ArgumentNullException.ThrowIfNull(thread);
 		Thread = thread;
+		var owned = thread.Messages.FirstOrDefault(message => message.Id == _draftId);
 		if (!HasUnsavedDraft)
 		{
-			_draftId = thread.EditableDraft?.Id;
-			_storedDraft = thread.EditableDraft?.Text ?? string.Empty;
-			DraftText = _storedDraft;
-		}
-		else if (_draftId is null)
-		{
-			// A new reply just saved comes back as the newest unsent message with the typed text.
-			if (thread.EditableDraft is { } newest && string.Equals(newest.Text, DraftText, StringComparison.Ordinal))
+			if (thread.EditableDraft is { } newest)
 			{
 				_draftId = newest.Id;
 				_storedDraft = newest.Text;
 			}
+			else
+			{
+				if (owned is not null)
+				{
+					_draftId = NewDraftId();
+				}
+
+				_storedDraft = string.Empty;
+			}
+
+			DraftText = _storedDraft;
 		}
-		else if (thread.Messages.FirstOrDefault(message => message.Id == _draftId && message.Delivery == RemarkDelivery.Draft) is { } edited)
+		else if (owned is { Delivery: RemarkDelivery.Draft })
 		{
-			_storedDraft = edited.Text;
+			_storedDraft = owned.Text;
+		}
+		else if (owned is not null)
+		{
+			// The message it edited went out: the typed text becomes a new reply.
+			_draftId = NewDraftId();
+			_storedDraft = string.Empty;
 		}
 		else
 		{
-			// The message it edited went out or away: the typed text becomes a new reply.
-			_draftId = null;
+			// Not stored yet, or removed: the typed text is a new reply under the owned id.
 			_storedDraft = string.Empty;
 		}
 
 		var editing = _draftId;
 		Messages = thread.Messages
-			.Where(message => editing is null || message.Id != editing)
+			.Where(message => !(message.Id == editing && message.Delivery == RemarkDelivery.Draft))
 			.Select(message => new RemarkMessageViewModel(
 				message.Author == RemarkAuthor.Agent ? "Agent" : "You",
 				message.Text,
@@ -169,6 +192,8 @@ public sealed class RemarkThreadViewModel : INotifyPropertyChanged
 		Raise(nameof(Thread), nameof(State), nameof(StateText), nameof(Messages), nameof(CanResolve), nameof(CanReopen), nameof(HasUnsavedDraft),
 			nameof(CanRetry), nameof(LocationText));
 	}
+
+	private static string NewDraftId() => Guid.NewGuid().ToString("N");
 
 	/// <summary>Records where the thread was placed.</summary>
 	public void SetPlacement(int? line, bool isOutdated)

@@ -152,28 +152,43 @@ public sealed class RemarkBook : IDisposable
 			cancellationToken);
 
 	/// <summary>
-	/// Saves the text of one draft box: into the unsent message <paramref name="messageId"/> when it
-	/// still is one, otherwise as a new unsent message, never over another one. Whitespace removes
-	/// that message, with the same rule for a thread left empty.
+	/// Saves the text of one draft box under the message id the box owns: into that message while it
+	/// is unsent, as a new unsent message with that id when it is not stored yet, or with a fresh id
+	/// when that message already went out. Never over another message. Whitespace removes the box's
+	/// own unsent message, with the same rule for a thread left empty.
 	/// </summary>
-	public Task SaveDraftAsync(string threadId, string? messageId, string text, CancellationToken cancellationToken) =>
-		ChangeThreadAsync(
+	/// <returns>The id of the stored unsent message, or null when nothing is stored.</returns>
+	public async Task<string?> SaveDraftAsync(string threadId, string messageId, string text, CancellationToken cancellationToken)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(messageId);
+		string? saved = null;
+		await ChangeThreadAsync(
 			threadId,
 			thread =>
 			{
-				var target = messageId is null
-					? null
-					: thread.Messages.FirstOrDefault(message => message.Id == messageId && message.Delivery == RemarkDelivery.Draft);
+				var existing = thread.Messages.FirstOrDefault(message => message.Id == messageId);
+				var target = existing is { Delivery: RemarkDelivery.Draft } ? existing : null;
 				if (string.IsNullOrWhiteSpace(text))
 				{
 					return target is null ? thread : thread with { Messages = thread.Messages.Where(message => message.Id != target.Id).ToArray() };
 				}
 
-				return target is null
-					? thread with { Messages = [.. thread.Messages, NewMessage(RemarkAuthor.User, text, RemarkDelivery.Draft)] }
-					: WithMessages(thread, message => message.Id == target.Id ? message with { Text = text } : message);
+				if (target is not null)
+				{
+					saved = target.Id;
+					return WithMessages(thread, message => message.Id == target.Id ? message with { Text = text } : message);
+				}
+
+				var added = NewMessage(RemarkAuthor.User, text, RemarkDelivery.Draft) with
+				{
+					Id = existing is null ? messageId : Guid.NewGuid().ToString("N")
+				};
+				saved = added.Id;
+				return thread with { Messages = [.. thread.Messages, added] };
 			},
-			cancellationToken);
+			cancellationToken).ConfigureAwait(false);
+		return saved;
+	}
 
 	/// <summary>Removes one unsent message, with the same rule for a thread left empty.</summary>
 	public Task DiscardUnsentAsync(string threadId, string messageId, CancellationToken cancellationToken) =>

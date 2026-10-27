@@ -438,7 +438,7 @@ public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposabl
 	}
 
 	private static int Number(string id) =>
-		int.TryParse(id.AsSpan(1), NumberStyles.None, CultureInfo.InvariantCulture, out var number) ? number : 0;
+		id.Length > 1 && int.TryParse(id.AsSpan(1), NumberStyles.None, CultureInfo.InvariantCulture, out var number) ? number : 0;
 
 	private void SetStatus(string? text)
 	{

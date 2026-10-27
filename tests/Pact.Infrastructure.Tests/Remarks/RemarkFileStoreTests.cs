@@ -76,6 +76,8 @@ public sealed class RemarkFileStoreTests
 	[TestCase("""{"version":1,"nextNumber":2,"threads":[{"id":"C1","anchor":{"path":"a.cs","side":"new","line":1,"lineText":"x","before":[],"after":[]},"isResolved":false}]}""")]
 	[TestCase("""{"version":1,"nextNumber":2,"threads":[{"id":"C1","anchor":{"path":"a.cs","side":"new","line":1,"lineText":"x","before":[],"after":[]},"messages":[null],"isResolved":false}]}""")]
 	[TestCase("""{"version":1,"nextNumber":2,"threads":[{"id":"C1","messages":[],"isResolved":false}]}""")]
+	[TestCase("""{"version":1,"nextNumber":2,"threads":[{"id":"","anchor":{"path":"a.cs","side":"old","line":1,"lineText":"x","before":[],"after":[]},"messages":[],"isResolved":false}]}""")]
+	[TestCase("""{"version":1,"nextNumber":2,"threads":[{"id":"X1","anchor":{"path":"a.cs","side":"old","line":1,"lineText":"x","before":[],"after":[]},"messages":[],"isResolved":false}]}""")]
 	public async Task Threads_with_missing_parts_are_set_aside(string json)
 	{
 		using var root = TemporaryDirectory.Create();

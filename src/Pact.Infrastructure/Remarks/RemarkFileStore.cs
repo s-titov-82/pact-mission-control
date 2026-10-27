@@ -79,10 +79,15 @@ public sealed class RemarkFileStore
 	// JSON leaves a missing or null member null whatever the record says, so every part the
 	// threads are used through is checked before they are trusted.
 	private static bool IsComplete(RemarkThread? thread) =>
-		thread is { Id: not null, Anchor: { Path: not null, LineText: not null, Before: not null, After: not null } anchor, Messages: not null }
+		thread is { Id: { } id, Anchor: { Path: not null, LineText: not null, Before: not null, After: not null } anchor, Messages: not null }
+		&& IsRemarkId(id)
 		&& anchor.Before.All(line => line is not null)
 		&& anchor.After.All(line => line is not null)
 		&& thread.Messages.All(message => message is { Id: not null, Text: not null });
+
+	// Ids are C followed by a number from 1: the counter and every consumer rely on it.
+	private static bool IsRemarkId(string id) =>
+		id.Length > 1 && id[0] == 'C' && id[1] != '0' && id.AsSpan(1).IndexOfAnyExceptInRange('0', '9') < 0;
 
 	// Moves the unreadable file under a name nothing else holds, so an earlier one is never replaced.
 	private string SetAside()
