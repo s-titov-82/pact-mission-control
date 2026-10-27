@@ -324,6 +324,20 @@ public sealed class AvaloniaMainShellControllerTests
 	}
 
 	[Test]
+	public async Task Closing_an_unselected_tab_keeps_the_project_screen()
+	{
+		await using ControllerFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var workspace = fixture.ViewModel.Workspaces.Single();
+		await fixture.Controller.SelectItemAsync(workspace, TestContext.CurrentContext.CancellationToken);
+
+		await fixture.Controller.CloseSessionAsync(fixture.ViewModel.Sessions[0], TestContext.CurrentContext.CancellationToken);
+
+		fixture.Controller.PresentedSurface.ShouldBeOfType<PresentedSurface.Project>().Screen.Workspace.ShouldBeSameAs(workspace);
+		workspace.IsCurrentProject.ShouldBeTrue();
+	}
+
+	[Test]
 	public async Task Opening_the_git_popup_does_not_open_the_project_screen()
 	{
 		await using ControllerFixture fixture = new();

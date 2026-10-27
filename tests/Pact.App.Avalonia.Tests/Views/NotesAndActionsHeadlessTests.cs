@@ -398,6 +398,26 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 	}
 
 	[AvaloniaTest]
+	public async Task Switching_notes_restores_a_backward_selection_with_its_caret()
+	{
+		var first = await CreateDocumentAsync("0123456789");
+		var second = await CreateDocumentAsync("other");
+		NotesPaneView notes = new();
+		var editor = notes.FindControl<SourceEditor>("Editor").ShouldBeOfType<SourceEditor>();
+		notes.Document = first;
+		editor.TextArea.Selection = AvaloniaEdit.Editing.Selection.Create(editor.TextArea, 8, 3);
+		editor.TextArea.Caret.Offset = 3;
+
+		notes.Document = second;
+		notes.Document = first;
+
+		editor.SelectionStart.ShouldBe(8);
+		editor.SelectionEnd.ShouldBe(3);
+		editor.CaretIndex.ShouldBe(3);
+		editor.SelectedText.ShouldBe("34567");
+	}
+
+	[AvaloniaTest]
 	public async Task Same_restored_selection_publishes_after_document_generation_changes()
 	{
 		var first = await CreateDocumentAsync("same text");

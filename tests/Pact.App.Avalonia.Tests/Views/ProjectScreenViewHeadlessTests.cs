@@ -76,6 +76,27 @@ public sealed class ProjectScreenViewHeadlessTests
 			});
 	}
 
+	[AvaloniaTest]
+	public async Task The_colouring_follows_the_picked_file_even_when_the_diffs_are_equal()
+	{
+		await WithScreenAsync(
+			new FileDiff(null,
+			[
+				new DiffHunk(1, 1, 1, 1, string.Empty, [new DiffLine(DiffLineKind.Added, null, 1, "same")])
+			]),
+			async (screen, view, window) =>
+			{
+				await screen.SelectTabAsync(ProjectScreenTab.Changes, CancellationToken.None);
+				var editor = view.FindControl<SourceEditor>("DiffEditor")!;
+				await screen.Changes!.SelectFileAsync(screen.Changes.Files[0], CancellationToken.None);
+				editor.SyntaxScope.ShouldBe("source.cs");
+
+				await screen.Changes.SelectFileAsync(screen.Changes.Files[1], CancellationToken.None);
+
+				editor.SyntaxScope.ShouldBe("text.html.markdown");
+			});
+	}
+
 	[TestCase("src/x.cs", "source.cs")]
 	[TestCase("docs/plan.md", "text.html.markdown")]
 	[TestCase("build/Build.PS1", "source.powershell")]
@@ -177,7 +198,10 @@ public sealed class ProjectScreenViewHeadlessTests
 			Task.FromResult<WorkingTreeChanges?>(new WorkingTreeChanges(
 				"head",
 				"main",
-				[new GitFileEntry("src/x.cs", null, GitChangeKind.Modified)],
+				[
+					new GitFileEntry("src/x.cs", null, GitChangeKind.Modified),
+					new GitFileEntry("docs/x.md", null, GitChangeKind.Modified)
+				],
 				1,
 				1));
 

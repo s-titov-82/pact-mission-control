@@ -2261,7 +2261,9 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		{
 			await SelectNoteAsync(note, cancellationToken);
 		}
-		else
+		// A selected project row has no tab selected; its screen stays while the project is open.
+		else if (PresentedSurface is not PresentedSurface.Project project
+			|| !ViewModel.Workspaces.Contains(project.Screen.Workspace))
 		{
 			Present(new PresentedSurface.None());
 		}

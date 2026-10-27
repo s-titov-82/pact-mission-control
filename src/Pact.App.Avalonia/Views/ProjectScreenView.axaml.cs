@@ -76,6 +76,7 @@ internal sealed partial class ProjectScreenView : UserControl
 	private void OnChangesPropertyChanged(object? sender, PropertyChangedEventArgs e)
 	{
 		if (e.PropertyName is nameof(ProjectChangesViewModel.DiffRows)
+			or nameof(ProjectChangesViewModel.SelectedFile)
 			or nameof(ProjectChangesViewModel.DiffPlaceholder)
 			or nameof(ProjectChangesViewModel.HiddenLineCount))
 		{
@@ -105,6 +106,9 @@ internal sealed partial class ProjectScreenView : UserControl
 	// and selects across lines, and the margin and tint read the row of each line.
 	private void RefreshDiffText()
 	{
+		// Two files can have equal diffs, which keep the same rows, so the colouring follows the
+		// picked file on its own.
+		DiffEditor.SetSyntaxFor(_changes?.SelectedFile?.Entry.Path);
 		var rows = _changes?.DiffRows ?? [];
 		if (ReferenceEquals(rows, _shownRows))
 		{
@@ -114,7 +118,6 @@ internal sealed partial class ProjectScreenView : UserControl
 		_shownRows = rows;
 		_diffNumbers.SetRows(rows);
 		_diffBackground.SetRows(rows);
-		DiffEditor.SetSyntaxFor(_changes?.SelectedFile?.Entry.Path);
 		DiffEditor.Document.Text = string.Join('\n', rows.Select(row => row.Text));
 		DiffEditor.ScrollToHome();
 	}

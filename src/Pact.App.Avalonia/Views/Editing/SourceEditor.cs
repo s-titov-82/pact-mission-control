@@ -1,4 +1,5 @@
 using AvaloniaEdit;
+using AvaloniaEdit.Editing;
 using AvaloniaEdit.TextMate;
 
 namespace Pact.App.Avalonia.Views.Editing;
@@ -44,14 +45,34 @@ internal sealed class SourceEditor : TextEditor
 		set => CaretOffset = value;
 	}
 
-	/// <summary>Offset where the selection ends; setting it selects from <see cref="TextEditor.SelectionStart"/>.</summary>
+	/// <summary>
+	/// Offset the selection is anchored at, as on a text box: after <see cref="SelectionEnd"/> for a
+	/// backward selection.
+	/// </summary>
+	public new int SelectionStart
+	{
+		get => TextArea.Selection.IsEmpty ? CaretOffset : Document.GetOffset(TextArea.Selection.StartPosition.Location);
+		set => SetSelection(value, SelectionEnd);
+	}
+
+	/// <summary>Offset of the selection's moving end, where the caret is.</summary>
 	public int SelectionEnd
 	{
-		get => SelectionStart + SelectionLength;
-		set
+		get => TextArea.Selection.IsEmpty ? CaretOffset : Document.GetOffset(TextArea.Selection.EndPosition.Location);
+		set => SetSelection(SelectionStart, value);
+	}
+
+	private void SetSelection(int anchor, int active)
+	{
+		if (anchor == active)
 		{
-			var start = SelectionStart;
-			Select(Math.Min(start, value), Math.Abs(value - start));
+			TextArea.ClearSelection();
 		}
+		else
+		{
+			TextArea.Selection = Selection.Create(TextArea, anchor, active);
+		}
+
+		TextArea.Caret.Offset = active;
 	}
 }
