@@ -18,6 +18,8 @@
     <PackageReference Include="Avalonia.Desktop" />
     <PackageReference Include="Avalonia.Themes.Fluent" />
     <PackageReference Include="Avalonia.Controls.WebView" />
+    <PackageReference Include="Avalonia.AvaloniaEdit" />
+    <PackageReference Include="AvaloniaEdit.TextMate" />
     <PackageReference Include="Avalonia.Labs.Gif" />
     <PackageReference Include="ClassIsland.Markdown.Avalonia" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />

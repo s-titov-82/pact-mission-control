@@ -1,9 +1,11 @@
 using Avalonia;
 using Avalonia.Controls;
+using AvaloniaEdit;
 using Avalonia.Headless.NUnit;
 using Avalonia.LogicalTree;
 using Avalonia.Themes.Fluent;
 using Pact.App.Avalonia.Views;
+using Pact.App.Avalonia.Views.Diff;
 using Pact.Core.Git;
 using Pact.Core.Projects;
 using Pact.Infrastructure.Storage;
@@ -32,14 +34,53 @@ public sealed class ProjectScreenViewHeadlessTests
 				window.UpdateLayout();
 
 				view.FindControl<Control>("ChangesPanel")!.IsVisible.ShouldBeTrue();
-				var texts = TextsUnder(view.FindControl<Control>("DiffRowsList")!);
-				texts.ShouldContain("old line");
-				texts.ShouldContain("new line");
-				texts.ShouldContain("4");
-				texts.ShouldContain("@@ -4,2 +4,2 @@ class X");
+				var editor = view.FindControl<TextEditor>("DiffEditor")!;
+				editor.Document.Text.ShouldBe("@@ -4,2 +4,2 @@ class X\nold line\nnew line");
+				editor.IsReadOnly.ShouldBeTrue();
+				editor.FontSize.ShouldBeGreaterThanOrEqualTo(13);
+				var margin = editor.TextArea.LeftMargins.OfType<DiffLineNumberMargin>().Single();
+				margin.NumbersOf(1).ShouldBe(("", ""));
+				margin.NumbersOf(2).ShouldBe(("4", ""));
+				margin.NumbersOf(3).ShouldBe(("", "4"));
+				var background = editor.TextArea.TextView.BackgroundRenderers.OfType<DiffLineBackgroundRenderer>().Single();
+				background.KindOf(1).ShouldBe(DiffRowKind.HunkHeader);
+				background.KindOf(2).ShouldBe(DiffRowKind.Removed);
+				background.KindOf(3).ShouldBe(DiffRowKind.Added);
 				view.FindControl<Control>("DiffPlaceholderText")!.IsVisible.ShouldBeFalse();
 			});
 	}
+
+	[AvaloniaTest]
+	public async Task The_diff_text_can_be_selected_across_lines()
+	{
+		await WithScreenAsync(
+			new FileDiff(null,
+			[
+				new DiffHunk(1, 1, 1, 2, string.Empty,
+				[
+					new DiffLine(DiffLineKind.Context, 1, 1, "first"),
+					new DiffLine(DiffLineKind.Added, null, 2, "second")
+				])
+			]),
+			async (screen, view, window) =>
+			{
+				await screen.SelectTabAsync(ProjectScreenTab.Changes, CancellationToken.None);
+				await screen.Changes!.SelectFileAsync(screen.Changes.Files[0], CancellationToken.None);
+				window.UpdateLayout();
+				var editor = view.FindControl<TextEditor>("DiffEditor")!;
+
+				editor.SelectAll();
+
+				editor.SelectedText.ShouldContain("first\nsecond");
+			});
+	}
+
+	[TestCase("src/x.cs", "source.cs")]
+	[TestCase("docs/plan.md", "text.html.markdown")]
+	[TestCase("build/Build.PS1", "source.powershell")]
+	[TestCase("bin/blob", null)]
+	public void The_grammar_follows_the_file_extension(string path, string? scope) =>
+		DiffSyntax.ScopeFor(path).ShouldBe(scope);
 
 	[AvaloniaTest]
 	public async Task A_binary_file_shows_the_placeholder()

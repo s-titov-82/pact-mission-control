@@ -2,7 +2,9 @@ using System.ComponentModel;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
+using AvaloniaEdit.TextMate;
 using Pact.App.Avalonia.Lifecycle;
+using Pact.App.Avalonia.Views.Diff;
 using Pact.Presentation.ViewModels;
 
 namespace Pact.App.Avalonia.Views;
@@ -15,11 +17,23 @@ internal sealed partial class ProjectScreenView : UserControl
 	private ProjectChangesViewModel? _changes;
 
 	private static readonly TimeSpan LogReloadInterval = TimeSpan.FromSeconds(2);
+	private const double DiffLineHeightFactor = 1.3;
 	private readonly DispatcherTimer _logReloadTimer;
+
+	private readonly DiffLineNumberMargin _diffNumbers = new();
+	private readonly DiffLineBackgroundRenderer _diffBackground = new();
+	private readonly TextMate.Installation _diffSyntax;
+	private IReadOnlyList<DiffRowViewModel>? _shownRows;
 
 	public ProjectScreenView()
 	{
 		InitializeComponent();
+		DiffEditor.Options.EnableHyperlinks = false;
+		DiffEditor.Options.EnableEmailHyperlinks = false;
+		DiffEditor.Options.LineHeightFactor = DiffLineHeightFactor;
+		DiffEditor.TextArea.LeftMargins.Insert(0, _diffNumbers);
+		DiffEditor.TextArea.TextView.BackgroundRenderers.Add(_diffBackground);
+		_diffSyntax = DiffSyntax.Install(DiffEditor);
 		DataContextChanged += (_, _) => Attach(DataContext as ProjectScreenViewModel);
 		// A review still running appends turns to the open log; re-read it while it is on screen.
 		_logReloadTimer = new DispatcherTimer { Interval = LogReloadInterval };
@@ -66,7 +80,8 @@ internal sealed partial class ProjectScreenView : UserControl
 
 	private void OnChangesPropertyChanged(object? sender, PropertyChangedEventArgs e)
 	{
-		if (e.PropertyName is nameof(ProjectChangesViewModel.DiffPlaceholder)
+		if (e.PropertyName is nameof(ProjectChangesViewModel.DiffRows)
+			or nameof(ProjectChangesViewModel.DiffPlaceholder)
 			or nameof(ProjectChangesViewModel.HiddenLineCount))
 		{
 			RefreshChanges();
@@ -88,6 +103,25 @@ internal sealed partial class ProjectScreenView : UserControl
 	{
 		DiffPlaceholderText.IsVisible = _changes?.DiffPlaceholder is not null;
 		ShowAllButton.IsVisible = _changes?.HiddenLineCount > 0;
+		RefreshDiffText();
+	}
+
+	// One document holds the whole diff, a line per row: the editor draws only what is on screen
+	// and selects across lines, and the margin and tint read the row of each line.
+	private void RefreshDiffText()
+	{
+		var rows = _changes?.DiffRows ?? [];
+		if (ReferenceEquals(rows, _shownRows))
+		{
+			return;
+		}
+
+		_shownRows = rows;
+		_diffNumbers.SetRows(rows);
+		_diffBackground.SetRows(rows);
+		DiffSyntax.SetFile(_diffSyntax, _changes?.SelectedFile?.Entry.Path);
+		DiffEditor.Document.Text = string.Join('\n', rows.Select(row => row.Text));
+		DiffEditor.ScrollToHome();
 	}
 
 	private void OnOverviewTabClicked(object? sender, RoutedEventArgs e) => SelectTab(ProjectScreenTab.Overview);

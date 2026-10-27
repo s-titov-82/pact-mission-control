@@ -4,6 +4,7 @@
              RequestedThemeVariant="Default">
   <Application.Styles>
     <FluentTheme />
+    <StyleInclude Source="avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml" />
     <Style Selector="TextBlock.SettingsFieldLabel">
       <Setter Property="VerticalAlignment" Value="Top" />
       <Setter Property="Margin" Value="0,6,10,4" />

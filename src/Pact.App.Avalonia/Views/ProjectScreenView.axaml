@@ -1,19 +1,9 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:md="https://github.com/whistyun/Markdown.Avalonia"
+             xmlns:ae="https://github.com/avaloniaui/avaloniaedit"
              x:Class="Pact.App.Avalonia.Views.ProjectScreenView"
              x:CompileBindings="False">
-  <UserControl.Styles>
-    <Style Selector="Border.diff-row.added">
-      <Setter Property="Background" Value="#2216A34A" />
-    </Style>
-    <Style Selector="Border.diff-row.removed">
-      <Setter Property="Background" Value="#22DC2626" />
-    </Style>
-    <Style Selector="Border.diff-row.header">
-      <Setter Property="Background" Value="#14808080" />
-    </Style>
-  </UserControl.Styles>
   <Grid RowDefinitions="Auto,*" Background="{DynamicResource AppPaneBackgroundBrush}">
     <Border Padding="10,8" BorderBrush="{StaticResource AppPanelBorderBrush}" BorderThickness="0,0,0,1">
       <StackPanel Orientation="Horizontal" Spacing="6">
@@ -34,28 +24,9 @@
       <Grid RowDefinitions="Auto,*,Auto">
         <TextBlock x:Name="DiffPlaceholderText" Margin="12" Opacity="0.7"
                    Text="{Binding Changes.DiffPlaceholder}" IsVisible="False" />
-        <ScrollViewer x:Name="DiffScroller" Grid.Row="1"
-                      HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-          <ItemsControl x:Name="DiffRowsList" ItemsSource="{Binding Changes.DiffRows}">
-            <ItemsControl.ItemTemplate>
-              <DataTemplate>
-                <Border Classes="diff-row" Classes.added="{Binding IsAdded}"
-                        Classes.removed="{Binding IsRemoved}" Classes.header="{Binding IsHunkHeader}">
-                  <Grid ColumnDefinitions="44,44,*">
-                    <TextBlock FontFamily="Cascadia Mono, Consolas, monospace" FontSize="12"
-                               Foreground="{DynamicResource AppTextMutedBrush}" TextAlignment="Right"
-                               Margin="0,0,6,0" Text="{Binding OldNumber}" />
-                    <TextBlock Grid.Column="1" FontFamily="Cascadia Mono, Consolas, monospace" FontSize="12"
-                               Foreground="{DynamicResource AppTextMutedBrush}" TextAlignment="Right"
-                               Margin="0,0,8,0" Text="{Binding NewNumber}" />
-                    <TextBlock Grid.Column="2" FontFamily="Cascadia Mono, Consolas, monospace" FontSize="12"
-                               Text="{Binding Text}" />
-                  </Grid>
-                </Border>
-              </DataTemplate>
-            </ItemsControl.ItemTemplate>
-          </ItemsControl>
-        </ScrollViewer>
+        <ae:TextEditor x:Name="DiffEditor" Grid.Row="1" IsReadOnly="True"
+                       FontFamily="Cascadia Mono, Consolas, monospace" FontSize="14"
+                       HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" />
         <Button x:Name="ShowAllButton" Grid.Row="2" Margin="12,6" HorizontalAlignment="Left"
                 Content="{Binding Changes.ShowAllText}" IsVisible="False" Click="OnShowAllClicked" />
       </Grid>
