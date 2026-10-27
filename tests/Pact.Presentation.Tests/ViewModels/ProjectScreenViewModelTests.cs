@@ -104,6 +104,29 @@ public sealed class ProjectScreenViewModelTests : IDisposable
 	}
 
 	[Test]
+	public async Task A_failed_bulk_deletion_still_lists_what_is_left()
+	{
+		WriteLog("2026-10-24-1400-code-review-a.md", "# A");
+		WriteLog("2026-10-25-1400-code-review-b.md", "# B");
+		var locked = Path.Combine(_root.Path, ".pact", "reviews", "2026-10-24-1400-code-review-a.md");
+		var screen = Create(git: false);
+		await screen.SelectTabAsync(ProjectScreenTab.ReviewLogs, CancellationToken.None);
+		File.SetAttributes(locked, FileAttributes.ReadOnly);
+		try
+		{
+			await Should.ThrowAsync<UnauthorizedAccessException>(() => screen.DeleteAllReviewLogsAsync(CancellationToken.None));
+
+			screen.ReviewLogs.ShouldBe([".pact/reviews/2026-10-24-1400-code-review-a.md"]);
+			screen.SelectedReviewLog.ShouldBe(".pact/reviews/2026-10-24-1400-code-review-a.md");
+			screen.ReviewLogText.ShouldBe("# A");
+		}
+		finally
+		{
+			File.SetAttributes(locked, FileAttributes.Normal);
+		}
+	}
+
+	[Test]
 	public async Task Deleting_all_logs_clears_the_view()
 	{
 		WriteLog("2026-10-24-1400-code-review-a.md", "# A");

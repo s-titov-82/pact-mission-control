@@ -216,33 +216,43 @@ public sealed class ProjectScreenViewModel : INotifyPropertyChanged
 
 	/// <summary>
 	/// Deletes every review log a running review does not write. A deleted shown log gives way to
-	/// the newest log left.
+	/// the newest log left. A failed delete stops the run; the list still shows what is left.
 	/// </summary>
 	public async Task<ReviewLogBulkDeletion> DeleteAllReviewLogsAsync(CancellationToken cancellationToken)
 	{
 		RefreshReviewLogs();
 		var deleted = 0;
 		var kept = 0;
-		foreach (var log in ReviewLogs)
+		try
 		{
-			if (_isLogInUse(log))
+			foreach (var log in ReviewLogs)
 			{
-				kept++;
-				continue;
-			}
+				if (_isLogInUse(log))
+				{
+					kept++;
+					continue;
+				}
 
-			ReviewLogFiles.Delete(RootPath, log);
-			deleted++;
+				ReviewLogFiles.Delete(RootPath, log);
+				deleted++;
+			}
+		}
+		finally
+		{
+			await ReconcileReviewLogsAsync(cancellationToken).ConfigureAwait(true);
 		}
 
+		return new ReviewLogBulkDeletion(deleted, kept);
+	}
+
+	private async Task ReconcileReviewLogsAsync(CancellationToken cancellationToken)
+	{
 		RefreshReviewLogs();
 		if (SelectedReviewLog is not null && !ReviewLogs.Contains(SelectedReviewLog))
 		{
 			await SelectReviewLogAsync(ReviewLogs.Count == 0 ? null : ReviewLogs[0], cancellationToken)
 				.ConfigureAwait(true);
 		}
-
-		return new ReviewLogBulkDeletion(deleted, kept);
 	}
 
 	private void RefreshReviewLogs()

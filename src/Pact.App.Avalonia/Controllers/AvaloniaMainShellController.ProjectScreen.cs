@@ -71,14 +71,16 @@ internal sealed partial class AvaloniaMainShellController
 		return true;
 	}
 
-	/// <summary>Deletes a review log of the shown project screen, unless a running review writes it.</summary>
-	public async Task DeleteReviewLogAsync(string relativePath, CancellationToken cancellationToken = default)
-	{
-		if (CurrentProjectScreen is not { } screen)
-		{
-			return;
-		}
+	// Deletion takes the screen the user confirmed it on: while the dialog waits, a review finishing
+	// elsewhere can bring up another project's screen.
 
+	/// <summary>Deletes a review log of a project screen, unless a running review writes it.</summary>
+	public async Task DeleteReviewLogAsync(
+		ProjectScreenViewModel screen,
+		string relativePath,
+		CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(screen);
 		var result = await screen.DeleteReviewLogAsync(relativePath, cancellationToken);
 		if (result == ReviewLogDeletion.InUse)
 		{
@@ -86,14 +88,12 @@ internal sealed partial class AvaloniaMainShellController
 		}
 	}
 
-	/// <summary>Deletes every review log of the shown project screen that no running review writes.</summary>
-	public async Task DeleteAllReviewLogsAsync(CancellationToken cancellationToken = default)
+	/// <summary>Deletes every review log of a project screen that no running review writes.</summary>
+	public async Task DeleteAllReviewLogsAsync(
+		ProjectScreenViewModel screen,
+		CancellationToken cancellationToken = default)
 	{
-		if (CurrentProjectScreen is not { } screen)
-		{
-			return;
-		}
-
+		ArgumentNullException.ThrowIfNull(screen);
 		var result = await screen.DeleteAllReviewLogsAsync(cancellationToken);
 		if (result.Kept > 0)
 		{

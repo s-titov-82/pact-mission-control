@@ -639,12 +639,17 @@ internal sealed partial class MainWindow : Window, IDisposable
 			: await MessageDialogWindow.ShowOwnedAsync(this, request);
 		if (result == MessageDialogResult.Yes)
 		{
-			await EngineProbeController.DeleteAllReviewLogsAsync();
+			await EngineProbeController.DeleteAllReviewLogsAsync(screen);
 		}
 	}
 
 	private async Task DeleteReviewLogAsync(string relativePath)
 	{
+		if (EngineProbeController.CurrentProjectScreen is not { } screen)
+		{
+			return;
+		}
+
 		MessageDialogRequest request = new(
 			"Delete review log",
 			$"Delete {Path.GetFileName(relativePath)}? The file is removed from the project.",
@@ -655,7 +660,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 			: await MessageDialogWindow.ShowOwnedAsync(this, request);
 		if (result == MessageDialogResult.Yes)
 		{
-			await EngineProbeController.DeleteReviewLogAsync(relativePath);
+			await EngineProbeController.DeleteReviewLogAsync(screen, relativePath);
 		}
 	}
 

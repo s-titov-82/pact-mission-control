@@ -371,6 +371,33 @@ public sealed class AvaloniaMainShellControllerTests
 		workspace.Notes.ShouldBeEmpty();
 	}
 
+	// A confirmation dialog awaits the user while other surfaces can come up (a review finishing
+	// in another project opens its log), so deletion acts on the screen that was confirmed.
+	[Test]
+	public async Task Review_logs_are_deleted_on_the_confirmed_screen_even_after_it_is_left()
+	{
+		await using ControllerFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var workspace = fixture.ViewModel.Workspaces.Single();
+		var folder = Path.Combine(fixture.Root, ".pact", "reviews");
+		Directory.CreateDirectory(folder);
+		await File.WriteAllTextAsync(Path.Combine(folder, "2026-10-26-1200-code-review-a.md"), "# A", TestContext.CurrentContext.CancellationToken);
+		await File.WriteAllTextAsync(Path.Combine(folder, "2026-10-26-1300-code-review-b.md"), "# B", TestContext.CurrentContext.CancellationToken);
+		await fixture.Controller.OpenProjectScreenAsync(workspace, ProjectScreenTab.ReviewLogs, TestContext.CurrentContext.CancellationToken);
+		var screen = fixture.Controller.CurrentProjectScreen.ShouldNotBeNull();
+		await fixture.Controller.SelectSessionAsync(
+			fixture.ViewModel.Sessions[0],
+			startIfNeeded: true,
+			cancellationToken: TestContext.CurrentContext.CancellationToken);
+		fixture.Controller.CurrentProjectScreen.ShouldBeNull();
+
+		await fixture.Controller.DeleteReviewLogAsync(screen, ".pact/reviews/2026-10-26-1300-code-review-b.md");
+		File.Exists(Path.Combine(folder, "2026-10-26-1300-code-review-b.md")).ShouldBeFalse();
+
+		await fixture.Controller.DeleteAllReviewLogsAsync(screen);
+		Directory.EnumerateFiles(folder).ShouldBeEmpty();
+	}
+
 	[Test]
 	public async Task Current_changes_follow_the_project_of_the_shown_session()
 	{
