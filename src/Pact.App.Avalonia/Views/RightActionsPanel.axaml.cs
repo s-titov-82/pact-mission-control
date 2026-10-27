@@ -129,6 +129,7 @@ internal sealed partial class RightActionsPanel : UserControl
 		ProjectListTitle.Text = showsFiles ? "Changed files" : "Review logs";
 		ChangedFilesList.IsVisible = showsFiles;
 		ReviewLogList.IsVisible = showsLogs;
+		DeleteAllReviewLogsButton.IsVisible = showsLogs && ProjectScreen!.HasReviewLogs;
 		_syncingSelection = true;
 		try
 		{
@@ -180,6 +181,12 @@ internal sealed partial class RightActionsPanel : UserControl
 			DeleteReviewLogRequested?.Invoke(this, log);
 		}
 	}
+
+	/// <summary>Raised when the delete-all button of the review log list is clicked.</summary>
+	public event EventHandler? DeleteAllReviewLogsRequested;
+
+	private void OnDeleteAllReviewLogsClicked(object? sender, RoutedEventArgs e) =>
+		DeleteAllReviewLogsRequested?.Invoke(this, EventArgs.Empty);
 
 	internal void ConfigureLifecycle(ObservedTaskGroup eventTasks) =>
 		_eventTasks = eventTasks ?? throw new ArgumentNullException(nameof(eventTasks));

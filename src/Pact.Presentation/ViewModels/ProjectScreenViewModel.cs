@@ -29,6 +29,11 @@ public enum ReviewLogDeletion
 	NotFound
 }
 
+/// <summary>How a request to delete every review log ended.</summary>
+/// <param name="Deleted">Logs removed.</param>
+/// <param name="Kept">Logs left in place because running reviews still write them.</param>
+public sealed record ReviewLogBulkDeletion(int Deleted, int Kept);
+
 /// <summary>The project screen shown in the center pane: overview, changes and review logs.</summary>
 public sealed class ProjectScreenViewModel : INotifyPropertyChanged
 {
@@ -207,6 +212,37 @@ public sealed class ProjectScreenViewModel : INotifyPropertyChanged
 		}
 
 		return ReviewLogDeletion.Deleted;
+	}
+
+	/// <summary>
+	/// Deletes every review log a running review does not write. A deleted shown log gives way to
+	/// the newest log left.
+	/// </summary>
+	public async Task<ReviewLogBulkDeletion> DeleteAllReviewLogsAsync(CancellationToken cancellationToken)
+	{
+		RefreshReviewLogs();
+		var deleted = 0;
+		var kept = 0;
+		foreach (var log in ReviewLogs)
+		{
+			if (_isLogInUse(log))
+			{
+				kept++;
+				continue;
+			}
+
+			ReviewLogFiles.Delete(RootPath, log);
+			deleted++;
+		}
+
+		RefreshReviewLogs();
+		if (SelectedReviewLog is not null && !ReviewLogs.Contains(SelectedReviewLog))
+		{
+			await SelectReviewLogAsync(ReviewLogs.Count == 0 ? null : ReviewLogs[0], cancellationToken)
+				.ConfigureAwait(true);
+		}
+
+		return new ReviewLogBulkDeletion(deleted, kept);
 	}
 
 	private void RefreshReviewLogs()

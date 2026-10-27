@@ -86,6 +86,23 @@ internal sealed partial class AvaloniaMainShellController
 		}
 	}
 
+	/// <summary>Deletes every review log of the shown project screen that no running review writes.</summary>
+	public async Task DeleteAllReviewLogsAsync(CancellationToken cancellationToken = default)
+	{
+		if (CurrentProjectScreen is not { } screen)
+		{
+			return;
+		}
+
+		var result = await screen.DeleteAllReviewLogsAsync(cancellationToken);
+		if (result.Kept > 0)
+		{
+			await ReportStatusAsync(result.Kept == 1
+				? "1 review is still running; its log stays until it ends."
+				: $"{result.Kept} reviews are still running; their logs stay until they end.");
+		}
+	}
+
 	// A review appends to its log until its footer is in; a delete before that would bring it
 	// back half-written.
 	private bool IsReviewLogInUse(WorkspaceViewModel workspace, string relativePath) =>

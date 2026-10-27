@@ -87,6 +87,39 @@ public sealed class ProjectScreenViewModelTests : IDisposable
 	}
 
 	[Test]
+	public async Task Deleting_all_logs_keeps_only_those_of_running_reviews()
+	{
+		WriteLog("2026-10-24-1400-code-review-a.md", "# A");
+		WriteLog("2026-10-25-1400-code-review-b.md", "# B");
+		WriteLog("2026-10-26-1400-code-review-c.md", "# C");
+		var screen = Create(git: false, logInUse: path => path.EndsWith("code-review-b.md", StringComparison.Ordinal));
+		await screen.SelectTabAsync(ProjectScreenTab.ReviewLogs, CancellationToken.None);
+
+		var result = await screen.DeleteAllReviewLogsAsync(CancellationToken.None);
+
+		result.ShouldBe(new ReviewLogBulkDeletion(Deleted: 2, Kept: 1));
+		screen.ReviewLogs.ShouldBe([".pact/reviews/2026-10-25-1400-code-review-b.md"]);
+		screen.SelectedReviewLog.ShouldBe(".pact/reviews/2026-10-25-1400-code-review-b.md");
+		screen.ReviewLogText.ShouldBe("# B");
+	}
+
+	[Test]
+	public async Task Deleting_all_logs_clears_the_view()
+	{
+		WriteLog("2026-10-24-1400-code-review-a.md", "# A");
+		WriteLog("2026-10-25-1400-code-review-b.md", "# B");
+		var screen = Create(git: false);
+		await screen.SelectTabAsync(ProjectScreenTab.ReviewLogs, CancellationToken.None);
+
+		(await screen.DeleteAllReviewLogsAsync(CancellationToken.None)).ShouldBe(new ReviewLogBulkDeletion(2, 0));
+
+		Directory.EnumerateFiles(Path.Combine(_root.Path, ".pact", "reviews")).ShouldBeEmpty();
+		screen.HasReviewLogs.ShouldBeFalse();
+		screen.SelectedReviewLog.ShouldBeNull();
+		screen.ReviewLogText.ShouldBeEmpty();
+	}
+
+	[Test]
 	public async Task Opening_an_unknown_log_reports_false_and_changes_nothing()
 	{
 		WriteLog("2026-10-24-1400-code-review-a.md", "# First");

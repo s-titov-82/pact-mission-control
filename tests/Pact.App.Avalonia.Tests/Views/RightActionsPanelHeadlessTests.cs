@@ -220,6 +220,29 @@ public sealed class RightActionsPanelHeadlessTests
 	}
 
 	[AvaloniaTest]
+	public async Task Delete_all_shows_only_while_there_are_logs_and_asks_to_delete_them()
+	{
+		using var root = TemporaryDirectory.Create();
+		var folder = Path.Combine(root.Path, ".pact", "reviews");
+		Directory.CreateDirectory(folder);
+		await File.WriteAllTextAsync(Path.Combine(folder, "2026-10-26-1200-a.md"), "# A");
+		var screen = Screen(root.Path, changes: null);
+		await screen.SelectTabAsync(ProjectScreenTab.ReviewLogs, CancellationToken.None);
+		RightActionsPanel panel = new() { ProjectScreen = screen };
+		var requests = 0;
+		panel.DeleteAllReviewLogsRequested += (_, _) => requests++;
+		var deleteAll = panel.FindControl<Button>("DeleteAllReviewLogsButton")!;
+
+		deleteAll.IsVisible.ShouldBeTrue();
+		deleteAll.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+		requests.ShouldBe(1);
+
+		await screen.DeleteAllReviewLogsAsync(CancellationToken.None);
+
+		deleteAll.IsVisible.ShouldBeFalse();
+	}
+
+	[AvaloniaTest]
 	public void The_overview_shows_no_project_list()
 	{
 		using var root = TemporaryDirectory.Create();

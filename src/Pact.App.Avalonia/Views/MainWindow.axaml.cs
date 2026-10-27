@@ -612,6 +612,35 @@ internal sealed partial class MainWindow : Window, IDisposable
 			handler => RightActions.DeleteReviewLogRequested -= handler,
 			"delete-review-log",
 			DeleteReviewLogAsync);
+		ObserveEvent(
+			handler => RightActions.DeleteAllReviewLogsRequested += handler,
+			handler => RightActions.DeleteAllReviewLogsRequested -= handler,
+			"delete-all-review-logs",
+			DeleteAllReviewLogsAsync);
+	}
+
+	private async Task DeleteAllReviewLogsAsync()
+	{
+		if (EngineProbeController.CurrentProjectScreen is not { HasReviewLogs: true } screen)
+		{
+			return;
+		}
+
+		var count = screen.ReviewLogs.Count;
+		MessageDialogRequest request = new(
+			"Delete all review logs",
+			count == 1
+				? "Delete the only review log? The file is removed from the project."
+				: $"Delete all {count} review logs? The files are removed from the project.",
+			MessageDialogButtons.YesNo,
+			MessageDialogResult.No);
+		var result = ShowMessageDialogAsyncOverride is not null
+			? await ShowMessageDialogAsyncOverride(request)
+			: await MessageDialogWindow.ShowOwnedAsync(this, request);
+		if (result == MessageDialogResult.Yes)
+		{
+			await EngineProbeController.DeleteAllReviewLogsAsync();
+		}
 	}
 
 	private async Task DeleteReviewLogAsync(string relativePath)
