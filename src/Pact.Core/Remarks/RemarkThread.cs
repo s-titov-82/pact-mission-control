@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Pact.Core.Remarks;
 
 /// <summary>Which version of a file a remark's line belongs to.</summary>
@@ -104,6 +106,7 @@ public sealed record RemarkThread(
 	bool IsResolved)
 {
 	/// <summary>Where the thread stands.</summary>
+	[JsonIgnore]
 	public RemarkThreadState State
 	{
 		get
@@ -135,13 +138,16 @@ public sealed record RemarkThread(
 	/// Every user message not sent yet, oldest first. A failed delivery hands its message back
 	/// while a newer one may already be typed; all of them go out with the next send.
 	/// </summary>
+	[JsonIgnore]
 	public IReadOnlyList<RemarkMessage> Unsent =>
 		Messages.Where(message => message.Author == RemarkAuthor.User && message.Delivery == RemarkDelivery.Draft).ToArray();
 
 	/// <summary>The newest unsent message, the one the draft box edits.</summary>
+	[JsonIgnore]
 	public RemarkMessage? EditableDraft => Unsent.Count == 0 ? null : Unsent[^1];
 
 	/// <summary>The session the newest sent user message went to.</summary>
+	[JsonIgnore]
 	public string? LastSessionId =>
 		Messages.LastOrDefault(message => message.Author == RemarkAuthor.User && message.Delivery == RemarkDelivery.Sent)?.SessionId;
 

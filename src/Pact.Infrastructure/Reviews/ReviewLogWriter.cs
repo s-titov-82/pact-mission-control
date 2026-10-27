@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using Pact.Core.Reviews;
+using Pact.Infrastructure.Storage;
 
 namespace Pact.Infrastructure.Reviews;
 
@@ -47,14 +48,9 @@ public sealed class ReviewLogWriter : IDisposable
 		ArgumentException.ThrowIfNullOrWhiteSpace(templateId);
 		ArgumentException.ThrowIfNullOrWhiteSpace(reviewId);
 
-		var pactDirectory = Path.Combine(projectRoot, ".pact");
-		var reviewsDirectory = Path.Combine(pactDirectory, "reviews");
+		PactFolder.EnsureGitIgnored(projectRoot);
+		var reviewsDirectory = Path.Combine(projectRoot, ".pact", "reviews");
 		Directory.CreateDirectory(reviewsDirectory);
-		var gitignore = Path.Combine(pactDirectory, ".gitignore");
-		if (!File.Exists(gitignore))
-		{
-			File.WriteAllText(gitignore, "*\n", Utf8);
-		}
 
 		PruneDirectory(reviewsDirectory, logsInUse, keep: KeptLogs - 1);
 
