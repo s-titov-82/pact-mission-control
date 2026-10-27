@@ -60,7 +60,9 @@ public sealed class PactSkillPublisherTests
 			"pact_append_project_note",
 			"pact_list_web_tabs",
 			"pact_resume_web_tab",
-			"pact_get_web_tab_html"
+			"pact_get_web_tab_html",
+			"pact_reply_remark",
+			"pact_list_remarks"
 		];
 		foreach (var toolName in toolNames)
 		{

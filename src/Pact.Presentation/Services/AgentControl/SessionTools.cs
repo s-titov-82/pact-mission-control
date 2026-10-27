@@ -17,14 +17,17 @@ public static class SessionTools
 	/// <param name="profiles">Current reviewer profiles; read on any thread when listing.</param>
 	/// <param name="reportStatusAsync">Reports a successful action in the status bar.</param>
 	/// <param name="subscriptionUsage">Reads the subscription usage Pact shows, as for the orchestrator.</param>
+	/// <param name="remarks">The tools that answer and list the user's remark threads.</param>
 	public static AgentControlToolSet Create(
 		AgentControlDispatcher dispatcher,
 		ReviewRelay relay,
 		Func<IReadOnlyList<ScenarioDefinition>> scenarios,
 		Func<IReadOnlyList<ReviewProfile>> profiles,
 		Func<string, Task> reportStatusAsync,
-		Func<AgentControlResult> subscriptionUsage)
+		Func<AgentControlResult> subscriptionUsage,
+		RemarkTools remarks)
 	{
+		ArgumentNullException.ThrowIfNull(remarks);
 		ArgumentNullException.ThrowIfNull(subscriptionUsage);
 		ArgumentNullException.ThrowIfNull(dispatcher);
 		ArgumentNullException.ThrowIfNull(relay);
@@ -248,7 +251,8 @@ public static class SessionTools
 					+ "limits (used percent and when each resets). Use it to plan work or to schedule a "
 					+ "wake-up after a reset.",
 				() => AgentControlSchema.Object(new()),
-				(_, _) => CompleteAsync(subscriptionUsage(), "[]", statusText: null))
+				(_, _) => CompleteAsync(subscriptionUsage(), "[]", statusText: null)),
+			.. remarks.Create()
 		]);
 	}
 }

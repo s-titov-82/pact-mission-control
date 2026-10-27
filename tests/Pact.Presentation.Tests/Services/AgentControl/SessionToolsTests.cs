@@ -4,6 +4,7 @@ using Pact.Core.AgentControl;
 using Pact.Infrastructure.AgentControl;
 using Pact.Infrastructure.Reviews;
 using Pact.Presentation.Services.AgentControl;
+using Pact.Presentation.Services.Remarks;
 using Pact.Presentation.Services.Reviews;
 using Pact.Presentation.Tests.Services.Reviews;
 
@@ -27,7 +28,9 @@ public sealed class SessionToolsTests
 					"pact_get_notes",
 					"pact_replace_notes",
 					"pact_open_document",
-					"pact_get_subscription_usage"
+					"pact_get_subscription_usage",
+					"pact_reply_remark",
+					"pact_list_remarks"
 				],
 				ignoreOrder: true);
 	}
@@ -194,14 +197,20 @@ public sealed class SessionToolsTests
 		IReadOnlyList<ReviewProfile>? profiles = null,
 		Func<string, Task>? reportStatusAsync = null,
 		ReviewRelay? relay = null,
-		Func<AgentControlResult>? usage = null) =>
-		SessionTools.Create(
-			new AgentControlDispatcher(new AgentControlDispatcherTests.FakeAgentControlHost()),
+		Func<AgentControlResult>? usage = null)
+	{
+		AgentControlDispatcher dispatcher = new(new AgentControlDispatcherTests.FakeAgentControlHost());
+		return SessionTools.Create(
+			dispatcher,
 			relay ?? CreateRelay(Path.GetTempPath(), scenarios ?? [], profiles ?? []),
 			() => scenarios ?? [],
 			() => profiles ?? [],
 			reportStatusAsync ?? (_ => Task.CompletedTask),
-			usage ?? (() => AgentControlResult.Ok("[]")));
+			usage ?? (() => AgentControlResult.Ok("[]")),
+			new RemarkTools(dispatcher, SharedBooks, (_, _) => Task.FromResult<string?>(null), _ => Task.CompletedTask));
+	}
+
+	private static readonly RemarkBooks SharedBooks = new(TimeProvider.System);
 
 	private static ReviewRelay CreateRelay(
 		string root,

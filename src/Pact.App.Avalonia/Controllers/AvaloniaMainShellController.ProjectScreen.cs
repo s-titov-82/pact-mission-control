@@ -108,6 +108,10 @@ internal sealed partial class AvaloniaMainShellController
 	private bool IsReviewLogInUse(WorkspaceViewModel workspace, string relativePath) =>
 		_reviewRelay.IsLogInUse(Path.Combine(workspace.RootPath, relativePath.Replace('/', Path.DirectorySeparatorChar)));
 
+	// The commit the remark tools compare old-side remarks with; null while HEAD is unborn or git fails.
+	private async Task<string?> ReadHeadCommitAsync(string projectRoot, CancellationToken cancellationToken) =>
+		(await WorkingTreeReader.ReadChangesAsync(projectRoot, cancellationToken).ConfigureAwait(false))?.HeadCommit;
+
 	private static bool IsReviewLogPath(string relativePath) =>
 		relativePath.StartsWith(ReviewLogFiles.Folder + "/", StringComparison.OrdinalIgnoreCase);
 

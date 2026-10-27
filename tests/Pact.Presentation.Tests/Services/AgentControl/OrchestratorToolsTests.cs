@@ -171,8 +171,11 @@ public sealed class OrchestratorToolsTests
 			new OrchestratorDispatcher(new OrchestratorDispatcherTests.FakeOrchestratorHost()));
 
 	private static AgentControlToolSet CreateSessionTools() =>
+		CreateSessionTools(new AgentControlDispatcher(new AgentControlDispatcherTests.FakeAgentControlHost()));
+
+	private static AgentControlToolSet CreateSessionTools(AgentControlDispatcher dispatcher) =>
 		SessionTools.Create(
-			new AgentControlDispatcher(new AgentControlDispatcherTests.FakeAgentControlHost()),
+			dispatcher,
 			new ReviewRelay(
 				new ReviewRelayTests.FakeReviewRelayHost(Path.GetTempPath()),
 				() => [],
@@ -182,7 +185,10 @@ public sealed class OrchestratorToolsTests
 			() => [],
 			() => [],
 			_ => Task.CompletedTask,
-			() => AgentControlResult.Ok("[]"));
+			() => AgentControlResult.Ok("[]"),
+			new RemarkTools(dispatcher, SharedBooks, (_, _) => Task.FromResult<string?>(null), _ => Task.CompletedTask));
+
+	private static readonly Pact.Presentation.Services.Remarks.RemarkBooks SharedBooks = new(TimeProvider.System);
 
 	private static readonly Pact.Infrastructure.Reviews.ReviewLogWriter SharedLog = new();
 

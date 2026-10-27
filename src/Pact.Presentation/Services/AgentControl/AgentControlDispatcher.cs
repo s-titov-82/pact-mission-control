@@ -170,6 +170,25 @@ public sealed class AgentControlDispatcher
 				$"The Docs pane does not list '{relativePath}'; files in generated folders such as .git, bin or .pact-reviews are not shown.");
 	}
 
+	/// <summary>Resolves the root of the calling session's project, or the refusal for ROOT and unknown sessions.</summary>
+	public async Task<(string? Root, AgentControlResult? Refusal)> ResolveProjectRootAsync(
+		string sessionId,
+		CancellationToken cancellationToken)
+	{
+		if (!_host.TryGetOwner(sessionId, out var owner))
+		{
+			return (null, UnknownSession());
+		}
+
+		var failure = AgentControlRequestValidator.ValidateProjectNotesOwner(owner);
+		if (failure is not null)
+		{
+			return (null, AgentControlResult.Refused(failure));
+		}
+
+		return (await _host.GetProjectRootAsync(owner.ProjectId!, cancellationToken).ConfigureAwait(false), null);
+	}
+
 	private static AgentControlResult UnknownSession() =>
 		AgentControlResult.Refused(
 			"unknown-session",
