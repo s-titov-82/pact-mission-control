@@ -483,6 +483,37 @@ public sealed class ReviewRelayTests : IDisposable
 	}
 
 	[Test]
+	public async Task A_log_counts_as_in_use_until_its_footer_is_written()
+	{
+		var (relay, host) = Create();
+		var reviewId = (await relay.RequestAsync(Author, Request(), CancellationToken.None)).Payload!;
+		var logPath = relay.Find(reviewId)!.LogPath;
+		var turnId = (string)Turn(relay, Reviewer)["turnId"]!;
+		relay.IsLogInUse(logPath.ToUpperInvariant()).ShouldBeTrue();
+		File.SetAttributes(logPath, FileAttributes.ReadOnly);
+		bool? inUseWhileEnding = null;
+		bool? listedWhileEnding = null;
+		host.OnTrace = line =>
+		{
+			if (!line.Contains("step=footer", StringComparison.Ordinal))
+			{
+				return;
+			}
+
+			host.OnTrace = null;
+			File.SetAttributes(logPath, FileAttributes.Normal);
+			inUseWhileEnding = relay.IsLogInUse(logPath);
+			listedWhileEnding = relay.ListActive().Count > 0;
+		};
+
+		await relay.SubmitAsync(Reviewer, turnId, "All good.", approved: true, CancellationToken.None);
+
+		listedWhileEnding.ShouldBe(false);
+		inUseWhileEnding.ShouldBe(true);
+		relay.IsLogInUse(logPath).ShouldBeFalse();
+	}
+
+	[Test]
 	public async Task Ending_a_project_s_reviews_is_quiet()
 	{
 		var (relay, host) = Create();

@@ -37,11 +37,37 @@ public sealed class ReviewLogFilesTests
 	[TestCase("docs/plan.md")]
 	[TestCase(".pact/reviews/../../plan.md")]
 	[TestCase(".pact/reviews/old/2026-10-26-0000-code-review-c.md")]
+	[TestCase(".pact/reviews/C:outside.md")]
+	[TestCase(".pact/reviews/a|b.md")]
 	public void Deleting_refuses_anything_but_a_log_in_the_folder(string relativePath)
 	{
 		using var root = TemporaryDirectory.Create();
 
 		Should.Throw<ArgumentException>(() => ReviewLogFiles.Delete(root.Path, relativePath));
+	}
+
+	// A drive-relative name resolves against the process's current folder, which this test sets.
+	[Test]
+	[NonParallelizable]
+	public void A_drive_relative_name_leaves_files_outside_the_folder_alone()
+	{
+		using var root = TemporaryDirectory.Create();
+		Directory.CreateDirectory(Path.Combine(root.Path, ".pact", "reviews"));
+		var drive = Path.GetPathRoot(root.Path)![..2];
+		var previous = Environment.CurrentDirectory;
+		Environment.CurrentDirectory = root.Path;
+		try
+		{
+			File.WriteAllText(Path.Combine(root.Path, "sentinel.md"), "keep");
+
+			Should.Throw<ArgumentException>(() => ReviewLogFiles.Delete(root.Path, $".pact/reviews/{drive}sentinel.md"));
+
+			File.Exists(Path.Combine(root.Path, "sentinel.md")).ShouldBeTrue();
+		}
+		finally
+		{
+			Environment.CurrentDirectory = previous;
+		}
 	}
 
 	[Test]

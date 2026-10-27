@@ -86,14 +86,10 @@ internal sealed partial class AvaloniaMainShellController
 		}
 	}
 
-	// A running review appends to its log, which would come back half-written after a delete.
-	private bool IsReviewLogInUse(WorkspaceViewModel workspace, string relativePath)
-	{
-		var path = Path.GetFullPath(Path.Combine(workspace.RootPath, relativePath.Replace('/', Path.DirectorySeparatorChar)));
-		return _reviewRelay.ListActive().Any(review =>
-			review.LogPath.Length > 0
-			&& string.Equals(Path.GetFullPath(review.LogPath), path, StringComparison.OrdinalIgnoreCase));
-	}
+	// A review appends to its log until its footer is in; a delete before that would bring it
+	// back half-written.
+	private bool IsReviewLogInUse(WorkspaceViewModel workspace, string relativePath) =>
+		_reviewRelay.IsLogInUse(Path.Combine(workspace.RootPath, relativePath.Replace('/', Path.DirectorySeparatorChar)));
 
 	private static bool IsReviewLogPath(string relativePath) =>
 		relativePath.StartsWith(ReviewLogFiles.Folder + "/", StringComparison.OrdinalIgnoreCase);

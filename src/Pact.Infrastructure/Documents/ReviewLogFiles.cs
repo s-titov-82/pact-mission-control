@@ -36,14 +36,20 @@ public static class ReviewLogFiles
 		var name = relativePath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
 			? relativePath[prefix.Length..]
 			: string.Empty;
+		// A drive-qualified name such as "C:x.md" would make Path.Combine drop the folder, so the
+		// name must be a plain file name and the resolved file must sit directly in the folder.
+		var folder = Path.GetFullPath(Path.Combine(projectRoot, ".pact", "reviews"));
+		var target = name.Length == 0 ? string.Empty : Path.GetFullPath(Path.Combine(folder, name));
 		if (name.Length == 0
-			|| name.IndexOfAny(['/', '\\']) >= 0
+			|| name.IndexOfAny(['/', '\\', ':']) >= 0
+			|| name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0
 			|| name.Contains("..", StringComparison.Ordinal)
-			|| !name.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
+			|| !name.EndsWith(".md", StringComparison.OrdinalIgnoreCase)
+			|| !string.Equals(Path.GetDirectoryName(target), folder, StringComparison.OrdinalIgnoreCase))
 		{
 			throw new ArgumentException($"Not a review log: {relativePath}", nameof(relativePath));
 		}
 
-		File.Delete(Path.Combine(projectRoot, ".pact", "reviews", name));
+		File.Delete(target);
 	}
 }

@@ -458,6 +458,20 @@ public sealed class ReviewRelay
 		}
 	}
 
+	/// <summary>
+	/// Whether a review still writes the log at a path: from its start until its footer is in,
+	/// which outlasts <see cref="ListActive"/> while the review ends.
+	/// </summary>
+	public bool IsLogInUse(string logPath)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(logPath);
+		var path = Path.GetFullPath(logPath);
+		lock (_gate)
+		{
+			return LogsInUse().Any(used => string.Equals(Path.GetFullPath(used), path, StringComparison.OrdinalIgnoreCase));
+		}
+	}
+
 	/// <summary>An active review, or <see langword="null"/>.</summary>
 	public ReviewSummary? Find(string reviewId)
 	{
