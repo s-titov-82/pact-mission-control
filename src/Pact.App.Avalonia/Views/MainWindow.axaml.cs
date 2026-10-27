@@ -1291,6 +1291,11 @@ internal sealed partial class MainWindow : Window, IDisposable
 			RightActions.Changes = EngineProbeController.CurrentChanges;
 		}
 
+		if (e.PropertyName == nameof(AvaloniaMainShellController.CurrentRemarks))
+		{
+			RightActions.Remarks = EngineProbeController.CurrentRemarks;
+		}
+
 		if (e.PropertyName == nameof(AvaloniaMainShellController.CurrentDocsAndNotes))
 		{
 			NotesPane.Workspace = EngineProbeController.CurrentDocsAndNotes;

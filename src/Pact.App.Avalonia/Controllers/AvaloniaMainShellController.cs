@@ -63,7 +63,8 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 	private readonly OrchestratorSupervisor _orchestrator;
 	private readonly ReviewLogWriter _reviewLog = new();
 	private readonly ReviewRelay _reviewRelay;
-	private readonly RemarkBooks _remarkBooks;
+	/// <summary>The projects' remarks, shared by the Changes tabs and the agent tools.</summary>
+	internal RemarkBooks RemarkBooks { get; }
 	private readonly ResumeCaptureService _resumeCapture;
 	private IReadOnlyList<ResolvedGitHelperAction> _resolvedGitHelperActions = [];
 	private GitButtonCommandSet _gitButtonCommands = GitButtonCommandSet.Create(null);
@@ -227,7 +228,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 			_timeProvider,
 			ShowSessionTerminalUnderBusyAsync,
 			ReportStatusAsync);
-		_remarkBooks = new RemarkBooks(_timeProvider);
+		RemarkBooks = new RemarkBooks(_timeProvider);
 		AgentControlHost agentControlHost = new(ViewModel, _uiTaskDispatcher, OpenProjectDocumentAsync);
 		AgentControlDispatcher agentControlDispatcher = new(agentControlHost);
 		OrchestratorHost orchestratorHost = new(
@@ -251,7 +252,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 				_orchestratorDispatcher.GetSubscriptionUsage,
 				new RemarkTools(
 					agentControlDispatcher,
-					_remarkBooks,
+					RemarkBooks,
 					ReadHeadCommitAsync,
 					status => _uiTaskDispatcher.InvokeAsync(() => ReportStatusAsync(status)))),
 			OrchestratorTools.Create(_orchestratorDispatcher));
@@ -2053,7 +2054,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		finally
 		{
 			DisposeProjectScreens();
-			_remarkBooks.Dispose();
+			RemarkBooks.Dispose();
 			_processMetricsMonitor.MetricsChanged -= OnProcessMetricsChanged;
 			_processMetricsMonitor.Dispose();
 			_webProcessMetricsMonitor.MetricsChanged -= OnWebProcessMetricsChanged;

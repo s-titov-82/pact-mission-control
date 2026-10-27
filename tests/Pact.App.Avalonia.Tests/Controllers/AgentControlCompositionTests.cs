@@ -682,6 +682,35 @@ public sealed class AgentControlCompositionTests
 
 	private sealed record ToolResult(string Text, bool IsError);
 
+	[Test]
+	public async Task A_remark_answer_over_mcp_lands_in_the_project_and_only_there()
+	{
+		await using CompositionFixture fixture = new(twoProjects: true);
+		await fixture.InitializeAsync();
+		await fixture.StartSessionAsync(CompositionFixture.SessionB);
+		var book = fixture.Controller.RemarkBooks.For(fixture.RootOf(CompositionFixture.ProjectA));
+		await book.AddAsync(
+			new Pact.Core.Remarks.RemarkAnchor("a.cs", Pact.Core.Remarks.RemarkSide.Old, 1, "x", [], [], "head", null),
+			null,
+			"why?",
+			CancellationToken.None);
+
+		var other = await fixture.InvokeToolAsync(
+			CompositionFixture.SessionB,
+			"pact_reply_remark",
+			new JsonObject { ["id"] = "C1", ["text"] = "not mine" });
+		var own = await fixture.InvokeToolAsync(
+			CompositionFixture.SessionA,
+			"pact_reply_remark",
+			new JsonObject { ["id"] = "C1", ["text"] = "because", ["resolve"] = true });
+
+		other.IsError.ShouldBeTrue();
+		other.Text.ShouldStartWith("unknown-remark:");
+		own.IsError.ShouldBeFalse(own.Text);
+		book.Threads.Single().State.ShouldBe(Pact.Core.Remarks.RemarkThreadState.Resolved);
+		book.Threads.Single().Messages.ShouldNotContain(message => message.Text == "not mine");
+	}
+
 	private sealed class CompositionFixture : IAsyncDisposable
 	{
 		public const string ProjectA = "project-a";

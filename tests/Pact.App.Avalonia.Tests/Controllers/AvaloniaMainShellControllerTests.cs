@@ -9,6 +9,7 @@ using Pact.Core.Git;
 using Pact.Core.Platform;
 using Pact.Core.Presentation;
 using Pact.Core.Projects;
+using Pact.Core.Remarks;
 using Pact.Core.RootTabs;
 using Pact.Core.Prompting;
 using Pact.Core.Sessions;
@@ -418,6 +419,82 @@ public sealed class AvaloniaMainShellControllerTests
 			TestContext.CurrentContext.CancellationToken);
 		fixture.Controller.CurrentProjectScreen.ShouldNotBeNull().Changes.ShouldBeSameAs(changes);
 		fixture.Controller.CurrentProjectScreen!.SelectedTab.ShouldBe(ProjectScreenTab.Changes);
+	}
+
+	[Test]
+	public async Task Remarks_follow_the_shown_project()
+	{
+		await using ControllerFixture fixture = new(gitRepository: true, secondGitProject: true);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var first = fixture.ViewModel.Workspaces.Single(workspace => workspace.RootPath == fixture.Root);
+		var second = fixture.ViewModel.Workspaces.Single(workspace => workspace.RootPath == fixture.SecondRoot);
+
+		await fixture.Controller.OpenProjectScreenAsync(first, ProjectScreenTab.Changes, TestContext.CurrentContext.CancellationToken);
+		var remarks = fixture.Controller.CurrentRemarks.ShouldNotBeNull();
+		fixture.Controller.CurrentProjectScreen!.Remarks.ShouldBeSameAs(remarks);
+
+		await fixture.Controller.OpenProjectScreenAsync(second, ProjectScreenTab.Changes, TestContext.CurrentContext.CancellationToken);
+		fixture.Controller.CurrentRemarks.ShouldNotBeNull().ShouldNotBeSameAs(remarks);
+
+		await fixture.Controller.CloseWorkspaceAsync(second, TestContext.CurrentContext.CancellationToken);
+		fixture.Controller.CurrentRemarks.ShouldNotBeSameAs(remarks);
+	}
+
+	[Test]
+	public async Task An_agent_reply_reaches_the_open_changes_tab()
+	{
+		await using ControllerFixture fixture = new(gitRepository: true);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var workspace = fixture.ViewModel.Workspaces.Single();
+		await fixture.Controller.OpenProjectScreenAsync(workspace, ProjectScreenTab.Changes, TestContext.CurrentContext.CancellationToken);
+		var remarks = fixture.Controller.CurrentRemarks.ShouldNotBeNull();
+		var book = fixture.Controller.RemarkBooks.For(fixture.Root);
+		await book.AddAsync(new RemarkAnchor("a.cs", RemarkSide.Old, 1, "x", [], [], "head", null), null, "why?", CancellationToken.None);
+		await book.CompleteSendAsync(
+			(await book.BeginSendAsync("s1", CancellationToken.None))!,
+			new PromptDeliveryResult(PromptDeliveryOutcome.Confirmed, WriteAttempted: true, SubmitAttempted: true),
+			CancellationToken.None);
+
+		await book.AgentReplyAsync("C1", "because", resolve: false, CancellationToken.None);
+
+		await WaitUntilAsync(() => remarks.Elsewhere.Any(thread => thread.Id == "C1" && thread.StateText == "Answered"));
+		remarks.OpenCount.ShouldBe(1);
+	}
+
+	[Test]
+	public async Task Sending_remarks_delivers_to_the_picked_session()
+	{
+		await using ControllerFixture fixture = new(gitRepository: true);
+		List<(string Session, string Text)> delivered = [];
+		fixture.Controller.RemarkDelivery = (session, text, _) =>
+		{
+			delivered.Add((session, text));
+			return Task.FromResult(new PromptDeliveryResult(PromptDeliveryOutcome.Confirmed, WriteAttempted: true, SubmitAttempted: true));
+		};
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var workspace = fixture.ViewModel.Workspaces.Single();
+		await fixture.Controller.OpenProjectScreenAsync(workspace, ProjectScreenTab.Changes, TestContext.CurrentContext.CancellationToken);
+		var remarks = fixture.Controller.CurrentRemarks.ShouldNotBeNull();
+		await fixture.Controller.RemarkBooks.For(fixture.Root)
+			.AddAsync(new RemarkAnchor("a.cs", RemarkSide.Old, 1, "x", [], [], "head", null), null, "why?", CancellationToken.None);
+		var target = remarks.SendTargets[^1];
+		target.Title.ShouldBe(workspace.Sessions[^1].Title);
+
+		await remarks.SendAsync(target.SessionId, CancellationToken.None);
+
+		var (session, text) = delivered.ShouldHaveSingleItem();
+		session.ShouldBe(workspace.Sessions[^1].Record.Id);
+		text.ShouldContain("C1 · a.cs, removed line 1 of HEAD head · why?");
+	}
+
+	private static async Task WaitUntilAsync(Func<bool> condition)
+	{
+		for (var attempt = 0; attempt < 200 && !condition(); attempt++)
+		{
+			await Task.Delay(10);
+		}
+
+		condition().ShouldBeTrue();
 	}
 
 	[Test]

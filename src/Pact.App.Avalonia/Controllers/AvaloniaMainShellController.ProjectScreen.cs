@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using Pact.Infrastructure.Documents;
+using Pact.Core.Sessions;
 using Pact.Infrastructure.Storage;
+using Pact.Presentation.Services.Remarks;
 using Pact.Presentation.ViewModels;
 
 namespace Pact.App.Avalonia.Controllers;
@@ -10,6 +12,7 @@ internal sealed partial class AvaloniaMainShellController
 {
 	private readonly Dictionary<string, ProjectScreenViewModel> _projectScreens = new(StringComparer.Ordinal);
 	private readonly Dictionary<string, ProjectChangesViewModel> _projectChanges = new(StringComparer.Ordinal);
+	private readonly Dictionary<string, ChangesRemarksViewModel> _projectRemarks = new(StringComparer.Ordinal);
 	private readonly HashSet<WorkspaceViewModel> _watchedWorkspaces = [];
 	private IDisposable? _changesObservation;
 	private ProjectFileChangeSignal? _changesSignal;
@@ -25,6 +28,12 @@ internal sealed partial class AvaloniaMainShellController
 	/// <see langword="null"/> when nothing of a git project is shown.
 	/// </summary>
 	public ProjectChangesViewModel? CurrentChanges { get; private set; }
+
+	/// <summary>The remark threads of the project <see cref="CurrentChanges"/> belongs to.</summary>
+	public ChangesRemarksViewModel? CurrentRemarks { get; private set; }
+
+	/// <summary>Delivers a remark prompt; tests replace it, otherwise the shared prompt delivery runs.</summary>
+	internal Func<string, string, CancellationToken, Task<PromptDeliveryResult>>? RemarkDelivery { get; set; }
 
 	/// <summary>Shows a project's screen on the given tab.</summary>
 	public async Task OpenProjectScreenAsync(
@@ -127,7 +136,8 @@ internal sealed partial class AvaloniaMainShellController
 			workspace,
 			GetOrCreateProjectChanges(workspace),
 			new ProjectMarkdownFileStore(),
-			relativePath => IsReviewLogInUse(workspace, relativePath));
+			relativePath => IsReviewLogInUse(workspace, relativePath),
+			_projectRemarks.GetValueOrDefault(workspace.Id));
 		_projectScreens[workspace.Id] = screen;
 		WatchWorkspace(workspace);
 		return screen;
@@ -148,11 +158,28 @@ internal sealed partial class AvaloniaMainShellController
 				_timeProvider,
 				_uiTaskDispatcher.Post);
 			_projectChanges.Add(workspace.Id, changes);
+			_projectRemarks[workspace.Id] = CreateRemarks(workspace, changes);
 			WatchWorkspace(workspace);
 		}
 
 		return changes;
 	}
+
+	// The remarks of a project's Changes tab, sent to one of the project's sessions through the shared delivery.
+	private ChangesRemarksViewModel CreateRemarks(WorkspaceViewModel workspace, ProjectChangesViewModel changes) =>
+		new(
+			changes,
+			RemarkBooks.For(workspace.RootPath),
+			() => workspace.Sessions.Select(session => new SessionTarget(session.Record.Id, session.Title)).ToArray(),
+			(sessionId, text, cancellationToken) => RemarkDelivery?.Invoke(sessionId, text, cancellationToken)
+				?? _runtimeCoordinator.DeliverPromptAsync(
+					sessionId,
+					text,
+					submit: true,
+					PromptSender.Outsider,
+					startIfNotRunning: true,
+					cancellationToken),
+			_uiTaskDispatcher.Post);
 
 	private void WatchWorkspace(WorkspaceViewModel workspace)
 	{
@@ -234,6 +261,8 @@ internal sealed partial class AvaloniaMainShellController
 		}
 
 		OnPropertyChanged(nameof(CurrentChanges));
+		CurrentRemarks = workspace is null ? null : _projectRemarks.GetValueOrDefault(workspace.Id);
+		OnPropertyChanged(nameof(CurrentRemarks));
 	}
 
 	private WorkspaceViewModel? FindShownWorkspace() => PresentedSurface switch
@@ -286,6 +315,17 @@ internal sealed partial class AvaloniaMainShellController
 			_projectChanges.Remove(workspace.Id);
 		}
 
+		if (_projectRemarks.Remove(workspace.Id, out var remarks))
+		{
+			if (ReferenceEquals(remarks, CurrentRemarks))
+			{
+				CurrentRemarks = null;
+				OnPropertyChanged(nameof(CurrentRemarks));
+			}
+
+			remarks.Dispose();
+		}
+
 		_projectScreens.Remove(workspace.Id);
 	}
 
@@ -298,6 +338,12 @@ internal sealed partial class AvaloniaMainShellController
 			changes.Dispose();
 		}
 
+		foreach (var remarks in _projectRemarks.Values)
+		{
+			remarks.Dispose();
+		}
+
+		_projectRemarks.Clear();
 		_projectChanges.Clear();
 		_projectScreens.Clear();
 		foreach (var workspace in _watchedWorkspaces.ToArray())
