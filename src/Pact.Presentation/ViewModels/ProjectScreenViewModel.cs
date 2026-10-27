@@ -81,6 +81,9 @@ public sealed class ProjectScreenViewModel : INotifyPropertyChanged
 	/// <summary>Review logs, newest first, as project-relative paths.</summary>
 	public IReadOnlyList<string> ReviewLogs { get; private set; } = [];
 
+	/// <summary>Whether the folder holds any review log.</summary>
+	public bool HasReviewLogs => ReviewLogs.Count > 0;
+
 	/// <summary>The log shown, or <see langword="null"/>.</summary>
 	public string? SelectedReviewLog { get; private set; }
 
@@ -213,6 +216,7 @@ public sealed class ProjectScreenViewModel : INotifyPropertyChanged
 		{
 			ReviewLogs = logs;
 			Raise(nameof(ReviewLogs));
+			Raise(nameof(HasReviewLogs));
 		}
 	}
 

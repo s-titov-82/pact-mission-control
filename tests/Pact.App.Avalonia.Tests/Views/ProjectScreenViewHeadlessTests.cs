@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using AvaloniaEdit;
+using Avalonia.Headless;
 using Avalonia.Headless.NUnit;
 using Avalonia.LogicalTree;
 using Avalonia.Themes.Fluent;
@@ -140,6 +141,36 @@ public sealed class ProjectScreenViewHeadlessTests
 				view.FindControl<Control>("ChangesPanel")!.IsVisible.ShouldBeFalse();
 				view.FindControl<Markdown.Avalonia.Full.MarkdownScrollViewer>("ReviewLogPreview")!
 					.Markdown.ShouldBe("# Review");
+			});
+	}
+
+	// Markdown.Avalonia's click-to-select indexes the first block of the document, so a click on
+	// an empty log once threw out of the message loop and froze the window.
+	[AvaloniaTest]
+	public async Task Clicking_the_log_area_after_the_last_log_is_deleted_is_harmless()
+	{
+		await WithScreenAsync(
+			new FileDiff(null, []),
+			async (screen, view, window) =>
+			{
+				var folder = Path.Combine(screen.RootPath, ".pact", "reviews");
+				Directory.CreateDirectory(folder);
+				const string log = ".pact/reviews/2026-10-26-1200-code-review-a.md";
+				await File.WriteAllTextAsync(Path.Combine(folder, "2026-10-26-1200-code-review-a.md"), "# Review");
+				await screen.OpenReviewLogAsync(log, CancellationToken.None);
+				window.UpdateLayout();
+
+				await screen.DeleteReviewLogAsync(log, CancellationToken.None);
+				window.UpdateLayout();
+				var panel = view.FindControl<Control>("ReviewLogsPanel")!;
+				var point = panel.TranslatePoint(new Point(40, 40), window)!.Value;
+
+				Should.NotThrow(() =>
+				{
+					window.MouseDown(point, global::Avalonia.Input.MouseButton.Left);
+					window.MouseUp(point, global::Avalonia.Input.MouseButton.Left);
+				});
+				view.FindControl<TextBlock>("NoReviewLogsText")!.IsVisible.ShouldBeTrue();
 			});
 	}
 

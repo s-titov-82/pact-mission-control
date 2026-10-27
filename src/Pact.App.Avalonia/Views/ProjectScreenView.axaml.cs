@@ -29,6 +29,7 @@ internal sealed partial class ProjectScreenView : UserControl
 		DiffEditor.Options.LineHeightFactor = DiffLineHeightFactor;
 		DiffEditor.TextArea.LeftMargins.Insert(0, _diffNumbers);
 		DiffEditor.TextArea.TextView.BackgroundRenderers.Add(_diffBackground);
+		MarkdownClickGuard.Attach(ReviewLogPreview);
 		DataContextChanged += (_, _) => Attach(DataContext as ProjectScreenViewModel);
 		// A review still running appends turns to the open log; re-read it while it is on screen.
 		_logReloadTimer = new DispatcherTimer { Interval = LogReloadInterval };

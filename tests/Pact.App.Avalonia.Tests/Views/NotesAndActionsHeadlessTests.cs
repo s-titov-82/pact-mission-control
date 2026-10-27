@@ -592,6 +592,54 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 		}
 	}
 
+	// Markdown.Avalonia's click-to-select throws once a rendered document turns empty, and the
+	// exception leaves the message loop. Only the templated viewer has the failing part.
+	[AvaloniaTest]
+	public async Task Clicking_the_preview_of_an_empty_document_is_harmless()
+	{
+		FluentTheme theme = new();
+		Application.Current!.Styles.Add(theme);
+		var root = CreateRoot();
+		try
+		{
+			Write(root, "README.md", "# Readme");
+			Write(root, "AGENTS.md", string.Empty);
+			var workspace = CreateWorkspace(root);
+			await workspace.RefreshAsync(CancellationToken.None);
+			NotesPaneView notes = new() { Workspace = workspace };
+			Window window = new() { Content = notes, Width = 800, Height = 600 };
+			window.Show();
+			try
+			{
+				await workspace.SelectSectionAsync(DocsAndNotesSection.Common, CancellationToken.None);
+				await workspace.SelectDocumentAsync(
+					workspace.CommonTree.Single(node => node.Title == "README.md"), CancellationToken.None);
+				window.UpdateLayout();
+				await workspace.SelectDocumentAsync(
+					workspace.CommonTree.Single(node => node.Title == "AGENTS.md"), CancellationToken.None);
+				window.UpdateLayout();
+				var preview = notes.FindControl<Control>("Preview")!;
+				preview.IsVisible.ShouldBeTrue();
+				var point = preview.TranslatePoint(new Point(40, 40), window)!.Value;
+
+				Should.NotThrow(() =>
+				{
+					window.MouseDown(point, MouseButton.Left);
+					window.MouseUp(point, MouseButton.Left);
+				});
+			}
+			finally
+			{
+				window.Close();
+			}
+		}
+		finally
+		{
+			Application.Current!.Styles.Remove(theme);
+			Directory.Delete(root, recursive: true);
+		}
+	}
+
 	[AvaloniaTest]
 	public async Task Mode_selection_is_remembered_independently_per_document()
 	{

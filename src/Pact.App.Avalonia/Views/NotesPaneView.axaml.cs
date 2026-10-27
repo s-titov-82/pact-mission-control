@@ -53,6 +53,7 @@ internal sealed partial class NotesPaneView : UserControl
 	public NotesPaneView()
 	{
 		InitializeComponent();
+		MarkdownClickGuard.Attach(Preview);
 		ConfirmDiscardAsync = ConfirmDiscardWithDialogAsync;
 		_externalChangeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
 		_externalChangeTimer.Tick += OnExternalChangeTimerTick;

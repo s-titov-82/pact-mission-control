@@ -62,9 +62,11 @@ public sealed class ProjectScreenViewModelTests : IDisposable
 		WriteLog("2026-10-24-1400-code-review-a.md", "# First");
 		var screen = Create(git: false);
 		await screen.SelectTabAsync(ProjectScreenTab.ReviewLogs, CancellationToken.None);
+		screen.HasReviewLogs.ShouldBeTrue();
 
 		await screen.DeleteReviewLogAsync(".pact/reviews/2026-10-24-1400-code-review-a.md", CancellationToken.None);
 
+		screen.HasReviewLogs.ShouldBeFalse();
 		screen.ReviewLogs.ShouldBeEmpty();
 		screen.SelectedReviewLog.ShouldBeNull();
 		screen.ReviewLogText.ShouldBeEmpty();
