@@ -42,16 +42,17 @@
       </Grid>
       <Grid x:Name="ProjectListSection" Grid.Row="1" Margin="0,20,0,0"
             RowDefinitions="Auto,*" IsVisible="False">
-        <Grid ColumnDefinitions="*,Auto">
+        <StackPanel Orientation="Horizontal" Spacing="10">
           <TextBlock x:Name="ProjectListTitle" FontWeight="SemiBold" VerticalAlignment="Center" />
-          <Button x:Name="DeleteAllReviewLogsButton" Grid.Column="1" Classes="compact-icon" IsVisible="False"
+          <Button x:Name="DeleteAllReviewLogsButton" Height="24" Padding="8,0"
+                  VerticalContentAlignment="Center" IsVisible="False"
                   ToolTip.Tip="Delete all review logs" Click="OnDeleteAllReviewLogsClicked">
-            <StackPanel Orientation="Horizontal" Spacing="4">
+            <StackPanel Orientation="Horizontal" Spacing="5">
               <PathIcon Width="12" Height="12" Data="{StaticResource AppDeleteIcon}" />
-              <TextBlock FontSize="11" VerticalAlignment="Center" Text="All" />
+              <TextBlock FontSize="12" VerticalAlignment="Center" Text="Delete all" />
             </StackPanel>
           </Button>
-        </Grid>
+        </StackPanel>
         <ListBox x:Name="ChangedFilesList" Grid.Row="1" Margin="0,8,0,0"
                  SelectionChanged="OnChangedFileSelectionChanged">
           <ListBox.ItemTemplate>

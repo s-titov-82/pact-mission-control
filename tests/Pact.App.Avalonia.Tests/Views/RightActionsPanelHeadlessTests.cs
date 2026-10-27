@@ -243,6 +243,43 @@ public sealed class RightActionsPanelHeadlessTests
 	}
 
 	[AvaloniaTest]
+	public async Task Delete_all_shows_its_label_next_to_the_title()
+	{
+		using var root = TemporaryDirectory.Create();
+		var folder = Path.Combine(root.Path, ".pact", "reviews");
+		Directory.CreateDirectory(folder);
+		await File.WriteAllTextAsync(Path.Combine(folder, "2026-10-26-1200-a.md"), "# A");
+		var screen = Screen(root.Path, changes: null);
+		await screen.SelectTabAsync(ProjectScreenTab.ReviewLogs, CancellationToken.None);
+		RightActionsPanel panel = new() { ProjectScreen = screen };
+		FluentTheme theme = new();
+		Application.Current!.Styles.Add(theme);
+		Window window = new() { Content = panel, Width = 320, Height = 800 };
+		window.Show();
+		try
+		{
+			window.UpdateLayout();
+			var deleteAll = panel.FindControl<Button>("DeleteAllReviewLogsButton")!;
+			var label = deleteAll.GetLogicalDescendants().OfType<TextBlock>().Single();
+			var title = panel.FindControl<TextBlock>("ProjectListTitle")!;
+
+			label.Text.ShouldBe("Delete all");
+			// compact-icon fixes the width at 24 and clips the label; the test app does not load
+			// App.axaml styles, so the class itself is checked.
+			deleteAll.Classes.ShouldNotContain("compact-icon");
+			deleteAll.Bounds.Width.ShouldBeGreaterThanOrEqualTo(label.DesiredSize.Width + 12);
+			var titleRight = title.TranslatePoint(new Point(title.Bounds.Width, 0), window)!.Value.X;
+			var buttonLeft = deleteAll.TranslatePoint(default, window)!.Value.X;
+			(buttonLeft - titleRight).ShouldBeInRange(4, 16);
+		}
+		finally
+		{
+			window.Close();
+			Application.Current.Styles.Remove(theme);
+		}
+	}
+
+	[AvaloniaTest]
 	public void The_overview_shows_no_project_list()
 	{
 		using var root = TemporaryDirectory.Create();
