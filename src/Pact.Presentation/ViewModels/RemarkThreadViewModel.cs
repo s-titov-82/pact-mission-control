@@ -79,6 +79,9 @@ public sealed class RemarkThreadViewModel : INotifyPropertyChanged
 		}
 	} = string.Empty;
 
+	/// <summary>Whether the draft box holds text that is not stored yet.</summary>
+	public bool HasUnsavedDraft => !string.Equals(DraftText, _storedDraft, StringComparison.Ordinal);
+
 	/// <summary>Whether the thread can be resolved.</summary>
 	public bool CanResolve => !Thread.IsResolved;
 

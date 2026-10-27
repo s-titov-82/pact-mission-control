@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:md="https://github.com/whistyun/Markdown.Avalonia"
              xmlns:editing="clr-namespace:Pact.App.Avalonia.Views.Editing"
+             xmlns:remarks="clr-namespace:Pact.App.Avalonia.Views.Remarks"
              x:Class="Pact.App.Avalonia.Views.ProjectScreenView"
              x:CompileBindings="False">
   <Grid RowDefinitions="Auto,*" Background="{DynamicResource AppPaneBackgroundBrush}">
@@ -27,6 +28,10 @@
         <editing:SourceEditor x:Name="DiffEditor" Grid.Row="1" IsReadOnly="True"
                        FontFamily="Cascadia Mono, Consolas, monospace" FontSize="14"
                        HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" />
+        <!-- Lies over the diff without taking its clicks; only the overlay inside is hit-testable. -->
+        <Canvas x:Name="RemarkLayer" Grid.Row="1" ClipToBounds="True">
+          <remarks:RemarkOverlay x:Name="RemarkOverlay" IsVisible="False" />
+        </Canvas>
         <Button x:Name="ShowAllButton" Grid.Row="2" Margin="12,6" HorizontalAlignment="Left"
                 Content="{Binding Changes.ShowAllText}" IsVisible="False" Click="OnShowAllClicked" />
       </Grid>

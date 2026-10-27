@@ -1,9 +1,11 @@
 using System.ComponentModel;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Pact.App.Avalonia.Lifecycle;
 using Pact.App.Avalonia.Views.Diff;
+using Pact.App.Avalonia.Views.Remarks;
 using Pact.Presentation.ViewModels;
 
 namespace Pact.App.Avalonia.Views;
@@ -14,21 +16,39 @@ internal sealed partial class ProjectScreenView : UserControl
 	private ObservedTaskGroup _eventTasks = new(static (_, _) => Task.CompletedTask);
 	private ProjectScreenViewModel? _screen;
 	private ProjectChangesViewModel? _changes;
+	private ChangesRemarksViewModel? _remarks;
 
 	private static readonly TimeSpan LogReloadInterval = TimeSpan.FromSeconds(2);
+	private static readonly IReadOnlyDictionary<int, IReadOnlyList<RemarkThreadViewModel>> NoThreads =
+		new Dictionary<int, IReadOnlyList<RemarkThreadViewModel>>();
 	private const double DiffLineHeightFactor = 1.3;
+	private const double OverlayMaxWidth = 640;
 	private readonly DispatcherTimer _logReloadTimer;
 
 	private readonly DiffLineNumberMargin _diffNumbers = new();
+	private readonly DiffRemarkMargin _remarkMargin = new();
 	private readonly DiffLineBackgroundRenderer _diffBackground = new();
 	private IReadOnlyList<DiffRowViewModel>? _shownRows;
+
+	// The row the remark overlay is open on and the diff it was opened on.
+	private int? _overlayRow;
+	private ShownDiff? _overlayDiff;
 
 	public ProjectScreenView()
 	{
 		InitializeComponent();
 		DiffEditor.Options.LineHeightFactor = DiffLineHeightFactor;
 		DiffEditor.TextArea.LeftMargins.Insert(0, _diffNumbers);
+		DiffEditor.TextArea.LeftMargins.Insert(1, _remarkMargin);
 		DiffEditor.TextArea.TextView.BackgroundRenderers.Add(_diffBackground);
+		DiffEditor.TextArea.TextView.ScrollOffsetChanged += (_, _) => PositionOverlay();
+		DiffEditor.TextArea.TextView.VisualLinesChanged += (_, _) => PositionOverlay();
+		_remarkMargin.RowClicked += (_, row) => OpenOverlay(row);
+		RemarkOverlay.CloseRequested += (_, _) => CloseOverlay();
+		RemarkOverlay.AddRequested += OnAddRemarkRequested;
+		RemarkOverlay.SizeChanged += (_, _) => PositionOverlay();
+		RemarkLayer.SizeChanged += (_, _) => PositionOverlay();
+		AddHandler(RemarkThreadView.ActionRequestedEvent, OnRemarkActionRequested);
 		MarkdownClickGuard.Attach(ReviewLogPreview);
 		DataContextChanged += (_, _) => Attach(DataContext as ProjectScreenViewModel);
 		// A review still running appends turns to the open log; re-read it while it is on screen.
@@ -58,10 +78,14 @@ internal sealed partial class ProjectScreenView : UserControl
 
 		_screen?.PropertyChanged -= OnScreenPropertyChanged;
 		_changes?.PropertyChanged -= OnChangesPropertyChanged;
+		_remarks?.PropertyChanged -= OnRemarksPropertyChanged;
 		_screen = screen;
 		_changes = screen?.Changes;
+		_remarks = screen?.Remarks;
 		_screen?.PropertyChanged += OnScreenPropertyChanged;
 		_changes?.PropertyChanged += OnChangesPropertyChanged;
+		_remarks?.PropertyChanged += OnRemarksPropertyChanged;
+		CloseOverlay();
 		RefreshTab();
 		RefreshChanges();
 	}
@@ -83,6 +107,19 @@ internal sealed partial class ProjectScreenView : UserControl
 		{
 			RefreshChanges();
 		}
+		else if (e.PropertyName == nameof(ProjectChangesViewModel.ShownDiff))
+		{
+			RefreshRemarkMarks();
+		}
+	}
+
+	private void OnRemarksPropertyChanged(object? sender, PropertyChangedEventArgs e)
+	{
+		if (e.PropertyName == nameof(ChangesRemarksViewModel.ThreadsByRow))
+		{
+			RefreshRemarkMarks();
+			RefreshOverlay();
+		}
 	}
 
 	private void RefreshTab()
@@ -101,6 +138,7 @@ internal sealed partial class ProjectScreenView : UserControl
 		DiffPlaceholderText.IsVisible = _changes?.DiffPlaceholder is not null;
 		ShowAllButton.IsVisible = _changes?.HiddenLineCount > 0;
 		RefreshDiffText();
+		RefreshRemarkMarks();
 	}
 
 	// One document holds the whole diff, a line per row: the editor draws only what is on screen
@@ -117,10 +155,169 @@ internal sealed partial class ProjectScreenView : UserControl
 		}
 
 		_shownRows = rows;
+		CloseOverlay();
 		_diffNumbers.SetRows(rows);
 		_diffBackground.SetRows(rows);
 		DiffEditor.Document.Text = string.Join('\n', rows.Select(row => row.Text));
 		DiffEditor.ScrollToHome();
+	}
+
+	// Marks go on the editor's rows only while the remarks were placed on that very row list.
+	private void RefreshRemarkMarks()
+	{
+		var shown = _changes?.ShownDiff;
+		if (_remarks is not { } remarks || shown is null || !ReferenceEquals(shown.Rows, _shownRows))
+		{
+			_remarkMargin.SetMarks(static _ => false, NoThreads);
+			return;
+		}
+
+		var placed = remarks.ThreadsByRow;
+		_remarkMargin.SetMarks(
+			row => remarks.CanRemarkOn(shown, row),
+			placed is not null && ReferenceEquals(placed.ForDiff.Rows, _shownRows) ? placed.ByRow : NoThreads);
+	}
+
+	private IReadOnlyList<RemarkThreadViewModel> ThreadsAt(int row) =>
+		_remarks?.ThreadsByRow is { } placed
+		&& ReferenceEquals(placed.ForDiff.Rows, _shownRows)
+		&& placed.ByRow.TryGetValue(row, out var threads)
+			? threads
+			: [];
+
+	private void OpenOverlay(int row)
+	{
+		if (_remarks is not { } remarks || _changes?.ShownDiff is not { } shown || !ReferenceEquals(shown.Rows, _shownRows))
+		{
+			return;
+		}
+
+		var threads = ThreadsAt(row);
+		var canAdd = threads.Count == 0 && remarks.CanRemarkOn(shown, row);
+		if (threads.Count == 0 && !canAdd)
+		{
+			return;
+		}
+
+		SaveTypedDrafts();
+		_overlayRow = row;
+		_overlayDiff = shown;
+		RemarkOverlay.Show(threads, canAdd);
+		RemarkOverlay.IsVisible = true;
+		PositionOverlay();
+	}
+
+	// After the threads moved: the overlay shows its row's threads, and closes when its thread is gone.
+	private void RefreshOverlay()
+	{
+		if (_overlayRow is not { } row)
+		{
+			return;
+		}
+
+		var threads = ThreadsAt(row);
+		var adding = threads.Count == 0 && _overlayDiff is { } shown && _remarks?.CanRemarkOn(shown, row) == true
+			&& RemarkOverlay.Threads.Count == 0;
+		if (threads.Count == 0 && !adding)
+		{
+			CloseOverlay();
+			return;
+		}
+
+		if (!threads.SequenceEqual(RemarkOverlay.Threads))
+		{
+			RemarkOverlay.Show(threads, adding);
+		}
+
+		PositionOverlay();
+	}
+
+	// Under its line, or above it when there is no room below; hidden while the line is scrolled away.
+	private void PositionOverlay()
+	{
+		if (_overlayRow is not { } row)
+		{
+			return;
+		}
+
+		var textView = DiffEditor.TextArea.TextView;
+		var line = row + 1;
+		var lineCount = DiffEditor.Document.LineCount;
+		if (line > lineCount)
+		{
+			CloseOverlay();
+			return;
+		}
+
+		var scroll = textView.ScrollOffset.Y;
+		var top = textView.GetVisualTopByDocumentLine(line);
+		var next = line < lineCount
+			? textView.GetVisualTopByDocumentLine(line + 1)
+			: top + (line > 1 ? top - textView.GetVisualTopByDocumentLine(line - 1) : textView.DefaultLineHeight);
+		var lineTop = top - scroll;
+		var lineBottom = next - scroll;
+		if (lineBottom <= 0 || lineTop >= textView.Bounds.Height || textView.TranslatePoint(default, RemarkLayer) is not { } origin)
+		{
+			RemarkOverlay.IsVisible = false;
+			return;
+		}
+
+		var width = Math.Max(160, Math.Min(OverlayMaxWidth, RemarkLayer.Bounds.Width - origin.X - 12));
+		RemarkOverlay.Width = width;
+		RemarkOverlay.Measure(new Size(width, double.PositiveInfinity));
+		var height = RemarkOverlay.DesiredSize.Height;
+		var y = origin.Y + lineBottom;
+		if (y + height > RemarkLayer.Bounds.Height && origin.Y + lineTop - height >= 0)
+		{
+			y = origin.Y + lineTop - height;
+		}
+
+		Canvas.SetLeft(RemarkOverlay, origin.X);
+		Canvas.SetTop(RemarkOverlay, y);
+		RemarkOverlay.IsVisible = true;
+	}
+
+	private void CloseOverlay()
+	{
+		SaveTypedDrafts();
+		_overlayRow = null;
+		_overlayDiff = null;
+		RemarkOverlay.IsVisible = false;
+		RemarkOverlay.Show([], canAdd: false);
+	}
+
+	// Typed but unsaved replies are kept when the overlay closes or moves to another row.
+	private void SaveTypedDrafts()
+	{
+		foreach (var thread in RemarkOverlay.Threads.Where(thread => thread.HasUnsavedDraft))
+		{
+			_eventTasks.TryRun("remark-save", () => thread.SaveDraftAsync(CancellationToken.None), static _ => Task.CompletedTask);
+		}
+	}
+
+	private void OnAddRemarkRequested(object? sender, string text)
+	{
+		if (_remarks is not { } remarks || _overlayDiff is not { } shown || _overlayRow is not { } row)
+		{
+			return;
+		}
+
+		_eventTasks.TryRun(
+			"remark-add",
+			async () =>
+			{
+				if (await remarks.AddRemarkAsync(shown, row, text, CancellationToken.None) is not null)
+				{
+					RemarkOverlay.ClearNewRemark();
+				}
+			},
+			static _ => Task.CompletedTask);
+	}
+
+	private void OnRemarkActionRequested(object? sender, RemarkActionEventArgs e)
+	{
+		e.Handled = true;
+		_eventTasks.TryRun(e.Name, () => e.Action(CancellationToken.None), static _ => Task.CompletedTask);
 	}
 
 	private void OnOverviewTabClicked(object? sender, RoutedEventArgs e) => SelectTab(ProjectScreenTab.Overview);

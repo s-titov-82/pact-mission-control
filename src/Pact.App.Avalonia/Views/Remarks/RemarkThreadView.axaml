@@ -1,0 +1,43 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Pact.App.Avalonia.Views.Remarks.RemarkThreadView"
+             x:CompileBindings="False">
+  <StackPanel Spacing="6">
+    <StackPanel Orientation="Horizontal" Spacing="8">
+      <TextBlock FontWeight="SemiBold" Text="{Binding Id}" />
+      <TextBlock Foreground="{DynamicResource AppTextMutedBrush}" Text="{Binding LocationText}" />
+      <TextBlock Foreground="{DynamicResource AppTextMutedBrush}" Text="{Binding StateText}" />
+      <Border x:Name="OutdatedBadge" Padding="5,0" CornerRadius="3" Background="#33F59E0B"
+              IsVisible="{Binding IsOutdated}">
+        <TextBlock FontSize="11" Text="Outdated" />
+      </Border>
+    </StackPanel>
+    <TextBlock FontFamily="Cascadia Mono, Consolas, monospace" FontSize="12"
+               Foreground="{DynamicResource AppTextMutedBrush}" TextTrimming="CharacterEllipsis"
+               Text="{Binding LineText, StringFormat='&gt; {0}'}" />
+    <ItemsControl x:Name="MessagesList" ItemsSource="{Binding Messages}">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate>
+          <StackPanel Margin="0,2">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <TextBlock FontWeight="SemiBold" Text="{Binding AuthorText}" />
+              <TextBlock FontSize="11" Foreground="{DynamicResource AppTextMutedBrush}"
+                         Text="{Binding DeliveryText}" IsVisible="{Binding DeliveryText, Converter={x:Static ObjectConverters.IsNotNull}}" />
+            </StackPanel>
+            <SelectableTextBlock TextWrapping="Wrap" Text="{Binding Text}" />
+          </StackPanel>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+    <TextBox x:Name="DraftBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="48" MaxHeight="160"
+             Watermark="Reply…" Text="{Binding DraftText, Mode=TwoWay}" />
+    <WrapPanel Orientation="Horizontal">
+      <Button x:Name="SaveButton" Margin="0,0,6,0" Content="Save" Click="OnSaveClicked" />
+      <Button x:Name="DiscardButton" Margin="0,0,6,0" Content="Discard" Click="OnDiscardClicked" />
+      <Button x:Name="ResolveButton" Margin="0,0,6,0" Content="Resolve" IsVisible="{Binding CanResolve}" Click="OnResolveClicked" />
+      <Button x:Name="ReopenButton" Margin="0,0,6,0" Content="Reopen" IsVisible="{Binding CanReopen}" Click="OnReopenClicked" />
+      <Button x:Name="RetryButton" Margin="0,0,6,0" Content="Send again" IsVisible="{Binding CanRetry}" Click="OnRetryClicked" />
+      <Button x:Name="MarkSentButton" Content="Mark as sent" IsVisible="{Binding CanRetry}" Click="OnMarkSentClicked" />
+    </WrapPanel>
+  </StackPanel>
+</UserControl>

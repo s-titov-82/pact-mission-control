@@ -46,12 +46,15 @@ public sealed class ProjectScreenViewModel : INotifyPropertyChanged
 	/// <param name="changes">The project's change list.</param>
 	/// <param name="fileStore">Reads the review logs.</param>
 	/// <param name="isLogInUse">Whether a running review writes the log at a project-relative path.</param>
+	/// <param name="remarks">The remark threads of the Changes tab; null outside git.</param>
 	public ProjectScreenViewModel(
 		WorkspaceViewModel workspace,
 		ProjectChangesViewModel? changes,
 		IProjectMarkdownFileStore fileStore,
-		Func<string, bool>? isLogInUse = null)
+		Func<string, bool>? isLogInUse = null,
+		ChangesRemarksViewModel? remarks = null)
 	{
+		Remarks = remarks;
 		Workspace = workspace ?? throw new ArgumentNullException(nameof(workspace));
 		Changes = changes;
 		_fileStore = fileStore ?? throw new ArgumentNullException(nameof(fileStore));
@@ -67,6 +70,9 @@ public sealed class ProjectScreenViewModel : INotifyPropertyChanged
 
 	/// <summary>The project's change list, or <see langword="null"/> outside git.</summary>
 	public ProjectChangesViewModel? Changes { get; }
+
+	/// <summary>The remark threads of the Changes tab, or <see langword="null"/> outside git.</summary>
+	public ChangesRemarksViewModel? Remarks { get; }
 
 	/// <summary>Whether the Changes tab exists.</summary>
 	public bool HasChanges => Changes is not null;
