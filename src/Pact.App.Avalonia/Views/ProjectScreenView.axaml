@@ -1,7 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:md="https://github.com/whistyun/Markdown.Avalonia"
-             xmlns:ae="https://github.com/avaloniaui/avaloniaedit"
+             xmlns:editing="clr-namespace:Pact.App.Avalonia.Views.Editing"
              x:Class="Pact.App.Avalonia.Views.ProjectScreenView"
              x:CompileBindings="False">
   <Grid RowDefinitions="Auto,*" Background="{DynamicResource AppPaneBackgroundBrush}">
@@ -24,7 +24,7 @@
       <Grid RowDefinitions="Auto,*,Auto">
         <TextBlock x:Name="DiffPlaceholderText" Margin="12" Opacity="0.7"
                    Text="{Binding Changes.DiffPlaceholder}" IsVisible="False" />
-        <ae:TextEditor x:Name="DiffEditor" Grid.Row="1" IsReadOnly="True"
+        <editing:SourceEditor x:Name="DiffEditor" Grid.Row="1" IsReadOnly="True"
                        FontFamily="Cascadia Mono, Consolas, monospace" FontSize="14"
                        HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" />
         <Button x:Name="ShowAllButton" Grid.Row="2" Margin="12,6" HorizontalAlignment="Left"

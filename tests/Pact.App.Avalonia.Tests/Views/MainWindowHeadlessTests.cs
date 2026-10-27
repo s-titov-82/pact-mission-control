@@ -15,6 +15,7 @@ using Pact.App.Avalonia.SelectionActions;
 using Pact.App.Avalonia.Tests.Controllers;
 using Pact.App.Avalonia.Tests.Fakes;
 using Pact.App.Avalonia.Views;
+using Pact.App.Avalonia.Views.Editing;
 using Pact.Core.Agents;
 using Pact.Core.Presentation;
 using Pact.Core.Projects;
@@ -133,7 +134,7 @@ public sealed class MainWindowHeadlessTests
 			note,
 			TestContext.CurrentContext.CancellationToken);
 		var notesPane = window.FindControl<NotesPaneView>("NotesPane").ShouldNotBeNull();
-		var editor = notesPane.FindControl<TextBox>("Editor").ShouldNotBeNull();
+		var editor = notesPane.FindControl<SourceEditor>("Editor").ShouldNotBeNull();
 		editor.SelectionStart = 0;
 		editor.SelectionEnd = "note selected".Length;
 
@@ -207,7 +208,7 @@ public sealed class MainWindowHeadlessTests
 			TestContext.CurrentContext.CancellationToken);
 		host.UpdateLayout();
 		var notesPane = mainWindow.FindControl<NotesPaneView>("NotesPane").ShouldNotBeNull();
-		var editor = notesPane.FindControl<TextBox>("Editor").ShouldNotBeNull();
+		var editor = notesPane.FindControl<SourceEditor>("Editor").ShouldNotBeNull();
 		Point editorPoint = new(40, 30);
 		editor.SelectionStart = 0;
 		editor.SelectionEnd = "note selected".Length;
@@ -239,7 +240,7 @@ public sealed class MainWindowHeadlessTests
 			TestContext.CurrentContext.CancellationToken);
 		host.UpdateLayout();
 		var notesPane = mainWindow.FindControl<NotesPaneView>("NotesPane").ShouldNotBeNull();
-		var editor = notesPane.FindControl<TextBox>("Editor").ShouldNotBeNull();
+		var editor = notesPane.FindControl<SourceEditor>("Editor").ShouldNotBeNull();
 		var popover =
 			mainWindow.FindControl<SelectionActionsPopover>("SelectionActions").ShouldNotBeNull();
 		var popup = popover.FindControl<Popup>("SelectionPopup").ShouldNotBeNull();
@@ -315,7 +316,7 @@ public sealed class MainWindowHeadlessTests
 	}
 
 	private static void RaisePointerReleased(
-		TextBox editor,
+		SourceEditor editor,
 		Window root,
 		Point editorPoint)
 	{

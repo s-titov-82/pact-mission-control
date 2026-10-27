@@ -6,6 +6,7 @@ using Avalonia.LogicalTree;
 using Avalonia.Themes.Fluent;
 using Pact.App.Avalonia.Views;
 using Pact.App.Avalonia.Views.Diff;
+using Pact.App.Avalonia.Views.Editing;
 using Pact.Core.Git;
 using Pact.Core.Projects;
 using Pact.Infrastructure.Storage;
@@ -80,7 +81,7 @@ public sealed class ProjectScreenViewHeadlessTests
 	[TestCase("build/Build.PS1", "source.powershell")]
 	[TestCase("bin/blob", null)]
 	public void The_grammar_follows_the_file_extension(string path, string? scope) =>
-		DiffSyntax.ScopeFor(path).ShouldBe(scope);
+		EditorSyntax.ScopeFor(path).ShouldBe(scope);
 
 	[AvaloniaTest]
 	public async Task A_binary_file_shows_the_placeholder()

@@ -42,6 +42,8 @@ internal sealed partial class NotesPaneView : UserControl
 	private int _selectionSourceGeneration;
 	private PublishedSelectionCompletion? _lastPublishedSelection;
 
+	private const double EditorLineHeightFactor = 1.3;
+
 	private enum DocumentMode
 	{
 		Preview,
@@ -63,12 +65,16 @@ internal sealed partial class NotesPaneView : UserControl
 				_document?.SetText(Editor.Text ?? string.Empty);
 			}
 		};
-		Editor.PointerReleased += OnEditorPointerReleased;
-		// TextBox deletes the selection from its own Delete class handler, which runs before any
-		// bubbling handler, so the classic Shift+Delete cut has to be claimed while the key
-		// tunnels down to the editor.
+		Editor.Options.LineHeightFactor = EditorLineHeightFactor;
+		// Every document here is Markdown.
+		Editor.SetSyntaxFor("document.md");
+		// The editor's text area handles pointer and key input itself and marks it handled, so
+		// selection completion listens to handled events too.
+		Editor.AddHandler(PointerReleasedEvent, OnEditorPointerReleased, RoutingStrategies.Bubble, handledEventsToo: true);
+		// The editor deletes the selection from its own Delete handling, so the classic
+		// Shift+Delete cut has to be claimed while the key tunnels down to the editor.
 		Editor.AddHandler(KeyDownEvent, OnEditorKeyDown, RoutingStrategies.Tunnel);
-		Editor.KeyUp += OnEditorKeyUp;
+		Editor.AddHandler(KeyUpEvent, OnEditorKeyUp, RoutingStrategies.Bubble, handledEventsToo: true);
 		RefreshDocumentMode();
 	}
 
@@ -193,7 +199,14 @@ internal sealed partial class NotesPaneView : UserControl
 			Editor.CaretIndex = Editor.Text?.Length ?? 0;
 			_moveCaretToEndOnNextFocus = false;
 		}
-		Editor.Focus();
+		// Typing goes to the editor's text area, not to the editor itself; an editor that was
+		// hidden until now has not placed that area in its template yet.
+		if (!Editor.TextArea.IsAttachedToVisualTree())
+		{
+			Editor.UpdateLayout();
+		}
+
+		Editor.TextArea.Focus();
 	}
 
 	private void OnNotesTabClicked(object? sender, RoutedEventArgs e) =>

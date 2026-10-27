@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:md="https://github.com/whistyun/Markdown.Avalonia"
+             xmlns:editing="clr-namespace:Pact.App.Avalonia.Views.Editing"
              x:Class="Pact.App.Avalonia.Views.NotesPaneView">
   <Grid RowDefinitions="Auto,Auto,Auto,*">
     <Border Padding="10,8" BorderBrush="{StaticResource AppPanelBorderBrush}" BorderThickness="0,0,0,1">
@@ -59,8 +60,9 @@
     </Border>
 
     <Grid Grid.Row="3">
-      <TextBox x:Name="Editor" Margin="10" AcceptsReturn="True"
-               TextWrapping="Wrap" ScrollViewer.VerticalScrollBarVisibility="Auto" />
+      <editing:SourceEditor x:Name="Editor" Margin="10" WordWrap="True"
+                            FontFamily="Cascadia Mono, Consolas, monospace" FontSize="14"
+                            HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" />
       <md:MarkdownScrollViewer x:Name="Preview" Margin="10" IsVisible="False"
                                SelectionEnabled="True" />
       <TextBlock x:Name="EmptyGroupMessage" Margin="10" HorizontalAlignment="Center"

@@ -3,10 +3,10 @@ using AvaloniaEdit;
 using AvaloniaEdit.TextMate;
 using TextMateSharp.Grammars;
 
-namespace Pact.App.Avalonia.Views.Diff;
+namespace Pact.App.Avalonia.Views.Editing;
 
 /// <summary>Syntax colouring of an editor by file name, in the app's light or dark theme.</summary>
-internal static class DiffSyntax
+internal static class EditorSyntax
 {
 	private static readonly RegistryOptions Registry = new(ThemeName.DarkPlus);
 
@@ -27,13 +27,6 @@ internal static class DiffSyntax
 		ApplyTheme(editor, installation);
 		editor.ActualThemeVariantChanged += (_, _) => ApplyTheme(editor, installation);
 		return installation;
-	}
-
-	/// <summary>Colours the editor's text as the file's language, or not at all.</summary>
-	public static void SetFile(TextMate.Installation installation, string? path)
-	{
-		ArgumentNullException.ThrowIfNull(installation);
-		installation.SetGrammar(path is null ? null : ScopeFor(path));
 	}
 
 	private static void ApplyTheme(TextEditor editor, TextMate.Installation installation) =>

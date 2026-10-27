@@ -13,6 +13,7 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Pact.App.Avalonia.Lifecycle;
 using Pact.App.Avalonia.Views;
+using Pact.App.Avalonia.Views.Editing;
 using Pact.Core.Projects;
 using Pact.Core.Prompting;
 using Pact.Infrastructure.Storage;
@@ -60,7 +61,7 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 	{
 		var document = await CreateDocumentAsync("first\nsecond\nthird");
 		NotesPaneView notes = new();
-		var editor = notes.FindControl<TextBox>("Editor").ShouldBeOfType<TextBox>();
+		var editor = notes.FindControl<SourceEditor>("Editor").ShouldBeOfType<SourceEditor>();
 		notes.Document = document;
 		notes.FocusEditor();
 		editor.CaretIndex = 3;
@@ -73,6 +74,19 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 	}
 
 	[AvaloniaTest]
+	public async Task The_editor_colours_markdown_source_in_a_monospace_font()
+	{
+		var document = await CreateDocumentAsync("# Title\n\n- item");
+		NotesPaneView notes = new() { Document = document };
+		var editor = notes.FindControl<SourceEditor>("Editor").ShouldBeOfType<SourceEditor>();
+
+		editor.SyntaxScope.ShouldBe("text.html.markdown");
+		editor.WordWrap.ShouldBeTrue();
+		editor.FontFamily.Name.ShouldContain("Cascadia Mono");
+		editor.Text.ShouldBe("# Title\n\n- item");
+	}
+
+	[AvaloniaTest]
 	public async Task ShiftDelete_CutsSelectedEditorText()
 	{
 		var document = await CreateDocumentAsync("abcdef");
@@ -81,7 +95,7 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 		window.Show();
 		try
 		{
-			var editor = notes.FindControl<TextBox>("Editor").ShouldBeOfType<TextBox>();
+			var editor = notes.FindControl<SourceEditor>("Editor").ShouldBeOfType<SourceEditor>();
 			editor.SelectionStart = 1;
 			editor.SelectionEnd = 4;
 			KeyEventArgs key = new()
@@ -114,7 +128,7 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 		window.Show();
 		try
 		{
-			var editor = notes.FindControl<TextBox>("Editor").ShouldBeOfType<TextBox>();
+			var editor = notes.FindControl<SourceEditor>("Editor").ShouldBeOfType<SourceEditor>();
 			var clipboard = TopLevel.GetTopLevel(notes).ShouldNotBeNull().Clipboard.ShouldNotBeNull();
 			await clipboard.SetTextAsync("untouched");
 			editor.SelectionStart = 1;
@@ -147,7 +161,7 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 		notes.SelectionCompleted += (_, completion) => received = completion;
 		window.Show();
 		window.UpdateLayout();
-		var editor = notes.FindControl<TextBox>("Editor").ShouldBeOfType<TextBox>();
+		var editor = notes.FindControl<SourceEditor>("Editor").ShouldBeOfType<SourceEditor>();
 		Point editorPoint = new(40, 30);
 		var windowPoint = editor.TranslatePoint(editorPoint, window).ShouldNotBeNull();
 		editor.SelectionStart = 7;
@@ -186,7 +200,7 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 	{
 		var document = await CreateDocumentAsync("before selected after");
 		NotesPaneView notes = new() { Document = document };
-		var editor = notes.FindControl<TextBox>("Editor").ShouldBeOfType<TextBox>();
+		var editor = notes.FindControl<SourceEditor>("Editor").ShouldBeOfType<SourceEditor>();
 		NotesSelectionCompletion? received = null;
 		notes.SelectionCompleted += (_, completion) => received = completion;
 		editor.SelectionStart = 7;
@@ -214,7 +228,7 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 		notes.SelectionCompleted += (_, completion) => received.Add(completion);
 		window.Show();
 		window.UpdateLayout();
-		var editor = notes.FindControl<TextBox>("Editor").ShouldBeOfType<TextBox>();
+		var editor = notes.FindControl<SourceEditor>("Editor").ShouldBeOfType<SourceEditor>();
 		Point editorPoint = new(40, 30);
 		var windowPoint = editor.TranslatePoint(editorPoint, window).ShouldNotBeNull();
 		editor.SelectionStart = 7;
@@ -263,7 +277,7 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 		notes.SelectionCompleted += (_, completion) => received.Add(completion);
 		window.Show();
 		window.UpdateLayout();
-		var editor = notes.FindControl<TextBox>("Editor").ShouldBeOfType<TextBox>();
+		var editor = notes.FindControl<SourceEditor>("Editor").ShouldBeOfType<SourceEditor>();
 		editor.SelectionStart = 7;
 		editor.SelectionEnd = 15;
 		editor.RaiseEvent(new KeyEventArgs
@@ -314,7 +328,7 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 	{
 		var document = await CreateDocumentAsync("text");
 		NotesPaneView notes = new() { Document = document };
-		var editor = notes.FindControl<TextBox>("Editor").ShouldBeOfType<TextBox>();
+		var editor = notes.FindControl<SourceEditor>("Editor").ShouldBeOfType<SourceEditor>();
 		NotesSelectionCompletion? received = null;
 		notes.SelectionCompleted += (_, completion) => received = completion;
 		editor.SelectionStart = 0;
@@ -347,7 +361,7 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 	{
 		var document = await CreateDocumentAsync("first");
 		NotesPaneView notes = new();
-		var editor = notes.FindControl<TextBox>("Editor").ShouldBeOfType<TextBox>();
+		var editor = notes.FindControl<SourceEditor>("Editor").ShouldBeOfType<SourceEditor>();
 		notes.Document = document;
 		notes.FocusEditor();
 		editor.CaretIndex = 2;
@@ -366,20 +380,19 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 		var first = await CreateDocumentAsync("same text");
 		var second = await CreateDocumentAsync("same text");
 		NotesPaneView notes = new();
-		var editor = notes.FindControl<TextBox>("Editor").ShouldBeOfType<TextBox>();
+		var editor = notes.FindControl<SourceEditor>("Editor").ShouldBeOfType<SourceEditor>();
 		notes.Document = first;
-		editor.CaretIndex = 2;
 		editor.SelectionStart = 1;
 		editor.SelectionEnd = 4;
 
 		notes.Document = second;
-		editor.CaretIndex = 7;
 		editor.SelectionStart = 5;
 		editor.SelectionEnd = 8;
 
 		notes.Document = first;
 
-		editor.CaretIndex.ShouldBe(2);
+		// The editor keeps its caret at the selection's end.
+		editor.CaretIndex.ShouldBe(4);
 		editor.SelectionStart.ShouldBe(1);
 		editor.SelectionEnd.ShouldBe(4);
 	}
@@ -390,7 +403,7 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 		var first = await CreateDocumentAsync("same text");
 		var second = await CreateDocumentAsync("same text");
 		NotesPaneView notes = new();
-		var editor = notes.FindControl<TextBox>("Editor").ShouldBeOfType<TextBox>();
+		var editor = notes.FindControl<SourceEditor>("Editor").ShouldBeOfType<SourceEditor>();
 		List<NotesSelectionCompletion> received = [];
 		notes.SelectionCompleted += (_, completion) => received.Add(completion);
 		notes.Document = second;
@@ -425,7 +438,7 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 	{
 		NotesPaneView notes = new();
 
-		notes.FindControl<TextBox>("Editor")!.IsVisible.ShouldBeFalse();
+		notes.FindControl<SourceEditor>("Editor")!.IsVisible.ShouldBeFalse();
 		notes.FindControl<Control>("Preview")!.IsVisible.ShouldBeFalse();
 		notes.FindControl<ToggleButton>("PreviewModeButton")!.IsEnabled.ShouldBeFalse();
 		notes.FindControl<ToggleButton>("EditorModeButton")!.IsEnabled.ShouldBeFalse();
@@ -444,15 +457,23 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 	public async Task Primary_tab_selection_focuses_only_editor_mode()
 	{
 		var root = CreateRoot();
+		// The editor's text area, which takes the focus, lives in the editor's template.
+		FluentTheme theme = new();
+		global::Avalonia.Markup.Xaml.Styling.StyleInclude editorStyle = new(new Uri("avares://Pact.App.Avalonia.Tests/"))
+		{
+			Source = new Uri("avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml")
+		};
 		try
 		{
 			Write(root, "README.md", "# Readme");
 			var workspace = CreateWorkspace(root);
 			await workspace.RefreshAsync(CancellationToken.None);
+			Application.Current!.Styles.Add(theme);
+			Application.Current.Styles.Add(editorStyle);
 			NotesPaneView notes = new() { Workspace = workspace };
 			Window window = new() { Content = notes };
 			window.Show();
-			var editor = notes.FindControl<TextBox>("Editor")!;
+			var editor = notes.FindControl<SourceEditor>("Editor")!;
 			var notesTab = notes.FindControl<ToggleButton>("NotesTab")!;
 			var commonTab = notes.FindControl<ToggleButton>("CommonTab")!;
 
@@ -460,13 +481,13 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 			notesTab.Focus();
 			Click(notesTab);
 
-			editor.IsFocused.ShouldBeTrue();
+			editor.IsKeyboardFocusWithin.ShouldBeTrue();
 
 			commonTab.Focus();
 			Click(commonTab);
 
 			editor.IsVisible.ShouldBeFalse();
-			editor.IsFocused.ShouldBeFalse();
+			editor.IsKeyboardFocusWithin.ShouldBeFalse();
 
 			Click(notes.FindControl<ToggleButton>("EditorModeButton")!);
 			notesTab.Focus();
@@ -475,12 +496,14 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 			Click(commonTab);
 
 			editor.IsVisible.ShouldBeTrue();
-			editor.IsFocused.ShouldBeTrue();
+			editor.IsKeyboardFocusWithin.ShouldBeTrue();
 
 			window.Close();
 		}
 		finally
 		{
+			Application.Current!.Styles.Remove(editorStyle);
+			Application.Current.Styles.Remove(theme);
 			Directory.Delete(root, recursive: true);
 		}
 	}
@@ -491,7 +514,7 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 		NotesPaneView notes = new();
 		RightActionsPanel actions = new();
 
-		notes.FindControl<TextBox>("Editor").ShouldNotBeNull();
+		notes.FindControl<SourceEditor>("Editor").ShouldNotBeNull();
 		actions.ShouldNotBeNull();
 	}
 
@@ -533,13 +556,13 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 			await workspace.RefreshAsync(CancellationToken.None);
 			NotesPaneView notes = new() { Workspace = workspace };
 
-			notes.FindControl<TextBox>("Editor")!.IsVisible.ShouldBeTrue();
+			notes.FindControl<SourceEditor>("Editor")!.IsVisible.ShouldBeTrue();
 			notes.FindControl<Control>("Preview")!.IsVisible.ShouldBeFalse();
 			(notes.FindControl<ToggleButton>("EditorModeButton")!.IsChecked == true).ShouldBeTrue();
 
 			await workspace.SelectSectionAsync(DocsAndNotesSection.Common, CancellationToken.None);
 
-			notes.FindControl<TextBox>("Editor")!.IsVisible.ShouldBeFalse();
+			notes.FindControl<SourceEditor>("Editor")!.IsVisible.ShouldBeFalse();
 			notes.FindControl<Control>("Preview")!.IsVisible.ShouldBeTrue();
 			(notes.FindControl<ToggleButton>("PreviewModeButton")!.IsChecked == true).ShouldBeTrue();
 		}
@@ -572,7 +595,7 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 			await workspace.SelectDocumentAsync(readme, CancellationToken.None);
 
 			(notes.FindControl<ToggleButton>("EditorModeButton")!.IsChecked == true).ShouldBeTrue();
-			notes.FindControl<TextBox>("Editor")!.IsVisible.ShouldBeTrue();
+			notes.FindControl<SourceEditor>("Editor")!.IsVisible.ShouldBeTrue();
 		}
 		finally
 		{
@@ -625,7 +648,7 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 			await workspace.RefreshAsync(CancellationToken.None);
 			await workspace.SelectSectionAsync(DocsAndNotesSection.Common, CancellationToken.None);
 			NotesPaneView notes = new() { Workspace = workspace };
-			var editor = notes.FindControl<TextBox>("Editor")!;
+			var editor = notes.FindControl<SourceEditor>("Editor")!;
 			editor.Text = "mine";
 			await File.WriteAllTextAsync(readme, "external");
 
@@ -1095,7 +1118,7 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 				Workspace = workspace,
 				ConfirmDiscardAsync = static () => Task.FromResult(false)
 			};
-			var editor = notes.FindControl<TextBox>("Editor")!;
+			var editor = notes.FindControl<SourceEditor>("Editor")!;
 
 			editor.Text = "mine";
 			await File.WriteAllTextAsync(readme, "external");
