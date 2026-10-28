@@ -245,7 +245,8 @@ public sealed class ProjectScreenRemarksHeadlessTests
 				fixture.ClickMargin(2);
 				await EventuallyAsync(fixture.Window, () => fixture.Overlay.Bounds.Height > 0);
 
-				fixture.Overlay.Bounds.Width.ShouldBeGreaterThan(700);
+				// Short enough to fit whole at the starting width: it stays that narrow and does not scroll.
+				fixture.Overlay.Bounds.Width.ShouldBe(520, 1);
 				var scroller = global::Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(fixture.Overlay).OfType<ScrollViewer>().First();
 				scroller.Extent.Height.ShouldBeLessThanOrEqualTo(scroller.Viewport.Height + 1);
 			},
@@ -403,6 +404,32 @@ public sealed class ProjectScreenRemarksHeadlessTests
 				var top = Canvas.GetTop(fixture.Overlay);
 				top.ShouldBeGreaterThanOrEqualTo(-1);
 				(top + fixture.Overlay.Bounds.Height).ShouldBeLessThanOrEqualTo(fixture.Layer.Bounds.Height + 1);
+			},
+			height: 320);
+	}
+
+	// Too tall for either side of its line even at its widest, it takes the whole height of the diff, covering the line.
+	[AvaloniaTest]
+	public async Task A_thread_taller_than_both_sides_uses_the_whole_diff_height()
+	{
+		await WithScreenAsync(
+			async fixture =>
+			{
+				await fixture.Remarks.AddRemarkAsync(fixture.Shown, 6, "why?", CancellationToken.None);
+				await fixture.Remarks.SendAsync("s1", CancellationToken.None);
+				var answer = string.Join('\n', Enumerable.Range(1, 12).Select(index => $"reason {index}"));
+				for (var reply = 0; reply < 4; reply++)
+				{
+					await fixture.Book.AgentReplyAsync("C1", answer, resolve: false, CancellationToken.None);
+				}
+
+				await EventuallyAsync(fixture.Window, () => fixture.Margin.MarkOf(7) == "thread");
+
+				fixture.ClickMargin(7);
+				await EventuallyAsync(fixture.Window, () => fixture.Overlay.Bounds.Height > 0);
+
+				fixture.Overlay.Bounds.Width.ShouldBe(fixture.Layer.Bounds.Width * 0.7, 1);
+				fixture.Overlay.Bounds.Height.ShouldBeGreaterThan(fixture.Layer.Bounds.Height - 12);
 			},
 			height: 320);
 	}

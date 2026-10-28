@@ -23,7 +23,9 @@ internal sealed partial class ProjectScreenView : UserControl
 	private static readonly IReadOnlyDictionary<int, IReadOnlyList<RemarkThreadViewModel>> NoThreads =
 		new Dictionary<int, IReadOnlyList<RemarkThreadViewModel>>();
 	private const double DiffLineHeightFactor = 1.3;
-	private const double OverlayMaxWidth = 900;
+	private const double OverlayStartWidth = 520;
+	private const double OverlayWidthStep = 80;
+	private const double OverlayWidthShare = 0.7;
 	private const double OverlayMinHeight = 80;
 	private readonly DispatcherTimer _logReloadTimer;
 
@@ -285,14 +287,21 @@ internal sealed partial class ProjectScreenView : UserControl
 			return;
 		}
 
-		var width = Math.Max(160, Math.Min(OverlayMaxWidth, RemarkLayer.Bounds.Width - origin.X - 12));
-		RemarkOverlay.Width = width;
-		RemarkOverlay.MaxHeight = double.PositiveInfinity;
-		RemarkOverlay.Measure(new Size(width, double.PositiveInfinity));
-		var height = RemarkOverlay.DesiredSize.Height;
 		var layerHeight = RemarkLayer.Bounds.Height;
 		var below = layerHeight - (origin.Y + lineBottom);
 		var above = origin.Y + lineTop;
+		// The narrowest width that fits the thread whole on one side of its line, widening up to a
+		// share of the panel before the thread has to cover its line or scroll.
+		var maxWidth = Math.Max(160, Math.Min(RemarkLayer.Bounds.Width * OverlayWidthShare, RemarkLayer.Bounds.Width - origin.X - 12));
+		var width = Math.Min(OverlayStartWidth, maxWidth);
+		RemarkOverlay.MaxHeight = double.PositiveInfinity;
+		var height = MeasureOverlay(width);
+		while (height > Math.Max(below, above) && width < maxWidth)
+		{
+			width = Math.Min(maxWidth, width + OverlayWidthStep);
+			height = MeasureOverlay(width);
+		}
+
 		double y;
 		if (height <= below)
 		{
@@ -304,8 +313,8 @@ internal sealed partial class ProjectScreenView : UserControl
 		}
 		else
 		{
-			// Fits neither side whole: it takes the roomier side and scrolls inside.
-			RemarkOverlay.MaxHeight = Math.Max(OverlayMinHeight, Math.Max(below, above) - 4);
+			// Fits neither side whole: it takes the whole height of the diff, over its line, and scrolls only past that.
+			RemarkOverlay.MaxHeight = Math.Max(OverlayMinHeight, layerHeight - 4);
 			height = Math.Min(height, RemarkOverlay.MaxHeight);
 			y = below >= above ? origin.Y + lineBottom : origin.Y + lineTop - height;
 		}
@@ -315,6 +324,13 @@ internal sealed partial class ProjectScreenView : UserControl
 		Canvas.SetLeft(RemarkOverlay, origin.X);
 		Canvas.SetTop(RemarkOverlay, y);
 		RemarkOverlay.IsVisible = true;
+	}
+
+	private double MeasureOverlay(double width)
+	{
+		RemarkOverlay.Width = width;
+		RemarkOverlay.Measure(new Size(width, double.PositiveInfinity));
+		return RemarkOverlay.DesiredSize.Height;
 	}
 
 	private void CloseOverlay()
