@@ -571,6 +571,37 @@ public sealed class ProjectScreenRemarksHeadlessTests
 			panelAlignment: global::Avalonia.Layout.VerticalAlignment.Center);
 	}
 
+	// Rows that would scroll at the start width widen the list, all the way to its share of the room
+	// when even that is not enough.
+	[AvaloniaTest]
+	public async Task A_list_too_long_for_the_window_widens_to_its_full_share_before_it_scrolls()
+	{
+		await WithScreenAsync(
+			async fixture =>
+			{
+				await fixture.Remarks.AddRemarkAsync(fixture.Shown, 4, "why?", CancellationToken.None);
+				await fixture.Remarks.SendAsync("s1", CancellationToken.None);
+				var answer = string.Join(' ', Enumerable.Range(1, 60).Select(index => $"reason{index}"));
+				for (var reply = 0; reply < 12; reply++)
+				{
+					await fixture.Book.AgentReplyAsync("C1", answer, resolve: false, CancellationToken.None);
+				}
+
+				var open = fixture.Panel.FindControl<Button>("OpenRemarksButton")!;
+				await EventuallyAsync(fixture.Window, () => open.IsEnabled);
+				var list = fixture.Panel.FindControl<ItemsControl>("OpenRemarksList")!;
+				open.Flyout!.ShowAt(open);
+				fixture.Window.UpdateLayout();
+				await EventuallyAsync(fixture.Window, () => list.GetLogicalDescendants().OfType<RemarkThreadView>().Count() == 1);
+
+				var scroller = global::Avalonia.VisualTree.VisualExtensions.GetVisualAncestors(list).OfType<ScrollViewer>().First();
+				var share = (1600 - 280 - 20) * 0.7;
+				await EventuallyAsync(fixture.Window, () => scroller.Bounds.Width >= share - 1);
+			},
+			height: 600,
+			width: 1600);
+	}
+
 	// A list rebuilt on each change would drop the focus of a reply being typed in it.
 	[AvaloniaTest]
 	public async Task A_reply_typed_in_the_open_list_keeps_its_row_when_remarks_change()

@@ -33,8 +33,8 @@ internal sealed partial class RemarksPanel : UserControl
 		ResolvedRemarksList.AddHandler(RemarkThreadView.ActionRequestedEvent, OnRemarkActionRequested);
 		((PopupFlyoutBase)OpenRemarksButton.Flyout!).Opening += (_, _) => FitList(OpenRemarksButton, OpenRemarksScroller);
 		((PopupFlyoutBase)ResolvedRemarksButton.Flyout!).Opening += (_, _) => FitList(ResolvedRemarksButton, ResolvedRemarksScroller);
-		OpenRemarksButton.Flyout!.Opened += (_, _) => WidenList(OpenRemarksScroller);
-		ResolvedRemarksButton.Flyout!.Opened += (_, _) => WidenList(ResolvedRemarksScroller);
+		WatchWidth(OpenRemarksButton.Flyout!, OpenRemarksScroller);
+		WatchWidth(ResolvedRemarksButton.Flyout!, ResolvedRemarksScroller);
 		Refresh();
 	}
 
@@ -111,27 +111,25 @@ internal sealed partial class RemarksPanel : UserControl
 		_listMaxWidth = maxWidth;
 	}
 
-	// Once the rows exist they can be measured: the list widens while they are taller than it may be.
-	private void WidenList(ScrollViewer scroller)
+	// The rows are built over the popup's first layout passes, so the list is judged after each pass:
+	// while it scrolls it widens a step, up to its share of the room.
+	private void WidenWhileScrolling(ScrollViewer scroller)
 	{
-		if (scroller.Content is not Control rows)
+		if (scroller.Extent.Height > scroller.Viewport.Height + 1 && scroller.Width < _listMaxWidth)
 		{
-			return;
+			scroller.Width = Math.Min(_listMaxWidth, scroller.Width + ListWidthStep);
 		}
-
-		var width = scroller.Width;
-		while (MeasureRows(rows, width) > scroller.MaxHeight && width < _listMaxWidth)
-		{
-			width = Math.Min(_listMaxWidth, width + ListWidthStep);
-		}
-
-		scroller.Width = width;
 	}
 
-	private static double MeasureRows(Control rows, double width)
+	private void WatchWidth(FlyoutBase flyout, ScrollViewer scroller)
 	{
-		rows.Measure(new Size(width, double.PositiveInfinity));
-		return rows.DesiredSize.Height;
+		void OnLayoutUpdated(object? sender, EventArgs e)
+		{
+			WidenWhileScrolling(scroller);
+		}
+
+		flyout.Opened += (_, _) => scroller.LayoutUpdated += OnLayoutUpdated;
+		flyout.Closed += (_, _) => scroller.LayoutUpdated -= OnLayoutUpdated;
 	}
 
 	private void OnRemarkActionRequested(object? sender, RemarkActionEventArgs e)
