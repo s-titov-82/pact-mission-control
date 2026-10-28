@@ -33,8 +33,8 @@ internal sealed partial class RemarksPanel : UserControl
 		ResolvedRemarksList.AddHandler(RemarkThreadView.ActionRequestedEvent, OnRemarkActionRequested);
 		((PopupFlyoutBase)OpenRemarksButton.Flyout!).Opening += (_, _) => FitList(OpenRemarksButton, OpenRemarksScroller);
 		((PopupFlyoutBase)ResolvedRemarksButton.Flyout!).Opening += (_, _) => FitList(ResolvedRemarksButton, ResolvedRemarksScroller);
-		WatchWidth(OpenRemarksButton.Flyout!, OpenRemarksScroller);
-		WatchWidth(ResolvedRemarksButton.Flyout!, ResolvedRemarksScroller);
+		OpenRemarksScroller.LayoutUpdated += (_, _) => WidenWhileScrolling(OpenRemarksScroller);
+		ResolvedRemarksScroller.LayoutUpdated += (_, _) => WidenWhileScrolling(ResolvedRemarksScroller);
 		Refresh();
 	}
 
@@ -112,24 +112,14 @@ internal sealed partial class RemarksPanel : UserControl
 	}
 
 	// The rows are built over the popup's first layout passes, so the list is judged after each pass:
-	// while it scrolls it widens a step, up to its share of the room.
+	// while it scrolls it widens a step, up to its share of the room. A list out of its popup has no
+	// layout passes, so this runs only while it is open.
 	private void WidenWhileScrolling(ScrollViewer scroller)
 	{
 		if (scroller.Extent.Height > scroller.Viewport.Height + 1 && scroller.Width < _listMaxWidth)
 		{
 			scroller.Width = Math.Min(_listMaxWidth, scroller.Width + ListWidthStep);
 		}
-	}
-
-	private void WatchWidth(FlyoutBase flyout, ScrollViewer scroller)
-	{
-		void OnLayoutUpdated(object? sender, EventArgs e)
-		{
-			WidenWhileScrolling(scroller);
-		}
-
-		flyout.Opened += (_, _) => scroller.LayoutUpdated += OnLayoutUpdated;
-		flyout.Closed += (_, _) => scroller.LayoutUpdated -= OnLayoutUpdated;
 	}
 
 	private void OnRemarkActionRequested(object? sender, RemarkActionEventArgs e)

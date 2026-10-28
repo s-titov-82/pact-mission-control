@@ -597,6 +597,13 @@ public sealed class ProjectScreenRemarksHeadlessTests
 				var scroller = global::Avalonia.VisualTree.VisualExtensions.GetVisualAncestors(list).OfType<ScrollViewer>().First();
 				var share = (1600 - 280 - 20) * 0.7;
 				await EventuallyAsync(fixture.Window, () => scroller.Bounds.Width >= share - 1);
+				// Only the list scrolls: the popup's own scroller would leave it unbounded, scrolling in a scroller.
+				foreach (var outer in global::Avalonia.VisualTree.VisualExtensions.GetVisualAncestors(scroller).OfType<ScrollViewer>())
+				{
+					outer.Extent.Height.ShouldBeLessThanOrEqualTo(outer.Viewport.Height + 1);
+				}
+
+				scroller.Extent.Height.ShouldBeGreaterThan(scroller.Viewport.Height);
 			},
 			height: 600,
 			width: 1600);

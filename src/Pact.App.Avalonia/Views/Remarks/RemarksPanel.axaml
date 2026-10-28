@@ -10,6 +10,8 @@
       <Setter Property="MaxHeight" Value="100000" />
       <Setter Property="Background" Value="{DynamicResource AppPopupBackgroundBrush}" />
       <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+      <!-- Only the list scrolls; the presenter's own scroller would scroll it as a whole, a scroller in a scroller. -->
+      <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Disabled" />
     </Style>
     <Style Selector="Grid#RemarkButtons > Button">
       <Setter Property="HorizontalAlignment" Value="Stretch" />
