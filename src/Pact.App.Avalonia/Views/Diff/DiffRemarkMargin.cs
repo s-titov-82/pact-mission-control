@@ -17,11 +17,12 @@ namespace Pact.App.Avalonia.Views.Diff;
 /// </summary>
 internal sealed class DiffRemarkMargin : AbstractMargin
 {
-	private const double ColumnWidth = 16;
+	private const double ColumnWidth = 22;
 	private static readonly IBrush Uncertain = new SolidColorBrush(Color.Parse("#F59E0B"));
 	private static readonly IBrush Sent = new SolidColorBrush(Color.Parse("#3B82F6"));
 	private static readonly IBrush Answered = new SolidColorBrush(Color.Parse("#16A34A"));
 	private static readonly IBrush Faint = new SolidColorBrush(Color.Parse("#80808080"));
+	private static readonly IBrush PlusBadge = new SolidColorBrush(Color.Parse("#3B82F6"));
 
 	private Func<int, bool> _canRemark = static _ => false;
 	private IReadOnlyDictionary<int, IReadOnlyList<RemarkThreadViewModel>> _threads = new Dictionary<int, IReadOnlyList<RemarkThreadViewModel>>();
@@ -37,6 +38,9 @@ internal sealed class DiffRemarkMargin : AbstractMargin
 		_threads = threads ?? throw new ArgumentNullException(nameof(threads));
 		InvalidateVisual();
 	}
+
+	/// <summary>Shows the "+" on a row hovered anywhere on the line, not only over this column.</summary>
+	public void SetHoverRow(int? row) => SetHover(row);
 
 	/// <summary>What a 1-based document line shows: <c>thread</c>, <c>+</c> or nothing.</summary>
 	public string MarkOf(int line)
@@ -78,14 +82,18 @@ internal sealed class DiffRemarkMargin : AbstractMargin
 			}
 			else if (_hoverRow == row && _canRemark(row))
 			{
+				// A filled badge, so the way to add a remark is seen, not guessed.
+				var size = Math.Min(16, height - 2);
+				var badge = new Rect((ColumnWidth - size) / 2, top + ((height - size) / 2), size, size);
+				context.DrawRectangle(PlusBadge, null, badge, 4, 4);
 				FormattedText plus = new(
 					"+",
 					CultureInfo.InvariantCulture,
 					FlowDirection.LeftToRight,
-					new Typeface(GetValue(TextElement.FontFamilyProperty)),
-					GetValue(TextElement.FontSizeProperty),
-					muted);
-				context.DrawText(plus, new Point((ColumnWidth - plus.Width) / 2, top + ((height - plus.Height) / 2)));
+					new Typeface(GetValue(TextElement.FontFamilyProperty), weight: FontWeight.Bold),
+					size - 2,
+					Brushes.White);
+				context.DrawText(plus, new Point(badge.X + ((size - plus.Width) / 2), badge.Y + ((size - plus.Height) / 2)));
 			}
 		}
 	}

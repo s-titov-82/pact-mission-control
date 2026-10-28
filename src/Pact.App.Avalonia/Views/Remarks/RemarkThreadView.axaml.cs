@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Pact.Presentation.ViewModels;
 
@@ -25,6 +26,24 @@ internal sealed partial class RemarkThreadView : UserControl
 	public RemarkThreadView()
 	{
 		InitializeComponent();
+		// Before the box sees it: Ctrl+Enter saves the reply instead of breaking the line.
+		DraftBox.AddHandler(KeyDownEvent, OnDraftKeyDown, RoutingStrategies.Tunnel);
+	}
+
+	/// <summary>Puts the cursor at the end of the reply box.</summary>
+	public void FocusDraft()
+	{
+		DraftBox.Focus();
+		DraftBox.CaretIndex = DraftBox.Text?.Length ?? 0;
+	}
+
+	private void OnDraftKeyDown(object? sender, KeyEventArgs e)
+	{
+		if (e.Key == Key.Enter && e.KeyModifiers.HasFlag(KeyModifiers.Control))
+		{
+			e.Handled = true;
+			Request("remark-save", thread => thread.SaveDraftAsync);
+		}
 	}
 
 	private RemarkThreadViewModel? Thread => DataContext as RemarkThreadViewModel;

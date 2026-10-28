@@ -2,6 +2,7 @@ using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
+using Avalonia.Input;
 using Avalonia.Media;
 using AvaloniaEdit.Editing;
 using AvaloniaEdit.Rendering;
@@ -15,6 +16,21 @@ internal sealed class DiffLineNumberMargin : AbstractMargin
 	private const double ColumnGap = 10;
 	private IReadOnlyList<DiffRowViewModel> _rows = [];
 	private int _digits = 1;
+
+	/// <summary>Raised with the row index (document line − 1) of a click on a line number.</summary>
+	public event EventHandler<int>? RowClicked;
+
+	/// <inheritdoc />
+	protected override void OnPointerPressed(PointerPressedEventArgs e)
+	{
+		base.OnPointerPressed(e);
+		if (TextView is { VisualLinesValid: true } textView
+			&& textView.GetVisualLineFromVisualTop(e.GetPosition(this).Y + textView.VerticalOffset) is { } line)
+		{
+			e.Handled = true;
+			RowClicked?.Invoke(this, line.FirstDocumentLine.LineNumber - 1);
+		}
+	}
 
 	/// <summary>Takes the rows whose numbers the document's lines have, in order.</summary>
 	public void SetRows(IReadOnlyList<DiffRowViewModel> rows)
@@ -44,6 +60,8 @@ internal sealed class DiffLineNumberMargin : AbstractMargin
 			return;
 		}
 
+		// A transparent fill makes the whole column take clicks, not only the digits.
+		context.FillRectangle(Brushes.Transparent, new Rect(Bounds.Size));
 		var column = ColumnWidth();
 		var brush = this.TryFindResource("AppTextMutedBrush", ActualThemeVariant, out var found) && found is IBrush muted
 			? muted

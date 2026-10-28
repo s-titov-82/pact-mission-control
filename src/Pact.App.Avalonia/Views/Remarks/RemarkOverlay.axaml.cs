@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.LogicalTree;
 using Pact.Presentation.ViewModels;
 
 namespace Pact.App.Avalonia.Views.Remarks;
@@ -12,6 +13,36 @@ internal sealed partial class RemarkOverlay : UserControl
 	{
 		InitializeComponent();
 		AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Bubble, handledEventsToo: true);
+		// Before the box sees it: Ctrl+Enter adds the remark instead of breaking the line.
+		NewRemarkBox.AddHandler(KeyDownEvent, OnNewRemarkKeyDown, RoutingStrategies.Tunnel);
+	}
+
+	/// <summary>Puts the cursor where typing goes: the new-remark box, or the last thread's reply box.</summary>
+	public void FocusInput()
+	{
+		if (!IsVisible)
+		{
+			return;
+		}
+
+		if (NewRemarkPanel.IsVisible)
+		{
+			NewRemarkBox.Focus();
+			NewRemarkBox.CaretIndex = NewRemarkBox.Text?.Length ?? 0;
+		}
+		else
+		{
+			this.GetLogicalDescendants().OfType<RemarkThreadView>().LastOrDefault()?.FocusDraft();
+		}
+	}
+
+	private void OnNewRemarkKeyDown(object? sender, KeyEventArgs e)
+	{
+		if (e.Key == Key.Enter && e.KeyModifiers.HasFlag(KeyModifiers.Control))
+		{
+			e.Handled = true;
+			OnAddClicked(sender, e);
+		}
 	}
 
 	/// <summary>Raised by ✕ and Esc.</summary>

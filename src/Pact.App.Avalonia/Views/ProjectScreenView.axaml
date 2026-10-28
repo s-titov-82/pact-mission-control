@@ -5,6 +5,13 @@
              xmlns:remarks="clr-namespace:Pact.App.Avalonia.Views.Remarks"
              x:Class="Pact.App.Avalonia.Views.ProjectScreenView"
              x:CompileBindings="False">
+  <UserControl.Styles>
+    <!-- The list sets its own width; the theme's narrow presenter would add a horizontal scroll. -->
+    <Style Selector="FlyoutPresenter.remark-list">
+      <Setter Property="MaxWidth" Value="680" />
+      <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+    </Style>
+  </UserControl.Styles>
   <Grid RowDefinitions="Auto,*" Background="{DynamicResource AppPaneBackgroundBrush}">
     <Border Padding="10,8" BorderBrush="{StaticResource AppPanelBorderBrush}" BorderThickness="0,0,0,1">
       <StackPanel Orientation="Horizontal" Spacing="6">
@@ -43,8 +50,8 @@
                          Foreground="{DynamicResource AppTextMutedBrush}" TextTrimming="CharacterEllipsis" />
               <Button x:Name="OtherRemarksButton" Grid.Column="2" Margin="0,0,8,0" IsVisible="False">
                 <Button.Flyout>
-                  <Flyout Placement="TopEdgeAlignedRight">
-                    <ScrollViewer MaxHeight="420" MaxWidth="620" VerticalScrollBarVisibility="Auto">
+                  <Flyout Placement="TopEdgeAlignedRight" FlyoutPresenterClasses="remark-list">
+                    <ScrollViewer Width="600" MaxHeight="420" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                       <ItemsControl x:Name="OtherRemarksList">
                         <ItemsControl.ItemTemplate>
                           <DataTemplate>

@@ -147,6 +147,131 @@ public sealed class ProjectScreenRemarksHeadlessTests
 	}
 
 	[AvaloniaTest]
+	public async Task Hovering_a_line_of_text_shows_its_plus()
+	{
+		await WithScreenAsync(fixture =>
+		{
+			var textView = fixture.Editor.TextArea.TextView;
+			var point = textView.TranslatePoint(new Point(80, fixture.LineTop(6) + 2), fixture.Window)!.Value;
+
+			fixture.Window.MouseMove(point);
+
+			fixture.Margin.MarkOf(6).ShouldBe("+");
+			return Task.CompletedTask;
+		});
+	}
+
+	[AvaloniaTest]
+	public async Task Clicking_a_line_number_opens_the_overlay()
+	{
+		await WithScreenAsync(fixture =>
+		{
+			var numbers = fixture.Editor.TextArea.LeftMargins.OfType<DiffLineNumberMargin>().Single();
+			var point = numbers.TranslatePoint(new Point(numbers.Bounds.Width / 2, fixture.LineTop(5) + 2), fixture.Window)!.Value;
+
+			fixture.Window.MouseDown(point, MouseButton.Left);
+			fixture.Window.MouseUp(point, MouseButton.Left);
+			fixture.Window.UpdateLayout();
+
+			fixture.Overlay.IsVisible.ShouldBeTrue();
+			Canvas.GetTop(fixture.Overlay).ShouldBe(fixture.LineBottomInLayer(5), tolerance: 1);
+			return Task.CompletedTask;
+		});
+	}
+
+	[AvaloniaTest]
+	public async Task Opening_the_overlay_puts_the_cursor_in_its_box()
+	{
+		await WithScreenAsync(async fixture =>
+		{
+			fixture.ClickMargin(5);
+
+			await EventuallyAsync(fixture.Window, () => fixture.Overlay.FindControl<TextBox>("NewRemarkBox")!.IsFocused);
+		});
+	}
+
+	[AvaloniaTest]
+	public async Task Ctrl_enter_adds_the_remark()
+	{
+		await WithScreenAsync(async fixture =>
+		{
+			fixture.ClickMargin(5);
+			var box = fixture.Overlay.FindControl<TextBox>("NewRemarkBox")!;
+			box.Focus();
+			box.Text = "why five?";
+			fixture.Window.UpdateLayout();
+
+			CtrlEnter(box);
+
+			await EventuallyAsync(fixture.Window, () => fixture.Book.Threads.Count == 1);
+			fixture.Book.Threads.Single().EditableDraft!.Text.ShouldBe("why five?");
+		});
+	}
+
+	[AvaloniaTest]
+	public async Task Ctrl_enter_saves_a_reply()
+	{
+		await WithScreenAsync(async fixture =>
+		{
+			await fixture.Remarks.AddRemarkAsync(fixture.Shown, 4, "why?", CancellationToken.None);
+			await fixture.Remarks.SendAsync("s1", CancellationToken.None);
+			await EventuallyAsync(fixture.Window, () => fixture.Margin.MarkOf(5) == "thread");
+			fixture.ClickMargin(5);
+			var draftBox = fixture.Overlay.GetLogicalDescendants().OfType<RemarkThreadView>().Single().FindControl<TextBox>("DraftBox")!;
+			draftBox.Focus();
+			draftBox.Text = "and also";
+			fixture.Window.UpdateLayout();
+
+			CtrlEnter(draftBox);
+
+			await EventuallyAsync(fixture.Window, () => fixture.Book.Threads.Single().Unsent.Any(message => message.Text == "and also"));
+		});
+	}
+
+	[AvaloniaTest]
+	public async Task A_click_in_the_text_closes_the_overlay()
+	{
+		await WithScreenAsync(fixture =>
+		{
+			fixture.ClickMargin(5);
+			var point = fixture.Editor.TextArea.TextView.TranslatePoint(new Point(40, fixture.LineTop(2) + 2), fixture.Window)!.Value;
+
+			fixture.Window.MouseDown(point, MouseButton.Left);
+			fixture.Window.MouseUp(point, MouseButton.Left);
+
+			fixture.Overlay.IsVisible.ShouldBeFalse();
+			return Task.CompletedTask;
+		});
+	}
+
+	[AvaloniaTest]
+	public async Task Other_remarks_fit_without_a_horizontal_scroll()
+	{
+		await WithScreenAsync(async fixture =>
+		{
+			await fixture.Book.AddAsync(
+				new Pact.Core.Remarks.RemarkAnchor("src/gone.cs", Pact.Core.Remarks.RemarkSide.New, 1, new string('x', 200), [], [], "head1", null),
+				"x\n",
+				string.Join(' ', Enumerable.Repeat("a fairly long remark", 20)),
+				CancellationToken.None);
+			var other = fixture.View.FindControl<Button>("OtherRemarksButton")!;
+			await EventuallyAsync(fixture.Window, () => other.IsVisible);
+
+			other.Flyout!.ShowAt(other);
+			fixture.Window.UpdateLayout();
+			await EventuallyAsync(fixture.Window, () => fixture.View.FindControl<ItemsControl>("OtherRemarksList")!.IsEffectivelyVisible);
+
+			var list = fixture.View.FindControl<ItemsControl>("OtherRemarksList")!;
+			var scrollers = global::Avalonia.VisualTree.VisualExtensions.GetVisualAncestors(list).OfType<ScrollViewer>().ToArray();
+			scrollers.Length.ShouldBeGreaterThan(1, "the flyout presenter should hold the list");
+			foreach (var scroller in global::Avalonia.VisualTree.VisualExtensions.GetVisualAncestors(list).OfType<ScrollViewer>())
+			{
+				scroller.Extent.Width.ShouldBeLessThanOrEqualTo(scroller.Viewport.Width + 1);
+			}
+		});
+	}
+
+	[AvaloniaTest]
 	public async Task The_bar_counts_drafts_and_sends_to_the_only_session()
 	{
 		await WithScreenAsync(async fixture =>
@@ -266,6 +391,11 @@ public sealed class ProjectScreenRemarksHeadlessTests
 			fixture.Remarks.Elsewhere.Single().IsOutdated.ShouldBeTrue();
 		});
 	}
+
+	// Sent straight to the box, after a layout pass: a TextBox never laid out wraps at zero width and
+	// Avalonia then allocates line after line without end.
+	private static void CtrlEnter(TextBox box) =>
+		box.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Enter, KeyModifiers = KeyModifiers.Control, Source = box });
 
 	private static async Task WithScreenAsync(Func<Fixture, Task> act, IReadOnlyList<SessionTarget>? sessions = null, double height = 500)
 	{

@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Pact.App.Avalonia.Lifecycle;
@@ -46,6 +47,13 @@ internal sealed partial class ProjectScreenView : UserControl
 		DiffEditor.TextArea.TextView.ScrollOffsetChanged += (_, _) => PositionOverlay();
 		DiffEditor.TextArea.TextView.VisualLinesChanged += (_, _) => PositionOverlay();
 		_remarkMargin.RowClicked += (_, row) => OpenOverlay(row);
+		_diffNumbers.RowClicked += (_, row) => OpenOverlay(row);
+		// The "+" shows for the line under the pointer wherever it is on the line, and a click in
+		// the text closes an open thread so reading goes on without a separate close.
+		var textArea = DiffEditor.TextArea;
+		textArea.AddHandler(PointerMovedEvent, (_, e) => _remarkMargin.SetHoverRow(RowAt(e)), RoutingStrategies.Tunnel, handledEventsToo: true);
+		textArea.AddHandler(PointerExitedEvent, (_, _) => _remarkMargin.SetHoverRow(null), RoutingStrategies.Direct | RoutingStrategies.Bubble, handledEventsToo: true);
+		textArea.TextView.AddHandler(PointerPressedEvent, (_, _) => CloseOverlay(), RoutingStrategies.Tunnel, handledEventsToo: true);
 		RemarkOverlay.CloseRequested += (_, _) => CloseOverlay();
 		RemarkOverlay.AddRequested += OnAddRemarkRequested;
 		RemarkOverlay.SizeChanged += (_, _) => PositionOverlay();
@@ -210,6 +218,20 @@ internal sealed partial class ProjectScreenView : UserControl
 		RemarkOverlay.Show(threads, canAdd);
 		RemarkOverlay.IsVisible = true;
 		PositionOverlay();
+		// Typing starts at once: the box takes the focus once the overlay is laid out.
+		Dispatcher.UIThread.Post(RemarkOverlay.FocusInput, DispatcherPriority.Loaded);
+	}
+
+	private int? RowAt(PointerEventArgs e)
+	{
+		var textView = DiffEditor.TextArea.TextView;
+		if (!textView.VisualLinesValid)
+		{
+			return null;
+		}
+
+		var line = textView.GetVisualLineFromVisualTop(e.GetPosition(textView).Y + textView.VerticalOffset);
+		return line is null ? null : line.FirstDocumentLine.LineNumber - 1;
 	}
 
 	// After the threads moved: the overlay shows its row's threads, and closes when its thread is gone.
