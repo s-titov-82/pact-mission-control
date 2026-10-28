@@ -19,8 +19,11 @@ internal sealed partial class RemarksPanel : UserControl
 	private const double ListMinWidth = 480;
 	private const double ListMinHeight = 160;
 	private const double ListMargin = 20;
+	private const double ListStartWidth = 720;
+	private const double ListWidthStep = 80;
 
 	private ObservedTaskGroup _eventTasks = new(static (_, _) => Task.CompletedTask);
+	private double _listMaxWidth = ListStartWidth;
 
 	public RemarksPanel()
 	{
@@ -30,6 +33,8 @@ internal sealed partial class RemarksPanel : UserControl
 		ResolvedRemarksList.AddHandler(RemarkThreadView.ActionRequestedEvent, OnRemarkActionRequested);
 		((PopupFlyoutBase)OpenRemarksButton.Flyout!).Opening += (_, _) => FitList(OpenRemarksButton, OpenRemarksScroller);
 		((PopupFlyoutBase)ResolvedRemarksButton.Flyout!).Opening += (_, _) => FitList(ResolvedRemarksButton, ResolvedRemarksScroller);
+		OpenRemarksButton.Flyout!.Opened += (_, _) => WidenList(OpenRemarksScroller);
+		ResolvedRemarksButton.Flyout!.Opened += (_, _) => WidenList(ResolvedRemarksScroller);
 		Refresh();
 	}
 
@@ -82,8 +87,9 @@ internal sealed partial class RemarksPanel : UserControl
 		ToolTip.SetTip(SendRemarksButton, remarks?.SendBlockedReason);
 	}
 
-	// The list opens left of the panel, its right edge on the panel's edge, as wide as a share of the
-	// room there and as tall as the window above the button allows, so it scrolls only past that.
+	// The list opens left of the panel, its right edge on the panel's edge and its bottom near the
+	// window's, so it can take the window's whole height wherever the button sits. It starts as wide
+	// as a thread over a line and widens up to a share of the room there before it has to scroll.
 	private void FitList(Button button, ScrollViewer scroller)
 	{
 		var anchor = AlignTarget ?? button;
@@ -96,9 +102,36 @@ internal sealed partial class RemarksPanel : UserControl
 		}
 
 		var room = Math.Max(0, edge.X - ListMargin);
-		scroller.Width = Math.Max(Math.Min(ListMinWidth, room), room * ListWidthShare);
-		scroller.MaxHeight = Math.Max(ListMinHeight, at.Y + button.Bounds.Height - (2 * ListMargin));
+		var maxWidth = Math.Max(Math.Min(ListMinWidth, room), room * ListWidthShare);
+		var windowHeight = top.Bounds.Height;
+		scroller.MaxHeight = Math.Max(ListMinHeight, windowHeight - (3 * ListMargin));
+		scroller.Width = Math.Min(ListStartWidth, maxWidth);
 		flyout.HorizontalOffset = edge.X - at.X;
+		flyout.VerticalOffset = Math.Max(0, windowHeight - ListMargin - (at.Y + button.Bounds.Height));
+		_listMaxWidth = maxWidth;
+	}
+
+	// Once the rows exist they can be measured: the list widens while they are taller than it may be.
+	private void WidenList(ScrollViewer scroller)
+	{
+		if (scroller.Content is not Control rows)
+		{
+			return;
+		}
+
+		var width = scroller.Width;
+		while (MeasureRows(rows, width) > scroller.MaxHeight && width < _listMaxWidth)
+		{
+			width = Math.Min(_listMaxWidth, width + ListWidthStep);
+		}
+
+		scroller.Width = width;
+	}
+
+	private static double MeasureRows(Control rows, double width)
+	{
+		rows.Measure(new Size(width, double.PositiveInfinity));
+		return rows.DesiredSize.Height;
 	}
 
 	private void OnRemarkActionRequested(object? sender, RemarkActionEventArgs e)

@@ -536,6 +536,41 @@ public sealed class ProjectScreenRemarksHeadlessTests
 			height: 1000);
 	}
 
+	// The buttons can sit mid-window when the column has more below them; the list still takes the
+	// window's height, and starts as wide as a thread over a line does.
+	[AvaloniaTest]
+	public async Task The_open_list_takes_the_window_height_not_just_the_room_above_its_button()
+	{
+		await WithScreenAsync(
+			async fixture =>
+			{
+				await fixture.Remarks.AddRemarkAsync(fixture.Shown, 4, "why?", CancellationToken.None);
+				await fixture.Remarks.SendAsync("s1", CancellationToken.None);
+				var answer = string.Join('\n', Enumerable.Range(1, 12).Select(index => $"reason {index}"));
+				for (var reply = 0; reply < 3; reply++)
+				{
+					await fixture.Book.AgentReplyAsync("C1", answer, resolve: false, CancellationToken.None);
+				}
+
+				var open = fixture.Panel.FindControl<Button>("OpenRemarksButton")!;
+				await EventuallyAsync(fixture.Window, () => open.IsEnabled);
+				var list = fixture.Panel.FindControl<ItemsControl>("OpenRemarksList")!;
+				open.Flyout!.ShowAt(open);
+				fixture.Window.UpdateLayout();
+				await EventuallyAsync(fixture.Window, () => list.GetLogicalDescendants().OfType<RemarkThreadView>().Count() == 1);
+				fixture.Window.UpdateLayout();
+
+				var scroller = global::Avalonia.VisualTree.VisualExtensions.GetVisualAncestors(list).OfType<ScrollViewer>().First();
+				var buttonBottom = open.TranslatePoint(new Point(0, open.Bounds.Height), fixture.Window)!.Value.Y;
+				list.Bounds.Height.ShouldBeGreaterThan(buttonBottom);
+				scroller.Extent.Height.ShouldBeLessThanOrEqualTo(scroller.Viewport.Height + 1);
+				scroller.Bounds.Width.ShouldBeLessThanOrEqualTo(721);
+			},
+			height: 1000,
+			width: 1600,
+			panelAlignment: global::Avalonia.Layout.VerticalAlignment.Center);
+	}
+
 	// A list rebuilt on each change would drop the focus of a reply being typed in it.
 	[AvaloniaTest]
 	public async Task A_reply_typed_in_the_open_list_keeps_its_row_when_remarks_change()
@@ -564,7 +599,8 @@ public sealed class ProjectScreenRemarksHeadlessTests
 	private static void CtrlEnter(TextBox box) =>
 		box.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Enter, KeyModifiers = KeyModifiers.Control, Source = box });
 
-	private static async Task WithScreenAsync(Func<Fixture, Task> act, IReadOnlyList<SessionTarget>? sessions = null, double height = 500)
+	private static async Task WithScreenAsync(Func<Fixture, Task> act, IReadOnlyList<SessionTarget>? sessions = null, double height = 500, double width = 1180,
+		global::Avalonia.Layout.VerticalAlignment panelAlignment = global::Avalonia.Layout.VerticalAlignment.Bottom)
 	{
 		List<string> deliveredTo = [];
 		FluentTheme theme = new();
@@ -595,13 +631,13 @@ public sealed class ProjectScreenRemarksHeadlessTests
 			action => global::Avalonia.Threading.Dispatcher.UIThread.Post(action));
 		ProjectScreenViewModel screen = new(workspace, changes, new ProjectMarkdownFileStore(), remarks: remarks);
 		ProjectScreenView view = new() { DataContext = screen };
-		// At the bottom of the right column, as under the file list.
-		RemarksPanel panel = new() { Remarks = remarks, Width = 280, VerticalAlignment = global::Avalonia.Layout.VerticalAlignment.Bottom };
+		// At the bottom of the right column, as under the file list, unless a test moves it.
+		RemarksPanel panel = new() { Remarks = remarks, Width = 280, VerticalAlignment = panelAlignment };
 		DockPanel layout = new();
 		DockPanel.SetDock(panel, Dock.Right);
 		layout.Children.Add(panel);
 		layout.Children.Add(view);
-		Window window = new() { Content = layout, Width = 1180, Height = height };
+		Window window = new() { Content = layout, Width = width, Height = height };
 		window.Show();
 		try
 		{
