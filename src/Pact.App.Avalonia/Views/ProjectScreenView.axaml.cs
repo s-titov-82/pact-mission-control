@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -59,8 +58,6 @@ internal sealed partial class ProjectScreenView : UserControl
 		RemarkOverlay.SizeChanged += (_, _) => PositionOverlay();
 		RemarkLayer.SizeChanged += (_, _) => PositionOverlay();
 		AddHandler(RemarkThreadView.ActionRequestedEvent, OnRemarkActionRequested);
-		// The open-remarks list lives in a popup, outside this view's tree, so its actions are caught on the list.
-		OpenRemarksList.AddHandler(RemarkThreadView.ActionRequestedEvent, OnRemarkActionRequested);
 		MarkdownClickGuard.Attach(ReviewLogPreview);
 		DataContextChanged += (_, _) => Attach(DataContext as ProjectScreenViewModel);
 		// A review still running appends turns to the open log; re-read it while it is on screen.
@@ -100,7 +97,6 @@ internal sealed partial class ProjectScreenView : UserControl
 		CloseOverlay();
 		RefreshTab();
 		RefreshChanges();
-		RefreshRemarkBar();
 	}
 
 	private void OnScreenPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -133,8 +129,6 @@ internal sealed partial class ProjectScreenView : UserControl
 			RefreshRemarkMarks();
 			RefreshOverlay();
 		}
-
-		RefreshRemarkBar();
 	}
 
 	private void RefreshTab()
@@ -364,64 +358,6 @@ internal sealed partial class ProjectScreenView : UserControl
 	{
 		e.Handled = true;
 		_eventTasks.TryRun(e.Name, () => e.Action(CancellationToken.None), static _ => Task.CompletedTask);
-	}
-
-	/// <summary>The menu of sessions Send opened when there were several; for tests.</summary>
-	internal MenuFlyout? SendMenu { get; private set; }
-
-	private void RefreshRemarkBar()
-	{
-		if (_remarks is not { } remarks)
-		{
-			RemarkBar.IsVisible = false;
-			return;
-		}
-
-		var open = remarks.OpenThreads;
-		RemarkBarText.Text = remarks.BarText;
-		RemarkStatusText.Text = remarks.StatusText;
-		OpenRemarksButton.IsVisible = open.Count > 0;
-		OpenRemarksButton.Content = string.Create(CultureInfo.InvariantCulture, $"Open remarks ({open.Count})");
-		OpenRemarksList.ItemsSource = open;
-		SendRemarksButton.IsEnabled = remarks.CanSend;
-		ToolTip.SetTip(SendRemarksButton, remarks.SendBlockedReason);
-		RemarkBar.IsVisible = remarks.OpenCount > 0 || remarks.StatusText is not null;
-	}
-
-	// One session takes the remarks at once; with several, the user picks one.
-	private void OnSendRemarksClicked(object? sender, RoutedEventArgs e)
-	{
-		if (_remarks is not { } remarks)
-		{
-			return;
-		}
-
-		var targets = remarks.SendTargets;
-		if (targets.Count == 1)
-		{
-			SendRemarks(remarks, targets[0].SessionId);
-			return;
-		}
-
-		MenuFlyout menu = new();
-		foreach (var target in targets)
-		{
-			MenuItem item = new() { Header = target.Title };
-			item.Click += (_, _) => SendRemarks(remarks, target.SessionId);
-			menu.Items.Add(item);
-		}
-
-		SendMenu = menu;
-		if (targets.Count > 1)
-		{
-			menu.ShowAt(SendRemarksButton);
-		}
-	}
-
-	private void SendRemarks(ChangesRemarksViewModel remarks, string sessionId)
-	{
-		SendMenu?.Hide();
-		_eventTasks.TryRun("remarks-send", () => remarks.SendAsync(sessionId, CancellationToken.None), static _ => Task.CompletedTask);
 	}
 
 	private void OnOverviewTabClicked(object? sender, RoutedEventArgs e) => SelectTab(ProjectScreenTab.Overview);

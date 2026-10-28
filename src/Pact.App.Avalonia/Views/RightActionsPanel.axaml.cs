@@ -164,6 +164,10 @@ internal sealed partial class RightActionsPanel : UserControl
 		ChangedFilesList.IsVisible = showsFiles;
 		ReviewLogList.IsVisible = showsLogs;
 		DeleteAllReviewLogsButton.IsVisible = showsLogs && ProjectScreen!.HasReviewLogs;
+		// The remark buttons sit under the files they are about; a project screen has no quick actions.
+		RemarksPanel.Remarks = showsFiles ? ProjectScreen!.Remarks : null;
+		RemarksPanel.IsVisible = RemarksPanel.Remarks is not null;
+		QuickActionsSection.IsVisible = ProjectScreen is null;
 		_syncingSelection = true;
 		try
 		{
@@ -222,8 +226,11 @@ internal sealed partial class RightActionsPanel : UserControl
 	private void OnDeleteAllReviewLogsClicked(object? sender, RoutedEventArgs e) =>
 		DeleteAllReviewLogsRequested?.Invoke(this, EventArgs.Empty);
 
-	internal void ConfigureLifecycle(ObservedTaskGroup eventTasks) =>
+	internal void ConfigureLifecycle(ObservedTaskGroup eventTasks)
+	{
 		_eventTasks = eventTasks ?? throw new ArgumentNullException(nameof(eventTasks));
+		RemarksPanel.ConfigureLifecycle(eventTasks);
+	}
 
 	private ObservedTaskGroup _eventTasks = new(static (_, _) => Task.CompletedTask);
 

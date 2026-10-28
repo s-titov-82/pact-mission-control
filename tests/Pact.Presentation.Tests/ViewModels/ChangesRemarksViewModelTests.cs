@@ -340,6 +340,46 @@ public sealed class ChangesRemarksViewModelTests : IDisposable
 	}
 
 	[Test]
+	public async Task Resolved_threads_list_the_reviewed_ones_newest_first()
+	{
+		var remarks = await OpenAsync();
+		var shown = _changes!.ShownDiff!;
+		await remarks.AddRemarkAsync(shown, 3, "one", CancellationToken.None);
+		await remarks.AddRemarkAsync(shown, 2, "two", CancellationToken.None);
+		await remarks.AddRemarkAsync(shown, 1, "three", CancellationToken.None);
+
+		await _book!.ResolveAsync("C1", CancellationToken.None);
+		await _book.ResolveAsync("C3", CancellationToken.None);
+
+		await EventuallyAsync(() => remarks.ResolvedThreads.Select(thread => thread.Id).SequenceEqual(["C3", "C1"]));
+		await _book.ReopenAsync("C3", CancellationToken.None);
+		await EventuallyAsync(() => remarks.ResolvedThreads.Select(thread => thread.Id).SequenceEqual(["C1"]));
+		remarks.OpenThreads.Select(thread => thread.Id).ShouldBe(["C2", "C3"]);
+	}
+
+	// A list rebuilt on every change takes the focus away from a reply typed in it.
+	[Test]
+	public async Task The_lists_stay_the_same_while_their_threads_do()
+	{
+		var remarks = await OpenAsync();
+		var shown = _changes!.ShownDiff!;
+		var thread = (await remarks.AddRemarkAsync(shown, 3, "one", CancellationToken.None))!;
+		await remarks.AddRemarkAsync(shown, 2, "two", CancellationToken.None);
+		await _book!.ResolveAsync("C2", CancellationToken.None);
+		await EventuallyAsync(() => remarks.ResolvedThreads.Count == 1);
+		var open = remarks.OpenThreads;
+		var resolved = remarks.ResolvedThreads;
+
+		thread.DraftText = "more";
+		await thread.SaveDraftAsync(CancellationToken.None);
+		await EventuallyAsync(() => _book.Threads.Single(item => item.Id == "C1").Unsent.Count == 2);
+		await Task.Delay(50);
+
+		remarks.OpenThreads.ShouldBeSameAs(open);
+		remarks.ResolvedThreads.ShouldBeSameAs(resolved);
+	}
+
+	[Test]
 	public async Task Adding_a_reply_shows_it_as_unsent_and_empties_the_box()
 	{
 		var thread = await SentThreadAsync();

@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:Pact.Presentation.ViewModels;assembly=Pact.Presentation"
              xmlns:local="clr-namespace:Pact.App.Avalonia.Views"
+             xmlns:remarks="clr-namespace:Pact.App.Avalonia.Views.Remarks"
              x:Class="Pact.App.Avalonia.Views.RightActionsPanel"
              x:CompileBindings="False">
   <Grid Margin="20,18" RowDefinitions="Auto,*">
@@ -16,6 +17,20 @@
       <Panel />
     </DockPanel>
     <Grid x:Name="DefaultActionsPanel" Grid.Row="1" RowDefinitions="Auto,0,Auto,Auto,*,Auto,Auto">
+      <StackPanel x:Name="ChangesSection" Margin="0,20,0,0" IsVisible="False">
+        <Button x:Name="ChangesEntry" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                Padding="10,6" Click="OnChangesEntryClicked">
+          <StackPanel Spacing="2">
+            <TextBlock x:Name="ChangesEntryTitle" FontWeight="SemiBold" />
+            <TextBlock x:Name="ChangesEntrySubtitle" FontSize="11"
+                       Foreground="{DynamicResource AppTextMutedBrush}" />
+            <TextBlock x:Name="ChangesEntryRemarks" FontSize="11" IsVisible="False"
+                       Foreground="{DynamicResource AppTextMutedBrush}" />
+          </StackPanel>
+        </Button>
+        <TextBlock x:Name="NoChangesText" Foreground="{DynamicResource AppTextMutedBrush}"
+                   Text="No uncommitted changes" IsVisible="False" />
+      </StackPanel>
       <Grid x:Name="DocumentsSection" Grid.Row="1" Margin="0,20,0,0"
             RowDefinitions="Auto,*" IsVisible="False">
         <TextBlock FontWeight="SemiBold" Text="Documents" />
@@ -41,7 +56,7 @@
         </TreeView>
       </Grid>
       <Grid x:Name="ProjectListSection" Grid.Row="1" Margin="0,20,0,0"
-            RowDefinitions="Auto,*" IsVisible="False">
+            RowDefinitions="Auto,*,Auto" IsVisible="False">
         <StackPanel Orientation="Horizontal" Spacing="10">
           <TextBlock x:Name="ProjectListTitle" FontWeight="SemiBold" VerticalAlignment="Center" />
           <Button x:Name="DeleteAllReviewLogsButton" Height="24" Padding="8,0"
@@ -91,8 +106,9 @@
             </DataTemplate>
           </ListBox.ItemTemplate>
         </ListBox>
+        <remarks:RemarksPanel x:Name="RemarksPanel" Grid.Row="2" Margin="0,10,0,0" IsVisible="False" />
       </Grid>
-      <StackPanel Grid.Row="2">
+      <StackPanel x:Name="QuickActionsSection" Grid.Row="2">
         <TextBlock Margin="0,20,0,0" FontWeight="SemiBold" Text="Quick actions" />
         <ScrollViewer MaxHeight="200" VerticalScrollBarVisibility="Auto">
           <ItemsControl x:Name="QuickActionsList" Margin="0,8,0,0" ItemsSource="{Binding VisibleQuickActions}">
@@ -102,21 +118,6 @@
             </DataTemplate></ItemsControl.ItemTemplate>
           </ItemsControl>
         </ScrollViewer>
-      </StackPanel>
-      <StackPanel x:Name="ChangesSection" Grid.Row="3" IsVisible="False">
-        <Separator Margin="0,14,0,10" />
-        <Button x:Name="ChangesEntry" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
-                Padding="10,6" Click="OnChangesEntryClicked">
-          <StackPanel Spacing="2">
-            <TextBlock x:Name="ChangesEntryTitle" FontWeight="SemiBold" />
-            <TextBlock x:Name="ChangesEntrySubtitle" FontSize="11"
-                       Foreground="{DynamicResource AppTextMutedBrush}" />
-            <TextBlock x:Name="ChangesEntryRemarks" FontSize="11" IsVisible="False"
-                       Foreground="{DynamicResource AppTextMutedBrush}" />
-          </StackPanel>
-        </Button>
-        <TextBlock x:Name="NoChangesText" Foreground="{DynamicResource AppTextMutedBrush}"
-                   Text="No uncommitted changes" IsVisible="False" />
       </StackPanel>
       <Grid x:Name="SelectedTabDetailsSection" Grid.Row="5" Margin="0,24,0,0" MaxHeight="360"
             RowDefinitions="Auto,Auto,*" IsVisible="False">

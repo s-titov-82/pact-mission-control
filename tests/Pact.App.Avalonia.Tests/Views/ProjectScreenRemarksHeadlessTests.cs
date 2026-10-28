@@ -305,14 +305,14 @@ public sealed class ProjectScreenRemarksHeadlessTests
 				"x\n",
 				string.Join(' ', Enumerable.Repeat("a fairly long remark", 20)),
 				CancellationToken.None);
-			var other = fixture.View.FindControl<Button>("OpenRemarksButton")!;
-			await EventuallyAsync(fixture.Window, () => other.IsVisible);
+			var other = fixture.Panel.FindControl<Button>("OpenRemarksButton")!;
+			await EventuallyAsync(fixture.Window, () => other.IsEnabled);
 
 			other.Flyout!.ShowAt(other);
 			fixture.Window.UpdateLayout();
-			await EventuallyAsync(fixture.Window, () => fixture.View.FindControl<ItemsControl>("OpenRemarksList")!.IsEffectivelyVisible);
+			await EventuallyAsync(fixture.Window, () => fixture.Panel.FindControl<ItemsControl>("OpenRemarksList")!.IsEffectivelyVisible);
 
-			var list = fixture.View.FindControl<ItemsControl>("OpenRemarksList")!;
+			var list = fixture.Panel.FindControl<ItemsControl>("OpenRemarksList")!;
 			var scrollers = global::Avalonia.VisualTree.VisualExtensions.GetVisualAncestors(list).OfType<ScrollViewer>().ToArray();
 			scrollers.Length.ShouldBeGreaterThan(1, "the flyout presenter should hold the list");
 			foreach (var scroller in global::Avalonia.VisualTree.VisualExtensions.GetVisualAncestors(list).OfType<ScrollViewer>())
@@ -328,10 +328,10 @@ public sealed class ProjectScreenRemarksHeadlessTests
 		await WithScreenAsync(async fixture =>
 		{
 			await fixture.Remarks.AddRemarkAsync(fixture.Shown, 3, "why?", CancellationToken.None);
-			var barText = fixture.View.FindControl<TextBlock>("RemarkBarText")!;
+			var barText = fixture.Panel.FindControl<TextBlock>("RemarkBarText")!;
 			await EventuallyAsync(fixture.Window, () => barText.Text == "1 remark to send");
 
-			fixture.View.FindControl<Button>("SendRemarksButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+			fixture.Panel.FindControl<Button>("SendRemarksButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
 
 			await EventuallyAsync(fixture.Window, () => fixture.DeliveredTo.Count == 1);
 			fixture.DeliveredTo.ShouldBe(["s1"]);
@@ -347,9 +347,9 @@ public sealed class ProjectScreenRemarksHeadlessTests
 				await fixture.Remarks.AddRemarkAsync(fixture.Shown, 3, "why?", CancellationToken.None);
 				await EventuallyAsync(fixture.Window, () => fixture.Remarks.CanSend);
 
-				fixture.View.FindControl<Button>("SendRemarksButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+				fixture.Panel.FindControl<Button>("SendRemarksButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
 
-				var items = fixture.View.SendMenu.ShouldNotBeNull().Items.OfType<MenuItem>().ToArray();
+				var items = fixture.Panel.SendMenu.ShouldNotBeNull().Items.OfType<MenuItem>().ToArray();
 				items.Select(item => item.Header as string).ShouldBe(["Claude", "Codex"]);
 				fixture.DeliveredTo.ShouldBeEmpty();
 				items[1].RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
@@ -367,7 +367,7 @@ public sealed class ProjectScreenRemarksHeadlessTests
 			await fixture.Remarks.AddRemarkAsync(fixture.Shown, 4, "why?", CancellationToken.None);
 			await fixture.Remarks.SendAsync("s1", CancellationToken.None);
 			await EventuallyAsync(fixture.Window, () => fixture.Margin.MarkOf(5) == "thread");
-			var send = fixture.View.FindControl<Button>("SendRemarksButton")!;
+			var send = fixture.Panel.FindControl<Button>("SendRemarksButton")!;
 			fixture.ClickMargin(5);
 			var draftBox = fixture.Overlay.GetLogicalDescendants().OfType<RemarkThreadView>().Single().FindControl<TextBox>("DraftBox")!;
 			send.IsEnabled.ShouldBeFalse();
@@ -414,7 +414,7 @@ public sealed class ProjectScreenRemarksHeadlessTests
 			async fixture =>
 			{
 				await fixture.Remarks.AddRemarkAsync(fixture.Shown, 3, "why?", CancellationToken.None);
-				var send = fixture.View.FindControl<Button>("SendRemarksButton")!;
+				var send = fixture.Panel.FindControl<Button>("SendRemarksButton")!;
 
 				await EventuallyAsync(fixture.Window, () => fixture.Remarks.DraftCount == 1);
 
@@ -435,9 +435,9 @@ public sealed class ProjectScreenRemarksHeadlessTests
 				"where did it go?",
 				CancellationToken.None);
 			await fixture.Remarks.AddRemarkAsync(fixture.Shown, 4, "on the shown file", CancellationToken.None);
-			var open = fixture.View.FindControl<Button>("OpenRemarksButton")!;
-			await EventuallyAsync(fixture.Window, () => open.IsVisible && (open.Content as string) == "Open remarks (2)");
-			var list = fixture.View.FindControl<ItemsControl>("OpenRemarksList")!;
+			var open = fixture.Panel.FindControl<Button>("OpenRemarksButton")!;
+			await EventuallyAsync(fixture.Window, () => open.IsEnabled && (open.Content as string) == "Open (2)");
+			var list = fixture.Panel.FindControl<ItemsControl>("OpenRemarksList")!;
 			list.ItemsSource.ShouldBeSameAs(fixture.Remarks.OpenThreads);
 
 			open.Flyout!.ShowAt(open);
@@ -448,7 +448,59 @@ public sealed class ProjectScreenRemarksHeadlessTests
 			first.FindControl<Button>("ResolveButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
 
 			await EventuallyAsync(fixture.Window, () => fixture.Book.Threads.Single(thread => thread.Id == "C1").IsResolved);
-			await EventuallyAsync(fixture.Window, () => (open.Content as string) == "Open remarks (1)");
+			await EventuallyAsync(fixture.Window, () => (open.Content as string) == "Open (1)");
+		});
+	}
+
+	[AvaloniaTest]
+	public async Task The_resolved_list_shows_the_review_done_and_reopens_a_thread()
+	{
+		await WithScreenAsync(async fixture =>
+		{
+			await fixture.Remarks.AddRemarkAsync(fixture.Shown, 4, "fixed?", CancellationToken.None);
+			var resolvedButton = fixture.Panel.FindControl<Button>("ResolvedRemarksButton")!;
+			var open = fixture.Panel.FindControl<Button>("OpenRemarksButton")!;
+			await EventuallyAsync(fixture.Window, () => (open.Content as string) == "Open (1)");
+			resolvedButton.IsEnabled.ShouldBeFalse();
+			(resolvedButton.Content as string).ShouldBe("Resolved (0)");
+
+			await fixture.Book.ResolveAsync("C1", CancellationToken.None);
+
+			await EventuallyAsync(fixture.Window, () => resolvedButton.IsEnabled && (resolvedButton.Content as string) == "Resolved (1)");
+			(open.Content as string).ShouldBe("Open (0)");
+			open.IsEnabled.ShouldBeFalse();
+			var list = fixture.Panel.FindControl<ItemsControl>("ResolvedRemarksList")!;
+			resolvedButton.Flyout!.ShowAt(resolvedButton);
+			fixture.Window.UpdateLayout();
+			await EventuallyAsync(fixture.Window, () => list.GetLogicalDescendants().OfType<RemarkThreadView>().Count() == 1);
+			list.GetLogicalDescendants().OfType<RemarkThreadView>().Single()
+				.FindControl<Button>("ReopenButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+			await EventuallyAsync(fixture.Window, () => !fixture.Book.Threads.Single().IsResolved);
+			await EventuallyAsync(fixture.Window, () => (open.Content as string) == "Open (1)" && (resolvedButton.Content as string) == "Resolved (0)");
+		});
+	}
+
+	// A list rebuilt on each change would drop the focus of a reply being typed in it.
+	[AvaloniaTest]
+	public async Task A_reply_typed_in_the_open_list_keeps_its_row_when_remarks_change()
+	{
+		await WithScreenAsync(async fixture =>
+		{
+			await fixture.Remarks.AddRemarkAsync(fixture.Shown, 4, "one", CancellationToken.None);
+			await fixture.Remarks.AddRemarkAsync(fixture.Shown, 6, "two", CancellationToken.None);
+			var open = fixture.Panel.FindControl<Button>("OpenRemarksButton")!;
+			await EventuallyAsync(fixture.Window, () => (open.Content as string) == "Open (2)");
+			var list = fixture.Panel.FindControl<ItemsControl>("OpenRemarksList")!;
+			open.Flyout!.ShowAt(open);
+			fixture.Window.UpdateLayout();
+			await EventuallyAsync(fixture.Window, () => list.GetLogicalDescendants().OfType<RemarkThreadView>().Count() == 2);
+			var row = list.GetLogicalDescendants().OfType<RemarkThreadView>().First();
+
+			await fixture.Book.SaveDraftAsync("C2", "x2", "and more", CancellationToken.None);
+			await EventuallyAsync(fixture.Window, () => fixture.Remarks.OpenThreads.Single(thread => thread.Id == "C2").Messages.Count == 2);
+
+			list.GetLogicalDescendants().OfType<RemarkThreadView>().First().ShouldBeSameAs(row);
 		});
 	}
 
@@ -488,14 +540,19 @@ public sealed class ProjectScreenRemarksHeadlessTests
 			action => global::Avalonia.Threading.Dispatcher.UIThread.Post(action));
 		ProjectScreenViewModel screen = new(workspace, changes, new ProjectMarkdownFileStore(), remarks: remarks);
 		ProjectScreenView view = new() { DataContext = screen };
-		Window window = new() { Content = view, Width = 900, Height = height };
+		RemarksPanel panel = new() { Remarks = remarks, Width = 280 };
+		DockPanel layout = new();
+		DockPanel.SetDock(panel, Dock.Right);
+		layout.Children.Add(panel);
+		layout.Children.Add(view);
+		Window window = new() { Content = layout, Width = 1180, Height = height };
 		window.Show();
 		try
 		{
 			await screen.SelectTabAsync(ProjectScreenTab.Changes, CancellationToken.None);
 			await changes.SelectFileAsync(changes.Files[0], CancellationToken.None);
 			window.UpdateLayout();
-			await act(new Fixture(window, view, book, remarks, changes.ShownDiff!, deliveredTo));
+			await act(new Fixture(window, view, panel, book, remarks, changes.ShownDiff!, deliveredTo));
 		}
 		finally
 		{
@@ -520,6 +577,7 @@ public sealed class ProjectScreenRemarksHeadlessTests
 	private sealed record Fixture(
 		Window Window,
 		ProjectScreenView View,
+		RemarksPanel Panel,
 		RemarkBook Book,
 		ChangesRemarksViewModel Remarks,
 		ShownDiff Shown,

@@ -29,7 +29,7 @@ public sealed class RightActionsPanelHeadlessTests
 	}
 
 	[AvaloniaTest]
-	public void The_changes_entry_sits_between_quick_actions_and_the_tab_details()
+	public void The_changes_entry_sits_on_top_above_quick_actions_and_the_tab_details()
 	{
 		using var changes = Changes(Files("a.cs"), added: 3, removed: 1);
 		RightActionsPanel panel = new() { Changes = changes };
@@ -43,8 +43,8 @@ public sealed class RightActionsPanelHeadlessTests
 			var entry = panel.FindControl<Control>("ChangesEntry")!;
 			var details = panel.FindControl<Control>("SelectedTabDetailsSection")!;
 
-			Top(entry, panel).ShouldBeGreaterThan(Top(quickActions, panel));
-			Top(details, panel).ShouldBeGreaterThan(Top(entry, panel));
+			Top(quickActions, panel).ShouldBeGreaterThan(Top(entry, panel));
+			Top(details, panel).ShouldBeGreaterThan(Top(quickActions, panel));
 		}
 		finally
 		{
@@ -125,7 +125,7 @@ public sealed class RightActionsPanelHeadlessTests
 	}
 
 	[AvaloniaTest]
-	public async Task The_changes_tab_lists_the_changed_files_above_quick_actions()
+	public async Task The_changes_tab_lists_the_files_under_the_entry_without_quick_actions()
 	{
 		using var root = TemporaryDirectory.Create();
 		using var changes = Changes(Files("a.cs", "b.cs"), added: 1, removed: 1, root.Path);
@@ -142,8 +142,10 @@ public sealed class RightActionsPanelHeadlessTests
 			list.IsEffectivelyVisible.ShouldBeTrue();
 			list.ItemCount.ShouldBe(2);
 			panel.FindControl<ListBox>("ReviewLogList")!.IsVisible.ShouldBeFalse();
-			Top(panel.FindControl<Control>("QuickActionsList")!, panel).ShouldBeGreaterThan(Top(list, panel));
-			panel.FindControl<Control>("ChangesEntry")!.IsVisible.ShouldBeTrue();
+			var entry = panel.FindControl<Control>("ChangesEntry")!;
+			entry.IsVisible.ShouldBeTrue();
+			Top(list, panel).ShouldBeGreaterThan(Top(entry, panel));
+			panel.FindControl<Control>("QuickActionsSection")!.IsVisible.ShouldBeFalse();
 
 			list.SelectedItem = changes.Files[1];
 
@@ -359,6 +361,40 @@ public sealed class RightActionsPanelHeadlessTests
 		}
 	}
 
+	[AvaloniaTest]
+	public async Task The_remark_buttons_stay_under_the_files_on_the_changes_tab_only()
+	{
+		using var root = TemporaryDirectory.Create();
+		using var changes = Changes(Files("a.cs"), added: 1, removed: 0, root.Path);
+		using RemarkBook book = new(root.Path, new RemarkFileStore(root.Path), TimeProvider.System);
+		using ChangesRemarksViewModel remarks = Remarks(changes, book);
+		var screen = Screen(root.Path, changes, remarks);
+		await screen.SelectTabAsync(ProjectScreenTab.Changes, CancellationToken.None);
+		RightActionsPanel panel = new() { Changes = changes, ProjectScreen = screen };
+		Window window = new() { Content = panel, Height = 800 };
+		window.Show();
+		try
+		{
+			window.UpdateLayout();
+			var buttons = panel.FindControl<Control>("RemarksPanel")!;
+			var list = panel.FindControl<ListBox>("ChangedFilesList")!;
+
+			buttons.IsEffectivelyVisible.ShouldBeTrue();
+			Top(buttons, panel).ShouldBeGreaterThan(Top(list, panel));
+			buttons.GetLogicalDescendants().OfType<Button>().Select(button => button.Content as string)
+				.ShouldBe(["Resolved (0)", "Open (0)", "Send"]);
+
+			await screen.SelectTabAsync(ProjectScreenTab.Overview, CancellationToken.None);
+			window.UpdateLayout();
+
+			buttons.IsVisible.ShouldBeFalse();
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
 	private static List<string?> RowTexts(ListBox list, int index) =>
 		list.ContainerFromIndex(index)?.GetLogicalDescendants().OfType<TextBlock>()
 			.Where(text => text.IsEffectivelyVisible)
@@ -375,11 +411,11 @@ public sealed class RightActionsPanelHeadlessTests
 
 	private static RemarkAnchor OldAnchor(string path) => new(path, RemarkSide.Old, 1, "x", [], [], "head", null);
 
-	private static ProjectScreenViewModel Screen(string root, ProjectChangesViewModel? changes)
+	private static ProjectScreenViewModel Screen(string root, ProjectChangesViewModel? changes, ChangesRemarksViewModel? remarks = null)
 	{
 		var now = DateTimeOffset.UtcNow;
 		WorkspaceViewModel workspace = new(new ProjectRecord("p1", "Pact", root, now, now, null), _ => changes is not null);
-		return new ProjectScreenViewModel(workspace, changes, new ProjectMarkdownFileStore());
+		return new ProjectScreenViewModel(workspace, changes, new ProjectMarkdownFileStore(), remarks: remarks);
 	}
 
 	private static async Task EventuallyAsync(Func<bool> condition)

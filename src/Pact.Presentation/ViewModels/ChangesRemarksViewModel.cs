@@ -72,6 +72,9 @@ public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposabl
 	/// <summary>Every thread not resolved yet, of any file, oldest id first: the remarks still in play.</summary>
 	public IReadOnlyList<RemarkThreadViewModel> OpenThreads { get; private set; } = [];
 
+	/// <summary>Every resolved thread, newest id first: the review already done, to look back at or reopen.</summary>
+	public IReadOnlyList<RemarkThreadViewModel> ResolvedThreads { get; private set; } = [];
+
 	/// <summary>Threads not resolved.</summary>
 	public int OpenCount { get; private set; }
 
@@ -314,7 +317,9 @@ public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposabl
 		}
 
 		OpenCount = threads.Count(thread => !thread.IsResolved);
-		OpenThreads = threads.Where(thread => !thread.IsResolved).Select(ThreadFor).OrderBy(view => Number(view.Id)).ToArray();
+		// The lists keep their instance while they hold the same threads, so a reply typed in one keeps its focus.
+		OpenThreads = Same(OpenThreads, threads.Where(thread => !thread.IsResolved).Select(ThreadFor).OrderBy(view => Number(view.Id)).ToArray());
+		ResolvedThreads = Same(ResolvedThreads, threads.Where(thread => thread.IsResolved).Select(ThreadFor).OrderByDescending(view => Number(view.Id)).ToArray());
 		DraftCount = CountDrafts(threads);
 		foreach (var file in _changes.Files)
 		{
@@ -327,7 +332,7 @@ public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposabl
 			StatusText = $"The remarks file could not be read; it was kept as {Path.GetFileName(aside)}.";
 		}
 
-		Raise(nameof(OpenCount), nameof(OpenThreads), nameof(DraftCount), nameof(BarText), nameof(CanSend), nameof(SendTargets),
+		Raise(nameof(OpenCount), nameof(OpenThreads), nameof(ResolvedThreads), nameof(DraftCount), nameof(BarText), nameof(CanSend), nameof(SendTargets),
 			nameof(SendBlockedReason), nameof(StatusText));
 		_ = PlaceAsync(version, threads, _changes.ShownDiff, _changes.HeadCommit);
 	}
@@ -440,6 +445,9 @@ public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposabl
 
 		return [.. lines];
 	}
+
+	private static IReadOnlyList<RemarkThreadViewModel> Same(IReadOnlyList<RemarkThreadViewModel> current, RemarkThreadViewModel[] next) =>
+		current.SequenceEqual(next) ? current : next;
 
 	private static int Number(string id) =>
 		id.Length > 1 && int.TryParse(id.AsSpan(1), NumberStyles.None, CultureInfo.InvariantCulture, out var number) ? number : 0;
