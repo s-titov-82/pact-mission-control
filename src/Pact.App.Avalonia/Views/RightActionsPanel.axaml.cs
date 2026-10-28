@@ -17,6 +17,8 @@ internal sealed partial class RightActionsPanel : UserControl
 	public RightActionsPanel()
 	{
 		InitializeComponent();
+		// The remark lists open over the diff, right up to this panel.
+		RemarksPanel.AlignTarget = this;
 	}
 
 	/// <summary>Raised when the tree's selection moves to a node, folder or document.</summary>

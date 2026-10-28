@@ -4,9 +4,11 @@
              x:Class="Pact.App.Avalonia.Views.Remarks.RemarksPanel"
              x:CompileBindings="False">
   <UserControl.Styles>
-    <!-- The lists set their own width; the theme's narrow presenter would add a horizontal scroll. -->
+    <!-- The lists size themselves to the room they have; the theme's small presenter would make them scroll. -->
     <Style Selector="FlyoutPresenter.remark-list">
-      <Setter Property="MaxWidth" Value="680" />
+      <Setter Property="MaxWidth" Value="100000" />
+      <Setter Property="MaxHeight" Value="100000" />
+      <Setter Property="Background" Value="{DynamicResource AppPopupBackgroundBrush}" />
       <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
     </Style>
     <Style Selector="Grid#RemarkButtons > Button">
@@ -24,7 +26,7 @@
       <Button x:Name="ResolvedRemarksButton" ToolTip.Tip="Remarks already resolved">
         <Button.Flyout>
           <Flyout Placement="LeftEdgeAlignedBottom" FlyoutPresenterClasses="remark-list">
-            <ScrollViewer Width="600" MaxHeight="520" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <ScrollViewer x:Name="ResolvedRemarksScroller" Width="600" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
               <ItemsControl x:Name="ResolvedRemarksList">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
@@ -39,7 +41,7 @@
       <Button x:Name="OpenRemarksButton" Grid.Column="2" ToolTip.Tip="Remarks not resolved yet">
         <Button.Flyout>
           <Flyout Placement="LeftEdgeAlignedBottom" FlyoutPresenterClasses="remark-list">
-            <ScrollViewer Width="600" MaxHeight="520" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <ScrollViewer x:Name="OpenRemarksScroller" Width="600" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
               <ItemsControl x:Name="OpenRemarksList">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>

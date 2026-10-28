@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using System.Globalization;
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Interactivity;
 using Pact.App.Avalonia.Lifecycle;
 using Pact.Presentation.ViewModels;
@@ -13,6 +15,11 @@ namespace Pact.App.Avalonia.Views.Remarks;
 /// </summary>
 internal sealed partial class RemarksPanel : UserControl
 {
+	private const double ListWidthShare = 0.7;
+	private const double ListMinWidth = 480;
+	private const double ListMinHeight = 160;
+	private const double ListMargin = 20;
+
 	private ObservedTaskGroup _eventTasks = new(static (_, _) => Task.CompletedTask);
 
 	public RemarksPanel()
@@ -21,8 +28,13 @@ internal sealed partial class RemarksPanel : UserControl
 		// The lists live in popups, outside this view's tree, so their actions are caught on the lists.
 		OpenRemarksList.AddHandler(RemarkThreadView.ActionRequestedEvent, OnRemarkActionRequested);
 		ResolvedRemarksList.AddHandler(RemarkThreadView.ActionRequestedEvent, OnRemarkActionRequested);
+		((PopupFlyoutBase)OpenRemarksButton.Flyout!).Opening += (_, _) => FitList(OpenRemarksButton, OpenRemarksScroller);
+		((PopupFlyoutBase)ResolvedRemarksButton.Flyout!).Opening += (_, _) => FitList(ResolvedRemarksButton, ResolvedRemarksScroller);
 		Refresh();
 	}
+
+	/// <summary>The control whose left edge the lists line up with, such as the panel holding this one; the button itself when unset.</summary>
+	public Control? AlignTarget { get; set; }
 
 	/// <summary>The remarks shown; <see langword="null"/> shows nothing to act on.</summary>
 	public ChangesRemarksViewModel? Remarks
@@ -68,6 +80,25 @@ internal sealed partial class RemarksPanel : UserControl
 		ResolvedRemarksList.ItemsSource = resolved;
 		SendRemarksButton.IsEnabled = remarks?.CanSend == true;
 		ToolTip.SetTip(SendRemarksButton, remarks?.SendBlockedReason);
+	}
+
+	// The list opens left of the panel, its right edge on the panel's edge, as wide as a share of the
+	// room there and as tall as the window above the button allows, so it scrolls only past that.
+	private void FitList(Button button, ScrollViewer scroller)
+	{
+		var anchor = AlignTarget ?? button;
+		if (TopLevel.GetTopLevel(this) is not { } top
+			|| button.TranslatePoint(default, top) is not { } at
+			|| anchor.TranslatePoint(default, top) is not { } edge
+			|| button.Flyout is not PopupFlyoutBase flyout)
+		{
+			return;
+		}
+
+		var room = Math.Max(0, edge.X - ListMargin);
+		scroller.Width = Math.Max(Math.Min(ListMinWidth, room), room * ListWidthShare);
+		scroller.MaxHeight = Math.Max(ListMinHeight, at.Y + button.Bounds.Height - (2 * ListMargin));
+		flyout.HorizontalOffset = edge.X - at.X;
 	}
 
 	private void OnRemarkActionRequested(object? sender, RemarkActionEventArgs e)

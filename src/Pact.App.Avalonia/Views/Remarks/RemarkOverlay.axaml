@@ -4,7 +4,7 @@
              x:Class="Pact.App.Avalonia.Views.Remarks.RemarkOverlay"
              x:CompileBindings="False">
   <Border Padding="10" CornerRadius="6" BorderThickness="1"
-          Background="{DynamicResource AppPaneBackgroundBrush}"
+          Background="{DynamicResource AppPopupBackgroundBrush}"
           BorderBrush="{StaticResource AppPanelBorderBrush}"
           BoxShadow="0 4 14 0 #40000000">
     <Grid RowDefinitions="*">

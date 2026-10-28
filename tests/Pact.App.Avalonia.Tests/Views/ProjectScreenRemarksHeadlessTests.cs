@@ -246,7 +246,7 @@ public sealed class ProjectScreenRemarksHeadlessTests
 				await EventuallyAsync(fixture.Window, () => fixture.Overlay.Bounds.Height > 0);
 
 				// Short enough to fit whole at the starting width: it stays that narrow and does not scroll.
-				fixture.Overlay.Bounds.Width.ShouldBe(520, 1);
+				fixture.Overlay.Bounds.Width.ShouldBe(Math.Min(720, fixture.Layer.Bounds.Width * 0.7), 1);
 				var scroller = global::Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(fixture.Overlay).OfType<ScrollViewer>().First();
 				scroller.Extent.Height.ShouldBeLessThanOrEqualTo(scroller.Viewport.Height + 1);
 			},
@@ -508,6 +508,34 @@ public sealed class ProjectScreenRemarksHeadlessTests
 		});
 	}
 
+	[AvaloniaTest]
+	public async Task The_open_list_takes_the_room_left_of_the_panel_before_it_scrolls()
+	{
+		await WithScreenAsync(
+			async fixture =>
+			{
+				await fixture.Remarks.AddRemarkAsync(fixture.Shown, 4, "why?", CancellationToken.None);
+				await fixture.Remarks.SendAsync("s1", CancellationToken.None);
+				var answer = string.Join('\n', Enumerable.Range(1, 12).Select(index => $"reason {index}"));
+				for (var reply = 0; reply < 2; reply++)
+				{
+					await fixture.Book.AgentReplyAsync("C1", answer, resolve: false, CancellationToken.None);
+				}
+
+				var open = fixture.Panel.FindControl<Button>("OpenRemarksButton")!;
+				await EventuallyAsync(fixture.Window, () => open.IsEnabled);
+				var list = fixture.Panel.FindControl<ItemsControl>("OpenRemarksList")!;
+				open.Flyout!.ShowAt(open);
+				fixture.Window.UpdateLayout();
+				await EventuallyAsync(fixture.Window, () => list.GetLogicalDescendants().OfType<RemarkThreadView>().Count() == 1);
+
+				var scroller = global::Avalonia.VisualTree.VisualExtensions.GetVisualAncestors(list).OfType<ScrollViewer>().First();
+				scroller.Bounds.Width.ShouldBeGreaterThan(600);
+				scroller.Extent.Height.ShouldBeLessThanOrEqualTo(scroller.Viewport.Height + 1);
+			},
+			height: 1000);
+	}
+
 	// A list rebuilt on each change would drop the focus of a reply being typed in it.
 	[AvaloniaTest]
 	public async Task A_reply_typed_in_the_open_list_keeps_its_row_when_remarks_change()
@@ -567,7 +595,8 @@ public sealed class ProjectScreenRemarksHeadlessTests
 			action => global::Avalonia.Threading.Dispatcher.UIThread.Post(action));
 		ProjectScreenViewModel screen = new(workspace, changes, new ProjectMarkdownFileStore(), remarks: remarks);
 		ProjectScreenView view = new() { DataContext = screen };
-		RemarksPanel panel = new() { Remarks = remarks, Width = 280 };
+		// At the bottom of the right column, as under the file list.
+		RemarksPanel panel = new() { Remarks = remarks, Width = 280, VerticalAlignment = global::Avalonia.Layout.VerticalAlignment.Bottom };
 		DockPanel layout = new();
 		DockPanel.SetDock(panel, Dock.Right);
 		layout.Children.Add(panel);
