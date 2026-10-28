@@ -52,6 +52,23 @@ internal sealed partial class RemarkThreadView : UserControl
 
 	private void OnDiscardClicked(object? sender, RoutedEventArgs e) => Request("remark-discard", thread => thread.DiscardDraftAsync);
 
+	private void OnEditMessageClicked(object? sender, RoutedEventArgs e)
+	{
+		if (Thread is { } thread && sender is Control { DataContext: RemarkMessageViewModel message })
+		{
+			thread.EditMessage(message.Id);
+			FocusDraft();
+		}
+	}
+
+	private void OnRemoveMessageClicked(object? sender, RoutedEventArgs e)
+	{
+		if (sender is Control { DataContext: RemarkMessageViewModel message })
+		{
+			Request("remark-remove", thread => cancellationToken => thread.RemoveMessageAsync(message.Id, cancellationToken));
+		}
+	}
+
 	private void OnResolveClicked(object? sender, RoutedEventArgs e) => Request("remark-resolve", thread => thread.ResolveAsync);
 
 	private void OnReopenClicked(object? sender, RoutedEventArgs e) => Request("remark-reopen", thread => thread.ReopenAsync);

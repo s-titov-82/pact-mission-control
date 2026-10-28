@@ -148,7 +148,7 @@ public sealed class ChangesRemarksViewModelTests : IDisposable
 
 		await _book!.SaveDraftAsync("C1", "why, really?", CancellationToken.None);
 
-		await EventuallyAsync(() => remarks.ThreadsByRow!.ByRow.TryGetValue(3, out var threads) && threads[0].DraftText == "why, really?");
+		await EventuallyAsync(() => remarks.ThreadsByRow!.ByRow.TryGetValue(3, out var threads) && threads[0].Messages.Any(message => message.Text == "why, really?"));
 		remarks.ThreadsByRow!.ByRow.Keys.ShouldBe([3]);
 	}
 
@@ -325,6 +325,73 @@ public sealed class ChangesRemarksViewModelTests : IDisposable
 		thread.DraftText.ShouldBeEmpty();
 	}
 
+	[Test]
+	public async Task Adding_a_reply_shows_it_as_unsent_and_empties_the_box()
+	{
+		var thread = await SentThreadAsync();
+		thread.DraftText = "more";
+
+		await thread.SaveDraftAsync(CancellationToken.None);
+
+		thread.DraftText.ShouldBeEmpty();
+		var added = thread.Messages[^1];
+		(added.Text, added.DeliveryText, added.IsUnsent).ShouldBe(("more", "Not sent yet", true));
+		_book!.Threads.Single().Unsent.Select(message => message.Text).ShouldBe(["more"]);
+	}
+
+	[Test]
+	public async Task The_pencil_puts_an_unsent_message_back_in_the_box()
+	{
+		var thread = await SentThreadAsync();
+		thread.DraftText = "more";
+		await thread.SaveDraftAsync(CancellationToken.None);
+		var id = thread.Messages[^1].Id;
+
+		thread.EditMessage(id);
+
+		thread.DraftText.ShouldBe("more");
+		thread.Messages.ShouldNotContain(message => message.Id == id);
+		thread.DraftText = "more, please";
+		await thread.SaveDraftAsync(CancellationToken.None);
+		_book!.Threads.Single().Unsent.Select(message => (message.Id, message.Text)).ShouldBe([(id, "more, please")]);
+		thread.DraftText.ShouldBeEmpty();
+	}
+
+	[Test]
+	public async Task The_cross_removes_an_unsent_message()
+	{
+		var thread = await SentThreadAsync();
+		thread.DraftText = "more";
+		await thread.SaveDraftAsync(CancellationToken.None);
+
+		await thread.RemoveMessageAsync(thread.Messages[^1].Id, CancellationToken.None);
+
+		_book!.Threads.Single().Unsent.ShouldBeEmpty();
+		thread.Messages.ShouldNotContain(message => message.IsUnsent);
+	}
+
+	[Test]
+	public async Task A_new_remark_shows_its_text_as_unsent_with_an_empty_box()
+	{
+		var remarks = await OpenAsync();
+
+		var thread = (await remarks.AddRemarkAsync(_changes!.ShownDiff!, 3, "why?", CancellationToken.None))!;
+
+		thread.DraftText.ShouldBeEmpty();
+		thread.Messages.Single().ShouldSatisfyAllConditions(
+			message => message.Text.ShouldBe("why?"),
+			message => message.IsUnsent.ShouldBeTrue());
+	}
+
+	private async Task<RemarkThreadViewModel> SentThreadAsync()
+	{
+		var remarks = await OpenAsync();
+		await remarks.AddRemarkAsync(_changes!.ShownDiff!, 3, "why?", CancellationToken.None);
+		await remarks.SendAsync("s1", CancellationToken.None);
+		await EventuallyAsync(() => remarks.ThreadsByRow?.ByRow.ContainsKey(3) == true);
+		return remarks.ThreadsByRow!.ByRow[3][0];
+	}
+
 	// The typed reply has the same text as the message handed back; text proves nothing about which is which.
 	[Test]
 	public async Task An_identical_reply_typed_during_a_failed_delivery_is_discarded_alone()
@@ -337,7 +404,7 @@ public sealed class ChangesRemarksViewModelTests : IDisposable
 	}
 
 	[Test]
-	public async Task Typing_on_while_a_new_reply_is_saved_updates_that_reply()
+	public async Task Typing_on_while_a_reply_is_added_keeps_the_new_text_for_the_next_one()
 	{
 		var remarks = await OpenAsync();
 		await remarks.AddRemarkAsync(_changes!.ShownDiff!, 3, "why?", CancellationToken.None);
@@ -351,7 +418,8 @@ public sealed class ChangesRemarksViewModelTests : IDisposable
 		await save;
 		await thread.SaveDraftAsync(CancellationToken.None);
 
-		_book!.Threads.Single().Unsent.Select(message => message.Text).ShouldBe(["C"]);
+		// B was added as its own message; C, typed meanwhile, stays in the box and goes in as the next one.
+		_book!.Threads.Single().Unsent.Select(message => message.Text).ShouldBe(["B", "C"]);
 	}
 
 	[Test]

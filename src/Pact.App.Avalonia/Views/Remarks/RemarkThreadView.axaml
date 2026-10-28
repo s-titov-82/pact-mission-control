@@ -23,6 +23,12 @@
               <TextBlock FontWeight="SemiBold" Text="{Binding AuthorText}" />
               <TextBlock FontSize="11" Foreground="{DynamicResource AppTextMutedBrush}"
                          Text="{Binding DeliveryText}" IsVisible="{Binding DeliveryText, Converter={x:Static ObjectConverters.IsNotNull}}" />
+              <Button Classes="compact-icon" ToolTip.Tip="Edit" IsVisible="{Binding IsUnsent}" Click="OnEditMessageClicked">
+                <PathIcon Width="12" Height="12" Data="{StaticResource AppEditIcon}" />
+              </Button>
+              <Button Classes="compact-icon" ToolTip.Tip="Remove" IsVisible="{Binding IsUnsent}" Click="OnRemoveMessageClicked">
+                <PathIcon Width="10" Height="10" Data="{StaticResource AppCloseIcon}" />
+              </Button>
             </StackPanel>
             <SelectableTextBlock TextWrapping="Wrap" Text="{Binding Text}" />
           </StackPanel>
@@ -32,8 +38,8 @@
     <TextBox x:Name="DraftBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="48" MaxHeight="160"
              Watermark="Reply…" Text="{Binding DraftText, Mode=TwoWay}" />
     <WrapPanel Orientation="Horizontal">
-      <Button x:Name="SaveButton" Margin="0,0,6,0" Content="Save" Click="OnSaveClicked" />
-      <Button x:Name="DiscardButton" Margin="0,0,6,0" Content="Discard" Click="OnDiscardClicked" />
+      <Button x:Name="SaveButton" Margin="0,0,6,0" Content="Add reply" ToolTip.Tip="Ctrl+Enter" Click="OnSaveClicked" />
+      <Button x:Name="DiscardButton" Margin="0,0,6,0" Content="Cancel" Click="OnDiscardClicked" />
       <Button x:Name="ResolveButton" Margin="0,0,6,0" Content="Resolve" IsVisible="{Binding CanResolve}" Click="OnResolveClicked" />
       <Button x:Name="ReopenButton" Margin="0,0,6,0" Content="Reopen" IsVisible="{Binding CanReopen}" Click="OnReopenClicked" />
       <Button x:Name="RetryButton" Margin="0,0,6,0" Content="Send again" IsVisible="{Binding CanRetry}" Click="OnRetryClicked" />

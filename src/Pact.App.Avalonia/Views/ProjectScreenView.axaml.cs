@@ -24,7 +24,7 @@ internal sealed partial class ProjectScreenView : UserControl
 	private static readonly IReadOnlyDictionary<int, IReadOnlyList<RemarkThreadViewModel>> NoThreads =
 		new Dictionary<int, IReadOnlyList<RemarkThreadViewModel>>();
 	private const double DiffLineHeightFactor = 1.3;
-	private const double OverlayMaxWidth = 640;
+	private const double OverlayMaxWidth = 900;
 	private const double OverlayMinHeight = 80;
 	private readonly DispatcherTimer _logReloadTimer;
 

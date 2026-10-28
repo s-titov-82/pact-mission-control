@@ -222,9 +222,60 @@ public sealed class ProjectScreenRemarksHeadlessTests
 			draftBox.Text = "and also";
 			fixture.Window.UpdateLayout();
 
-			CtrlEnter(draftBox);
+			fixture.Window.KeyPress(Key.Enter, RawInputModifiers.Control, PhysicalKey.Enter, null);
 
 			await EventuallyAsync(fixture.Window, () => fixture.Book.Threads.Single().Unsent.Any(message => message.Text == "and also"));
+			draftBox.Text.ShouldBeNullOrEmpty();
+		});
+	}
+
+	[AvaloniaTest]
+	public async Task The_overlay_takes_the_width_and_height_it_has()
+	{
+		await WithScreenAsync(
+			async fixture =>
+			{
+				await fixture.Remarks.AddRemarkAsync(fixture.Shown, 1, "why?", CancellationToken.None);
+				await fixture.Remarks.SendAsync("s1", CancellationToken.None);
+				var answer = string.Join('\n', Enumerable.Range(1, 8).Select(index => $"reason {index}"));
+				await fixture.Book.AgentReplyAsync("C1", answer, resolve: false, CancellationToken.None);
+				await fixture.Book.AgentReplyAsync("C1", answer, resolve: false, CancellationToken.None);
+				await EventuallyAsync(fixture.Window, () => fixture.Margin.MarkOf(2) == "thread");
+
+				fixture.ClickMargin(2);
+				await EventuallyAsync(fixture.Window, () => fixture.Overlay.Bounds.Height > 0);
+
+				fixture.Overlay.Bounds.Width.ShouldBeGreaterThan(700);
+				var scroller = global::Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(fixture.Overlay).OfType<ScrollViewer>().First();
+				scroller.Extent.Height.ShouldBeLessThanOrEqualTo(scroller.Viewport.Height + 1);
+			},
+			height: 900);
+	}
+
+	[AvaloniaTest]
+	public async Task The_pencil_and_the_cross_act_on_an_unsent_reply()
+	{
+		await WithScreenAsync(async fixture =>
+		{
+			await fixture.Remarks.AddRemarkAsync(fixture.Shown, 4, "why?", CancellationToken.None);
+			await EventuallyAsync(fixture.Window, () => fixture.Margin.MarkOf(5) == "thread");
+			fixture.ClickMargin(5);
+			var threadView = fixture.Overlay.GetLogicalDescendants().OfType<RemarkThreadView>().Single();
+			var draftBox = threadView.FindControl<TextBox>("DraftBox")!;
+			Button Action(string tip)
+			{
+				return threadView.GetLogicalDescendants().OfType<Button>().Single(button => ToolTip.GetTip(button) as string == tip);
+			}
+
+			Action("Edit").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+			draftBox.Text.ShouldBe("why?");
+
+			draftBox.Text = string.Empty;
+			threadView.FindControl<Button>("DiscardButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+			await EventuallyAsync(fixture.Window, () => threadView.GetLogicalDescendants().OfType<Button>().Any(button => ToolTip.GetTip(button) as string == "Remove"));
+			Action("Remove").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+			await EventuallyAsync(fixture.Window, () => fixture.Book.Threads.Count == 0);
 		});
 	}
 

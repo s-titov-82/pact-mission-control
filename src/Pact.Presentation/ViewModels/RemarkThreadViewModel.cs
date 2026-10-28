@@ -6,10 +6,12 @@ using Pact.Presentation.Services.Remarks;
 namespace Pact.Presentation.ViewModels;
 
 /// <summary>One message of a remark thread as shown.</summary>
+/// <param name="Id">The message id, for editing or removing an unsent one.</param>
 /// <param name="AuthorText"><c>You</c> or <c>Agent</c>.</param>
 /// <param name="Text">The message.</param>
 /// <param name="DeliveryText">How far a message of the user got, when it is not simply sent.</param>
-public sealed record RemarkMessageViewModel(string AuthorText, string Text, string? DeliveryText);
+/// <param name="IsUnsent">Whether it waits for the next send and can still be edited or removed.</param>
+public sealed record RemarkMessageViewModel(string Id, string AuthorText, string Text, string? DeliveryText, bool IsUnsent);
 
 /// <summary>
 /// One remark thread in the Changes tab. One instance lives as long as its thread, so the draft
@@ -20,8 +22,8 @@ public sealed class RemarkThreadViewModel : INotifyPropertyChanged
 	private readonly RemarkBook _book;
 	private string _storedDraft = string.Empty;
 
-	// The id of the message the draft box owns: an unsent message it edits, or an id reserved for a
-	// new reply that the book stores under it. Ownership is never inferred from text.
+	// The id of the message the reply box owns: an unsent message put back in it with the pencil, or
+	// an id reserved for the next reply, which the book stores under it. Never inferred from text.
 	private string _draftId = NewDraftId();
 	private int? _placedLine;
 
@@ -95,27 +97,88 @@ public sealed class RemarkThreadViewModel : INotifyPropertyChanged
 	/// <summary>Whether a message waits for <c>Send again</c> or <c>Mark as sent</c>.</summary>
 	public bool CanRetry => State == RemarkThreadState.DeliveryUncertain;
 
-	/// <summary>Saves the draft box under the message id it owns; empty text removes that message.</summary>
+	/// <summary>
+	/// Adds the reply box's text to the thread as an unsent message, or stores the edit of the one
+	/// put back with the pencil, then empties the box for the next reply. Text typed while it was
+	/// being stored stays in the box as that next reply.
+	/// </summary>
 	public async Task SaveDraftAsync(CancellationToken cancellationToken)
 	{
 		var owned = _draftId;
-		var saved = await _book.SaveDraftAsync(Id, owned, DraftText, cancellationToken).ConfigureAwait(true);
-		if (saved is not null && saved != owned && _draftId == owned)
+		var text = DraftText;
+		if (string.IsNullOrWhiteSpace(text) && !IsEditing)
 		{
-			// The owned message had gone out meanwhile; the book stored the text under a fresh id.
-			_draftId = saved;
-			if (_book.Threads.FirstOrDefault(thread => thread.Id == Id) is { } current)
-			{
-				Update(current);
-			}
+			return;
 		}
+
+		await _book.SaveDraftAsync(Id, owned, text, cancellationToken).ConfigureAwait(true);
+		if (_draftId != owned)
+		{
+			return;
+		}
+
+		_draftId = NewDraftId();
+		_storedDraft = string.Empty;
+		if (string.Equals(DraftText, text, StringComparison.Ordinal))
+		{
+			DraftText = string.Empty;
+		}
+
+		Refresh();
 	}
 
-	/// <summary>Empties the draft box and removes the message it edits; a new reply only empties the box.</summary>
+	/// <summary>Empties the reply box; an unsent message put back with the pencil stays as it was.</summary>
 	public Task DiscardDraftAsync(CancellationToken cancellationToken)
 	{
+		_draftId = NewDraftId();
+		_storedDraft = string.Empty;
 		DraftText = string.Empty;
-		return _book.SaveDraftAsync(Id, _draftId, string.Empty, cancellationToken);
+		Refresh();
+		return Task.CompletedTask;
+	}
+
+	/// <summary>Puts an unsent message back in the reply box to edit it; text typed there first is kept as a reply.</summary>
+	public void EditMessage(string messageId)
+	{
+		if (Thread.Messages.FirstOrDefault(message => message.Id == messageId) is not { Author: RemarkAuthor.User, Delivery: RemarkDelivery.Draft } message)
+		{
+			return;
+		}
+
+		if (HasUnsavedDraft && !string.IsNullOrWhiteSpace(DraftText))
+		{
+			_ = _book.SaveDraftAsync(Id, _draftId, DraftText, CancellationToken.None);
+		}
+
+		_draftId = message.Id;
+		_storedDraft = message.Text;
+		DraftText = message.Text;
+		Refresh();
+	}
+
+	/// <summary>Removes an unsent message before it is sent.</summary>
+	public async Task RemoveMessageAsync(string messageId, CancellationToken cancellationToken)
+	{
+		if (messageId == _draftId)
+		{
+			_draftId = NewDraftId();
+			_storedDraft = string.Empty;
+			DraftText = string.Empty;
+		}
+
+		await _book.DiscardUnsentAsync(Id, messageId, cancellationToken).ConfigureAwait(true);
+		Refresh();
+	}
+
+	// Whether the reply box holds an unsent message put back with the pencil.
+	private bool IsEditing => Thread.Messages.Any(message => message.Id == _draftId && message.Delivery == RemarkDelivery.Draft);
+
+	private void Refresh()
+	{
+		if (_book.Threads.FirstOrDefault(thread => thread.Id == Id) is { } current)
+		{
+			Update(current);
+		}
 	}
 
 	/// <summary>Resolves the thread.</summary>
@@ -131,47 +194,27 @@ public sealed class RemarkThreadViewModel : INotifyPropertyChanged
 	public Task MarkSentAsync(CancellationToken cancellationToken) => _book.MarkSentAsync(Id, cancellationToken);
 
 	/// <summary>
-	/// Takes a newer copy of the thread. An untouched draft box follows the newest unsent message;
-	/// one the user typed into keeps its text and the message it edits, so a message a failed
-	/// delivery hands back stays a separate, older one.
+	/// Takes a newer copy of the thread. Unsent messages show in the list; the reply box keeps what
+	/// was typed into it and the message it owns, so a message a failed delivery hands back stays
+	/// a separate one.
 	/// </summary>
 	public void Update(RemarkThread thread)
 	{
 		ArgumentNullException.ThrowIfNull(thread);
 		Thread = thread;
 		var owned = thread.Messages.FirstOrDefault(message => message.Id == _draftId);
-		if (!HasUnsavedDraft)
-		{
-			if (thread.EditableDraft is { } newest)
-			{
-				_draftId = newest.Id;
-				_storedDraft = newest.Text;
-			}
-			else
-			{
-				if (owned is not null)
-				{
-					_draftId = NewDraftId();
-				}
-
-				_storedDraft = string.Empty;
-			}
-
-			DraftText = _storedDraft;
-		}
-		else if (owned is { Delivery: RemarkDelivery.Draft })
+		if (owned is { Delivery: RemarkDelivery.Draft })
 		{
 			_storedDraft = owned.Text;
 		}
-		else if (owned is not null)
-		{
-			// The message it edited went out: the typed text becomes a new reply.
-			_draftId = NewDraftId();
-			_storedDraft = string.Empty;
-		}
 		else
 		{
-			// Not stored yet, or removed: the typed text is a new reply under the owned id.
+			if (owned is not null)
+			{
+				// The message it edited went out: the box is for the next reply.
+				_draftId = NewDraftId();
+			}
+
 			_storedDraft = string.Empty;
 		}
 
@@ -179,6 +222,7 @@ public sealed class RemarkThreadViewModel : INotifyPropertyChanged
 		Messages = thread.Messages
 			.Where(message => !(message.Id == editing && message.Delivery == RemarkDelivery.Draft))
 			.Select(message => new RemarkMessageViewModel(
+				message.Id,
 				message.Author == RemarkAuthor.Agent ? "Agent" : "You",
 				message.Text,
 				message.Author == RemarkAuthor.Agent ? null : message.Delivery switch
@@ -187,7 +231,8 @@ public sealed class RemarkThreadViewModel : INotifyPropertyChanged
 					RemarkDelivery.Sending => "Sending…",
 					RemarkDelivery.Uncertain => "Delivery uncertain",
 					_ => null
-				}))
+				},
+				message is { Author: RemarkAuthor.User, Delivery: RemarkDelivery.Draft }))
 			.ToArray();
 		Raise(nameof(Thread), nameof(State), nameof(StateText), nameof(Messages), nameof(CanResolve), nameof(CanReopen), nameof(HasUnsavedDraft),
 			nameof(CanRetry), nameof(LocationText));
