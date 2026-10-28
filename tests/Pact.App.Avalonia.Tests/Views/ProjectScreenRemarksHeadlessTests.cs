@@ -296,7 +296,7 @@ public sealed class ProjectScreenRemarksHeadlessTests
 	}
 
 	[AvaloniaTest]
-	public async Task Other_remarks_fit_without_a_horizontal_scroll()
+	public async Task The_remarks_list_fits_without_a_horizontal_scroll()
 	{
 		await WithScreenAsync(async fixture =>
 		{
@@ -305,14 +305,14 @@ public sealed class ProjectScreenRemarksHeadlessTests
 				"x\n",
 				string.Join(' ', Enumerable.Repeat("a fairly long remark", 20)),
 				CancellationToken.None);
-			var other = fixture.View.FindControl<Button>("OtherRemarksButton")!;
+			var other = fixture.View.FindControl<Button>("OpenRemarksButton")!;
 			await EventuallyAsync(fixture.Window, () => other.IsVisible);
 
 			other.Flyout!.ShowAt(other);
 			fixture.Window.UpdateLayout();
-			await EventuallyAsync(fixture.Window, () => fixture.View.FindControl<ItemsControl>("OtherRemarksList")!.IsEffectivelyVisible);
+			await EventuallyAsync(fixture.Window, () => fixture.View.FindControl<ItemsControl>("OpenRemarksList")!.IsEffectivelyVisible);
 
-			var list = fixture.View.FindControl<ItemsControl>("OtherRemarksList")!;
+			var list = fixture.View.FindControl<ItemsControl>("OpenRemarksList")!;
 			var scrollers = global::Avalonia.VisualTree.VisualExtensions.GetVisualAncestors(list).OfType<ScrollViewer>().ToArray();
 			scrollers.Length.ShouldBeGreaterThan(1, "the flyout presenter should hold the list");
 			foreach (var scroller in global::Avalonia.VisualTree.VisualExtensions.GetVisualAncestors(list).OfType<ScrollViewer>())
@@ -425,7 +425,7 @@ public sealed class ProjectScreenRemarksHeadlessTests
 	}
 
 	[AvaloniaTest]
-	public async Task Other_remarks_lists_outdated_threads()
+	public async Task The_remarks_list_holds_every_open_thread_and_its_buttons_work()
 	{
 		await WithScreenAsync(async fixture =>
 		{
@@ -434,12 +434,21 @@ public sealed class ProjectScreenRemarksHeadlessTests
 				"x\n",
 				"where did it go?",
 				CancellationToken.None);
-			var other = fixture.View.FindControl<Button>("OtherRemarksButton")!;
+			await fixture.Remarks.AddRemarkAsync(fixture.Shown, 4, "on the shown file", CancellationToken.None);
+			var open = fixture.View.FindControl<Button>("OpenRemarksButton")!;
+			await EventuallyAsync(fixture.Window, () => open.IsVisible && (open.Content as string) == "Open remarks (2)");
+			var list = fixture.View.FindControl<ItemsControl>("OpenRemarksList")!;
+			list.ItemsSource.ShouldBeSameAs(fixture.Remarks.OpenThreads);
 
-			await EventuallyAsync(fixture.Window, () => other.IsVisible && (other.Content as string) == "Other remarks (1)");
+			open.Flyout!.ShowAt(open);
+			fixture.Window.UpdateLayout();
+			await EventuallyAsync(fixture.Window, () => list.GetLogicalDescendants().OfType<RemarkThreadView>().Count() == 2);
+			var first = list.GetLogicalDescendants().OfType<RemarkThreadView>()
+				.First(view => ((RemarkThreadViewModel)view.DataContext!).Id == "C1");
+			first.FindControl<Button>("ResolveButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
 
-			fixture.View.FindControl<ItemsControl>("OtherRemarksList")!.ItemsSource.ShouldBeSameAs(fixture.Remarks.Elsewhere);
-			fixture.Remarks.Elsewhere.Single().IsOutdated.ShouldBeTrue();
+			await EventuallyAsync(fixture.Window, () => fixture.Book.Threads.Single(thread => thread.Id == "C1").IsResolved);
+			await EventuallyAsync(fixture.Window, () => (open.Content as string) == "Open remarks (1)");
 		});
 	}
 

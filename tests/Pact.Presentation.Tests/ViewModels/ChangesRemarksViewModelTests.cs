@@ -326,6 +326,20 @@ public sealed class ChangesRemarksViewModelTests : IDisposable
 	}
 
 	[Test]
+	public async Task Open_threads_list_every_unresolved_thread_in_id_order()
+	{
+		var remarks = await OpenAsync();
+		var shown = _changes!.ShownDiff!;
+		await remarks.AddRemarkAsync(shown, 3, "one", CancellationToken.None);
+		await remarks.AddRemarkAsync(shown, 2, "two", CancellationToken.None);
+		await remarks.AddRemarkAsync(shown, 1, "three", CancellationToken.None);
+
+		await _book!.ResolveAsync("C2", CancellationToken.None);
+
+		await EventuallyAsync(() => remarks.OpenThreads.Select(thread => thread.Id).SequenceEqual(["C1", "C3"]));
+	}
+
+	[Test]
 	public async Task Adding_a_reply_shows_it_as_unsent_and_empties_the_box()
 	{
 		var thread = await SentThreadAsync();

@@ -69,6 +69,9 @@ public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposabl
 	/// <summary>Threads that are outdated or not on a shown row, newest first.</summary>
 	public IReadOnlyList<RemarkThreadViewModel> Elsewhere { get; private set; } = [];
 
+	/// <summary>Every thread not resolved yet, of any file, oldest id first: the remarks still in play.</summary>
+	public IReadOnlyList<RemarkThreadViewModel> OpenThreads { get; private set; } = [];
+
 	/// <summary>Threads not resolved.</summary>
 	public int OpenCount { get; private set; }
 
@@ -311,6 +314,7 @@ public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposabl
 		}
 
 		OpenCount = threads.Count(thread => !thread.IsResolved);
+		OpenThreads = threads.Where(thread => !thread.IsResolved).Select(ThreadFor).OrderBy(view => Number(view.Id)).ToArray();
 		DraftCount = CountDrafts(threads);
 		foreach (var file in _changes.Files)
 		{
@@ -323,7 +327,7 @@ public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposabl
 			StatusText = $"The remarks file could not be read; it was kept as {Path.GetFileName(aside)}.";
 		}
 
-		Raise(nameof(OpenCount), nameof(DraftCount), nameof(BarText), nameof(CanSend), nameof(SendTargets),
+		Raise(nameof(OpenCount), nameof(OpenThreads), nameof(DraftCount), nameof(BarText), nameof(CanSend), nameof(SendTargets),
 			nameof(SendBlockedReason), nameof(StatusText));
 		_ = PlaceAsync(version, threads, _changes.ShownDiff, _changes.HeadCommit);
 	}

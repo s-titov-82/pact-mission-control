@@ -48,11 +48,11 @@
               <TextBlock x:Name="RemarkBarText" VerticalAlignment="Center" FontWeight="SemiBold" />
               <TextBlock x:Name="RemarkStatusText" Grid.Column="1" Margin="12,0" VerticalAlignment="Center"
                          Foreground="{DynamicResource AppTextMutedBrush}" TextTrimming="CharacterEllipsis" />
-              <Button x:Name="OtherRemarksButton" Grid.Column="2" Margin="0,0,8,0" IsVisible="False">
+              <Button x:Name="OpenRemarksButton" Grid.Column="2" Margin="0,0,8,0" IsVisible="False">
                 <Button.Flyout>
                   <Flyout Placement="TopEdgeAlignedRight" FlyoutPresenterClasses="remark-list">
                     <ScrollViewer Width="600" MaxHeight="420" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                      <ItemsControl x:Name="OtherRemarksList">
+                      <ItemsControl x:Name="OpenRemarksList">
                         <ItemsControl.ItemTemplate>
                           <DataTemplate>
                             <remarks:RemarkThreadView Margin="0,0,0,12" />

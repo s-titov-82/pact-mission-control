@@ -59,6 +59,8 @@ internal sealed partial class ProjectScreenView : UserControl
 		RemarkOverlay.SizeChanged += (_, _) => PositionOverlay();
 		RemarkLayer.SizeChanged += (_, _) => PositionOverlay();
 		AddHandler(RemarkThreadView.ActionRequestedEvent, OnRemarkActionRequested);
+		// The open-remarks list lives in a popup, outside this view's tree, so its actions are caught on the list.
+		OpenRemarksList.AddHandler(RemarkThreadView.ActionRequestedEvent, OnRemarkActionRequested);
 		MarkdownClickGuard.Attach(ReviewLogPreview);
 		DataContextChanged += (_, _) => Attach(DataContext as ProjectScreenViewModel);
 		// A review still running appends turns to the open log; re-read it while it is on screen.
@@ -375,15 +377,15 @@ internal sealed partial class ProjectScreenView : UserControl
 			return;
 		}
 
-		var others = remarks.Elsewhere;
+		var open = remarks.OpenThreads;
 		RemarkBarText.Text = remarks.BarText;
 		RemarkStatusText.Text = remarks.StatusText;
-		OtherRemarksButton.IsVisible = others.Count > 0;
-		OtherRemarksButton.Content = string.Create(CultureInfo.InvariantCulture, $"Other remarks ({others.Count})");
-		OtherRemarksList.ItemsSource = others;
+		OpenRemarksButton.IsVisible = open.Count > 0;
+		OpenRemarksButton.Content = string.Create(CultureInfo.InvariantCulture, $"Open remarks ({open.Count})");
+		OpenRemarksList.ItemsSource = open;
 		SendRemarksButton.IsEnabled = remarks.CanSend;
 		ToolTip.SetTip(SendRemarksButton, remarks.SendBlockedReason);
-		RemarkBar.IsVisible = remarks.OpenCount > 0 || others.Count > 0 || remarks.StatusText is not null;
+		RemarkBar.IsVisible = remarks.OpenCount > 0 || remarks.StatusText is not null;
 	}
 
 	// One session takes the remarks at once; with several, the user picks one.
