@@ -1,6 +1,6 @@
 using System.Globalization;
-using System.Text;
 using Pact.Core.Git;
+using Pact.Infrastructure.Files;
 
 namespace Pact.Infrastructure.Git;
 
@@ -49,9 +49,7 @@ public sealed class GitWorkingTreeReader(IGitCliRunner runner) : IGitWorkingTree
 	public const string EmptyTreeId = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
 	/// <summary>Untracked files larger than this are not read for display.</summary>
-	public const long MaxFileBytes = 2 * 1024 * 1024;
-
-	private const int BinaryProbeBytes = 8000;
+	public const long MaxFileBytes = TextFileReader.MaxBytes;
 
 	/// <inheritdoc />
 	public async Task<WorkingTreeChanges?> ReadChangesAsync(string root, CancellationToken cancellationToken)
@@ -138,26 +136,14 @@ public sealed class GitWorkingTreeReader(IGitCliRunner runner) : IGitWorkingTree
 	// The text of a file, or why there is none: missing (an empty diff), too large or binary.
 	private static async Task<(string? Text, FileDiff? Placeholder)> ReadTextAsync(string path, CancellationToken cancellationToken)
 	{
-		FileInfo file = new(path);
-		if (!file.Exists)
+		var content = await TextFileReader.ReadAsync(path, cancellationToken).ConfigureAwait(false);
+		return content.State switch
 		{
-			return (null, new FileDiff(null, []));
-		}
-
-		if (file.Length > MaxFileBytes)
-		{
-			return (null, FileDiff.TooLarge);
-		}
-
-		var bytes = await File.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false);
-		if (Array.IndexOf(bytes, (byte)0, 0, Math.Min(bytes.Length, BinaryProbeBytes)) >= 0)
-		{
-			return (null, FileDiff.Binary);
-		}
-
-		using MemoryStream stream = new(bytes);
-		using StreamReader reader = new(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-		return (await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false), null);
+			TextFileState.Text => (content.Text, null),
+			TextFileState.TooLarge => (null, FileDiff.TooLarge),
+			TextFileState.Binary => (null, FileDiff.Binary),
+			_ => (null, new FileDiff(null, []))
+		};
 	}
 
 	private static (int Added, int Removed) SumNumstat(string output)
