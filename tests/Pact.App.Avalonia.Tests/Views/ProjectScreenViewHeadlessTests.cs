@@ -123,6 +123,37 @@ public sealed class ProjectScreenViewHeadlessTests
 	}
 
 	[AvaloniaTest]
+	public async Task Rendered_is_offered_only_for_markdown_and_no_switch_for_a_binary_file()
+	{
+		await WithScreenAsync(
+			new FileDiff(null, [new DiffHunk(1, 1, 1, 1, string.Empty, [new DiffLine(DiffLineKind.Added, null, 1, "x")])]),
+			async (screen, view, window) =>
+			{
+				await screen.SelectTabAsync(ProjectScreenTab.Changes, CancellationToken.None);
+				await screen.Changes!.SelectFileAsync(screen.Changes.Files[0], CancellationToken.None);
+				window.UpdateLayout();
+				view.FindControl<Control>("WholeFileModeButton")!.IsVisible.ShouldBeTrue();
+				view.FindControl<Control>("RenderedModeButton")!.IsVisible.ShouldBeFalse();
+
+				await screen.Changes.SelectFileAsync(screen.Changes.Files[1], CancellationToken.None);
+				window.UpdateLayout();
+				view.FindControl<Control>("RenderedModeButton")!.IsVisible.ShouldBeTrue();
+			});
+
+		await WithScreenAsync(
+			FileDiff.Binary,
+			async (screen, view, window) =>
+			{
+				await screen.SelectTabAsync(ProjectScreenTab.Changes, CancellationToken.None);
+				await screen.Changes!.SelectFileAsync(screen.Changes.Files[0], CancellationToken.None);
+				window.UpdateLayout();
+				view.FindControl<Control>("DiffModeButton")!.IsVisible.ShouldBeFalse();
+				view.FindControl<Control>("WholeFileModeButton")!.IsVisible.ShouldBeFalse();
+				view.FindControl<Control>("RenderedModeButton")!.IsVisible.ShouldBeFalse();
+			});
+	}
+
+	[AvaloniaTest]
 	public async Task The_review_logs_tab_renders_the_selected_log()
 	{
 		await WithScreenAsync(

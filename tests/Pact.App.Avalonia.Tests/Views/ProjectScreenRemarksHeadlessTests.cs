@@ -609,6 +609,156 @@ public sealed class ProjectScreenRemarksHeadlessTests
 			width: 1600);
 	}
 
+	[AvaloniaTest]
+	public async Task The_mode_switch_shows_whole_file_and_back()
+	{
+		await WithScreenAsync(async fixture =>
+		{
+			await fixture.EditAsync(Text, ChangedLine(5));
+
+			fixture.Click(fixture.View.FindControl<Button>("WholeFileModeButton")!);
+			fixture.Editor.Document.LineCount.ShouldBe(61);
+			LineText(fixture, 1).ShouldBe("line 1");
+			LineText(fixture, 5).ShouldBe("▸ 1 line removed");
+
+			fixture.Click(fixture.View.FindControl<Button>("DiffModeButton")!);
+			LineText(fixture, 1).ShouldStartWith("@@");
+		});
+	}
+
+	[AvaloniaTest]
+	public async Task Clicking_a_fold_line_expands_it_and_clicking_again_folds_it()
+	{
+		await WithScreenAsync(async fixture =>
+		{
+			await fixture.EditAsync(Text, ChangedLine(5));
+			fixture.Click(fixture.View.FindControl<Button>("WholeFileModeButton")!);
+
+			fixture.PressText(5);
+			LineText(fixture, 5).ShouldBe("▾ 1 line removed");
+			LineText(fixture, 6).ShouldBe("old 5");
+
+			fixture.PressText(5);
+			LineText(fixture, 6).ShouldBe("line 5");
+		});
+	}
+
+	[AvaloniaTest]
+	public async Task A_remark_added_in_whole_file_mode_on_an_unchanged_line_shows_its_mark()
+	{
+		await WithScreenAsync(async fixture =>
+		{
+			await fixture.EditAsync(Text, ChangedLine(5));
+			fixture.Click(fixture.View.FindControl<Button>("WholeFileModeButton")!);
+			var shown = fixture.Changes.ShownDiff!;
+			var row = shown.Rows.ToList().FindIndex(item => item.NewNumber == "40");
+
+			await fixture.Remarks.AddRemarkAsync(shown, row, "far", CancellationToken.None);
+
+			await EventuallyAsync(fixture.Window, () => fixture.Margin.MarkOf(row + 1) == "thread");
+			fixture.Book.Threads.Single().Anchor.Line.ShouldBe(40);
+		});
+	}
+
+	[AvaloniaTest]
+	public async Task An_edit_of_the_open_file_keeps_the_scroll_position_in_diff_and_whole_file()
+	{
+		await WithScreenAsync(async fixture =>
+		{
+			var lineHeight = fixture.LineHeight;
+			fixture.ScrollTo(20 * lineHeight);
+
+			await fixture.EditAsync("x\n" + Text);
+			fixture.Window.UpdateLayout();
+			fixture.Editor.TextArea.TextView.ScrollOffset.Y.ShouldBe(20 * lineHeight, tolerance: 1);
+
+			fixture.Click(fixture.View.FindControl<Button>("WholeFileModeButton")!);
+			fixture.ScrollTo(20 * lineHeight);
+			await fixture.EditAsync("y\nx\n" + Text);
+			fixture.Window.UpdateLayout();
+			fixture.Editor.TextArea.TextView.ScrollOffset.Y.ShouldBe(20 * lineHeight, tolerance: 1);
+		});
+	}
+
+	[AvaloniaTest]
+	public async Task A_first_remark_being_typed_survives_an_edit_of_its_file_and_follows_its_line()
+	{
+		await WithScreenAsync(async fixture =>
+		{
+			// Row 10 shows line 10, document line 11 under the hunk header.
+			fixture.ClickMargin(11);
+			var box = fixture.Overlay.FindControl<TextBox>("NewRemarkBox")!;
+			box.Text = "draft";
+
+			await fixture.EditAsync("x\ny\n" + Text);
+
+			fixture.Overlay.IsVisible.ShouldBeTrue();
+			box.Text.ShouldBe("draft");
+			Canvas.GetTop(fixture.Overlay).ShouldBe(fixture.LineBottomInLayer(13), tolerance: 1);
+			CtrlEnter(box);
+			await EventuallyAsync(fixture.Window, () => fixture.Book.Threads.Count == 1);
+			fixture.Book.Threads.Single().Anchor.Line.ShouldBe(10);
+		});
+	}
+
+	[AvaloniaTest]
+	public async Task A_first_remark_survives_two_edits_and_a_late_placement_and_anchors_to_the_original_line()
+	{
+		await WithScreenAsync(async fixture =>
+		{
+			fixture.ClickMargin(11);
+			var box = fixture.Overlay.FindControl<TextBox>("NewRemarkBox")!;
+			box.Text = "draft";
+
+			await fixture.EditAsync("x\ny\n" + Text);
+			await fixture.EditAsync("z\nx\ny\n" + Text);
+			// Another thread's placement is published while the box is open.
+			await fixture.Remarks.AddRemarkAsync(fixture.Changes.ShownDiff!, 2, "other", CancellationToken.None);
+			await EventuallyAsync(fixture.Window, () => fixture.Remarks.ThreadsByRow?.ByRow.Count == 1);
+
+			fixture.Overlay.IsVisible.ShouldBeTrue();
+			box.Text.ShouldBe("draft");
+			Canvas.GetTop(fixture.Overlay).ShouldBe(fixture.LineBottomInLayer(14), tolerance: 1);
+			CtrlEnter(box);
+			await EventuallyAsync(fixture.Window, () => fixture.Book.Threads.Count == 2);
+			var anchor = fixture.Book.Threads.Single(thread => thread.Messages[0].Text == "draft").Anchor;
+			anchor.Line.ShouldBe(10);
+			(await fixture.Book.LoadSnapshotLinesAsync(anchor.SnapshotId!, CancellationToken.None))!.Count.ShouldBe(60);
+		});
+	}
+
+	[AvaloniaTest]
+	public async Task Selecting_another_file_still_starts_at_the_top_and_closes_the_overlay()
+	{
+		await WithScreenAsync(async fixture =>
+		{
+			fixture.Reader.Paths = [FilePath, "src/y.cs"];
+			fixture.Time.Advance(ProjectChangesViewModel.ReconcileInterval);
+			await EventuallyAsync(fixture.Window, () => fixture.Changes.Files.Count == 2);
+			fixture.ScrollTo(20 * fixture.LineHeight);
+			fixture.ClickMargin(25);
+
+			await fixture.Changes.SelectFileAsync(fixture.Changes.Files[1], CancellationToken.None);
+			fixture.Window.UpdateLayout();
+
+			fixture.Overlay.IsVisible.ShouldBeFalse();
+			fixture.Editor.TextArea.TextView.ScrollOffset.Y.ShouldBe(0, tolerance: 1);
+		});
+	}
+
+	private static string LineText(Fixture fixture, int line) =>
+		fixture.Editor.Document.GetText(fixture.Editor.Document.GetLineByNumber(line));
+
+	// Line n of Text replaced: "old n" removed above "line n".
+	private static FileDiff ChangedLine(int line) =>
+		new(null, [new DiffHunk(line - 1, 3, line - 1, 3, string.Empty,
+		[
+			new DiffLine(DiffLineKind.Context, line - 1, line - 1, $"line {line - 1}"),
+			new DiffLine(DiffLineKind.Removed, line, null, $"old {line}"),
+			new DiffLine(DiffLineKind.Added, null, line, $"line {line}"),
+			new DiffLine(DiffLineKind.Context, line + 1, line + 1, $"line {line + 1}")
+		])]);
+
 	// A list rebuilt on each change would drop the focus of a reply being typed in it.
 	[AvaloniaTest]
 	public async Task A_reply_typed_in_the_open_list_keeps_its_row_when_remarks_change()
@@ -653,7 +803,9 @@ public sealed class ProjectScreenRemarksHeadlessTests
 		await File.WriteAllTextAsync(Path.Combine(root.Path, "src", "x.cs"), Text);
 		var now = DateTimeOffset.UtcNow;
 		WorkspaceViewModel workspace = new(new ProjectRecord("p1", "Pact", root.Path, now, now, null), _ => true);
-		using ProjectChangesViewModel changes = new(root.Path, new TextReader(), TimeProvider.System, action => action());
+		TextReader reader = new();
+		ManualTimeProvider time = new();
+		using ProjectChangesViewModel changes = new(root.Path, reader, time, action => action());
 		using var observation = changes.Observe();
 		await EventuallyAsync(null, () => changes.Files.Count == 1);
 		using RemarkBook book = new(root.Path, new RemarkFileStore(root.Path), TimeProvider.System);
@@ -682,7 +834,7 @@ public sealed class ProjectScreenRemarksHeadlessTests
 			await screen.SelectTabAsync(ProjectScreenTab.Changes, CancellationToken.None);
 			await changes.SelectFileAsync(changes.Files[0], CancellationToken.None);
 			window.UpdateLayout();
-			await act(new Fixture(window, view, panel, book, remarks, changes.ShownDiff!, deliveredTo));
+			await act(new Fixture(window, view, panel, book, remarks, changes.ShownDiff!, deliveredTo, changes, reader, time));
 		}
 		finally
 		{
@@ -711,8 +863,38 @@ public sealed class ProjectScreenRemarksHeadlessTests
 		RemarkBook Book,
 		ChangesRemarksViewModel Remarks,
 		ShownDiff Shown,
-		List<string> DeliveredTo)
+		List<string> DeliveredTo,
+		ProjectChangesViewModel Changes,
+		TextReader Reader,
+		ManualTimeProvider Time)
 	{
+		// The agent rewrites the file; the next reconciliation reads it.
+		public async Task EditAsync(string text, FileDiff? diff = null)
+		{
+			var before = Changes.ShownDiff;
+			Reader.Text = text;
+			Reader.Diff = diff;
+			Time.Advance(ProjectChangesViewModel.ReconcileInterval);
+			await EventuallyAsync(Window, () => !ReferenceEquals(Changes.ShownDiff, before));
+		}
+
+		public void Click(Button button)
+		{
+			button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+			Window.UpdateLayout();
+		}
+
+		// A press on the text of a line, as a click there.
+		public void PressText(int line)
+		{
+			Window.UpdateLayout();
+			var textView = Editor.TextArea.TextView;
+			var point = textView.TranslatePoint(new Point(40, LineTop(line) + (LineHeight / 2)), Window)!.Value;
+			Window.MouseDown(point, MouseButton.Left);
+			Window.MouseUp(point, MouseButton.Left);
+			Window.UpdateLayout();
+		}
+
 		public TextEditor Editor => View.FindControl<TextEditor>("DiffEditor")!;
 
 		public Control Layer => View.FindControl<Control>("RemarkLayer")!;
@@ -749,16 +931,23 @@ public sealed class ProjectScreenRemarksHeadlessTests
 
 	private sealed class TextReader : IGitWorkingTreeReader
 	{
+		public string Text { get; set; } = ProjectScreenRemarksHeadlessTests.Text;
+
+		// The diff read; the whole text as added when not set.
+		public FileDiff? Diff { get; set; }
+
+		public string[] Paths { get; set; } = [FilePath];
+
 		public Task<WorkingTreeChanges?> ReadChangesAsync(string root, CancellationToken cancellationToken) =>
 			Task.FromResult<WorkingTreeChanges?>(new WorkingTreeChanges(
 				"head1",
 				"main",
-				[new GitFileEntry(FilePath, null, GitChangeKind.Untracked)],
+				Paths.Select(path => new GitFileEntry(path, null, GitChangeKind.Untracked)).ToArray(),
 				60,
 				0));
 
 		public Task<FileDiff> ReadDiffAsync(string root, GitFileEntry entry, string? headCommit, CancellationToken cancellationToken) =>
-			Task.FromResult(FileDiff.AllAdded(Text));
+			Task.FromResult(Diff ?? FileDiff.AllAdded(Text));
 
 		public Task<string?> ReadWorkingTextAsync(string root, string path, CancellationToken cancellationToken) =>
 			Task.FromResult<string?>(Text);

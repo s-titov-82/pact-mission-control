@@ -33,10 +33,13 @@ internal sealed partial class ProjectScreenView : UserControl
 	private readonly DiffRemarkMargin _remarkMargin = new();
 	private readonly DiffLineBackgroundRenderer _diffBackground = new();
 	private IReadOnlyList<DiffRowViewModel>? _shownRows;
+	private string? _shownPath;
 
-	// The row the remark overlay is open on and the diff it was opened on.
+	// Where the overlay is drawn: the row it shows, moved along when the file is edited.
 	private int? _overlayRow;
+	// What the overlay was opened on, never moved: a new remark anchors to it and follows it from there.
 	private ShownDiff? _overlayDiff;
+	private int _overlayCapturedRow;
 
 	public ProjectScreenView()
 	{
@@ -54,7 +57,7 @@ internal sealed partial class ProjectScreenView : UserControl
 		var textArea = DiffEditor.TextArea;
 		textArea.AddHandler(PointerMovedEvent, (_, e) => _remarkMargin.SetHoverRow(RowAt(e)), RoutingStrategies.Tunnel, handledEventsToo: true);
 		textArea.AddHandler(PointerExitedEvent, (_, _) => _remarkMargin.SetHoverRow(null), RoutingStrategies.Direct | RoutingStrategies.Bubble, handledEventsToo: true);
-		textArea.TextView.AddHandler(PointerPressedEvent, (_, _) => CloseOverlay(), RoutingStrategies.Tunnel, handledEventsToo: true);
+		textArea.TextView.AddHandler(PointerPressedEvent, OnTextPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
 		RemarkOverlay.CloseRequested += (_, _) => CloseOverlay();
 		RemarkOverlay.AddRequested += OnAddRemarkRequested;
 		RemarkOverlay.SizeChanged += (_, _) => PositionOverlay();
@@ -67,6 +70,19 @@ internal sealed partial class ProjectScreenView : UserControl
 		_logReloadTimer.Tick += OnLogReloadTick;
 		AttachedToVisualTree += (_, _) => _logReloadTimer.Start();
 		DetachedFromVisualTree += (_, _) => _logReloadTimer.Stop();
+	}
+
+	// A press on a fold opens or closes its removed lines; anywhere else in the text it closes the thread.
+	private void OnTextPressed(object? sender, PointerPressedEventArgs e)
+	{
+		if (RowAt(e) is { } row && row < (_shownRows?.Count ?? 0) && _shownRows![row].Kind == DiffRowKind.Fold)
+		{
+			e.Handled = true;
+			_changes?.ToggleFold(row);
+			return;
+		}
+
+		CloseOverlay();
 	}
 
 	private void OnLogReloadTick(object? sender, EventArgs e)
@@ -118,6 +134,12 @@ internal sealed partial class ProjectScreenView : UserControl
 		{
 			RefreshChanges();
 		}
+		else if (e.PropertyName is nameof(ProjectChangesViewModel.EffectiveMode)
+			or nameof(ProjectChangesViewModel.CanShowWholeFile)
+			or nameof(ProjectChangesViewModel.CanRender))
+		{
+			RefreshModeBar();
+		}
 		else if (e.PropertyName == nameof(ProjectChangesViewModel.ShownDiff))
 		{
 			RefreshRemarkMarks();
@@ -148,8 +170,38 @@ internal sealed partial class ProjectScreenView : UserControl
 	{
 		DiffPlaceholderText.IsVisible = _changes?.DiffPlaceholder is not null;
 		ShowAllButton.IsVisible = _changes?.HiddenLineCount > 0;
+		RefreshModeBar();
 		RefreshDiffText();
 		RefreshRemarkMarks();
+	}
+
+	private void RefreshModeBar()
+	{
+		var whole = _changes?.CanShowWholeFile == true;
+		var mode = _changes?.EffectiveMode ?? DiffViewMode.Diff;
+		DiffModeButton.IsVisible = whole;
+		WholeFileModeButton.IsVisible = whole;
+		RenderedModeButton.IsVisible = _changes?.CanRender == true;
+		ModeBar.IsVisible = whole;
+		DiffModeButton.IsChecked = mode == DiffViewMode.Diff;
+		WholeFileModeButton.IsChecked = mode == DiffViewMode.WholeFile;
+		RenderedModeButton.IsChecked = mode == DiffViewMode.Rendered;
+		var rendered = mode == DiffViewMode.Rendered;
+		RenderedHost.IsVisible = rendered;
+		DiffEditor.IsVisible = !rendered;
+	}
+
+	private void OnDiffModeClicked(object? sender, RoutedEventArgs e) => SelectMode(DiffViewMode.Diff);
+
+	private void OnWholeFileModeClicked(object? sender, RoutedEventArgs e) => SelectMode(DiffViewMode.WholeFile);
+
+	private void OnRenderedModeClicked(object? sender, RoutedEventArgs e) => SelectMode(DiffViewMode.Rendered);
+
+	private void SelectMode(DiffViewMode mode)
+	{
+		_changes?.Mode = mode;
+		// The toggle flips itself on click; the model decides what is checked.
+		RefreshModeBar();
 	}
 
 	// One document holds the whole diff, a line per row: the editor draws only what is on screen
@@ -160,17 +212,51 @@ internal sealed partial class ProjectScreenView : UserControl
 		// picked file on its own.
 		DiffEditor.SetSyntaxFor(_changes?.SelectedFile?.Entry.Path);
 		var rows = _changes?.DiffRows ?? [];
-		if (ReferenceEquals(rows, _shownRows))
+		var path = _changes?.SelectedFile?.Entry.Path;
+		if (ReferenceEquals(rows, _shownRows) && string.Equals(path, _shownPath, StringComparison.Ordinal))
 		{
 			return;
 		}
 
+		// The same file redrawn after an edit, a fold or a mode switch keeps its place and an open
+		// thread; another file starts at the top.
+		var samePath = path is not null && string.Equals(path, _shownPath, StringComparison.Ordinal);
 		_shownRows = rows;
-		CloseOverlay();
+		_shownPath = path;
+		if (!samePath)
+		{
+			CloseOverlay();
+		}
+
+		var scroller = global::Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(DiffEditor).OfType<ScrollViewer>().FirstOrDefault();
+		var offset = scroller?.Offset ?? default;
 		_diffNumbers.SetRows(rows);
 		_diffBackground.SetRows(rows);
 		DiffEditor.Document.Text = string.Join('\n', rows.Select(row => row.Text));
-		DiffEditor.ScrollToHome();
+		if (samePath && scroller is not null)
+		{
+			DiffEditor.UpdateLayout();
+			scroller.Offset = offset;
+			FollowOverlay();
+		}
+		else
+		{
+			DiffEditor.ScrollToHome();
+		}
+	}
+
+	// After the file was redrawn: the overlay moves to where its line is now, or stays put when the
+	// line is gone; what it was opened on does not change.
+	private void FollowOverlay()
+	{
+		if (_overlayRow is not { } row || _overlayDiff is not { } captured || _changes?.ShownDiff is not { } shown)
+		{
+			return;
+		}
+
+		_overlayRow = _remarks?.MapRow(captured, _overlayCapturedRow, shown)
+			?? Math.Clamp(row, 0, Math.Max(0, DiffEditor.Document.LineCount - 1));
+		RefreshOverlay();
 	}
 
 	// Marks go on the editor's rows only while the remarks were placed on that very row list.
@@ -213,6 +299,7 @@ internal sealed partial class ProjectScreenView : UserControl
 		SaveTypedDrafts();
 		_overlayRow = row;
 		_overlayDiff = shown;
+		_overlayCapturedRow = row;
 		RemarkOverlay.Show(threads, canAdd);
 		RemarkOverlay.IsVisible = true;
 		PositionOverlay();
@@ -241,7 +328,8 @@ internal sealed partial class ProjectScreenView : UserControl
 		}
 
 		var threads = ThreadsAt(row);
-		var adding = threads.Count == 0 && _overlayDiff is { } shown && _remarks?.CanRemarkOn(shown, row) == true
+		// A new remark is judged on what it was opened on, so edits of the file leave it open.
+		var adding = threads.Count == 0 && _overlayDiff is { } shown && _remarks?.CanRemarkOn(shown, _overlayCapturedRow) == true
 			&& RemarkOverlay.Threads.Count == 0;
 		if (threads.Count == 0 && !adding)
 		{
@@ -353,10 +441,12 @@ internal sealed partial class ProjectScreenView : UserControl
 
 	private void OnAddRemarkRequested(object? sender, string text)
 	{
-		if (_remarks is not { } remarks || _overlayDiff is not { } shown || _overlayRow is not { } row)
+		if (_remarks is not { } remarks || _overlayDiff is not { } shown || _overlayRow is null)
 		{
 			return;
 		}
+
+		var row = _overlayCapturedRow;
 
 		_eventTasks.TryRun(
 			"remark-add",

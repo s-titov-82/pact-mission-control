@@ -23,11 +23,21 @@
 
     <Grid x:Name="ChangesPanel" Grid.Row="1" IsVisible="False">
       <Grid RowDefinitions="Auto,*,Auto">
-        <TextBlock x:Name="DiffPlaceholderText" Margin="12" Opacity="0.7"
-                   Text="{Binding Changes.DiffPlaceholder}" IsVisible="False" />
+        <StackPanel>
+          <!-- How the file is shown; the model keeps the choice across files and falls back where a file does not allow it. -->
+          <StackPanel x:Name="ModeBar" Orientation="Horizontal" Spacing="4" Margin="10,6">
+            <ToggleButton x:Name="DiffModeButton" Height="26" Padding="10,2" Content="Diff" Click="OnDiffModeClicked" />
+            <ToggleButton x:Name="WholeFileModeButton" Height="26" Padding="10,2" Content="Whole file" Click="OnWholeFileModeClicked" />
+            <ToggleButton x:Name="RenderedModeButton" Height="26" Padding="10,2" Content="Rendered" Click="OnRenderedModeClicked" />
+          </StackPanel>
+          <TextBlock x:Name="DiffPlaceholderText" Margin="12" Opacity="0.7"
+                     Text="{Binding Changes.DiffPlaceholder}" IsVisible="False" />
+        </StackPanel>
         <editing:SourceEditor x:Name="DiffEditor" Grid.Row="1" IsReadOnly="True"
                        FontFamily="Cascadia Mono, Consolas, monospace" FontSize="14"
                        HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" />
+        <!-- The rendered view of a Markdown file takes the diff's place. -->
+        <Panel x:Name="RenderedHost" Grid.Row="1" IsVisible="False" />
         <!-- Lies over the diff without taking its clicks; only the overlay inside is hit-testable. -->
         <Canvas x:Name="RemarkLayer" Grid.Row="1" ClipToBounds="True">
           <remarks:RemarkOverlay x:Name="RemarkOverlay" IsVisible="False" />
