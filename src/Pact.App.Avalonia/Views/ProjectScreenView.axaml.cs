@@ -7,6 +7,7 @@ using Avalonia.Threading;
 using Pact.App.Avalonia.Lifecycle;
 using Pact.App.Avalonia.Views.Diff;
 using Pact.App.Avalonia.Views.Remarks;
+using Pact.Presentation.Services;
 using Pact.Presentation.ViewModels;
 
 namespace Pact.App.Avalonia.Views;
@@ -28,6 +29,8 @@ internal sealed partial class ProjectScreenView : UserControl
 	private const double OverlayWidthShare = 0.7;
 	private const double OverlayMinHeight = 80;
 	private readonly DispatcherTimer _logReloadTimer;
+	private static readonly TimeSpan LinkNoticeTime = TimeSpan.FromSeconds(5);
+	private readonly DispatcherTimer _linkNoticeTimer;
 
 	private readonly DiffLineNumberMargin _diffNumbers = new();
 	private readonly DiffRemarkMargin _remarkMargin = new();
@@ -64,6 +67,17 @@ internal sealed partial class ProjectScreenView : UserControl
 		RemarkLayer.SizeChanged += (_, _) => PositionOverlay();
 		AddHandler(RemarkThreadView.ActionRequestedEvent, OnRemarkActionRequested);
 		MarkdownClickGuard.Attach(ReviewLogPreview);
+		MarkdownPreviewHook.Attach(
+			ReviewLogPreview,
+			() => _screen?.SelectedReviewLog is { } log ? (_screen.RootPath, log) : null,
+			target => FollowLink(target, ReviewLogPreview));
+		RenderedView.LinkFollowed += (_, target) => FollowLink(target, RenderedView);
+		_linkNoticeTimer = new DispatcherTimer { Interval = LinkNoticeTime };
+		_linkNoticeTimer.Tick += (_, _) =>
+		{
+			_linkNoticeTimer.Stop();
+			LinkNotice.IsVisible = false;
+		};
 		DataContextChanged += (_, _) => Attach(DataContext as ProjectScreenViewModel);
 		// A review still running appends turns to the open log; re-read it while it is on screen.
 		_logReloadTimer = new DispatcherTimer { Interval = LogReloadInterval };
@@ -125,6 +139,10 @@ internal sealed partial class ProjectScreenView : UserControl
 		if (e.PropertyName == nameof(ProjectScreenViewModel.SelectedTab))
 		{
 			RefreshTab();
+		}
+		else if (e.PropertyName == nameof(ProjectScreenViewModel.SelectedReviewLog))
+		{
+			MarkdownPreviewHook.SetDocument(ReviewLogPreview, _screen?.RootPath, _screen?.SelectedReviewLog);
 		}
 	}
 
@@ -205,8 +223,50 @@ internal sealed partial class ProjectScreenView : UserControl
 	{
 		if (_changes is { EffectiveMode: DiffViewMode.Rendered, ShownDiff: { } shown })
 		{
+			RenderedView.ProjectRoot = _screen?.RootPath;
 			RenderedView.Show(shown, _remarks);
 		}
+	}
+
+	// A project document opens in the Docs pane; a heading is looked for in what is shown here.
+	private void FollowLink(MarkdownLinkTarget target, Control shown)
+	{
+		switch (target)
+		{
+			case ProjectDocumentLink document when _screen is { } screen:
+				_eventTasks.TryRun(
+					"project-screen-link",
+					async () =>
+					{
+						if (!await screen.OpenDocumentAsync(document.RelativePath, CancellationToken.None))
+						{
+							ShowLinkNotice($"Not found: {document.RelativePath}");
+						}
+					},
+					static _ => Task.CompletedTask);
+				break;
+			case HeadingLink heading:
+				if (!MarkdownPreviewHook.ScrollToHeading(shown, heading.Heading))
+				{
+					ShowLinkNotice($"No such heading: #{heading.Heading}");
+				}
+
+				break;
+			case WebLink web:
+				MarkdownPreviewHook.OpenWeb(web.Uri);
+				break;
+			case RefusedLink refused:
+				ShowLinkNotice(refused.Notice);
+				break;
+		}
+	}
+
+	private void ShowLinkNotice(string notice)
+	{
+		LinkNoticeText.Text = notice;
+		LinkNotice.IsVisible = true;
+		_linkNoticeTimer.Stop();
+		_linkNoticeTimer.Start();
 	}
 
 	private void OnDiffModeClicked(object? sender, RoutedEventArgs e) => SelectMode(DiffViewMode.Diff);

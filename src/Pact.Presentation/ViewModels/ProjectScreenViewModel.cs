@@ -38,6 +38,7 @@ public sealed record ReviewLogBulkDeletion(int Deleted, int Kept);
 public sealed class ProjectScreenViewModel : INotifyPropertyChanged
 {
 	private readonly IProjectMarkdownFileStore _fileStore;
+	private readonly Func<string, CancellationToken, Task<bool>> _openDocument;
 	private readonly Func<string, bool> _isLogInUse;
 	private int _logVersion;
 
@@ -47,14 +48,17 @@ public sealed class ProjectScreenViewModel : INotifyPropertyChanged
 	/// <param name="fileStore">Reads the review logs.</param>
 	/// <param name="isLogInUse">Whether a running review writes the log at a project-relative path.</param>
 	/// <param name="remarks">The remark threads of the Changes tab; null outside git.</param>
+	/// <param name="openDocument">Shows a project Markdown file in the Docs pane, for links in logs and rendered files.</param>
 	public ProjectScreenViewModel(
 		WorkspaceViewModel workspace,
 		ProjectChangesViewModel? changes,
 		IProjectMarkdownFileStore fileStore,
 		Func<string, bool>? isLogInUse = null,
-		ChangesRemarksViewModel? remarks = null)
+		ChangesRemarksViewModel? remarks = null,
+		Func<string, CancellationToken, Task<bool>>? openDocument = null)
 	{
 		Remarks = remarks;
+		_openDocument = openDocument ?? (static (_, _) => Task.FromResult(false));
 		Workspace = workspace ?? throw new ArgumentNullException(nameof(workspace));
 		Changes = changes;
 		_fileStore = fileStore ?? throw new ArgumentNullException(nameof(fileStore));
@@ -85,6 +89,14 @@ public sealed class ProjectScreenViewModel : INotifyPropertyChanged
 
 	/// <summary>Project root folder.</summary>
 	public string RootPath => Workspace.RootPath;
+
+	/// <summary>Shows a project Markdown file in the project's Docs pane, as a link in a log or a rendered file asks.</summary>
+	/// <returns><see langword="false"/> when the pane cannot show it.</returns>
+	public Task<bool> OpenDocumentAsync(string relativePath, CancellationToken cancellationToken)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(relativePath);
+		return _openDocument(relativePath, cancellationToken);
+	}
 
 	/// <summary>Current branch, empty outside git or before the first read.</summary>
 	public string Branch => Changes?.Branch ?? string.Empty;

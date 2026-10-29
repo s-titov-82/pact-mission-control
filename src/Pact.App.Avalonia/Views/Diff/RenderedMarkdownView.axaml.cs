@@ -10,6 +10,7 @@ using Avalonia.Threading;
 using Markdown.Avalonia.Full;
 using Pact.App.Avalonia.Lifecycle;
 using Pact.App.Avalonia.Views.Remarks;
+using Pact.Presentation.Services;
 using Pact.Presentation.ViewModels;
 
 namespace Pact.App.Avalonia.Views.Diff;
@@ -43,6 +44,12 @@ internal sealed partial class RenderedMarkdownView : UserControl
 		_editor.CloseRequested += (_, _) => CloseEditor();
 		_editor.AddRequested += OnAddRequested;
 	}
+
+	/// <summary>The project the shown file is in, for its links and images.</summary>
+	public string? ProjectRoot { get; set; }
+
+	/// <summary>Raised when a link in a block is followed, resolved against the shown file.</summary>
+	public event EventHandler<MarkdownLinkTarget>? LinkFollowed;
 
 	internal void ConfigureLifecycle(ObservedTaskGroup eventTasks) =>
 		_eventTasks = eventTasks ?? throw new ArgumentNullException(nameof(eventTasks));
@@ -140,7 +147,7 @@ internal sealed partial class RenderedMarkdownView : UserControl
 		};
 		Panel editorSlot = new();
 		StackPanel content = new() { Margin = new(8, 0, 0, 0) };
-		content.Children.Add(new MarkdownScrollViewer { Markdown = KeepNumber(block.Markdown), SelectionEnabled = true });
+		content.Children.Add(Viewer(KeepNumber(block.Markdown)));
 		content.Children.Add(threads);
 		content.Children.Add(editorSlot);
 		Grid.SetColumn(content, 2);
@@ -157,9 +164,25 @@ internal sealed partial class RenderedMarkdownView : UserControl
 		return root;
 	}
 
-	private static StackPanel RemovedRow(RenderedRemoved removed)
+	// A viewer for one block: its links and images resolve against the shown file.
+	private MarkdownScrollViewer Viewer(string markdown)
 	{
-		MarkdownScrollViewer old = new() { Markdown = removed.Markdown, IsVisible = false, Opacity = 0.7, Margin = new(34, 0, 0, 0) };
+		MarkdownScrollViewer viewer = new() { SelectionEnabled = true };
+		MarkdownPreviewHook.Attach(
+			viewer,
+			() => ProjectRoot is { } root && _shown is { } shown ? (root, shown.Path) : null,
+			target => LinkFollowed?.Invoke(this, target));
+		MarkdownPreviewHook.SetDocument(viewer, ProjectRoot, _shown?.Path);
+		viewer.Markdown = MarkdownPreviewHook.Prepare(markdown, viewer.AssetPathRoot);
+		return viewer;
+	}
+
+	private StackPanel RemovedRow(RenderedRemoved removed)
+	{
+		var old = Viewer(removed.Markdown);
+		old.IsVisible = false;
+		old.Opacity = 0.7;
+		old.Margin = new(34, 0, 0, 0);
 		Button toggle = new() { Content = FoldText(removed.LineCount, expanded: false), Margin = new(30, 0, 0, 0) };
 		toggle.Classes.Add("rendered-removed");
 		toggle.Click += (_, _) =>

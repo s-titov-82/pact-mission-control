@@ -35,6 +35,8 @@ internal sealed partial class NotesPaneView : UserControl
 	private Func<Exception, Task> _reportSaveFailureAsync =
 		static _ => Task.CompletedTask;
 	private IMarkdownEditorDocument? _document;
+	private static readonly TimeSpan LinkNoticeTime = TimeSpan.FromSeconds(5);
+	private readonly DispatcherTimer _linkNoticeTimer;
 	private bool _updating;
 	private bool _moveCaretToEndOnNextFocus;
 	private int _externalCheckRunning;
@@ -54,6 +56,13 @@ internal sealed partial class NotesPaneView : UserControl
 	{
 		InitializeComponent();
 		MarkdownClickGuard.Attach(Preview);
+		MarkdownPreviewHook.Attach(Preview, ShownDocument, FollowLink);
+		_linkNoticeTimer = new DispatcherTimer { Interval = LinkNoticeTime };
+		_linkNoticeTimer.Tick += (_, _) =>
+		{
+			_linkNoticeTimer.Stop();
+			LinkNotice.IsVisible = false;
+		};
 		ConfirmDiscardAsync = ConfirmDiscardWithDialogAsync;
 		_externalChangeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
 		_externalChangeTimer.Tick += OnExternalChangeTimerTick;
@@ -257,8 +266,62 @@ internal sealed partial class NotesPaneView : UserControl
 		Preview.IsVisible = hasDocument && mode == DocumentMode.Preview;
 		if (Preview.IsVisible)
 		{
-			Preview.Markdown = _document?.Text ?? string.Empty;
+			var shown = ShownDocument();
+			MarkdownPreviewHook.SetDocument(Preview, shown?.ProjectRoot, shown?.DocumentRelativePath);
+			Preview.Markdown = MarkdownPreviewHook.Prepare(_document?.Text ?? string.Empty, Preview.AssetPathRoot);
 		}
+	}
+
+	// The project document in the preview; notes have no place in the project to resolve links from.
+	private (string ProjectRoot, string DocumentRelativePath)? ShownDocument() =>
+		Workspace is { } workspace && _document is not ProjectNoteDocument
+			&& workspace.SelectedNode is { Document: not null } node && ReferenceEquals(node.Document, _document)
+			? (workspace.ProjectRootPath, node.RelativePath)
+			: null;
+
+	private void FollowLink(MarkdownLinkTarget target)
+	{
+		switch (target)
+		{
+			case ProjectDocumentLink document when Workspace is { } workspace:
+				RunEvent("notes-open-link", async () =>
+				{
+					if (!await workspace.OpenDocumentAsync(document.RelativePath, CancellationToken.None))
+					{
+						ShowLinkNotice($"Not found: {document.RelativePath}");
+					}
+					else if (document.Heading is { } heading)
+					{
+						Dispatcher.UIThread.Post(() => ScrollToHeading(heading), DispatcherPriority.Loaded);
+					}
+				});
+				break;
+			case HeadingLink heading:
+				ScrollToHeading(heading.Heading);
+				break;
+			case WebLink web:
+				MarkdownPreviewHook.OpenWeb(web.Uri);
+				break;
+			case RefusedLink refused:
+				ShowLinkNotice(refused.Notice);
+				break;
+		}
+	}
+
+	private void ScrollToHeading(string heading)
+	{
+		if (!MarkdownPreviewHook.ScrollToHeading(Preview, heading))
+		{
+			ShowLinkNotice($"No such heading: #{heading}");
+		}
+	}
+
+	private void ShowLinkNotice(string notice)
+	{
+		LinkNoticeText.Text = notice;
+		LinkNotice.IsVisible = true;
+		_linkNoticeTimer.Stop();
+		_linkNoticeTimer.Start();
 	}
 
 	private void OnReloadFromDiskClicked(object? sender, RoutedEventArgs e)
@@ -504,7 +567,9 @@ internal sealed partial class NotesPaneView : UserControl
 
 		if (Preview.IsVisible)
 		{
-			Preview.Markdown = text;
+			var shown = ShownDocument();
+			MarkdownPreviewHook.SetDocument(Preview, shown?.ProjectRoot, shown?.DocumentRelativePath);
+			Preview.Markdown = MarkdownPreviewHook.Prepare(text, Preview.AssetPathRoot);
 		}
 	}
 

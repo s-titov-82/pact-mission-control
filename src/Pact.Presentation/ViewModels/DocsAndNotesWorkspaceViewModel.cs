@@ -90,7 +90,9 @@ public sealed class DocsAndNotesWorkspaceViewModel : INotifyPropertyChanged
 {
 	private static readonly DocumentSaveStatus CleanSaveStatus =
 		new(DocumentSaveState.Clean);
-	private readonly string _projectRootPath;
+
+	/// <summary>The project root the pane lists Markdown from.</summary>
+	public string ProjectRootPath { get; }
 	private readonly IProjectMarkdownFileStore _fileStore;
 	private readonly TimeSpan _debounceInterval;
 	private readonly Dictionary<string, IMarkdownEditorDocument> _documents =
@@ -107,7 +109,7 @@ public sealed class DocsAndNotesWorkspaceViewModel : INotifyPropertyChanged
 		TimeSpan debounceInterval)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(projectRootPath);
-		_projectRootPath = Path.GetFullPath(projectRootPath);
+		ProjectRootPath = Path.GetFullPath(projectRootPath);
 		NotesDocument = notesDocument ?? throw new ArgumentNullException(nameof(notesDocument));
 		_fileStore = fileStore ?? throw new ArgumentNullException(nameof(fileStore));
 		_debounceInterval = debounceInterval;
@@ -209,7 +211,7 @@ public sealed class DocsAndNotesWorkspaceViewModel : INotifyPropertyChanged
 	/// <summary>Refreshes discovery while retaining document buffers, expansion, and selection.</summary>
 	public async Task RefreshAsync(CancellationToken cancellationToken)
 	{
-		var catalog = ProjectMarkdownCatalog.Scan(_projectRootPath);
+		var catalog = ProjectMarkdownCatalog.Scan(ProjectRootPath);
 		CommonTree = BuildNodes(MarkdownTreeNode.Build(catalog.Common));
 		DocsTree = BuildNodes(MarkdownTreeNode.Build(catalog.Docs, "docs/"));
 		await NotesDocument.LoadAsync(cancellationToken);

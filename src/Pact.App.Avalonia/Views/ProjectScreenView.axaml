@@ -56,5 +56,11 @@
       <TextBlock x:Name="NoReviewLogsText" Margin="12" Opacity="0.7" IsVisible="{Binding !HasReviewLogs}"
                  Text="No review logs yet. Logs of reviews run in this project appear here." />
     </Grid>
+
+    <!-- Why a link went nowhere; it fades on its own. -->
+    <Border x:Name="LinkNotice" Grid.Row="1" Margin="16,8" Padding="10,4" CornerRadius="4" HorizontalAlignment="Right"
+            VerticalAlignment="Top" Background="{DynamicResource AppPopupBackgroundBrush}" IsVisible="False">
+      <TextBlock x:Name="LinkNoticeText" />
+    </Border>
   </Grid>
 </UserControl>

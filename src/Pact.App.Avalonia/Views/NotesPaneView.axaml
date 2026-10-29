@@ -65,6 +65,11 @@
                             HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" />
       <md:MarkdownScrollViewer x:Name="Preview" Margin="10" IsVisible="False"
                                SelectionEnabled="True" />
+      <!-- Why a link went nowhere; it fades on its own. -->
+      <Border x:Name="LinkNotice" Margin="16,8" Padding="10,4" CornerRadius="4" HorizontalAlignment="Right"
+              VerticalAlignment="Top" Background="{DynamicResource AppPopupBackgroundBrush}" IsVisible="False">
+        <TextBlock x:Name="LinkNoticeText" />
+      </Border>
       <TextBlock x:Name="EmptyGroupMessage" Margin="10" HorizontalAlignment="Center"
                  VerticalAlignment="Center" Opacity="0.7"
                  Text="Select a document in the Documents tree." IsVisible="False" />
