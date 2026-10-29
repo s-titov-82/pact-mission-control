@@ -130,6 +130,20 @@ public sealed class JsonRootTabsStoreTests
 	}
 
 	[Test]
+	public async Task A_root_session_keeps_its_file_links()
+	{
+		using var temporaryDirectory = TemporaryDirectory.Create();
+		JsonRootTabsStore store = new(temporaryDirectory.Path);
+		AgentFileLink[] links = [new(@"C:\x\notes.md", "Notes", DateTimeOffset.Parse("2026-10-29T12:00:00Z", System.Globalization.CultureInfo.InvariantCulture))];
+
+		await store.SaveAsync(
+			RootTabsRecord.CreateDefault() with { Sessions = [CreateSession(1) with { FileLinks = links }] },
+			CancellationToken.None);
+
+		(await store.LoadAsync(CancellationToken.None)).Sessions.Single().FileLinks.ShouldBe(links);
+	}
+
+	[Test]
 	public async Task UpdateAsync_serializes_concurrent_changes()
 	{
 		using var temporaryDirectory = TemporaryDirectory.Create();

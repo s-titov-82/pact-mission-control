@@ -189,6 +189,58 @@ public sealed class JsonProjectStoreTests
 	}
 
 	[Test]
+	public async Task Sessions_keep_their_file_links()
+	{
+		using var temporaryDirectory = TemporaryDirectory.Create();
+		JsonProjectStore store = new(temporaryDirectory.Path);
+		var at = DateTimeOffset.Parse("2026-10-29T12:00:00Z", System.Globalization.CultureInfo.InvariantCulture);
+		AgentFileLink[] links = [new(@"C:\x\b.md", "Plan", at), new(@"C:\x\a.txt", null, at.AddMinutes(-1))];
+		var session = new SessionRecord("s1", AgentKind.Claude, "Claude", Path.GetTempPath(), "claude", null, SessionStatus.Stopped, at, at)
+		{
+			FileLinks = links
+		};
+
+		await store.SaveAsync(
+			new ProjectsDocument(1, [CreateProjectRecord("p1") with { Sessions = [session] }]),
+			CancellationToken.None);
+		var loaded = await store.LoadAsync(CancellationToken.None);
+
+		loaded.Projects.Single().Sessions.Single().FileLinks.ShouldBe(links);
+	}
+
+	[Test]
+	public async Task A_file_written_before_links_loads_with_none()
+	{
+		using var temporaryDirectory = TemporaryDirectory.Create();
+		var root = temporaryDirectory.Path;
+		AppPaths paths = new(root);
+		Directory.CreateDirectory(paths.SettingsDirectory);
+		await File.WriteAllTextAsync(
+			paths.ProjectsPath,
+			/*lang=json,strict*/
+			"""
+			{
+			  "schemaVersion": 1,
+			  "projects": [{
+			    "id": "p1", "name": "Project", "rootPath": "D:\\proj",
+			    "createdAt": "2026-07-11T10:00:00Z", "lastActiveAt": "2026-07-11T10:00:00Z",
+			    "notes": null,
+			    "sessions": [{
+			      "id": "s1", "kind": "claude", "title": "Claude", "workingDirectory": "D:\\proj",
+			      "startCommand": "claude", "resumeCommand": null, "status": "stopped",
+			      "createdAt": "2026-07-11T10:00:00Z", "lastActiveAt": "2026-07-11T10:00:00Z"
+			    }]
+			  }]
+			}
+			""");
+		JsonProjectStore store = new(root);
+
+		var loaded = await store.LoadAsync(CancellationToken.None);
+
+		loaded.Projects.Single().Sessions.Single().FileLinks.ShouldNotBeNull().ShouldBeEmpty();
+	}
+
+	[Test]
 	public async Task Load_ProjectsJsonWithoutNotesTab_LoadsNull()
 	{
 		using var temporaryDirectory = TemporaryDirectory.Create();

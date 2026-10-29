@@ -34,4 +34,8 @@ public sealed record SessionRecord(
 	string? ResumeCommand,
 	SessionStatus Status,
 	DateTimeOffset CreatedAt,
-	DateTimeOffset LastActiveAt);
+	DateTimeOffset LastActiveAt)
+{
+	/// <summary>Files the agent linked for the user, newest first; dropped with the session.</summary>
+	public IReadOnlyList<AgentFileLink> FileLinks { get; init; } = [];
+}
