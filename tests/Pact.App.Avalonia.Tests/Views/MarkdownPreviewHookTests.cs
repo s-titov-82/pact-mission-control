@@ -28,6 +28,7 @@ public sealed class MarkdownPreviewHookTests
 	[TestCase("A span `that starts here\n![x](nope.png) and ends` there.")]
 	[TestCase("Text.\n\n    ![x](nope.png)\n\nMore.")]
 	[TestCase("``a ` b`` then `![x](nope.png)`")]
+	[TestCase("```md\n    ```\n![example](missing.png)\n```")]
 	public void Images_in_longer_spans_multiline_spans_and_indented_code_stay(string text)
 	{
 		using var folder = TemporaryDirectory.Create();

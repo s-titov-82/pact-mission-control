@@ -88,7 +88,8 @@ internal static partial class MarkdownPreviewHook
 			if (fence is { } open)
 			{
 				output.Add(line);
-				if (run >= open.Length && trimmed[0] == open.Character && trimmed.Trim().Length == run)
+				// As in Core's MarkdownBlocks: a closing fence is indented at most three spaces too.
+				if (run >= open.Length && trimmed[0] == open.Character && trimmed.Trim().Length == run && Indent(line) <= 3)
 				{
 					fence = null;
 				}
