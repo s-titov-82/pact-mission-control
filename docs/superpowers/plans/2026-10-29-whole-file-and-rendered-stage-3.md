@@ -74,7 +74,13 @@
 	MarkdownBlocks.Split(["> a", "> b", "| x |", "|---|", "| 1 |"]).ShouldBe([new(1, 2), new(3, 5)]);
 [Test] public void An_unclosed_fence_runs_to_the_end() =>
 	MarkdownBlocks.Split(["```", "x"]).ShouldBe([new(1, 2)]);
+[Test] public void A_longer_fence_is_not_closed_by_a_shorter_one_inside_it() =>
+	MarkdownBlocks.Split(["````", "```", "x", "```", "````", "after"]).ShouldBe([new(1, 5), new(6, 6)]);
+[Test] public void A_nested_list_stays_inside_its_parent_item() =>
+	MarkdownBlocks.Split(["- one", "  - sub", "  - sub2", "- two"]).ShouldBe([new(1, 3), new(4, 4)]);
 ```
+
+Why per-block source and not one rendering: Markdown.Avalonia renders a whole document into controls without source positions, so bars and remarks cannot be laid on its output. A block's source keeps its own parsing context — a nested list stays inside its parent item (test above), a fence holds its content — and Task 5 checks the result against the whole-document preview.
 
 - [ ] **Step 2: Run them to see them fail**
 
@@ -82,7 +88,7 @@ Run: `dotnet test tests/Pact.Core.Tests --no-build ... --filter FullyQualifiedNa
 
 - [ ] **Step 3: Implement `MarkdownBlocks.Split`**
 
-Line scan with a current-block start. Fences open on a line whose trimmed start begins with ```` ``` ```` or `~~~` and close on the next line starting with the same marker. Heading: trimmed start matches `#{1,6} `. List item start: trimmed start matches `[-*+] ` or `\d+[.)] `; a following non-blank line indented by at least one space (and not itself an item start) continues it. Quote: line starts with `>`; table: trimmed start begins with `|`; consecutive lines of the same kind join, a change of kind starts a new block.
+Line scan with a current-block start. Fences follow CommonMark: an opening line of three or more backticks or tildes (indented at most three spaces) closes only on a line of the same character, at least as long, with nothing after it but spaces. Heading: trimmed start matches `#{1,6} `. List item start: trimmed start matches `[-*+] ` or `\d+[.)] `; a following non-blank line indented by at least one space (and not itself an item start) continues it. Quote: line starts with `>`; table: trimmed start begins with `|`; consecutive lines of the same kind join, a change of kind starts a new block.
 
 - [ ] **Step 4: Run the tests** — Expected: 6 pass.
 - [ ] **Step 5: Commit** — `feat: split Markdown text into blocks with line ranges`.
@@ -100,9 +106,10 @@ Line scan with a current-block start. Fences open on a line whose trimmed start 
   - `DiffRowKind.Fold` (new value, last). A fold row has empty numbers and text `▸ N lines removed` / `▾ N lines removed` (`line` when N is 1).
   - `public sealed record RemovedRun(int BeforeNewLine, int OldStart, IReadOnlyList<string> Lines);` — `BeforeNewLine` is the new line the run sits above (`NewLines.Count + 1` at the end).
   - `ShownDiff` gains a last parameter `IReadOnlyList<RemovedRun> RemovedRuns` (empty in Diff mode).
-  - `ProjectChangesViewModel`: `DiffViewMode Mode { get; set; }` (raises and rebuilds rows; kept across `SelectFileAsync`), `bool CanShowWholeFile` (a line diff with hunks, `DiffPlaceholder` null), `bool CanRender` (also path ends with `.md`, case-insensitive), `void ToggleFold(int row)`.
+  - `ProjectChangesViewModel`: `DiffViewMode Mode { get; set; }` — the user's preferred mode (raises and rebuilds rows; kept across `SelectFileAsync`); `DiffViewMode EffectiveMode { get; }` — what is shown; `bool CanShowWholeFile` (a line diff with hunks, `DiffPlaceholder` null), `bool CanRender` (also path ends with `.md`, case-insensitive), `void ToggleFold(int row)`.
+  - Effective mode: `Diff` when `Mode` is `Diff` or the file cannot show whole (placeholder) or its text was read inconsistently (`NewLines` null and not deleted); `WholeFile` when `Mode` is `WholeFile`, or `Mode` is `Rendered` but the file is not Markdown or is deleted (its old text shows as removed rows); `Rendered` only for a Markdown file with `NewLines`. Switch buttons show `EffectiveMode` as checked; `Mode` is untouched by a fallback, so the next Markdown file opens Rendered again.
   - `internal static class WholeFileRows { public static (IReadOnlyList<DiffRowViewModel> Rows, IReadOnlyList<RemovedRun> Runs) Build(FileDiff diff, IReadOnlyList<string>? newLines, bool deleted, IReadOnlySet<int> expandedOldStarts); }`.
-- Rows for `WholeFile` and `Rendered` are the same; the cut at `MaxShownLines` and "Show all" apply to them as to hunk rows.
+- Rows for `WholeFile` and `Rendered` are the same and are never cut: the file is already bounded by `GitWorkingTreeReader.MaxFileBytes` and the editor draws only what is on screen, so `MaxShownLines` and "Show all" apply to hunk rows only (`HiddenLineCount` is 0 in the other modes). Rendered blocks therefore always have a row for every line.
 
 - [ ] **Step 1: Write the failing tests** (in `ProjectChangesViewModelTests`, using the file's existing fake reader)
 
@@ -123,6 +130,9 @@ Line scan with a current-block start. Fences open on a line whose trimmed start 
 [Test] public async Task Text_read_inconsistently_falls_back_to_hunk_rows_in_whole_file_mode() // NewLines null → hunk rows (Review Focus 2)
 [Test] public async Task A_refresh_that_changed_nothing_keeps_the_whole_file_shown_diff_instance() // Review Focus 1
 [Test] public async Task An_expanded_fold_stays_expanded_after_a_refresh()                   // keyed by OldStart
+[Test] public async Task Whole_file_rows_are_not_cut_at_the_shown_line_limit()                // 3500-line file: every line, HiddenLineCount 0
+[Test] public async Task Rendered_falls_back_to_whole_file_for_a_deleted_markdown_file_and_for_a_non_markdown_file() // Mode stays Rendered
+[Test] public async Task Rendered_falls_back_to_hunk_rows_when_a_refresh_reads_the_text_inconsistently()          // EffectiveMode Diff, then Rendered again on a consistent read
 ```
 
 In `ChangesRemarksViewModelTests`:
@@ -138,7 +148,15 @@ In `ChangesRemarksViewModelTests`:
 - [ ] **Step 2: Build and run; see them fail** — Expected: compile errors for `Mode`, `DiffRowKind.Fold`, `RemovedRun`.
 - [ ] **Step 3: Implement**
 
-`WholeFileRows.Build`: walk new lines 1..N; added new numbers come from the hunks' `Added` lines; each hunk's consecutive `Removed` lines form a run placed before the next new line of that hunk (or at `BeforeNewLine = N + 1`). A run whose `OldStart` is in `expandedOldStarts` adds the fold row (`▾`) and then one `Removed` row per line with its old number; otherwise only the `▸` fold row. `deleted` → every hunk line as a `Removed` row, no fold. In the model, rows come from `WholeFileRows` when `Mode != Diff`, the file is not a placeholder and either `NewLines` is not null or the file is deleted; otherwise from the hunk builder. `ToggleFold(row)` flips the run's `OldStart` in a set kept per selected path (cleared when another path is selected) and re-applies. In `ChangesRemarksViewModel`, treat `Fold` like `HunkHeader` in `AddRemarkAsync` and in the context walk.
+Rows follow `EffectiveMode`. `WholeFileRows.Build`: walk new lines 1..N; added new numbers come from the hunks' `Added` lines; each hunk's consecutive `Removed` lines form a run placed before the next new line of that hunk (or at `BeforeNewLine = N + 1`). A run whose `OldStart` is in `expandedOldStarts` adds the fold row (`▾`) and then one `Removed` row per line with its old number; otherwise only the `▸` fold row. `deleted` → every hunk line as a `Removed` row, no fold. In the model, rows come from `WholeFileRows` when `EffectiveMode != Diff`, otherwise from the hunk builder with its cut. `ToggleFold(row)` flips the run's `OldStart` in a set kept per selected path (cleared when another path is selected) and re-applies. In `ChangesRemarksViewModel`, treat `Fold` like `HunkHeader` in `AddRemarkAsync` and in the context walk.
+
+A remark being typed survives a real edit of its file (finding 6). `ChangesRemarksViewModel` gains `public int? MapRow(ShownDiff from, int row, ShownDiff to)`: same path required; a New-side row maps through `RemarkLocator.LocateNew` from `from.NewLines` to `to.NewLines` (null when the line did not survive unchanged); an Old-side row maps to the row with the same `OldNumber` while `HeadCommit` is unchanged. `AddRemarkAsync(shown, ...)` accepts a `shown` that is no longer current when its `Path` equals the current one: the remark is anchored to the text the user saw when they started typing (its snapshot is `shown.NewLines`), and placement then shows it in place or outdated by the section 4 rules — never silently rebound to another line. Tests:
+
+```csharp
+[Test] public async Task A_row_maps_to_the_same_line_after_lines_were_inserted_above_it()
+[Test] public async Task A_row_whose_line_changed_maps_to_nothing()
+[Test] public async Task A_remark_started_before_an_edit_anchors_to_the_text_seen_when_typing_began()
+```
 
 - [ ] **Step 4: Run Presentation tests** — Expected: all of `ProjectChangesViewModelTests` and `ChangesRemarksViewModelTests` pass, and the full Presentation project stays green.
 - [ ] **Step 5: Commit** — `feat: whole-file rows with folded removed runs for the changes view`.
@@ -162,10 +180,14 @@ In `ChangesRemarksViewModelTests`:
 [AvaloniaTest] public async Task Clicking_a_fold_line_expands_it_and_clicking_again_folds_it()
 	// press on the fold row's text → Document has the removed lines; again → fold only
 [AvaloniaTest] public async Task A_remark_added_in_whole_file_mode_on_an_unchanged_line_shows_its_mark()   // in ProjectScreenRemarksHeadlessTests
+[AvaloniaTest] public async Task An_edit_of_the_open_file_keeps_the_scroll_position_in_diff_and_whole_file()
+[AvaloniaTest] public async Task A_first_remark_being_typed_survives_an_edit_of_its_file_and_follows_its_line()
+	// open "+" on line 30, type "draft", the agent inserts 2 lines at the top → overlay still open with "draft", over the row of old line 30 (now 32); Ctrl+Enter → anchor Line 30 of the captured text, placed at 32
+[AvaloniaTest] public async Task Selecting_another_file_still_starts_at_the_top_and_closes_the_overlay()
 ```
 
 - [ ] **Step 2: Run them; see them fail** — Expected: `FindControl("WholeFileModeButton")` null.
-- [ ] **Step 3: Implement** — The buttons set `Changes.Mode`; their `IsChecked` and visibility follow `Mode`, `CanShowWholeFile`, `CanRender`. A pointer press on a fold row's line in the text view (row from `RowAt`) calls `ToggleFold` and is handled (it does not also close the overlay or select). Fold rows get a muted brush in `DiffLineBackgroundRenderer` (same as `HeaderBrush`). The editor and its margins stay as they are: they read rows, so whole-file rows work through `DiffRows`.
+- [ ] **Step 3: Implement** — The buttons set `Changes.Mode`; their `IsChecked` and visibility follow `Mode`, `CanShowWholeFile`, `CanRender`. A pointer press on a fold row's line in the text view (row from `RowAt`) calls `ToggleFold` and is handled (it does not also close the overlay or select). Fold rows get a muted brush in `DiffLineBackgroundRenderer` (same as `HeaderBrush`). The margins read rows, so whole-file rows work through `DiffRows`. `RefreshDiffText` changes for a refresh of the same path (spec section 1, which today's `ScrollToHome`/`CloseOverlay` on every row change does not meet): keep the vertical offset instead of scrolling home, and keep an open overlay — move it to `MapRow(_overlayDiff, _overlayRow, newShown)` when that is not null, otherwise leave it on its old row index clamped to the document — with its typed text untouched; submitting uses the overlay's captured `_overlayDiff`. A different path keeps today's behaviour (top, overlay closed with drafts saved).
 - [ ] **Step 4: Run** `ProjectScreenViewHeadlessTests` and `ProjectScreenRemarksHeadlessTests` — Expected: pass.
 - [ ] **Step 5: Commit** — `feat: switch the changes view between diff and whole file`.
 
@@ -193,10 +215,11 @@ In `ChangesRemarksViewModelTests`:
 [Test] public void Each_block_points_at_the_row_of_its_first_line()
 [Test] public void A_thread_on_the_third_line_of_a_paragraph_lands_on_that_paragraph()
 [Test] public void A_fenced_block_with_blank_lines_stays_one_block()                 // Review Focus 3
+[Test] public void A_run_removed_before_a_blank_separator_sits_between_the_paragraphs() // new ["a","","b"], run before line 2 → [a, removed, b]
 ```
 
 - [ ] **Step 2: Run; see them fail** — Expected: compile errors.
-- [ ] **Step 3: Implement** — Blocks from `Split(shown.NewLines!)`; added lines from rows of kind `Added`; a run with `BeforeNewLine` strictly inside `(FirstLine, LastLine]` marks that block `Changed`; other runs become `RenderedRemoved` before the block whose `FirstLine == BeforeNewLine` (or at the end). Row of a new line: index of the row with that `NewNumber`.
+- [ ] **Step 3: Implement** — Blocks from `Split(shown.NewLines!)`; added lines from rows of kind `Added`; a run with `BeforeNewLine` strictly inside `(FirstLine, LastLine]` marks that block `Changed`; other runs become `RenderedRemoved` before the first block whose `FirstLine >= BeforeNewLine`, in source order; only runs after the last block go at the end. Row of a new line: index of the row with that `NewNumber`.
 - [ ] **Step 4: Run** — Expected: pass.
 - [ ] **Step 5: Commit** — `feat: build rendered Markdown blocks with change marks and threads`.
 
@@ -221,10 +244,14 @@ In `ChangesRemarksViewModelTests`:
 [AvaloniaTest] public async Task A_thread_inside_a_paragraph_shows_under_that_paragraph()
 [AvaloniaTest] public async Task A_block_with_a_thread_carries_a_mark_and_a_removed_block_has_no_add_button()
 [AvaloniaTest] public async Task An_agent_edit_redraws_the_blocks_and_keeps_an_open_thread()   // Review Focus 1
+[AvaloniaTest] public async Task Adding_and_resolving_a_thread_updates_its_block_without_redrawing_the_text() // same block control instances
+[AvaloniaTest] public async Task Threads_placed_after_the_first_draw_appear_under_their_blocks()
+[AvaloniaTest] public async Task A_first_remark_being_typed_on_a_block_survives_an_edit_of_the_file()
+[AvaloniaTest] public async Task A_nested_list_and_an_ordered_item_render_as_in_the_docs_preview() // nested bullets kept; "3. three" shows 3
 ```
 
 - [ ] **Step 2: Run; see them fail.**
-- [ ] **Step 3: Implement** — One `ScrollViewer` over a `StackPanel`; per `RenderedBlock` a grid of bar (4 px, green for `Added`, blue for `Changed`, none otherwise), the block's control from `new Markdown.Avalonia.Markdown().Transform(block.Markdown)` (engine created once per view, asset root and link command from Task 7's hook), the "+" visible on pointer over and while `CanRemarkOn(shown, block.Row)`, and under it the block's threads as `RemarkThreadView`s plus a `RemarkOverlay` in inline mode for a new remark. Rebuild only when `ShownDiff` changes instance; keep the vertical offset.
+- [ ] **Step 3: Implement** — One `ScrollViewer` over a `StackPanel`; per `RenderedBlock` a grid of bar (4 px, green for `Added`, blue for `Changed`, none otherwise), the block's control from `new Markdown.Avalonia.Markdown().Transform(block.Markdown)` (engine created once per view, asset root and link command from Task 7's hook), the "+" visible on pointer over and while `CanRemarkOn(shown, block.Row)`, and under it the block's threads as `RemarkThreadView`s plus a `RemarkOverlay` in inline mode for a new remark. Two update paths: block controls are rebuilt only when `ShownDiff` changes instance (keeping the vertical offset; an inline new-remark editor with typed text is moved to the block that now holds `MapRow` of its row, or kept on its old block position when the line is gone, and submits against its captured `ShownDiff`); thread lists and marks are refreshed in place on every `ThreadsByRow` publication whose `ForDiff` is the shown diff, without recreating block controls or an open editor. An ordered item whose engine output restarts numbering at 1 is rendered with its own number kept (builder's choice of how, checked by the test above).
 - [ ] **Step 4: Run** the new tests and `ProjectScreenRemarksHeadlessTests` — Expected: pass.
 - [ ] **Step 5: Commit** — `feat: rendered Markdown mode with block remarks`.
 
