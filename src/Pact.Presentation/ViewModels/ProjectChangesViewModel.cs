@@ -18,7 +18,10 @@ public enum DiffRowKind
 	Added,
 
 	/// <summary>Removed line.</summary>
-	Removed
+	Removed,
+
+	/// <summary>A folded run of removed lines in the whole-file view; a click unfolds it.</summary>
+	Fold
 }
 
 /// <summary>One row of the diff view.</summary>
@@ -49,7 +52,13 @@ public sealed record DiffRowViewModel(DiffRowKind Kind, string OldNumber, string
 /// The working-tree text the rows describe, as lines; null for a deleted file, a placeholder, or a
 /// file that changed while it was read.
 /// </param>
-public sealed record ShownDiff(string Path, string? HeadCommit, IReadOnlyList<DiffRowViewModel> Rows, IReadOnlyList<string>? NewLines);
+/// <param name="RemovedRuns">The removed runs of a whole-file view, folded or not; empty for hunks.</param>
+public sealed record ShownDiff(
+	string Path,
+	string? HeadCommit,
+	IReadOnlyList<DiffRowViewModel> Rows,
+	IReadOnlyList<string>? NewLines,
+	IReadOnlyList<RemovedRun> RemovedRuns);
 
 /// <summary>One changed file in the Changes list.</summary>
 public sealed class ChangedFileViewModel : INotifyPropertyChanged
@@ -150,6 +159,10 @@ public sealed class ProjectChangesViewModel : INotifyPropertyChanged, IDisposabl
 	private int _selectionVersion;
 	private LoadedDiff? _selectedDiff;
 	private bool _showAll;
+	// Folds the user opened, by the first old line of their run, for the file they were opened in.
+	private readonly HashSet<int> _expandedOldStarts = [];
+	private string? _expandedPath;
+	private readonly Dictionary<int, int> _foldRowOldStarts = [];
 
 	/// <summary>Creates the change list of one project root.</summary>
 	public ProjectChangesViewModel(
@@ -194,6 +207,51 @@ public sealed class ProjectChangesViewModel : INotifyPropertyChanged, IDisposabl
 	public string ShowAllText => string.Create(
 		CultureInfo.InvariantCulture,
 		$"Show all ({HiddenLineCount} more lines)");
+
+	/// <summary>The way the user chose to see files; it stays while they move between files.</summary>
+	public DiffViewMode Mode
+	{
+		get;
+		set
+		{
+			if (field == value)
+			{
+				return;
+			}
+
+			field = value;
+			Raise(nameof(Mode));
+			ApplyDiff(_selectedDiff);
+		}
+	}
+
+	/// <summary>
+	/// How the selected file is shown: <see cref="Mode"/> where the file allows it, otherwise the
+	/// nearest mode that works for it.
+	/// </summary>
+	public DiffViewMode EffectiveMode => Effective(_selectedDiff);
+
+	/// <summary>Whether the selected file has a line diff to show whole.</summary>
+	public bool CanShowWholeFile => _selectedDiff is { Diff.Placeholder: null, Diff.Hunks.Count: > 0 };
+
+	/// <summary>Whether the selected file is Markdown that can be shown rendered.</summary>
+	public bool CanRender => CanShowWholeFile && IsMarkdown(_selectedDiff!.Path);
+
+	/// <summary>Opens or closes the removed lines folded at a row of the whole-file view.</summary>
+	public void ToggleFold(int row)
+	{
+		if (!_foldRowOldStarts.TryGetValue(row, out var oldStart))
+		{
+			return;
+		}
+
+		if (!_expandedOldStarts.Remove(oldStart))
+		{
+			_expandedOldStarts.Add(oldStart);
+		}
+
+		ApplyDiff(_selectedDiff);
+	}
 
 	/// <summary>Number of changed files.</summary>
 	public int FileCount => Files.Count;
@@ -496,17 +554,56 @@ public sealed class ProjectChangesViewModel : INotifyPropertyChanged, IDisposabl
 		var lines = diff.Placeholder is null && before is not null && string.Equals(before, after, StringComparison.Ordinal)
 			? RemarkLocator.SplitLines(before)
 			: null;
-		return new LoadedDiff(entry.Path, headCommit, diff, lines);
+		return new LoadedDiff(entry.Path, headCommit, diff, lines, deleted);
 	}
+
+	private DiffViewMode Effective(LoadedDiff? loaded)
+	{
+		if (Mode == DiffViewMode.Diff || loaded is not { Diff.Placeholder: null, Diff.Hunks.Count: > 0 }
+			|| (!loaded.Deleted && loaded.NewLines is null))
+		{
+			return DiffViewMode.Diff;
+		}
+
+		return Mode == DiffViewMode.Rendered && !loaded.Deleted && IsMarkdown(loaded.Path)
+			? DiffViewMode.Rendered
+			: DiffViewMode.WholeFile;
+	}
+
+	private static bool IsMarkdown(string path) => path.EndsWith(".md", StringComparison.OrdinalIgnoreCase);
 
 	private void ApplyDiff(LoadedDiff? loaded)
 	{
 		_selectedDiff = loaded;
+		if (!string.Equals(loaded?.Path, _expandedPath, StringComparison.Ordinal))
+		{
+			_expandedOldStarts.Clear();
+			_expandedPath = loaded?.Path;
+		}
+
 		var diff = loaded?.Diff;
 		List<DiffRowViewModel> rows = [];
+		IReadOnlyList<RemovedRun> runs = [];
+		_foldRowOldStarts.Clear();
 		var shown = 0;
 		var total = diff?.LineCount ?? 0;
-		foreach (var hunk in diff?.Hunks ?? [])
+		var whole = Effective(loaded) != DiffViewMode.Diff;
+		if (whole)
+		{
+			// A file shown whole is not cut: it is already bounded in size and the editor draws only
+			// what is on screen.
+			(var wholeRows, runs) = WholeFileRows.Build(loaded!.Diff, loaded.NewLines, loaded.Deleted, _expandedOldStarts);
+			rows.AddRange(wholeRows);
+			var folds = rows.Select((row, index) => (row, index)).Where(item => item.row.Kind == DiffRowKind.Fold).Select(item => item.index);
+			foreach (var (index, run) in folds.Zip(runs))
+			{
+				_foldRowOldStarts[index] = run.OldStart;
+			}
+
+			total = 0;
+		}
+
+		foreach (var hunk in whole ? [] : diff?.Hunks ?? [])
 		{
 			if (!_showAll && shown >= MaxShownLines)
 			{
@@ -542,13 +639,14 @@ public sealed class ProjectChangesViewModel : INotifyPropertyChanged, IDisposabl
 
 		HiddenLineCount = total - shown;
 		// A refresh that changed nothing keeps the same instance, so a remark being written on it stands.
-		var next = loaded is null ? null : new ShownDiff(loaded.Path, loaded.HeadCommit, DiffRows, loaded.NewLines);
+		var next = loaded is null ? null : new ShownDiff(loaded.Path, loaded.HeadCommit, DiffRows, loaded.NewLines, runs);
 		if (!SameShownDiff(ShownDiff, next))
 		{
 			ShownDiff = next;
 		}
 
-		Raise(nameof(DiffRows), nameof(DiffPlaceholder), nameof(HiddenLineCount), nameof(ShowAllText), nameof(ShownDiff));
+		Raise(nameof(DiffRows), nameof(DiffPlaceholder), nameof(HiddenLineCount), nameof(ShowAllText), nameof(ShownDiff),
+			nameof(EffectiveMode), nameof(CanShowWholeFile), nameof(CanRender));
 	}
 
 	private static bool SameShownDiff(ShownDiff? current, ShownDiff? next) =>
@@ -556,9 +654,12 @@ public sealed class ProjectChangesViewModel : INotifyPropertyChanged, IDisposabl
 		&& string.Equals(current.Path, next.Path, StringComparison.Ordinal)
 		&& string.Equals(current.HeadCommit, next.HeadCommit, StringComparison.Ordinal)
 		&& ReferenceEquals(current.Rows, next.Rows)
-		&& (current.NewLines is null ? next.NewLines is null : next.NewLines is not null && current.NewLines.SequenceEqual(next.NewLines));
+		&& (current.NewLines is null ? next.NewLines is null : next.NewLines is not null && current.NewLines.SequenceEqual(next.NewLines))
+		&& current.RemovedRuns.Count == next.RemovedRuns.Count
+		&& current.RemovedRuns.Zip(next.RemovedRuns).All(pair => pair.First.BeforeNewLine == pair.Second.BeforeNewLine
+			&& pair.First.OldStart == pair.Second.OldStart && pair.First.Lines.SequenceEqual(pair.Second.Lines));
 
-	private sealed record LoadedDiff(string Path, string? HeadCommit, FileDiff Diff, IReadOnlyList<string>? NewLines);
+	private sealed record LoadedDiff(string Path, string? HeadCommit, FileDiff Diff, IReadOnlyList<string>? NewLines, bool Deleted);
 
 	private static string HunkHeaderText(DiffHunk hunk) => string.Create(
 		CultureInfo.InvariantCulture,

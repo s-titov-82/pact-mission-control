@@ -105,8 +105,9 @@ public sealed class ChangesRemarksViewModelTests : IDisposable
 		remarks.ThreadsByRow.ByRow.ShouldBeEmpty();
 	}
 
+	// A remark started before an edit of its file anchors to the text the user saw when typing began.
 	[Test]
-	public async Task A_remark_on_a_replaced_shown_diff_is_refused()
+	public async Task A_row_of_a_superseded_diff_of_the_same_file_still_takes_a_remark()
 	{
 		var remarks = await OpenAsync();
 		var old = _changes!.ShownDiff!;
@@ -115,11 +116,128 @@ public sealed class ChangesRemarksViewModelTests : IDisposable
 		_time.Advance(ProjectChangesViewModel.ReconcileInterval);
 		_changes.ShownDiff.ShouldNotBeSameAs(old);
 
-		remarks.CanRemarkOn(old, 1).ShouldBeFalse();
-		(await remarks.AddRemarkAsync(old, 1, "late", CancellationToken.None)).ShouldBeNull();
+		remarks.CanRemarkOn(old, 1).ShouldBeTrue();
+		remarks.CanRemarkOn(old with { Path = "src/Other.cs" }, 1).ShouldBeFalse();
+		(await remarks.AddRemarkAsync(old, 3, "late", CancellationToken.None)).ShouldNotBeNull();
 
-		remarks.StatusText.ShouldBe("The diff changed; try again.");
-		_book!.Threads.ShouldBeEmpty();
+		var anchor = _book!.Threads.Single().Anchor;
+		(anchor.Side, anchor.Line, anchor.LineText).ShouldBe((RemarkSide.New, 2, "b"));
+		(await _book.LoadSnapshotLinesAsync(anchor.SnapshotId!, CancellationToken.None)).ShouldBe(["a", "b", "c"]);
+	}
+
+	[Test]
+	public async Task A_remark_started_before_an_edit_anchors_to_the_text_seen_when_typing_began()
+	{
+		var remarks = await OpenAsync();
+		var seen = _changes!.ShownDiff!;
+		_reader.Texts[Path1] = "new\na\nb\nc\n";
+		_reader.Diffs[Path1] = FileDiff.AllAdded("new\na\nb\nc\n");
+		_time.Advance(ProjectChangesViewModel.ReconcileInterval);
+
+		await remarks.AddRemarkAsync(seen, 3, "on b", CancellationToken.None);
+
+		_book!.Threads.Single().Anchor.Line.ShouldBe(2);
+		await EventuallyAsync(() => remarks.ThreadsByRow?.ForDiff == _changes.ShownDiff
+			&& remarks.ThreadsByRow!.ByRow.Values.SelectMany(threads => threads).Any());
+		var row = remarks.ThreadsByRow!.ByRow.Single().Key;
+		_changes.ShownDiff!.Rows[row].NewNumber.ShouldBe("3");
+	}
+
+	[Test]
+	public async Task A_row_maps_to_the_same_line_after_lines_were_inserted_above_it()
+	{
+		var remarks = await OpenAsync("a\nb\nc\n", FileDiff.AllAdded("a\nb\nc\n"));
+		var from = _changes!.ShownDiff!;
+		_reader.Texts[Path1] = "x\ny\na\nb\nc\n";
+		_reader.Diffs[Path1] = FileDiff.AllAdded("x\ny\na\nb\nc\n");
+		_time.Advance(ProjectChangesViewModel.ReconcileInterval);
+		var to = _changes.ShownDiff!;
+
+		// Row 2 of "a b c" (after the header) is b, line 2; it is line 4 now.
+		var mapped = remarks.MapRow(from, 2, to).ShouldNotBeNull();
+		to.Rows[mapped].NewNumber.ShouldBe("4");
+	}
+
+	[Test]
+	public async Task A_row_whose_line_changed_maps_to_nothing()
+	{
+		var remarks = await OpenAsync("a\nb\nc\n", FileDiff.AllAdded("a\nb\nc\n"));
+		var from = _changes!.ShownDiff!;
+		_reader.Texts[Path1] = "a\nB\nc\n";
+		_reader.Diffs[Path1] = FileDiff.AllAdded("a\nB\nc\n");
+		_time.Advance(ProjectChangesViewModel.ReconcileInterval);
+
+		remarks.MapRow(from, 2, _changes.ShownDiff!).ShouldBeNull();
+	}
+
+	[Test]
+	public async Task A_remark_on_a_whole_file_line_far_from_any_hunk_anchors_to_that_new_line()
+	{
+		var text = string.Join('\n', Enumerable.Range(1, 50).Select(index => $"line {index}")) + "\n";
+		var remarks = await OpenAsync(text, ChangedSecondLine(text));
+		_changes!.Mode = DiffViewMode.WholeFile;
+		var shown = _changes.ShownDiff!;
+		var row = shown.Rows.ToList().FindIndex(item => item.NewNumber == "40");
+
+		await remarks.AddRemarkAsync(shown, row, "far", CancellationToken.None);
+
+		var anchor = _book!.Threads.Single().Anchor;
+		(anchor.Side, anchor.Line, anchor.LineText).ShouldBe((RemarkSide.New, 40, "line 40"));
+	}
+
+	[Test]
+	public async Task A_fold_row_takes_no_remark()
+	{
+		var remarks = await OpenAsync();
+		_changes!.Mode = DiffViewMode.WholeFile;
+		var shown = _changes.ShownDiff!;
+		var fold = shown.Rows.ToList().FindIndex(row => row.Kind == DiffRowKind.Fold);
+
+		remarks.CanRemarkOn(shown, fold).ShouldBeFalse();
+		(await remarks.AddRemarkAsync(shown, fold, "fold?", CancellationToken.None)).ShouldBeNull();
+	}
+
+	[Test]
+	public async Task A_thread_on_a_folded_removed_line_has_no_row_and_shows_in_place_once_expanded()
+	{
+		var remarks = await OpenAsync();
+		await remarks.AddRemarkAsync(_changes!.ShownDiff!, 2, "why gone?", CancellationToken.None);
+
+		_changes.Mode = DiffViewMode.WholeFile;
+		await EventuallyAsync(() => remarks.ThreadsByRow?.ForDiff == _changes.ShownDiff);
+		remarks.ThreadsByRow!.ByRow.ShouldBeEmpty();
+		remarks.OpenThreads.ShouldHaveSingleItem();
+
+		_changes.ToggleFold(_changes.DiffRows.ToList().FindIndex(row => row.Kind == DiffRowKind.Fold));
+		await EventuallyAsync(() => remarks.ThreadsByRow?.ForDiff == _changes.ShownDiff && remarks.ThreadsByRow!.ByRow.Count == 1);
+		var row = remarks.ThreadsByRow!.ByRow.Single().Key;
+		(_changes.DiffRows[row].Kind, _changes.DiffRows[row].Text).ShouldBe((DiffRowKind.Removed, "old"));
+	}
+
+	[Test]
+	public async Task A_thread_made_in_diff_mode_sits_on_its_line_in_whole_file_mode()
+	{
+		var remarks = await OpenAsync();
+		await remarks.AddRemarkAsync(_changes!.ShownDiff!, 3, "why?", CancellationToken.None);
+
+		_changes.Mode = DiffViewMode.WholeFile;
+
+		await EventuallyAsync(() => remarks.ThreadsByRow?.ForDiff == _changes.ShownDiff && remarks.ThreadsByRow!.ByRow.Count == 1);
+		var row = remarks.ThreadsByRow!.ByRow.Single().Key;
+		_changes.DiffRows[row].NewNumber.ShouldBe("2");
+	}
+
+	// Line 2 of the text changed from "old 2"; one hunk around it.
+	private static FileDiff ChangedSecondLine(string text)
+	{
+		var lines = text.TrimEnd('\n').Split('\n');
+		return new(null, [new DiffHunk(1, 3, 1, 3, string.Empty,
+		[
+			new DiffLine(DiffLineKind.Context, 1, 1, lines[0]),
+			new DiffLine(DiffLineKind.Removed, 2, null, "old 2"),
+			new DiffLine(DiffLineKind.Added, null, 2, lines[1]),
+			new DiffLine(DiffLineKind.Context, 3, 3, lines[2])
+		])]);
 	}
 
 	[Test]

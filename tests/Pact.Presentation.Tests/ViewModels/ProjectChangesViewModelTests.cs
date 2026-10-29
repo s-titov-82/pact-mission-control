@@ -441,6 +441,234 @@ public sealed class ProjectChangesViewModelTests
 		_reader.ChangeReads.ShouldBe(2);
 	}
 
+	[Test]
+	public async Task Whole_file_shows_every_new_line_with_added_lines_marked_and_removed_runs_folded()
+	{
+		using var changes = await WholeFileAsync("a");
+
+		changes.DiffRows.Select(row => (row.Kind, row.NewNumber, row.Text)).ShouldBe([
+			(DiffRowKind.Context, "1", "a"),
+			(DiffRowKind.Fold, "", "▸ 2 lines removed"),
+			(DiffRowKind.Added, "2", "B"),
+			(DiffRowKind.Context, "3", "c"),
+			(DiffRowKind.Context, "4", "d")]);
+		var run = changes.ShownDiff.ShouldNotBeNull().RemovedRuns.ShouldHaveSingleItem();
+		(run.BeforeNewLine, run.OldStart).ShouldBe((2, 2));
+		run.Lines.ShouldBe(["b", "x"]);
+	}
+
+	[Test]
+	public async Task Toggling_a_fold_shows_the_old_lines_as_removed_rows_with_old_numbers_and_folds_them_back()
+	{
+		using var changes = await WholeFileAsync("a");
+
+		changes.ToggleFold(1);
+		changes.DiffRows.Skip(1).Take(3).Select(row => (row.Kind, row.OldNumber, row.Text)).ShouldBe([
+			(DiffRowKind.Fold, "", "▾ 2 lines removed"),
+			(DiffRowKind.Removed, "2", "b"),
+			(DiffRowKind.Removed, "3", "x")]);
+
+		changes.ToggleFold(1);
+		changes.DiffRows.Count.ShouldBe(5);
+		changes.DiffRows[1].Text.ShouldBe("▸ 2 lines removed");
+	}
+
+	[Test]
+	public async Task The_mode_stays_when_another_file_is_selected()
+	{
+		_reader.Current = Changes("a", "b");
+		Edit("b");
+		using var changes = await WholeFileAsync("a", list: false);
+
+		await changes.SelectFileAsync(changes.Files[1], CancellationToken.None);
+
+		changes.Mode.ShouldBe(DiffViewMode.WholeFile);
+		changes.DiffRows.Count.ShouldBe(5);
+	}
+
+	[Test]
+	public async Task A_deleted_file_shows_its_old_text_as_removed_rows_without_a_fold()
+	{
+		_reader.Current = new("head", "main", [new GitFileEntry("a", null, GitChangeKind.Deleted)], 0, 0);
+		_reader.Diffs["a"] = new FileDiff(null, [new DiffHunk(1, 2, 0, 0, string.Empty,
+			[new DiffLine(DiffLineKind.Removed, 1, null, "one"), new DiffLine(DiffLineKind.Removed, 2, null, "two")])]);
+		using var changes = Create();
+		using var observation = changes.Observe();
+		changes.Mode = DiffViewMode.WholeFile;
+
+		await changes.SelectFileAsync(changes.Files[0], CancellationToken.None);
+
+		changes.EffectiveMode.ShouldBe(DiffViewMode.WholeFile);
+		changes.DiffRows.Select(row => (row.Kind, row.OldNumber, row.Text)).ShouldBe([
+			(DiffRowKind.Removed, "1", "one"), (DiffRowKind.Removed, "2", "two")]);
+	}
+
+	[Test]
+	public async Task A_placeholder_file_cannot_show_whole_and_keeps_the_placeholder()
+	{
+		_reader.Current = Changes("a");
+		_reader.Diffs["a"] = FileDiff.Binary;
+		using var changes = Create();
+		using var observation = changes.Observe();
+		changes.Mode = DiffViewMode.WholeFile;
+
+		await changes.SelectFileAsync(changes.Files[0], CancellationToken.None);
+
+		changes.CanShowWholeFile.ShouldBeFalse();
+		changes.EffectiveMode.ShouldBe(DiffViewMode.Diff);
+		changes.DiffPlaceholder.ShouldNotBeNull();
+		changes.DiffRows.ShouldBeEmpty();
+	}
+
+	[Test]
+	public async Task Rendered_is_offered_for_markdown_only()
+	{
+		_reader.Current = Changes("x.md", "x.cs");
+		Edit("x.md");
+		Edit("x.cs");
+		using var changes = Create();
+		using var observation = changes.Observe();
+
+		await changes.SelectFileAsync(changes.Files[0], CancellationToken.None);
+		changes.CanRender.ShouldBeTrue();
+		await changes.SelectFileAsync(changes.Files[1], CancellationToken.None);
+		changes.CanRender.ShouldBeFalse();
+		changes.CanShowWholeFile.ShouldBeTrue();
+	}
+
+	[Test]
+	public async Task Text_read_inconsistently_falls_back_to_hunk_rows_in_whole_file_mode()
+	{
+		_reader.Current = Changes("a");
+		Edit("a");
+		_reader.Texts["a"] = new(["a\nB\nc\nd\n", "a\nB\nc\nd\nmore\n"]);
+		using var changes = Create();
+		using var observation = changes.Observe();
+		changes.Mode = DiffViewMode.WholeFile;
+
+		await changes.SelectFileAsync(changes.Files[0], CancellationToken.None);
+
+		changes.EffectiveMode.ShouldBe(DiffViewMode.Diff);
+		changes.DiffRows[0].Kind.ShouldBe(DiffRowKind.HunkHeader);
+	}
+
+	[Test]
+	public async Task A_refresh_that_changed_nothing_keeps_the_whole_file_shown_diff_instance()
+	{
+		using var changes = await WholeFileAsync("a");
+		var shown = changes.ShownDiff;
+
+		_time.Advance(ProjectChangesViewModel.ReconcileInterval);
+
+		changes.ShownDiff.ShouldBeSameAs(shown);
+	}
+
+	[Test]
+	public async Task An_expanded_fold_stays_expanded_after_a_refresh()
+	{
+		using var changes = await WholeFileAsync("a");
+		changes.ToggleFold(1);
+
+		_reader.Texts["a"] = new(["a\nB\nc\nd2\n"]);
+		_reader.Diffs["a"] = EditDiff("d2");
+		_time.Advance(ProjectChangesViewModel.ReconcileInterval);
+
+		changes.DiffRows[1].Text.ShouldBe("▾ 2 lines removed");
+		changes.DiffRows[^1].Text.ShouldBe("d2");
+	}
+
+	[Test]
+	public async Task Whole_file_rows_are_not_cut_at_the_shown_line_limit()
+	{
+		var lines = Enumerable.Range(0, ProjectChangesViewModel.MaxShownLines + 500)
+			.Select(index => index.ToString(System.Globalization.CultureInfo.InvariantCulture))
+			.ToArray();
+		_reader.Current = Changes("a");
+		_reader.Diffs["a"] = Diff(lines);
+		_reader.Texts["a"] = new([string.Join('\n', lines)]);
+		using var changes = Create();
+		using var observation = changes.Observe();
+		changes.Mode = DiffViewMode.WholeFile;
+
+		await changes.SelectFileAsync(changes.Files[0], CancellationToken.None);
+
+		changes.DiffRows.Count.ShouldBe(lines.Length);
+		changes.HiddenLineCount.ShouldBe(0);
+	}
+
+	[Test]
+	public async Task Rendered_falls_back_to_whole_file_for_a_deleted_markdown_file_and_for_a_non_markdown_file()
+	{
+		_reader.Current = new("head", "main",
+			[new GitFileEntry("gone.md", null, GitChangeKind.Deleted), new GitFileEntry("x.cs", null, GitChangeKind.Modified)], 0, 0);
+		_reader.Diffs["gone.md"] = new FileDiff(null, [new DiffHunk(1, 1, 0, 0, string.Empty, [new DiffLine(DiffLineKind.Removed, 1, null, "old")])]);
+		Edit("x.cs");
+		using var changes = Create();
+		using var observation = changes.Observe();
+		changes.Mode = DiffViewMode.Rendered;
+
+		await changes.SelectFileAsync(changes.Files[0], CancellationToken.None);
+		changes.EffectiveMode.ShouldBe(DiffViewMode.WholeFile);
+		await changes.SelectFileAsync(changes.Files[1], CancellationToken.None);
+		changes.EffectiveMode.ShouldBe(DiffViewMode.WholeFile);
+		changes.Mode.ShouldBe(DiffViewMode.Rendered);
+	}
+
+	[Test]
+	public async Task Rendered_falls_back_to_hunk_rows_when_a_refresh_reads_the_text_inconsistently()
+	{
+		_reader.Current = Changes("x.md");
+		Edit("x.md");
+		using var changes = Create();
+		using var observation = changes.Observe();
+		changes.Mode = DiffViewMode.Rendered;
+		await changes.SelectFileAsync(changes.Files[0], CancellationToken.None);
+		changes.EffectiveMode.ShouldBe(DiffViewMode.Rendered);
+
+		_reader.Texts["x.md"] = new(["a\nB\nc\nd\n", "moving\n", "a\nB\nc\nd\n"]);
+		_time.Advance(ProjectChangesViewModel.ReconcileInterval);
+		changes.EffectiveMode.ShouldBe(DiffViewMode.Diff);
+
+		_time.Advance(ProjectChangesViewModel.ReconcileInterval);
+		changes.EffectiveMode.ShouldBe(DiffViewMode.Rendered);
+	}
+
+	// Old a,b,x,c,d; new a,B,c,d: b and x removed above B.
+	private void Edit(string path, string last = "d")
+	{
+		_reader.Diffs[path] = EditDiff(last);
+		_reader.Texts[path] = new([$"a\nB\nc\n{last}\n"]);
+	}
+
+	private static FileDiff EditDiff(string last) =>
+		new(null,
+		[
+			new DiffHunk(1, 5, 1, 4, string.Empty,
+			[
+				new DiffLine(DiffLineKind.Context, 1, 1, "a"),
+				new DiffLine(DiffLineKind.Removed, 2, null, "b"),
+				new DiffLine(DiffLineKind.Removed, 3, null, "x"),
+				new DiffLine(DiffLineKind.Added, null, 2, "B"),
+				new DiffLine(DiffLineKind.Context, 4, 3, "c"),
+				new DiffLine(DiffLineKind.Context, 5, 4, last)
+			])
+		]);
+
+	private async Task<ProjectChangesViewModel> WholeFileAsync(string path, bool list = true)
+	{
+		if (list)
+		{
+			_reader.Current = Changes(path);
+		}
+
+		Edit(path);
+		var changes = Create();
+		changes.Observe();
+		changes.Mode = DiffViewMode.WholeFile;
+		await changes.SelectFileAsync(changes.Files[0], CancellationToken.None);
+		return changes;
+	}
+
 	private ProjectChangesViewModel Create() => new("C:\\repo", _reader, _time, action => action());
 
 	private static WorkingTreeChanges Changes(params string[] paths) =>

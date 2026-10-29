@@ -105,7 +105,7 @@ public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposabl
 	public bool CanRemarkOn(ShownDiff shown, int row)
 	{
 		ArgumentNullException.ThrowIfNull(shown);
-		if (!ReferenceEquals(shown, _changes.ShownDiff) || row < 0 || row >= shown.Rows.Count)
+		if (!IsOfShownFile(shown) || row < 0 || row >= shown.Rows.Count)
 		{
 			return false;
 		}
@@ -130,13 +130,14 @@ public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposabl
 			return null;
 		}
 
-		if (!ReferenceEquals(shown, _changes.ShownDiff))
+		// A remark begun before its file was edited anchors to the text seen when typing began.
+		if (!IsOfShownFile(shown))
 		{
 			SetStatus("The diff changed; try again.");
 			return null;
 		}
 
-		if (row < 0 || row >= shown.Rows.Count || shown.Rows[row].Kind == DiffRowKind.HunkHeader)
+		if (row < 0 || row >= shown.Rows.Count || shown.Rows[row].Kind is DiffRowKind.HunkHeader or DiffRowKind.Fold)
 		{
 			return null;
 		}
@@ -403,6 +404,50 @@ public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposabl
 		return view;
 	}
 
+	/// <summary>
+	/// The row of <paramref name="to"/> showing the line that <paramref name="row"/> of
+	/// <paramref name="from"/> showed, for an editor that follows its line through edits of the file;
+	/// null when the line did not survive unchanged.
+	/// </summary>
+	public int? MapRow(ShownDiff from, int row, ShownDiff to)
+	{
+		ArgumentNullException.ThrowIfNull(from);
+		ArgumentNullException.ThrowIfNull(to);
+		if (!IsOfShownFile(from) || !IsOfShownFile(to) || row < 0 || row >= from.Rows.Count)
+		{
+			return null;
+		}
+
+		var source = from.Rows[row];
+		if (source.Kind == DiffRowKind.Removed)
+		{
+			return string.Equals(from.HeadCommit, to.HeadCommit, StringComparison.Ordinal)
+				? RowOf(to, RemarkSide.Old, int.Parse(source.OldNumber, CultureInfo.InvariantCulture))
+				: null;
+		}
+
+		if (source.Kind is not (DiffRowKind.Added or DiffRowKind.Context) || from.NewLines is not { } before
+			|| to.NewLines is not { } after)
+		{
+			return null;
+		}
+
+		var index = int.Parse(source.NewNumber, CultureInfo.InvariantCulture) - 1;
+		RemarkAnchor anchor = new(
+			from.Path,
+			RemarkSide.New,
+			index + 1,
+			source.Text,
+			before.Skip(Math.Max(0, index - ContextLines)).Take(Math.Min(index, ContextLines)).ToArray(),
+			before.Skip(index + 1).Take(ContextLines).ToArray(),
+			from.HeadCommit,
+			null);
+		return RemarkLocator.LocateNew(anchor, before, after) is { } line ? RowOf(to, RemarkSide.New, line) : null;
+	}
+
+	private bool IsOfShownFile(ShownDiff shown) =>
+		_changes.ShownDiff is { } current && string.Equals(shown.Path, current.Path, StringComparison.Ordinal);
+
 	private static int? RowOf(ShownDiff shown, RemarkSide side, int line)
 	{
 		var number = line.ToString(CultureInfo.InvariantCulture);
@@ -427,7 +472,7 @@ public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposabl
 		List<string> lines = [];
 		for (var index = row + step; index >= 0 && index < rows.Count && lines.Count < ContextLines; index += step)
 		{
-			if (rows[index].Kind == DiffRowKind.HunkHeader)
+			if (rows[index].Kind is DiffRowKind.HunkHeader or DiffRowKind.Fold)
 			{
 				break;
 			}
