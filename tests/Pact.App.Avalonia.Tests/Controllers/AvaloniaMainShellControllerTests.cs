@@ -487,6 +487,140 @@ public sealed class AvaloniaMainShellControllerTests
 		text.ShouldContain("C1 · a.cs, removed line 1 of HEAD head · why?");
 	}
 
+	[Test]
+	public async Task Agent_files_follow_the_shown_session()
+	{
+		await using ControllerFixture fixture = new(gitRepository: true);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var workspace = fixture.ViewModel.Workspaces.Single();
+		var token = TestContext.CurrentContext.CancellationToken;
+		await fixture.Controller.SelectSessionAsync(fixture.ViewModel.Sessions[0], startIfNeeded: true, cancellationToken: token);
+		var file = Path.Combine(Path.GetTempPath(), "agent-file.txt");
+
+		await fixture.ViewModel.AddSessionFileLinkAsync("session-2", new AgentFileLink(file, null, DateTimeOffset.UtcNow), token);
+
+		fixture.Controller.CurrentAgentFiles.ShouldNotBeNull().Items.ShouldBeEmpty();
+		await fixture.Controller.SelectSessionAsync(fixture.ViewModel.Sessions[1], startIfNeeded: true, cancellationToken: token);
+		fixture.Controller.CurrentAgentFiles.ShouldNotBeNull().Items.ShouldHaveSingleItem().Path.ShouldBe(file);
+		await fixture.Controller.SelectItemAsync(workspace, token);
+		fixture.Controller.CurrentAgentFiles.ShouldBeNull();
+	}
+
+	[Test]
+	public async Task Opening_an_agent_file_shows_its_document()
+	{
+		await using var fixture = await AgentFileFixtureAsync();
+		var item = new AgentFileItem(@"C:\x\a.txt", "a.txt", "x", @"C:\x\a.txt");
+
+		await fixture.Controller.OpenAgentFileAsync(item, CancellationToken.None);
+
+		fixture.Controller.ShownAgentFile.ShouldNotBeNull().FullPath.ShouldBe(@"C:\x\a.txt");
+		fixture.Controller.ShownAgentFileProjectId.ShouldBe("project-1");
+	}
+
+	[Test]
+	public async Task Changing_the_shown_surface_closes_the_agent_file()
+	{
+		await using var fixture = await AgentFileFixtureAsync();
+		await fixture.Controller.OpenAgentFileAsync(new AgentFileItem(@"C:\x\a.txt", "a.txt", "x", ""), CancellationToken.None);
+
+		await fixture.Controller.SelectSessionAsync(
+			fixture.ViewModel.Sessions[1],
+			startIfNeeded: true,
+			cancellationToken: TestContext.CurrentContext.CancellationToken);
+
+		fixture.Controller.ShownAgentFile.ShouldBeNull();
+	}
+
+	[Test]
+	public async Task A_slower_earlier_open_does_not_replace_a_later_one()
+	{
+		await using var fixture = await AgentFileFixtureAsync();
+		var loads = GateLoads(fixture.Controller);
+
+		var first = fixture.Controller.OpenAgentFileAsync(new AgentFileItem(@"C:\x\a.txt", "a.txt", "x", ""), CancellationToken.None);
+		var second = fixture.Controller.OpenAgentFileAsync(new AgentFileItem(@"C:\x\b.txt", "b.txt", "x", ""), CancellationToken.None);
+		loads[@"C:\x\b.txt"].SetResult(Document(@"C:\x\b.txt"));
+		await second;
+		loads[@"C:\x\a.txt"].SetResult(Document(@"C:\x\a.txt"));
+		await first;
+
+		fixture.Controller.ShownAgentFile.ShouldNotBeNull().FullPath.ShouldBe(@"C:\x\b.txt");
+	}
+
+	[Test]
+	public async Task A_load_finishing_after_close_does_not_reopen_the_panel()
+	{
+		await using var fixture = await AgentFileFixtureAsync();
+		var loads = GateLoads(fixture.Controller);
+
+		var open = fixture.Controller.OpenAgentFileAsync(new AgentFileItem(@"C:\x\a.txt", "a.txt", "x", ""), CancellationToken.None);
+		fixture.Controller.CloseAgentFile();
+		loads[@"C:\x\a.txt"].SetResult(Document(@"C:\x\a.txt"));
+		await open;
+
+		fixture.Controller.ShownAgentFile.ShouldBeNull();
+	}
+
+	[Test]
+	public async Task A_load_finishing_after_switching_away_and_back_does_not_open_the_panel()
+	{
+		await using var fixture = await AgentFileFixtureAsync();
+		var loads = GateLoads(fixture.Controller);
+		var token = TestContext.CurrentContext.CancellationToken;
+
+		var open = fixture.Controller.OpenAgentFileAsync(new AgentFileItem(@"C:\x\a.txt", "a.txt", "x", ""), CancellationToken.None);
+		await fixture.Controller.SelectSessionAsync(fixture.ViewModel.Sessions[1], startIfNeeded: true, cancellationToken: token);
+		await fixture.Controller.SelectSessionAsync(fixture.ViewModel.Sessions[0], startIfNeeded: true, cancellationToken: token);
+		loads[@"C:\x\a.txt"].SetResult(Document(@"C:\x\a.txt"));
+		await open;
+
+		fixture.Controller.ShownAgentFile.ShouldBeNull();
+	}
+
+	[Test]
+	public async Task Removing_a_link_updates_the_list_and_leaves_an_open_panel_open()
+	{
+		await using var fixture = await AgentFileFixtureAsync();
+		var token = TestContext.CurrentContext.CancellationToken;
+		var file = Path.Combine(Path.GetTempPath(), "agent-file.txt");
+		await fixture.ViewModel.AddSessionFileLinkAsync("session-1", new AgentFileLink(file, null, DateTimeOffset.UtcNow), token);
+		var files = fixture.Controller.CurrentAgentFiles.ShouldNotBeNull();
+		await fixture.Controller.OpenAgentFileAsync(files.Items.Single(), token);
+
+		await files.RemoveAsync(files.Items.Single(), token);
+
+		files.Items.ShouldBeEmpty();
+		fixture.Controller.ShownAgentFile.ShouldNotBeNull();
+	}
+
+	private static async Task<ControllerFixture> AgentFileFixtureAsync()
+	{
+		ControllerFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		await fixture.Controller.SelectSessionAsync(
+			fixture.ViewModel.Sessions[0],
+			startIfNeeded: true,
+			cancellationToken: TestContext.CurrentContext.CancellationToken);
+		fixture.Controller.AgentFileLoader = (path, root, _) => Task.FromResult(Document(path));
+		return fixture;
+	}
+
+	private static Dictionary<string, TaskCompletionSource<AgentFileDocument>> GateLoads(AvaloniaMainShellController controller)
+	{
+		Dictionary<string, TaskCompletionSource<AgentFileDocument>> loads = new(StringComparer.Ordinal);
+		controller.AgentFileLoader = (path, _, _) =>
+		{
+			TaskCompletionSource<AgentFileDocument> load = new(TaskCreationOptions.RunContinuationsAsynchronously);
+			loads[path] = load;
+			return load.Task;
+		};
+		return loads;
+	}
+
+	private static AgentFileDocument Document(string path) =>
+		new(path, Path.GetFileName(path), "text", null, IsMarkdown: false, null, null);
+
 	private static async Task WaitUntilAsync(Func<bool> condition)
 	{
 		for (var attempt = 0; attempt < 200 && !condition(); attempt++)

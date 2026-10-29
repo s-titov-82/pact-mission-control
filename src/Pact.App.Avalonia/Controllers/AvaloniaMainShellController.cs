@@ -2062,6 +2062,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		finally
 		{
 			DisposeProjectScreens();
+			DisposeAgentFiles();
 			RemarkBooks.Dispose();
 			_processMetricsMonitor.MetricsChanged -= OnProcessMetricsChanged;
 			_processMetricsMonitor.Dispose();
@@ -3006,6 +3007,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		RaiseIfChanged((previous as PresentedSurface.Project)?.Screen, CurrentProjectScreen, nameof(CurrentProjectScreen));
 		ViewModel.RefreshCurrentProjectState(CurrentProjectScreen?.Workspace);
 		UpdateCurrentChanges();
+		UpdateCurrentAgentFiles(previous, next);
 	}
 
 	private void RaiseIfChanged(bool previous, bool current, string propertyName)
