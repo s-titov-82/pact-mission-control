@@ -348,6 +348,13 @@ public sealed class OrchestratorCompositionTests
 		fixture.OrchestratorBackend.CompleteOutput();
 		await fixture.WaitForBackendCountAsync(3);
 
+		// The new backend exists before the restart that made it has finished starting it.
+		var deadline = DateTimeOffset.UtcNow.AddSeconds(5);
+		while (!fixture.Controller.IsOrchestratorRunning && DateTimeOffset.UtcNow < deadline)
+		{
+			await Task.Delay(10);
+		}
+
 		fixture.Controller.IsOrchestratorRunning.ShouldBeTrue();
 	}
 
