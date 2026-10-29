@@ -18,6 +18,8 @@ internal sealed class TemporaryDirectory : IDisposable, IAsyncDisposable
 		return new TemporaryDirectory(path);
 	}
 
+	// Waited for on the caller's thread, so the retries below must not resume on its context: on a UI
+	// thread they would wait for the very thread this blocks.
 	public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
 
 	public async ValueTask DisposeAsync()
@@ -36,12 +38,12 @@ internal sealed class TemporaryDirectory : IDisposable, IAsyncDisposable
 			}
 			catch (IOException) when (attempt < 2)
 			{
-				await Task.Delay(TimeSpan.FromMilliseconds(50));
+				await Task.Delay(TimeSpan.FromMilliseconds(50)).ConfigureAwait(false);
 			}
 			catch (UnauthorizedAccessException) when (attempt < 2)
 			{
 				ClearReadOnlyAttributes();
-				await Task.Delay(TimeSpan.FromMilliseconds(50));
+				await Task.Delay(TimeSpan.FromMilliseconds(50)).ConfigureAwait(false);
 			}
 		}
 	}
