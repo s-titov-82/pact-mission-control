@@ -4,7 +4,9 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Headless.NUnit;
 using Avalonia.Input;
+using Avalonia.Headless;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using Markdown.Avalonia.Full;
 using Pact.App.Avalonia.Views;
 using Pact.App.Avalonia.Views.Editing;
@@ -133,6 +135,25 @@ public sealed class AgentFilePanelHeadlessTests
 		});
 
 		requests.ShouldBe(2);
+	}
+
+	[AvaloniaTest]
+	public void Escape_right_after_opening_from_a_focused_button_closes()
+	{
+		using var host = new PanelHost();
+		Button opener = new() { Content = "open" };
+		host.Pane.Children.Add(opener);
+		host.Window.UpdateLayout();
+		opener.Focus();
+		var requests = 0;
+		host.Panel.CloseRequested += (_, _) => requests++;
+
+		host.Panel.Show(Document(@"C:\x\a.txt", "a"), host.Pane);
+		Dispatcher.UIThread.RunJobs();
+		host.Window.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
+		Dispatcher.UIThread.RunJobs();
+
+		requests.ShouldBe(1);
 	}
 
 	[AvaloniaTest]

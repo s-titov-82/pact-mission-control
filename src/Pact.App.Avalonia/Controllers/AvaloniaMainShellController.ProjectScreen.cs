@@ -295,6 +295,7 @@ internal sealed partial class AvaloniaMainShellController
 
 		DropProject(workspace);
 		UnwatchWorkspace(workspace);
+		ReleaseAgentFiles(workspace);
 	}
 
 	// Disposes the project's change list and forgets its screen; the current list lets go first.

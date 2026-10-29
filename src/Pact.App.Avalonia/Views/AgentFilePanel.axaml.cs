@@ -79,6 +79,8 @@ internal sealed partial class AgentFilePanel : UserControl
 
 		Place();
 		FilePopup.IsOpen = true;
+		// The click that opened the panel left focus in the right column; Esc must reach the panel.
+		Dispatcher.UIThread.Post(() => PanelBorder.Focus(), DispatcherPriority.Input);
 	}
 
 	/// <summary>Closes the panel.</summary>

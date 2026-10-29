@@ -91,6 +91,26 @@ internal sealed partial class AvaloniaMainShellController
 		OnPropertyChanged(nameof(CurrentAgentFiles));
 	}
 
+	// A paused or closed project keeps showing its last terminal, so the panel and the list of its
+	// session are let go here rather than by a change of surface; loads still running are dropped.
+	private void ReleaseAgentFiles(WorkspaceViewModel workspace)
+	{
+		var ownsList = CurrentAgentFiles is { } files && workspace.Sessions.Contains(files.Session);
+		if (ownsList || string.Equals(ShownAgentFileProjectId, workspace.Id, StringComparison.Ordinal))
+		{
+			CloseAgentFile();
+		}
+
+		if (!ownsList)
+		{
+			return;
+		}
+
+		CurrentAgentFiles!.Dispose();
+		CurrentAgentFiles = null;
+		OnPropertyChanged(nameof(CurrentAgentFiles));
+	}
+
 	private void DisposeAgentFiles()
 	{
 		_agentFileGeneration++;

@@ -594,9 +594,38 @@ public sealed class AvaloniaMainShellControllerTests
 		fixture.Controller.ShownAgentFile.ShouldNotBeNull();
 	}
 
-	private static async Task<ControllerFixture> AgentFileFixtureAsync()
+	[Test]
+	public async Task Pausing_the_project_closes_an_open_agent_file_and_its_list()
 	{
-		ControllerFixture fixture = new();
+		await using var fixture = await AgentFileFixtureAsync(withSecondSession: false);
+		var token = TestContext.CurrentContext.CancellationToken;
+		await fixture.Controller.OpenAgentFileAsync(new AgentFileItem(@"C:\x\a.txt", "a.txt", "x", ""), token);
+		fixture.Controller.ShownAgentFile.ShouldNotBeNull();
+
+		await fixture.Controller.PauseWorkspaceAsync(fixture.ViewModel.Workspaces.Single(), token);
+
+		fixture.Controller.ShownAgentFile.ShouldBeNull();
+		fixture.Controller.CurrentAgentFiles.ShouldBeNull();
+	}
+
+	[Test]
+	public async Task A_load_finishing_after_the_project_paused_does_not_open_the_panel()
+	{
+		await using var fixture = await AgentFileFixtureAsync(withSecondSession: false);
+		var loads = GateLoads(fixture.Controller);
+		var token = TestContext.CurrentContext.CancellationToken;
+
+		var open = fixture.Controller.OpenAgentFileAsync(new AgentFileItem(@"C:\x\a.txt", "a.txt", "x", ""), token);
+		await fixture.Controller.PauseWorkspaceAsync(fixture.ViewModel.Workspaces.Single(), token);
+		loads[@"C:\x\a.txt"].SetResult(Document(@"C:\x\a.txt"));
+		await open;
+
+		fixture.Controller.ShownAgentFile.ShouldBeNull();
+	}
+
+	private static async Task<ControllerFixture> AgentFileFixtureAsync(bool withSecondSession = true)
+	{
+		ControllerFixture fixture = new(withSecondSession: withSecondSession);
 		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
 		await fixture.Controller.SelectSessionAsync(
 			fixture.ViewModel.Sessions[0],
