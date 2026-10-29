@@ -11,7 +11,7 @@ public sealed class DocsAndNotesWorkspaceViewModelTests : IDisposable
 	private string _root => _temporaryDirectory.Path;
 
 	[Test]
-	public async Task Refresh_builds_common_and_docs_trees()
+	public async Task Refresh_builds_one_tree_of_every_project_markdown_file()
 	{
 		Write("AGENTS.md", "agents");
 		Write("src/Service/README.md", "service");
@@ -22,9 +22,39 @@ public sealed class DocsAndNotesWorkspaceViewModelTests : IDisposable
 
 		workspace.SelectedSection.ShouldBe(DocsAndNotesSection.Notes);
 		workspace.ShowsDocumentTree.ShouldBeFalse();
-		workspace.CommonTree.Select(node => node.Title).ShouldBe(["src", "AGENTS.md"]);
-		workspace.DocsTree.Select(node => node.Title).ShouldBe(["superpowers"]);
+		workspace.DocsTree.Select(node => node.Title).ShouldBe(["docs", "src", "AGENTS.md"]);
 		workspace.ActiveDocument.ShouldBeOfType<ProjectNoteDocument>();
+	}
+
+	[Test]
+	public async Task The_docs_tree_shows_folders_before_files_and_selects_the_root_readme()
+	{
+		Write("README.md", "# Readme");
+		Write("AGENTS.md", "# Agents");
+		Write("src/x.md", "# X");
+		Write("docs/guide.md", "# Guide");
+		var workspace = CreateWorkspace();
+		await workspace.RefreshAsync(CancellationToken.None);
+
+		await workspace.SelectSectionAsync(DocsAndNotesSection.Docs, CancellationToken.None);
+
+		workspace.DocsTree.Select(node => node.Title).ShouldBe(["docs", "src", "AGENTS.md", "README.md"]);
+		workspace.SelectedNode.ShouldNotBeNull().RelativePath.ShouldBe("README.md");
+		(workspace.ActiveDocument?.Text).ShouldBe("# Readme");
+	}
+
+	[Test]
+	public async Task Opening_a_root_document_selects_it_in_the_docs_tree()
+	{
+		Write("README.md", "# Readme");
+		Write("AGENTS.md", "# Agents");
+		var workspace = CreateWorkspace();
+		await workspace.RefreshAsync(CancellationToken.None);
+
+		(await workspace.OpenDocumentAsync("AGENTS.md", CancellationToken.None)).ShouldBeTrue();
+
+		workspace.SelectedSection.ShouldBe(DocsAndNotesSection.Docs);
+		workspace.SelectedNode.ShouldNotBeNull().RelativePath.ShouldBe("AGENTS.md");
 	}
 
 	[Test]
@@ -85,7 +115,7 @@ public sealed class DocsAndNotesWorkspaceViewModelTests : IDisposable
 
 		(await workspace.OpenDocumentAsync("notes/idea.md", CancellationToken.None)).ShouldBeTrue();
 
-		workspace.SelectedSection.ShouldBe(DocsAndNotesSection.Common);
+		workspace.SelectedSection.ShouldBe(DocsAndNotesSection.Docs);
 		workspace.SelectedNode.ShouldNotBeNull().RelativePath.ShouldBe("notes/idea.md");
 		(workspace.ActiveDocument?.Text).ShouldBe("# Idea");
 	}
@@ -100,7 +130,7 @@ public sealed class DocsAndNotesWorkspaceViewModelTests : IDisposable
 		(await workspace.OpenDocumentAsync(".pact/reviews/2026-10-24-1422-code-review-bbbb.md", CancellationToken.None))
 			.ShouldBeFalse();
 
-		workspace.CommonTree.ShouldBeEmpty();
+		workspace.DocsTree.ShouldBeEmpty();
 		workspace.DocsTree.ShouldBeEmpty();
 	}
 
@@ -135,7 +165,7 @@ public sealed class DocsAndNotesWorkspaceViewModelTests : IDisposable
 		var workspace = CreateWorkspace();
 		await workspace.RefreshAsync(CancellationToken.None);
 
-		await workspace.SelectSectionAsync(DocsAndNotesSection.Common, CancellationToken.None);
+		await workspace.SelectSectionAsync(DocsAndNotesSection.Docs, CancellationToken.None);
 
 		workspace.ShowsDocumentTree.ShouldBeTrue();
 		(workspace.ActiveDocument?.Text).ShouldBe("# Readme");
@@ -149,13 +179,13 @@ public sealed class DocsAndNotesWorkspaceViewModelTests : IDisposable
 		var workspace = CreateWorkspace();
 		await workspace.RefreshAsync(CancellationToken.None);
 
-		await workspace.SelectSectionAsync(DocsAndNotesSection.Common, CancellationToken.None);
+		await workspace.SelectSectionAsync(DocsAndNotesSection.Docs, CancellationToken.None);
 
 		workspace.ActiveDocument.ShouldBeNull();
 	}
 
 	[Test]
-	public async Task Docs_opens_nothing_on_first_activation()
+	public async Task Without_a_root_readme_nothing_is_selected()
 	{
 		Write("docs/manual-tests/checklist.md", "# Checklist");
 		var workspace = CreateWorkspace();
@@ -165,29 +195,29 @@ public sealed class DocsAndNotesWorkspaceViewModelTests : IDisposable
 
 		workspace.ShowsDocumentTree.ShouldBeTrue();
 		workspace.ActiveDocument.ShouldBeNull();
-		workspace.DocsTree.Select(node => node.Title).ShouldBe(["manual-tests"]);
+		workspace.DocsTree.Select(node => node.Title).ShouldBe(["docs"]);
 	}
 
 	[Test]
-	public async Task Selecting_a_document_expands_its_folders_and_is_remembered_per_section()
+	public async Task Selecting_a_document_expands_its_folders_and_is_remembered_across_tabs()
 	{
 		Write("README.md", "# Readme");
 		Write("docs/manual-tests/checklist.md", "# Checklist");
 		var workspace = CreateWorkspace();
 		await workspace.RefreshAsync(CancellationToken.None);
 		await workspace.SelectSectionAsync(DocsAndNotesSection.Docs, CancellationToken.None);
-		var folder = workspace.DocsTree.Single();
-		var checklist = folder.Children.Single();
+		var folder = workspace.DocsTree.First(node => node.Title == "docs");
+		var tests = folder.Children.Single();
+		var checklist = tests.Children.Single();
 
 		await workspace.SelectDocumentAsync(checklist, CancellationToken.None);
 
 		(workspace.ActiveDocument?.Text).ShouldBe("# Checklist");
 		folder.IsExpanded.ShouldBeTrue();
+		tests.IsExpanded.ShouldBeTrue();
 		workspace.SelectedNode.ShouldBeSameAs(checklist);
 
-		await workspace.SelectSectionAsync(DocsAndNotesSection.Common, CancellationToken.None);
-		(workspace.ActiveDocument?.Text).ShouldBe("# Readme");
-
+		await workspace.SelectSectionAsync(DocsAndNotesSection.Notes, CancellationToken.None);
 		await workspace.SelectSectionAsync(DocsAndNotesSection.Docs, CancellationToken.None);
 		(workspace.ActiveDocument?.Text).ShouldBe("# Checklist");
 	}
@@ -205,10 +235,10 @@ public sealed class DocsAndNotesWorkspaceViewModelTests : IDisposable
 			store,
 			TimeSpan.FromHours(1));
 		await workspace.RefreshAsync(CancellationToken.None);
-		await workspace.SelectSectionAsync(DocsAndNotesSection.Common, CancellationToken.None);
+		await workspace.SelectSectionAsync(DocsAndNotesSection.Docs, CancellationToken.None);
 		var readmeDocument = workspace.ActiveDocument.ShouldNotBeNull();
 		readmeDocument.SetText("# Edited");
-		var agents = workspace.CommonTree.Single(node => node.Title == "AGENTS.md");
+		var agents = workspace.DocsTree.Single(node => node.Title == "AGENTS.md");
 		TaskCompletionSource gate =
 			new(TaskCreationOptions.RunContinuationsAsynchronously);
 		store.BlockNextSave = gate;
@@ -239,11 +269,11 @@ public sealed class DocsAndNotesWorkspaceViewModelTests : IDisposable
 			store,
 			TimeSpan.FromHours(1));
 		await workspace.RefreshAsync(CancellationToken.None);
-		await workspace.SelectSectionAsync(DocsAndNotesSection.Common, CancellationToken.None);
+		await workspace.SelectSectionAsync(DocsAndNotesSection.Docs, CancellationToken.None);
 		var readmeDocument = workspace.ActiveDocument.ShouldNotBeNull();
 		readmeDocument.SetText("# Edited");
 		store.FailNextSave = true;
-		var agents = workspace.CommonTree.Single(node => node.Title == "AGENTS.md");
+		var agents = workspace.DocsTree.Single(node => node.Title == "AGENTS.md");
 
 		await Should.ThrowAsync<IOException>(
 			() => workspace.SelectDocumentAsync(agents, CancellationToken.None));
@@ -255,21 +285,19 @@ public sealed class DocsAndNotesWorkspaceViewModelTests : IDisposable
 	}
 
 	[Test]
-	public async Task A_node_outside_the_visible_tree_is_ignored()
+	public async Task A_node_selected_while_notes_are_shown_is_ignored()
 	{
 		Write("README.md", "# Readme");
 		Write("docs/notes.md", "# Notes");
 		var workspace = CreateWorkspace();
 		await workspace.RefreshAsync(CancellationToken.None);
 		await workspace.SelectSectionAsync(DocsAndNotesSection.Docs, CancellationToken.None);
-		var docsNode = workspace.DocsTree.Single();
-		await workspace.SelectDocumentAsync(docsNode, CancellationToken.None);
-		await workspace.SelectSectionAsync(DocsAndNotesSection.Common, CancellationToken.None);
+		var docsNode = workspace.DocsTree.First(node => node.Title == "docs").Children.Single();
+		await workspace.SelectSectionAsync(DocsAndNotesSection.Notes, CancellationToken.None);
 
 		await workspace.SelectDocumentAsync(docsNode, CancellationToken.None);
 
-		(workspace.ActiveDocument?.Text).ShouldBe("# Readme");
-		workspace.SelectedNode.ShouldNotBeNull().Title.ShouldBe("README.md");
+		workspace.ActiveDocument.ShouldBeOfType<ProjectNoteDocument>();
 	}
 
 	[Test]
@@ -279,8 +307,8 @@ public sealed class DocsAndNotesWorkspaceViewModelTests : IDisposable
 		Write("src/details.md", "# Details");
 		var workspace = CreateWorkspace();
 		await workspace.RefreshAsync(CancellationToken.None);
-		await workspace.SelectSectionAsync(DocsAndNotesSection.Common, CancellationToken.None);
-		var staleNode = workspace.CommonTree.Single(node => node.IsFolder).Children.Single();
+		await workspace.SelectSectionAsync(DocsAndNotesSection.Docs, CancellationToken.None);
+		var staleNode = workspace.DocsTree.Single(node => node.IsFolder).Children.Single();
 		await workspace.RefreshAsync(CancellationToken.None);
 
 		await workspace.SelectDocumentAsync(staleNode, CancellationToken.None);
@@ -295,8 +323,8 @@ public sealed class DocsAndNotesWorkspaceViewModelTests : IDisposable
 		Write("src/Service/details.md", "# Details");
 		var workspace = CreateWorkspace();
 		await workspace.RefreshAsync(CancellationToken.None);
-		await workspace.SelectSectionAsync(DocsAndNotesSection.Common, CancellationToken.None);
-		var folder = workspace.CommonTree.Single(node => node.IsFolder);
+		await workspace.SelectSectionAsync(DocsAndNotesSection.Docs, CancellationToken.None);
+		var folder = workspace.DocsTree.Single(node => node.IsFolder);
 
 		await workspace.SelectDocumentAsync(folder, CancellationToken.None);
 
@@ -305,7 +333,7 @@ public sealed class DocsAndNotesWorkspaceViewModelTests : IDisposable
 		(workspace.ActiveDocument?.Text).ShouldBe("# Readme");
 
 		await workspace.SelectSectionAsync(DocsAndNotesSection.Notes, CancellationToken.None);
-		await workspace.SelectSectionAsync(DocsAndNotesSection.Common, CancellationToken.None);
+		await workspace.SelectSectionAsync(DocsAndNotesSection.Docs, CancellationToken.None);
 
 		(workspace.ActiveDocument?.Text).ShouldBe("# Readme");
 	}
@@ -317,9 +345,9 @@ public sealed class DocsAndNotesWorkspaceViewModelTests : IDisposable
 		Write("src/Service/details.md", "# Details");
 		var workspace = CreateWorkspace();
 		await workspace.RefreshAsync(CancellationToken.None);
-		await workspace.SelectSectionAsync(DocsAndNotesSection.Common, CancellationToken.None);
-		var folder = workspace.CommonTree.Single(node => node.IsFolder);
-		var readme = workspace.CommonTree.Single(node => !node.IsFolder);
+		await workspace.SelectSectionAsync(DocsAndNotesSection.Docs, CancellationToken.None);
+		var folder = workspace.DocsTree.Single(node => node.IsFolder);
+		var readme = workspace.DocsTree.Single(node => !node.IsFolder);
 
 		workspace.ToggleFolder(folder);
 		folder.IsExpanded.ShouldBeTrue();
@@ -339,8 +367,8 @@ public sealed class DocsAndNotesWorkspaceViewModelTests : IDisposable
 		Write("src/Service/details.md", "# Details");
 		var workspace = CreateWorkspace();
 		await workspace.RefreshAsync(CancellationToken.None);
-		await workspace.SelectSectionAsync(DocsAndNotesSection.Common, CancellationToken.None);
-		var details = workspace.CommonTree
+		await workspace.SelectSectionAsync(DocsAndNotesSection.Docs, CancellationToken.None);
+		var details = workspace.DocsTree
 			.Single(node => node.IsFolder).Children
 			.Single(node => node.IsFolder).Children
 			.Single();
@@ -350,7 +378,7 @@ public sealed class DocsAndNotesWorkspaceViewModelTests : IDisposable
 		await workspace.RefreshAsync(CancellationToken.None);
 
 		(workspace.ActiveDocument?.Text).ShouldBe("# Edited");
-		workspace.CommonTree.Single(node => node.IsFolder).IsExpanded.ShouldBeTrue();
+		workspace.DocsTree.Single(node => node.IsFolder).IsExpanded.ShouldBeTrue();
 	}
 
 	[Test]
@@ -382,7 +410,7 @@ public sealed class DocsAndNotesWorkspaceViewModelTests : IDisposable
 			markdownStore,
 			TimeSpan.FromHours(1));
 		await workspace.RefreshAsync(CancellationToken.None);
-		await workspace.SelectSectionAsync(DocsAndNotesSection.Common, CancellationToken.None);
+		await workspace.SelectSectionAsync(DocsAndNotesSection.Docs, CancellationToken.None);
 		notes.SetText("one");
 		notesStore.FailNextSave = true;
 		workspace.ActiveDocument!.SetText("two");

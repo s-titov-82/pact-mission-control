@@ -1,21 +1,17 @@
 namespace Pact.Infrastructure.Documents;
 
 /// <summary>
-/// Splits project Markdown into the Common group (everything outside <c>docs</c>) and the Docs
-/// group (the <c>docs</c> tree, including <c>docs/superpowers</c>). The review logs in
-/// <c>.pact/reviews</c> belong to neither: the project screen lists them.
+/// The project's Markdown files, the <c>docs</c> tree and everything outside it alike. The review
+/// logs in <c>.pact/reviews</c> are left out: the project screen lists them.
 /// </summary>
-public sealed record ProjectMarkdownCatalog(
-	IReadOnlyList<ProjectMarkdownFileEntry> Common,
-	IReadOnlyList<ProjectMarkdownFileEntry> Docs)
+public sealed record ProjectMarkdownCatalog(IReadOnlyList<ProjectMarkdownFileEntry> All)
 {
 	private static readonly HashSet<string> IgnoredDirectoryNames = new(
 		[".git", ".worktrees", ".pact-reviews", "bin", "obj", "node_modules"],
 		StringComparer.OrdinalIgnoreCase);
 
 	/// <summary>
-	/// Scans the project root once, skipping generated directories and reparse
-	/// points, and classifies each Markdown file by whether it lives under <c>docs</c>.
+	/// Scans the project root once, skipping generated directories, reparse points and review logs.
 	/// </summary>
 	public static ProjectMarkdownCatalog Scan(string projectRootPath)
 	{
@@ -23,24 +19,20 @@ public sealed record ProjectMarkdownCatalog(
 		var root = Path.GetFullPath(projectRootPath);
 		if (!Directory.Exists(root))
 		{
-			return new ProjectMarkdownCatalog([], []);
+			return new ProjectMarkdownCatalog([]);
 		}
 
-		List<string> markdownPaths = [];
-		AddMarkdownTree(root, markdownPaths);
-		var docsRoot = Path.Combine(root, "docs");
 		// The supplied project root is trusted even when it is a junction; only
 		// descendants are rejected for being reparse points.
-
+		List<string> markdownPaths = [];
+		AddMarkdownTree(root, markdownPaths);
 		var reviewsRoot = Path.Combine(root, ".pact", "reviews");
 		bool IsReviewLog(string path)
 		{
 			return string.Equals(Path.GetDirectoryName(path), reviewsRoot, StringComparison.OrdinalIgnoreCase);
 		}
 
-		return new ProjectMarkdownCatalog(
-			ToEntries(root, markdownPaths.Where(path => !IsUnderDirectory(path, docsRoot) && !IsReviewLog(path))),
-			ToEntries(root, markdownPaths.Where(path => IsUnderDirectory(path, docsRoot))));
+		return new ProjectMarkdownCatalog(ToEntries(root, markdownPaths.Where(path => !IsReviewLog(path))));
 	}
 
 	private static void AddMarkdownTree(string directory, List<string> paths)
@@ -110,14 +102,6 @@ public sealed record ProjectMarkdownCatalog(
 				Path.GetRelativePath(root, path).Replace(Path.DirectorySeparatorChar, '/')))
 			.OrderBy(entry => entry.RelativePath, StringComparer.OrdinalIgnoreCase)
 			.ToArray();
-
-	private static bool IsUnderDirectory(string path, string directory)
-	{
-		var relativePath = Path.GetRelativePath(directory, path);
-		return !Path.IsPathRooted(relativePath)
-			&& !relativePath.Equals("..", StringComparison.Ordinal)
-			&& !relativePath.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal);
-	}
 }
 
 /// <summary>Identifies a project Markdown file by full and project-relative path.</summary>

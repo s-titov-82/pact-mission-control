@@ -8,42 +8,26 @@ public sealed class ProjectMarkdownCatalogTests : IDisposable
 	private string _externalRoot => _externalDirectory.Path;
 
 	[Test]
-	public void Scan_puts_every_non_docs_markdown_in_common_and_the_docs_tree_in_docs()
+	public void The_catalog_lists_root_and_docs_files_together_without_review_logs()
 	{
 		Write("ReadMe.md");
 		Write("AGENTS.md");
 		Write("src/Service/README.md");
-		Write("src/Service/details.md");
 		Write("docs/README.md");
-		Write("docs/manual-tests/checklist.md");
 		Write("docs/superpowers/specs/feature.md");
-
-		var catalog = ProjectMarkdownCatalog.Scan(_root);
-
-		catalog.Common.Select(file => file.RelativePath).ShouldBe([
-			"AGENTS.md",
-			"ReadMe.md",
-			"src/Service/details.md",
-			"src/Service/README.md"
-		]);
-		catalog.Docs.Select(file => file.RelativePath).ShouldBe([
-			"docs/manual-tests/checklist.md",
-			"docs/README.md",
-			"docs/superpowers/specs/feature.md"
-		]);
-	}
-
-	[Test]
-	public void Scan_leaves_review_logs_out_of_common_and_docs()
-	{
 		Write(".pact/reviews/2026-10-23-0910-code-review-aaaa.md");
 		Write(".pact/notes.md");
-		Write("README.md");
 
 		var catalog = ProjectMarkdownCatalog.Scan(_root);
 
-		catalog.Common.Select(file => file.RelativePath).ShouldBe([".pact/notes.md", "README.md"], ignoreOrder: true);
-		catalog.Docs.ShouldBeEmpty();
+		catalog.All.Select(file => file.RelativePath).ShouldBe([
+			".pact/notes.md",
+			"AGENTS.md",
+			"docs/README.md",
+			"docs/superpowers/specs/feature.md",
+			"ReadMe.md",
+			"src/Service/README.md"
+		]);
 	}
 
 	[Test]
@@ -66,8 +50,7 @@ public sealed class ProjectMarkdownCatalogTests : IDisposable
 
 		foreach (var generatedPath in generatedPaths)
 		{
-			catalog.Common.Select(file => file.RelativePath).ShouldNotContain(generatedPath);
-			catalog.Docs.Select(file => file.RelativePath).ShouldNotContain(generatedPath);
+			catalog.All.Select(file => file.RelativePath).ShouldNotContain(generatedPath);
 		}
 	}
 
@@ -83,8 +66,7 @@ public sealed class ProjectMarkdownCatalogTests : IDisposable
 
 		var catalog = ProjectMarkdownCatalog.Scan(_root);
 
-		catalog.Common.ShouldBeEmpty();
-		catalog.Docs.ShouldBeEmpty();
+		catalog.All.ShouldBeEmpty();
 	}
 
 	[Test]
@@ -98,8 +80,7 @@ public sealed class ProjectMarkdownCatalogTests : IDisposable
 
 		var catalog = ProjectMarkdownCatalog.Scan(rootLink);
 
-		catalog.Common.Select(file => file.RelativePath).ShouldBe(["README.md"]);
-		catalog.Docs.Select(file => file.RelativePath).ShouldBe(["docs/guide.md"]);
+		catalog.All.Select(file => file.RelativePath).ShouldBe(["docs/guide.md", "README.md"]);
 	}
 
 	[Test]
@@ -119,7 +100,7 @@ public sealed class ProjectMarkdownCatalogTests : IDisposable
 
 		var catalog = ProjectMarkdownCatalog.Scan(_root);
 
-		catalog.Docs.Select(file => file.RelativePath).ShouldBe(["docs/real.md"]);
+		catalog.All.Select(file => file.RelativePath).ShouldBe(["docs/real.md"]);
 	}
 
 	[Test]
@@ -129,8 +110,7 @@ public sealed class ProjectMarkdownCatalogTests : IDisposable
 
 		var catalog = ProjectMarkdownCatalog.Scan(_root);
 
-		catalog.Common.ShouldBeEmpty();
-		catalog.Docs.ShouldBeEmpty();
+		catalog.All.ShouldBeEmpty();
 	}
 
 	public void Dispose()

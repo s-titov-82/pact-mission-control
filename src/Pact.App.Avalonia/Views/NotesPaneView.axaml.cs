@@ -222,9 +222,6 @@ internal sealed partial class NotesPaneView : UserControl
 	private void OnNotesTabClicked(object? sender, RoutedEventArgs e) =>
 		RunEvent("notes-select-notes", () => SelectSectionAsync(DocsAndNotesSection.Notes));
 
-	private void OnCommonTabClicked(object? sender, RoutedEventArgs e) =>
-		RunEvent("notes-select-common", () => SelectSectionAsync(DocsAndNotesSection.Common));
-
 	private void OnDocsTabClicked(object? sender, RoutedEventArgs e) =>
 		RunEvent("notes-select-docs", () => SelectSectionAsync(DocsAndNotesSection.Docs));
 
@@ -470,7 +467,6 @@ internal sealed partial class NotesPaneView : UserControl
 	private void RefreshWorkspace()
 	{
 		NotesTab.IsChecked = Workspace?.SelectedSection == DocsAndNotesSection.Notes;
-		CommonTab.IsChecked = Workspace?.SelectedSection == DocsAndNotesSection.Common;
 		DocsTab.IsChecked = Workspace?.SelectedSection == DocsAndNotesSection.Docs;
 		SetDocument(Workspace?.ActiveDocument);
 		EmptyGroupMessage.IsVisible = Workspace is not null && _document is null;

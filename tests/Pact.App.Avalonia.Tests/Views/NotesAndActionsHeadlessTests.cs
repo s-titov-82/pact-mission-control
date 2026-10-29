@@ -495,9 +495,9 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 			window.Show();
 			var editor = notes.FindControl<SourceEditor>("Editor")!;
 			var notesTab = notes.FindControl<ToggleButton>("NotesTab")!;
-			var commonTab = notes.FindControl<ToggleButton>("CommonTab")!;
+			var commonTab = notes.FindControl<ToggleButton>("DocsTab")!;
 
-			await workspace.SelectSectionAsync(DocsAndNotesSection.Common, CancellationToken.None);
+			await workspace.SelectSectionAsync(DocsAndNotesSection.Docs, CancellationToken.None);
 			notesTab.Focus();
 			Click(notesTab);
 
@@ -539,7 +539,7 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 	}
 
 	[AvaloniaTest]
-	public async Task DocsAndNotesPaneShowsThreePrimaryTabsAndNoNestedStrip()
+	public async Task The_docs_pane_has_two_tabs()
 	{
 		var root = CreateRoot();
 		try
@@ -551,7 +551,7 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 			NotesPaneView notes = new() { Workspace = workspace };
 
 			(notes.FindControl<ToggleButton>("NotesTab")?.Content).ShouldBe("Notes");
-			(notes.FindControl<ToggleButton>("CommonTab")?.Content).ShouldBe("Common MD's");
+			notes.FindControl<ToggleButton>("CommonTab").ShouldBeNull();
 			(notes.FindControl<ToggleButton>("DocsTab")?.Content).ShouldBe("Docs");
 			notes.FindControl<ToggleButton>("ReadmeTab").ShouldBeNull();
 			notes.FindControl<ToggleButton>("SuperpowersTab").ShouldBeNull();
@@ -580,7 +580,7 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 			notes.FindControl<Control>("Preview")!.IsVisible.ShouldBeFalse();
 			(notes.FindControl<ToggleButton>("EditorModeButton")!.IsChecked == true).ShouldBeTrue();
 
-			await workspace.SelectSectionAsync(DocsAndNotesSection.Common, CancellationToken.None);
+			await workspace.SelectSectionAsync(DocsAndNotesSection.Docs, CancellationToken.None);
 
 			notes.FindControl<SourceEditor>("Editor")!.IsVisible.ShouldBeFalse();
 			notes.FindControl<Control>("Preview")!.IsVisible.ShouldBeTrue();
@@ -611,12 +611,12 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 			window.Show();
 			try
 			{
-				await workspace.SelectSectionAsync(DocsAndNotesSection.Common, CancellationToken.None);
+				await workspace.SelectSectionAsync(DocsAndNotesSection.Docs, CancellationToken.None);
 				await workspace.SelectDocumentAsync(
-					workspace.CommonTree.Single(node => node.Title == "README.md"), CancellationToken.None);
+					workspace.DocsTree.Single(node => node.Title == "README.md"), CancellationToken.None);
 				window.UpdateLayout();
 				await workspace.SelectDocumentAsync(
-					workspace.CommonTree.Single(node => node.Title == "AGENTS.md"), CancellationToken.None);
+					workspace.DocsTree.Single(node => node.Title == "AGENTS.md"), CancellationToken.None);
 				window.UpdateLayout();
 				var preview = notes.FindControl<Control>("Preview")!;
 				preview.IsVisible.ShouldBeTrue();
@@ -652,14 +652,14 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 			await workspace.RefreshAsync(CancellationToken.None);
 			NotesPaneView notes = new() { Workspace = workspace };
 
-			await workspace.SelectSectionAsync(DocsAndNotesSection.Common, CancellationToken.None);
+			await workspace.SelectSectionAsync(DocsAndNotesSection.Docs, CancellationToken.None);
 			Click(notes.FindControl<ToggleButton>("EditorModeButton")!);
-			var agents = workspace.CommonTree.Single(node => node.Title == "AGENTS.md");
+			var agents = workspace.DocsTree.Single(node => node.Title == "AGENTS.md");
 			await workspace.SelectDocumentAsync(agents, CancellationToken.None);
 
 			(notes.FindControl<ToggleButton>("PreviewModeButton")!.IsChecked == true).ShouldBeTrue();
 
-			var readme = workspace.CommonTree.Single(node => node.Title == "README.md");
+			var readme = workspace.DocsTree.Single(node => node.Title == "README.md");
 			await workspace.SelectDocumentAsync(readme, CancellationToken.None);
 
 			(notes.FindControl<ToggleButton>("EditorModeButton")!.IsChecked == true).ShouldBeTrue();
@@ -714,7 +714,7 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 			var readme = Write(root, "README.md", "initial");
 			var workspace = CreateWorkspace(root);
 			await workspace.RefreshAsync(CancellationToken.None);
-			await workspace.SelectSectionAsync(DocsAndNotesSection.Common, CancellationToken.None);
+			await workspace.SelectSectionAsync(DocsAndNotesSection.Docs, CancellationToken.None);
 			NotesPaneView notes = new() { Workspace = workspace };
 			var editor = notes.FindControl<SourceEditor>("Editor")!;
 			editor.Text = "mine";
@@ -904,7 +904,7 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 			panel.RowDefinitions[1].Height.ShouldBe(new GridLength(0));
 			documentsSection.Bounds.Height.ShouldBe(0);
 
-			await workspace.SelectSectionAsync(DocsAndNotesSection.Common, CancellationToken.None);
+			await workspace.SelectSectionAsync(DocsAndNotesSection.Docs, CancellationToken.None);
 			window.UpdateLayout();
 
 			actions.FindControl<Control>("DocumentsSection")!.IsVisible.ShouldBeTrue();
@@ -939,20 +939,20 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 			window.Show();
 			var tree = actions.FindControl<TreeView>("DocumentTree")!;
 
-			await workspace.SelectSectionAsync(DocsAndNotesSection.Common, CancellationToken.None);
+			await workspace.SelectSectionAsync(DocsAndNotesSection.Docs, CancellationToken.None);
 			window.UpdateLayout();
 			Dispatcher.UIThread.RunJobs();
 
 			tree.SelectedItem.ShouldBeSameAs(workspace.SelectedNode);
 			((MarkdownTreeNodeViewModel)tree.SelectedItem!).Title.ShouldBe("README.md");
 
-			await workspace.SelectSectionAsync(DocsAndNotesSection.Docs, CancellationToken.None);
+			await workspace.SelectSectionAsync(DocsAndNotesSection.Notes, CancellationToken.None);
 			window.UpdateLayout();
 			Dispatcher.UIThread.RunJobs();
 
 			tree.SelectedItem.ShouldBeNull();
 
-			await workspace.SelectSectionAsync(DocsAndNotesSection.Common, CancellationToken.None);
+			await workspace.SelectSectionAsync(DocsAndNotesSection.Docs, CancellationToken.None);
 			window.UpdateLayout();
 			Dispatcher.UIThread.RunJobs();
 
@@ -979,7 +979,7 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 			Write(root, "src/details.md", "# Details");
 			var workspace = CreateWorkspace(root);
 			await workspace.RefreshAsync(CancellationToken.None);
-			await workspace.SelectSectionAsync(DocsAndNotesSection.Common, CancellationToken.None);
+			await workspace.SelectSectionAsync(DocsAndNotesSection.Docs, CancellationToken.None);
 			RightActionsPanel actions = new() { Workspace = workspace };
 			Window window = new()
 			{
@@ -994,8 +994,8 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 				workspace.SelectDocumentAsync(node, CancellationToken.None).GetAwaiter().GetResult();
 			actions.FolderToggleRequested += (_, node) => workspace.ToggleFolder(node);
 			var tree = actions.FindControl<TreeView>("DocumentTree")!;
-			var readme = workspace.CommonTree.Single(node => !node.IsFolder);
-			var folder = workspace.CommonTree.Single(node => node.IsFolder);
+			var readme = workspace.DocsTree.Single(node => !node.IsFolder);
+			var folder = workspace.DocsTree.Single(node => node.IsFolder);
 			var openedDocument = workspace.ActiveDocument;
 			openedDocument.ShouldBeSameAs(readme.Document);
 
@@ -1034,7 +1034,7 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 			Write(root, "AGENTS.md", "# Agents");
 			var workspace = CreateWorkspace(root);
 			await workspace.RefreshAsync(CancellationToken.None);
-			await workspace.SelectSectionAsync(DocsAndNotesSection.Common, CancellationToken.None);
+			await workspace.SelectSectionAsync(DocsAndNotesSection.Docs, CancellationToken.None);
 			RightActionsPanel actions = new() { Workspace = workspace };
 			Window window = new() { Width = 400, Height = 600, Content = actions };
 			window.Show();
@@ -1044,7 +1044,7 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 			actions.TreeNodeSelected += (_, node) => selected.Add(node);
 			actions.FolderToggleRequested += (_, node) => selected.Add(node);
 			var tree = actions.FindControl<TreeView>("DocumentTree")!;
-			var agents = workspace.CommonTree.Single(node => node.Title == "AGENTS.md");
+			var agents = workspace.DocsTree.Single(node => node.Title == "AGENTS.md");
 
 			ClickTreeRow(window, tree, agents);
 
@@ -1071,7 +1071,7 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 			Write(root, "src/details.md", "# Details");
 			var workspace = CreateWorkspace(root);
 			await workspace.RefreshAsync(CancellationToken.None);
-			await workspace.SelectSectionAsync(DocsAndNotesSection.Common, CancellationToken.None);
+			await workspace.SelectSectionAsync(DocsAndNotesSection.Docs, CancellationToken.None);
 			RightActionsPanel actions = new() { Workspace = workspace };
 			Window window = new() { Width = 400, Height = 600, Content = actions };
 			window.Show();
@@ -1079,10 +1079,10 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 			Dispatcher.UIThread.RunJobs();
 			var tree = actions.FindControl<TreeView>("DocumentTree")!;
 
-			FindTreeRow(tree, workspace.CommonTree.Single(node => node.IsFolder))
+			FindTreeRow(tree, workspace.DocsTree.Single(node => node.IsFolder))
 				.GetVisualDescendants().OfType<PathIcon>()
 				.Any(icon => icon.IsVisible).ShouldBeTrue();
-			FindTreeRow(tree, workspace.CommonTree.Single(node => !node.IsFolder))
+			FindTreeRow(tree, workspace.DocsTree.Single(node => !node.IsFolder))
 				.GetVisualDescendants().OfType<PathIcon>()
 				.Any(icon => icon.IsVisible).ShouldBeFalse();
 
@@ -1180,7 +1180,7 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 			var readme = Write(root, "README.md", "initial");
 			var workspace = CreateWorkspace(root);
 			await workspace.RefreshAsync(CancellationToken.None);
-			await workspace.SelectSectionAsync(DocsAndNotesSection.Common, CancellationToken.None);
+			await workspace.SelectSectionAsync(DocsAndNotesSection.Docs, CancellationToken.None);
 			NotesPaneView notes = new()
 			{
 				Workspace = workspace,

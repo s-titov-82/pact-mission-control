@@ -488,7 +488,7 @@ public sealed class MainWindowPaneVisibilityHeadlessTests
 		await fixture.Controller.SelectItemAsync(note, TestContext.CurrentContext.CancellationToken);
 		var workspace = fixture.Controller.CurrentDocsAndNotes.ShouldNotBeNull();
 		await workspace.SelectSectionAsync(
-			DocsAndNotesSection.Common,
+			DocsAndNotesSection.Docs,
 			TestContext.CurrentContext.CancellationToken);
 		window.UpdateLayout();
 		Dispatcher.UIThread.RunJobs();
@@ -497,7 +497,7 @@ public sealed class MainWindowPaneVisibilityHeadlessTests
 			.ShouldBeOfType<RightActionsPanel>();
 		actions.Workspace.ShouldBeSameAs(workspace);
 		var tree = actions.FindControl<TreeView>("DocumentTree")!;
-		var agents = workspace.CommonTree.Single(node => node.Title == "AGENTS.md");
+		var agents = workspace.DocsTree.Single(node => node.Title == "AGENTS.md");
 		var agentsRow = tree.GetVisualDescendants()
 			.OfType<TreeViewItem>()
 			.Single(item => ReferenceEquals(item.DataContext, agents));

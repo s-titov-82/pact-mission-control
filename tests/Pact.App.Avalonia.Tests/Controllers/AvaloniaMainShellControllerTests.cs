@@ -616,7 +616,7 @@ public sealed class AvaloniaMainShellControllerTests
 		fixture.Controller.IsNotesSelectionSource.ShouldBeFalse();
 		List<string?> changes = [];
 		fixture.Controller.PropertyChanged += (_, e) => changes.Add(e.PropertyName);
-		await docs.SelectSectionAsync(DocsAndNotesSection.Common, TestContext.CurrentContext.CancellationToken);
+		await docs.SelectSectionAsync(DocsAndNotesSection.Docs, TestContext.CurrentContext.CancellationToken);
 		changes.ShouldBeEmpty();
 	}
 
@@ -2534,7 +2534,7 @@ public sealed class AvaloniaMainShellControllerTests
 			new SelectionActionAnchor(SelectionActionSourceKind.Notes, 40, 60, true));
 
 		await fixture.Controller.CurrentDocsAndNotes.ShouldNotBeNull().SelectSectionAsync(
-			DocsAndNotesSection.Common,
+			DocsAndNotesSection.Docs,
 			TestContext.CurrentContext.CancellationToken);
 
 		fixture.Controller.IsSelectionActionsOpen.ShouldBeFalse();

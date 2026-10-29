@@ -11,10 +11,7 @@ public enum DocsAndNotesSection
 	/// <summary>App-owned project notes, which default to the editor.</summary>
 	Notes,
 
-	/// <summary>Project Markdown outside the <c>docs</c> directory.</summary>
-	Common,
-
-	/// <summary>Markdown under <c>docs</c>, including <c>docs/superpowers</c>.</summary>
+	/// <summary>Every Markdown file of the project in one tree.</summary>
 	Docs
 }
 
@@ -191,19 +188,12 @@ public sealed class DocsAndNotesWorkspaceViewModel : INotifyPropertyChanged
 	public Task RetrySaveAsync(CancellationToken cancellationToken = default) =>
 		ActiveDocument?.FlushAsync(cancellationToken) ?? Task.CompletedTask;
 
-	/// <summary>Tree of Markdown outside <c>docs</c>.</summary>
-	public IReadOnlyList<MarkdownTreeNodeViewModel> CommonTree { get; private set; } = [];
-
-	/// <summary>Tree of Markdown under <c>docs</c>, rooted at the <c>docs</c> children.</summary>
+	/// <summary>Tree of the project's Markdown, folders before files in every folder.</summary>
 	public IReadOnlyList<MarkdownTreeNodeViewModel> DocsTree { get; private set; } = [];
 
 	/// <summary>Tree shown for the selected section; empty for Notes.</summary>
-	public IReadOnlyList<MarkdownTreeNodeViewModel> VisibleTree => SelectedSection switch
-	{
-		DocsAndNotesSection.Common => CommonTree,
-		DocsAndNotesSection.Docs => DocsTree,
-		_ => []
-	};
+	public IReadOnlyList<MarkdownTreeNodeViewModel> VisibleTree =>
+		SelectedSection == DocsAndNotesSection.Docs ? DocsTree : [];
 
 	/// <summary>Whether the right panel must show the documentation tree.</summary>
 	public bool ShowsDocumentTree => SelectedSection is not DocsAndNotesSection.Notes;
@@ -212,11 +202,9 @@ public sealed class DocsAndNotesWorkspaceViewModel : INotifyPropertyChanged
 	public async Task RefreshAsync(CancellationToken cancellationToken)
 	{
 		var catalog = ProjectMarkdownCatalog.Scan(ProjectRootPath);
-		CommonTree = BuildNodes(MarkdownTreeNode.Build(catalog.Common));
-		DocsTree = BuildNodes(MarkdownTreeNode.Build(catalog.Docs, "docs/"));
+		DocsTree = BuildNodes(MarkdownTreeNode.Build(catalog.All));
 		await NotesDocument.LoadAsync(cancellationToken);
 		await ActivateSelectedSectionAsync(cancellationToken);
-		OnPropertyChanged(nameof(CommonTree));
 		OnPropertyChanged(nameof(DocsTree));
 		OnPropertyChanged(nameof(VisibleTree));
 		OnPropertyChanged(nameof(ShowsDocumentTree));
@@ -264,27 +252,19 @@ public sealed class DocsAndNotesWorkspaceViewModel : INotifyPropertyChanged
 	}
 
 	/// <summary>
-	/// Shows a project Markdown file: selects Docs for a file under <c>docs/</c> and Common
-	/// otherwise, expands its folders and opens it. Rescans once when the file is not in the
-	/// tree yet, as for one written after the last refresh.
+	/// Shows a project Markdown file: selects Docs, expands its folders and opens it. Rescans once
+	/// when the file is not in the tree yet, as for one written after the last refresh.
 	/// </summary>
 	/// <returns><see langword="false"/> when the pane does not list the file.</returns>
 	public async Task<bool> OpenDocumentAsync(string relativePath, CancellationToken cancellationToken)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(relativePath);
-		var section = relativePath.StartsWith("docs/", StringComparison.OrdinalIgnoreCase)
-			? DocsAndNotesSection.Docs
-			: DocsAndNotesSection.Common;
-		IReadOnlyList<MarkdownTreeNodeViewModel> Tree()
-		{
-			return section == DocsAndNotesSection.Docs ? DocsTree : CommonTree;
-		}
-
-		var node = FindDocument(Tree(), relativePath);
+		const DocsAndNotesSection section = DocsAndNotesSection.Docs;
+		var node = FindDocument(DocsTree, relativePath);
 		if (node is null)
 		{
 			await RefreshAsync(cancellationToken);
-			node = FindDocument(Tree(), relativePath);
+			node = FindDocument(DocsTree, relativePath);
 			if (node is null)
 			{
 				return false;
@@ -408,11 +388,8 @@ public sealed class DocsAndNotesWorkspaceViewModel : INotifyPropertyChanged
 				ClearTreeSelection();
 				ActiveDocument = NotesDocument;
 				break;
-			case DocsAndNotesSection.Common:
-				await ActivateSectionAsync(CommonTree, "README.md", cancellationToken);
-				break;
 			case DocsAndNotesSection.Docs:
-				await ActivateSectionAsync(DocsTree, null, cancellationToken);
+				await ActivateSectionAsync(DocsTree, "README.md", cancellationToken);
 				break;
 		}
 	}
