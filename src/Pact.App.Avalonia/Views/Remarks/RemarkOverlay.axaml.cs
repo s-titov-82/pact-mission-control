@@ -67,6 +67,9 @@ internal sealed partial class RemarkOverlay : UserControl
 		}
 	}
 
+	/// <summary>What the new-remark box holds now.</summary>
+	public string NewRemarkText => NewRemarkBox.Text ?? string.Empty;
+
 	/// <summary>Empties the new-remark box after its remark was added.</summary>
 	public void ClearNewRemark() => NewRemarkBox.Text = string.Empty;
 

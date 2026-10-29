@@ -183,18 +183,39 @@ public sealed class RenderedMarkdownViewHeadlessTests
 	{
 		await WithRenderedAsync(async fixture =>
 		{
+			fixture.Store.Hold();
 			fixture.Click(AddButton(fixture.Block(3)));
 			var first = fixture.NewRemarkBox(3);
 			first.Text = "first";
 			CtrlEnter(first);
+			await fixture.Store.Entered;
 			fixture.Click(AddButton(fixture.Block(9)));
 			fixture.NewRemarkBox(9).Text = "second";
 
-			await EventuallyAsync(fixture.Window, () => fixture.Book.Threads.Count == 1);
-			await Task.Delay(100);
-			fixture.Window.UpdateLayout();
+			fixture.Store.Release();
+			await fixture.EventTasks.WaitForIdleAsync();
 
 			fixture.NewRemarkBox(9).Text.ShouldBe("second");
+		});
+	}
+
+	[AvaloniaTest]
+	public async Task A_finished_add_keeps_text_typed_after_it_was_sent()
+	{
+		await WithRenderedAsync(async fixture =>
+		{
+			fixture.Store.Hold();
+			fixture.Click(AddButton(fixture.Block(3)));
+			var box = fixture.NewRemarkBox(3);
+			box.Text = "first";
+			CtrlEnter(box);
+			await fixture.Store.Entered;
+			box.Text = "first and more";
+
+			fixture.Store.Release();
+			await fixture.EventTasks.WaitForIdleAsync();
+
+			fixture.NewRemarkBox(3).Text.ShouldBe("first and more");
 		});
 	}
 
@@ -300,7 +321,8 @@ public sealed class RenderedMarkdownViewHeadlessTests
 		ManualTimeProvider time = new();
 		using ProjectChangesViewModel changes = new(root.Path, reader, time, action => action());
 		using var observation = changes.Observe();
-		using RemarkBook book = new(root.Path, new RemarkFileStore(root.Path), TimeProvider.System);
+		GatedRemarkStore store = new(new RemarkFileStore(root.Path));
+		using RemarkBook book = new(root.Path, store, TimeProvider.System);
 		using ChangesRemarksViewModel remarks = new(
 			changes,
 			book,
@@ -319,6 +341,8 @@ public sealed class RenderedMarkdownViewHeadlessTests
 				return Task.FromResult(true);
 			});
 		ProjectScreenView view = new() { DataContext = screen };
+		Pact.App.Avalonia.Lifecycle.ObservedTaskGroup eventTasks = new(static (_, _) => Task.CompletedTask);
+		view.ConfigureLifecycle(eventTasks);
 		Window window = new() { Content = view, Width = 1000, Height = 900 };
 		window.Show();
 		try
@@ -335,7 +359,7 @@ public sealed class RenderedMarkdownViewHeadlessTests
 			}
 
 			window.UpdateLayout();
-			await act(new Fixture(window, view, book, remarks, changes, reader, time, opened));
+			await act(new Fixture(window, view, book, remarks, changes, reader, time, opened, store, eventTasks));
 		}
 		finally
 		{
@@ -365,7 +389,9 @@ public sealed class RenderedMarkdownViewHeadlessTests
 		ProjectChangesViewModel Changes,
 		Reader Reader,
 		ManualTimeProvider Time,
-		List<(string Path, string? Heading)> Opened)
+		List<(string Path, string? Heading)> Opened,
+		GatedRemarkStore Store,
+		Pact.App.Avalonia.Lifecycle.ObservedTaskGroup EventTasks)
 	{
 		public RenderedMarkdownView Rendered => View.FindControl<RenderedMarkdownView>("RenderedView")!;
 

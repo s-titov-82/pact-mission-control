@@ -468,7 +468,8 @@ internal sealed partial class NotesPaneView : UserControl
 
 	private void ScrollToRequestedHeading()
 	{
-		if (Workspace?.TakeRequestedHeading() is { } heading && Preview.IsVisible)
+		// Only for the document it was asked for: a pick made since has dropped or changed it.
+		if (Preview.IsVisible && Workspace?.TakeRequestedHeading(ShownDocument()?.DocumentRelativePath) is { } heading)
 		{
 			ScrollToHeading(heading);
 		}

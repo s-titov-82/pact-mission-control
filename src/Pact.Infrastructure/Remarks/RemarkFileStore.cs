@@ -16,11 +16,27 @@ namespace Pact.Infrastructure.Remarks;
 /// </param>
 public sealed record RemarkFile(int NextNumber, IReadOnlyList<RemarkThread> Threads, string? SetAsideFile = null);
 
+/// <summary>Where a project's remark threads and the file copies their anchors were written on are kept.</summary>
+public interface IRemarkStore
+{
+	/// <summary>The stored threads.</summary>
+	Task<RemarkFile> LoadAsync(CancellationToken cancellationToken);
+
+	/// <summary>Replaces the stored threads.</summary>
+	Task SaveAsync(RemarkFile file, CancellationToken cancellationToken);
+
+	/// <summary>Keeps a copy of a file's text; returns its id.</summary>
+	Task<string> SaveSnapshotAsync(string text, CancellationToken cancellationToken);
+
+	/// <summary>A kept copy as lines; null when there is none.</summary>
+	Task<IReadOnlyList<string>?> LoadSnapshotLinesAsync(string id, CancellationToken cancellationToken);
+}
+
 /// <summary>
 /// Stores a project's remark threads in <c>.pact/remarks/remarks.json</c> and the file copies their
 /// anchors were written on in <c>.pact/remarks/snapshots</c>, named by the hash of their text.
 /// </summary>
-public sealed class RemarkFileStore
+public sealed class RemarkFileStore : IRemarkStore
 {
 	private const int Version = 1;
 

@@ -26,14 +26,14 @@ public sealed record RemarkBatch(string SessionId, IReadOnlyList<RemarkBatchItem
 /// </summary>
 public sealed class RemarkBook : IDisposable
 {
-	private readonly RemarkFileStore _store;
+	private readonly IRemarkStore _store;
 	private readonly TimeProvider _time;
 	private readonly SemaphoreSlim _gate = new(1, 1);
 	private RemarkFile _file = new(1, []);
 	private bool _loaded;
 
 	/// <summary>Creates the book of one project; nothing is read until it is first used.</summary>
-	public RemarkBook(string projectRoot, RemarkFileStore store, TimeProvider time)
+	public RemarkBook(string projectRoot, IRemarkStore store, TimeProvider time)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(projectRoot);
 		ProjectRoot = projectRoot;

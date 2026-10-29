@@ -50,8 +50,10 @@ internal static partial class MarkdownPreviewHook
 
 	/// <summary>
 	/// The text to show for a document in <paramref name="folder"/>: an image whose local file is
-	/// missing or cannot be decoded becomes its alt text, since the engine would draw only a
-	/// broken-image mark. Code, fenced or inline, is left as written.
+	/// missing or does not start as an image file does becomes its alt text, since the engine would
+	/// draw only a broken-image mark. Code, fenced, indented or inline, is left as written. A file
+	/// that starts as an image but is damaged further on, and a web image that fails to load, still
+	/// show the engine's mark.
 	/// </summary>
 	public static string Prepare(string markdown, string? folder)
 	{
@@ -61,49 +63,136 @@ internal static partial class MarkdownPreviewHook
 			return markdown;
 		}
 
+		// Fenced and indented code is kept whole; the rest is taken a paragraph at a time, since a
+		// code span may run over lines but never past a blank one.
 		var lines = markdown.Split('\n');
+		List<string> output = [];
+		List<string> paragraph = [];
 		(char Character, int Length)? fence = null;
-		for (var index = 0; index < lines.Length; index++)
+		var previousBlank = true;
+		var inIndentedCode = false;
+		void Flush()
 		{
-			var trimmed = lines[index].TrimStart();
+			if (paragraph.Count > 0)
+			{
+				output.Add(OutsideCodeSpans(string.Join('\n', paragraph), text => ReplaceMissingImages(text, folder)));
+				paragraph.Clear();
+			}
+		}
+
+		foreach (var line in lines)
+		{
+			var trimmed = line.TrimStart();
 			var run = trimmed.Length > 0 && trimmed[0] is '`' or '~' ? trimmed.TakeWhile(character => character == trimmed[0]).Count() : 0;
+			var blank = trimmed.Length == 0;
 			if (fence is { } open)
 			{
+				output.Add(line);
 				if (run >= open.Length && trimmed[0] == open.Character && trimmed.Trim().Length == run)
 				{
 					fence = null;
 				}
-
-				continue;
 			}
-
-			if (run >= 3)
+			else if (run >= 3 && Indent(line) <= 3)
 			{
+				Flush();
+				output.Add(line);
 				fence = (trimmed[0], run);
-				continue;
+			}
+			else if (!blank && Indent(line) >= 4 && (previousBlank || inIndentedCode))
+			{
+				Flush();
+				output.Add(line);
+				inIndentedCode = true;
+			}
+			else if (blank)
+			{
+				Flush();
+				output.Add(line);
+			}
+			else
+			{
+				inIndentedCode = false;
+				paragraph.Add(line);
 			}
 
-			lines[index] = OutsideInlineCode(lines[index], segment => ReplaceMissingImages(segment, folder));
+			previousBlank = blank;
+			if (!blank && Indent(line) < 4)
+			{
+				inIndentedCode = false;
+			}
 		}
 
-		return string.Join('\n', lines);
+		Flush();
+		return string.Join('\n', output);
 	}
 
-	// Backtick spans are code: only the text between them is looked at.
-	private static string OutsideInlineCode(string line, Func<string, string> replace)
+	private static int Indent(string line) =>
+		line.TakeWhile(character => character is ' ' or '\t').Sum(character => character == '\t' ? 4 : 1);
+
+	// A code span opens with a run of backticks and closes at the next run of the same length; a
+	// run that is never closed is plain text. Only the text outside spans is replaced.
+	private static string OutsideCodeSpans(string text, Func<string, string> replace)
 	{
-		if (!line.Contains('`', StringComparison.Ordinal))
+		System.Text.StringBuilder result = new();
+		var plainStart = 0;
+		var index = 0;
+		while (index < text.Length)
 		{
-			return replace(line);
+			if (text[index] != '`')
+			{
+				index++;
+				continue;
+			}
+
+			var length = RunLength(text, index);
+			var close = FindRun(text, index + length, length);
+			if (close < 0)
+			{
+				index += length;
+				continue;
+			}
+
+			result.Append(replace(text[plainStart..index]));
+			result.Append(text, index, close + length - index);
+			index = close + length;
+			plainStart = index;
 		}
 
-		var parts = line.Split('`');
-		for (var index = 0; index < parts.Length; index += 2)
+		result.Append(replace(text[plainStart..]));
+		return result.ToString();
+	}
+
+	private static int RunLength(string text, int start)
+	{
+		var end = start;
+		while (end < text.Length && text[end] == '`')
 		{
-			parts[index] = replace(parts[index]);
+			end++;
 		}
 
-		return string.Join('`', parts);
+		return end - start;
+	}
+
+	private static int FindRun(string text, int from, int length)
+	{
+		for (var index = from; index < text.Length; index++)
+		{
+			if (text[index] != '`')
+			{
+				continue;
+			}
+
+			var run = RunLength(text, index);
+			if (run == length)
+			{
+				return index;
+			}
+
+			index += run - 1;
+		}
+
+		return -1;
 	}
 
 	private static string ReplaceMissingImages(string text, string folder) =>

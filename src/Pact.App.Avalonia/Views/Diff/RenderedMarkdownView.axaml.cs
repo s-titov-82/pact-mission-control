@@ -320,8 +320,10 @@ internal sealed partial class RenderedMarkdownView : UserControl
 			"rendered-remark-add",
 			async () =>
 			{
+				// Only the editor as it was sent is closed: one opened since, or text typed on, is newer.
 				if (await remarks.AddRemarkAsync(capture.Diff, capture.Row, text, CancellationToken.None) is not null
-					&& activation == _editorActivation)
+					&& activation == _editorActivation
+					&& string.Equals(_editor.NewRemarkText, text, StringComparison.Ordinal))
 				{
 					CloseEditor();
 				}

@@ -24,6 +24,25 @@ public sealed class MarkdownPreviewHookTests
 		MarkdownPreviewHook.Prepare(text, folder.Path).ShouldBe(text);
 	}
 
+	[TestCase("Use ``![x](nope.png)`` here.")]
+	[TestCase("A span `that starts here\n![x](nope.png) and ends` there.")]
+	[TestCase("Text.\n\n    ![x](nope.png)\n\nMore.")]
+	[TestCase("``a ` b`` then `![x](nope.png)`")]
+	public void Images_in_longer_spans_multiline_spans_and_indented_code_stay(string text)
+	{
+		using var folder = TemporaryDirectory.Create();
+
+		MarkdownPreviewHook.Prepare(text, folder.Path).ShouldBe(text);
+	}
+
+	[Test]
+	public void An_image_after_a_closed_code_span_is_still_replaced()
+	{
+		using var folder = TemporaryDirectory.Create();
+
+		MarkdownPreviewHook.Prepare("``code`` ![x](nope.png)", folder.Path).ShouldBe("``code`` *x*");
+	}
+
 	[AvaloniaTest]
 	public void An_existing_image_in_angle_brackets_stays()
 	{

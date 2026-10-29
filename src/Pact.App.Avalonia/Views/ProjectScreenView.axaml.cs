@@ -545,8 +545,10 @@ internal sealed partial class ProjectScreenView : UserControl
 			"remark-add",
 			async () =>
 			{
+				// Only the box as it was sent is emptied: one opened since, or text typed on, is newer.
 				if (await remarks.AddRemarkAsync(shown, row, text, CancellationToken.None) is not null
-					&& activation == _overlayActivation)
+					&& activation == _overlayActivation
+					&& string.Equals(RemarkOverlay.NewRemarkText, text, StringComparison.Ordinal))
 				{
 					RemarkOverlay.ClearNewRemark();
 				}

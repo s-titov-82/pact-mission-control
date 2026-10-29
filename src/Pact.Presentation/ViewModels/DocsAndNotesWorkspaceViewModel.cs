@@ -216,6 +216,7 @@ public sealed class DocsAndNotesWorkspaceViewModel : INotifyPropertyChanged
 		CancellationToken cancellationToken)
 	{
 		await FlushActiveAsync(cancellationToken);
+		DropRequestedHeading();
 		SelectedSection = section;
 		await ActivateSelectedSectionAsync(cancellationToken);
 	}
@@ -247,6 +248,7 @@ public sealed class DocsAndNotesWorkspaceViewModel : INotifyPropertyChanged
 			return;
 		}
 
+		DropRequestedHeading();
 		await FlushActiveAsync(cancellationToken);
 		await ActivateAsync(node, cancellationToken);
 	}
@@ -275,20 +277,44 @@ public sealed class DocsAndNotesWorkspaceViewModel : INotifyPropertyChanged
 		SelectedSection = section;
 		_visitedSections.Add(section);
 		await ActivateAsync(node, cancellationToken);
-		RequestedHeading = string.IsNullOrEmpty(heading) ? null : heading;
-		OnPropertyChanged(nameof(RequestedHeading));
+		if (!string.IsNullOrEmpty(heading))
+		{
+			RequestedHeading = heading;
+			_requestedHeadingDocument = node.RelativePath;
+			OnPropertyChanged(nameof(RequestedHeading));
+		}
+
 		return true;
 	}
 
-	/// <summary>A heading the opened document should be scrolled to once it is shown.</summary>
+	/// <summary>
+	/// A heading the document just opened should be scrolled to once it is shown; dropped when
+	/// another document or tab is picked first.
+	/// </summary>
 	public string? RequestedHeading { get; private set; }
 
-	/// <summary>Hands over <see cref="RequestedHeading"/> to the view that scrolls to it, once.</summary>
-	public string? TakeRequestedHeading()
+	private string? _requestedHeadingDocument;
+
+	/// <summary>
+	/// Hands over <see cref="RequestedHeading"/> to the view that scrolls to it, once, and only while
+	/// <paramref name="documentRelativePath"/> is the document it was asked for.
+	/// </summary>
+	public string? TakeRequestedHeading(string? documentRelativePath)
 	{
-		var heading = RequestedHeading;
-		RequestedHeading = null;
+		if (RequestedHeading is not { } heading
+			|| !string.Equals(documentRelativePath, _requestedHeadingDocument, StringComparison.Ordinal))
+		{
+			return null;
+		}
+
+		DropRequestedHeading();
 		return heading;
+	}
+
+	private void DropRequestedHeading()
+	{
+		RequestedHeading = null;
+		_requestedHeadingDocument = null;
 	}
 
 	/// <summary>Flips a folder's expansion; document nodes and stale nodes are ignored.</summary>

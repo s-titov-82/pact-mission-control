@@ -733,19 +733,42 @@ public sealed class ProjectScreenRemarksHeadlessTests
 	{
 		await WithScreenAsync(async fixture =>
 		{
+			fixture.Store.Hold();
 			fixture.ClickMargin(5);
 			var box = fixture.Overlay.FindControl<TextBox>("NewRemarkBox")!;
 			box.Text = "first";
 			CtrlEnter(box);
+			await fixture.Store.Entered;
 			fixture.ClickMargin(9);
 			box.Text = "second";
 
-			await EventuallyAsync(fixture.Window, () => fixture.Book.Threads.Count == 1);
-			await Task.Delay(100);
-			fixture.Window.UpdateLayout();
+			fixture.Store.Release();
+			await fixture.EventTasks.WaitForIdleAsync();
 
 			box.Text.ShouldBe("second");
 			fixture.Book.Threads.Single().Anchor.Line.ShouldBe(4);
+		});
+	}
+
+	// Text typed into the same box while its remark is saved is a new remark in the making.
+	[AvaloniaTest]
+	public async Task A_finished_add_keeps_text_typed_after_it_was_sent()
+	{
+		await WithScreenAsync(async fixture =>
+		{
+			fixture.Store.Hold();
+			fixture.ClickMargin(5);
+			var box = fixture.Overlay.FindControl<TextBox>("NewRemarkBox")!;
+			box.Text = "first";
+			CtrlEnter(box);
+			await fixture.Store.Entered;
+			box.Text = "first and more";
+
+			fixture.Store.Release();
+			await fixture.EventTasks.WaitForIdleAsync();
+
+			box.Text.ShouldBe("first and more");
+			fixture.Book.Threads.Single().Messages[0].Text.ShouldBe("first");
 		});
 	}
 
@@ -830,7 +853,8 @@ public sealed class ProjectScreenRemarksHeadlessTests
 		using ProjectChangesViewModel changes = new(root.Path, reader, time, action => action());
 		using var observation = changes.Observe();
 		await EventuallyAsync(null, () => changes.Files.Count == 1);
-		using RemarkBook book = new(root.Path, new RemarkFileStore(root.Path), TimeProvider.System);
+		GatedRemarkStore store = new(new RemarkFileStore(root.Path));
+		using RemarkBook book = new(root.Path, store, TimeProvider.System);
 		using ChangesRemarksViewModel remarks = new(
 			changes,
 			book,
@@ -843,6 +867,8 @@ public sealed class ProjectScreenRemarksHeadlessTests
 			action => global::Avalonia.Threading.Dispatcher.UIThread.Post(action));
 		ProjectScreenViewModel screen = new(workspace, changes, new ProjectMarkdownFileStore(), remarks: remarks);
 		ProjectScreenView view = new() { DataContext = screen };
+		Pact.App.Avalonia.Lifecycle.ObservedTaskGroup eventTasks = new(static (_, _) => Task.CompletedTask);
+		view.ConfigureLifecycle(eventTasks);
 		// At the bottom of the right column, as under the file list, unless a test moves it.
 		RemarksPanel panel = new() { Remarks = remarks, Width = 280, VerticalAlignment = panelAlignment };
 		DockPanel layout = new();
@@ -856,7 +882,7 @@ public sealed class ProjectScreenRemarksHeadlessTests
 			await screen.SelectTabAsync(ProjectScreenTab.Changes, CancellationToken.None);
 			await changes.SelectFileAsync(changes.Files[0], CancellationToken.None);
 			window.UpdateLayout();
-			await act(new Fixture(window, view, panel, book, remarks, changes.ShownDiff!, deliveredTo, changes, reader, time));
+			await act(new Fixture(window, view, panel, book, remarks, changes.ShownDiff!, deliveredTo, changes, reader, time, store, eventTasks));
 		}
 		finally
 		{
@@ -888,7 +914,9 @@ public sealed class ProjectScreenRemarksHeadlessTests
 		List<string> DeliveredTo,
 		ProjectChangesViewModel Changes,
 		TextReader Reader,
-		ManualTimeProvider Time)
+		ManualTimeProvider Time,
+		GatedRemarkStore Store,
+		Pact.App.Avalonia.Lifecycle.ObservedTaskGroup EventTasks)
 	{
 		// The agent rewrites the file; the next reconciliation reads it.
 		public async Task EditAsync(string text, FileDiff? diff = null)

@@ -54,7 +54,26 @@ public sealed class DocsAndNotesWorkspaceViewModelTests : IDisposable
 		(await workspace.OpenDocumentAsync("README.md", CancellationToken.None, "usage")).ShouldBeTrue();
 
 		workspace.RequestedHeading.ShouldBe("usage");
-		workspace.TakeRequestedHeading().ShouldBe("usage");
+		workspace.TakeRequestedHeading("AGENTS.md").ShouldBeNull();
+		workspace.TakeRequestedHeading("README.md").ShouldBe("usage");
+		workspace.RequestedHeading.ShouldBeNull();
+	}
+
+	// The scroll is queued until the preview is laid out; another pick before then cancels it.
+	[Test]
+	public async Task A_requested_heading_is_dropped_when_another_document_or_tab_is_picked()
+	{
+		Write("README.md", "# Readme\n\n## Usage");
+		Write("AGENTS.md", "# Agents\n\n## Usage");
+		var workspace = CreateWorkspace();
+		await workspace.RefreshAsync(CancellationToken.None);
+		await workspace.OpenDocumentAsync("README.md", CancellationToken.None, "usage");
+
+		await workspace.SelectDocumentAsync(workspace.DocsTree.Single(node => node.Title == "AGENTS.md"), CancellationToken.None);
+		workspace.RequestedHeading.ShouldBeNull();
+
+		await workspace.OpenDocumentAsync("README.md", CancellationToken.None, "usage");
+		await workspace.SelectSectionAsync(DocsAndNotesSection.Notes, CancellationToken.None);
 		workspace.RequestedHeading.ShouldBeNull();
 	}
 
