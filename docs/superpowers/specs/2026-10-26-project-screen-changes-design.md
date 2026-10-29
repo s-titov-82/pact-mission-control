@@ -31,7 +31,8 @@ with answers coming back per remark, the way a GitLab review works.
 - **Remark threads** on diff lines: each remark gets an id, all open remarks
   go to an agent in one prompt, the agent answers and resolves them over MCP,
   the user reopens them if needed.
-- A **rendered mode for Markdown** diffs next to the plain diff.
+- A **whole-file mode** for every text file next to the plain diff, and a
+  **rendered mode** for Markdown; remarks can be made in both.
 - **Agent files**: an agent adds a link to any file (inside or outside the
   project) to a list in the right column; a click shows the file read-only in
   a temporary panel over the terminal.
@@ -44,8 +45,8 @@ with answers coming back per remark, the way a GitLab review works.
   stays in the git popup.
 - Viewing a specific commit or a range of commits (later, see Stages).
 - Filling the Overview tab with a dashboard (section 3 of the plan).
-- Moving Docs into the project screen. The Docs pane stays as it is; only the
-  review logs leave it.
+- Moving Docs into the project screen. The Docs pane stays where it is; the
+  review logs leave it, and its Common and Docs tabs merge (section 3).
 - Syntax highlighting of code in the diff (nice later, not needed now).
 
 ## Anti-goals
@@ -64,8 +65,12 @@ Built and shipped in this order; each stage is usable on its own.
 1. Project screen, Changes tab without remarks, review logs moved, right
    column reworked.
 2. Agent files.
-3. Rendered Markdown mode.
+3. Whole-file and rendered Markdown modes, Markdown preview fixes, Docs tabs
+   merged.
 4. Remark threads.
+
+Agreed build order (2026-10-27): 1, 4, 3, 2, 5. Stage 3 was widened on
+2026-10-29; stage 4 already exists when it is built.
 5. Later, out of this spec's plans: viewing a commit, the Overview dashboard.
 
 ## 1. Project screen and the Changes tab
@@ -181,16 +186,79 @@ as it is.
     same treatment as in the diff.
 - The tool does not open the panel by itself; the agent only adds the link.
 
-## 3. Rendered Markdown mode
+## 3. Whole-file and rendered modes, Markdown preview
 
-- For a `.md` file the diff header has a switch: **Diff** (default) and
-  **Rendered**.
-- Rendered shows the new version through the Docs Markdown preview, with
-  changed blocks marked: added and modified blocks with a coloured bar at the
-  side, removed blocks as a thin collapsed marker that expands to the old
-  text. Block granularity (paragraph, list item, heading, code block) is the
-  builder's call.
-- Remarks (stage 4) are made in the Diff mode only.
+Why: in review the user often needs to see where a changed block sits in its
+file, which hunks with a few lines of context do not show.
+
+### Modes
+
+- The diff header gets a switch: **Diff** (default) and **Whole file** for
+  every file that has a text diff; a `.md` file also gets **Rendered**.
+  Binary files and files cut as too large keep the plain placeholder and no
+  switch. The chosen mode stays while the user moves between files. *(my
+  call)*
+- **Whole file** shows the new version of the file in full, in the same
+  monospaced view as the diff, with new line numbers only. Added lines and
+  changed lines (a removed-then-added pair) are tinted as in the diff.
+  Where lines were removed, a thin marker ("▸ 2 lines removed") stands
+  between the surrounding lines; a click expands the old lines in place,
+  tinted as removed, and another click folds them. A deleted file shows its
+  old text as removed. *(chosen by the user over a full-context unified
+  diff, 2026-10-29)*
+- **Rendered** (`.md` only) shows the new version through the Docs Markdown
+  preview with changed blocks marked: added and changed blocks with a
+  coloured bar at the side, removed blocks as the same thin collapsed marker,
+  expanding to the old text rendered. A block is a heading, a paragraph, a
+  list item, a quote, a table or a code block. *(my call; the user agreed
+  block-level remarks are enough)*
+- The open file refreshing by itself (section 1) works in every mode,
+  keeping the scroll position near where it was.
+
+### Remarks in these modes
+
+- **Whole file:** the same as in Diff. The "+" on hover and a click on the
+  line number open a thread under a new line; an expanded removed line takes
+  an old-side remark. Anchors, ids and outdated rules are exactly section 4's,
+  so a thread made in one mode shows in the others at its line.
+- **Rendered:** a "+" on hover at the side of a block opens a thread under
+  that block. The remark is anchored as a new-side remark on the first source
+  line of the block, with that line's text captured, so it shows at that line
+  in Diff and Whole file. A thread whose line lies inside a block is shown
+  under that block. Removed blocks take no remarks in Rendered. *(my call)*
+- A block with threads carries a small mark, like the line mark in the diff.
+
+### Markdown preview fixes
+
+These apply to every place that uses the Docs Markdown preview: the Docs
+pane, review logs, Rendered mode, and later the agent-file panel.
+
+- **Links (bug: a click on a link to another `.md` freezes Pact).**
+  - A relative link to a `.md` file inside the project opens that file in the
+    same preview: in the Docs pane it selects that document in the tree; in
+    Rendered mode it opens the document in the Docs pane. *(my call for
+    Rendered)* A link relative to the document's folder and a root-relative
+    `/path.md` both resolve; `#heading` scrolls to the heading, also after
+    `file.md#heading`.
+  - A link to a file outside the project, or to a file that does not exist,
+    does not navigate and does not freeze: the preview shows a short notice
+    such as "Outside the project: ../x.md". *(wording is the builder's call)*
+  - An `http(s)` link opens in the system browser. *(my call)*
+- **Images (bug: images are not drawn).** Relative image paths resolve
+  against the document's folder, `http(s)` images load from the network. A
+  missing or failing image shows its alt text in place, never blocks the
+  preview. In Rendered mode images come from the working tree.
+
+### Docs pane: Common and Docs merged
+
+- The Docs pane's tabs are **Notes** and **Docs**. The new Docs tab holds one
+  tree with every Markdown file of the project that the two tabs show today.
+- In every folder, subfolders come first, then files, each sorted by name,
+  as in a file manager.
+- Opening the tab selects `README.md` at the project root when there is one,
+  otherwise nothing. *(my call)*
+- `pact_open_document` and the right-column Documents tree keep working on
+  the merged tree; nothing else about the pane changes.
 
 ## 4. Remark threads
 
@@ -289,7 +357,10 @@ as it is.
 
 - Refresh throttling numbers, the large-diff threshold, the agent-file cap.
 - How the agent-file panel is layered over the WebView.
-- Markdown block diffing granularity.
+- How Rendered mode marks blocks and places threads (one preview per block
+  or one preview with overlays), and how changed blocks are matched between
+  versions, within the block list in section 3.
+- Why the link click freezes today, and the notice's wording and look.
 - Storage file names and formats, as long as remarks live in the project's
   `.pact/` and agent links live with the session record.
 - Exact prompt wording for remark delivery and tool descriptions.
