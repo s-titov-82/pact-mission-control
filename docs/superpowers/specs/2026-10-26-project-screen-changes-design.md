@@ -246,8 +246,12 @@ pane, review logs, Rendered mode, and later the agent-file panel.
   - An `http(s)` link opens in the system browser. *(my call)*
 - **Images (bug: images are not drawn).** Relative image paths resolve
   against the document's folder, `http(s)` images load from the network. A
-  missing or failing image shows its alt text in place, never blocks the
-  preview. In Rendered mode images come from the working tree.
+  missing local image, or a local file that is not an image, shows its alt
+  text in place; nothing blocks the preview. In Rendered mode images come from
+  the working tree. *(Narrowed by the user on 2026-10-29: a local file that
+  starts as an image but is damaged, and a web image that fails to load, show
+  the Markdown engine's broken-image mark for now; alt text for them is in the
+  backlog.)*
 
 ### Docs pane: Common and Docs merged
 
