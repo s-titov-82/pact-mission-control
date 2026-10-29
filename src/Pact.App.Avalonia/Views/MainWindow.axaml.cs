@@ -14,6 +14,7 @@ using Pact.App.Avalonia.Web;
 using Pact.Core.Platform;
 using Pact.Core.Prompting;
 using Pact.Core.Updates;
+using Pact.Presentation.Services;
 using Pact.Presentation.Settings;
 using Pact.Presentation.Settings.ViewModels;
 using Pact.Presentation.Updates;
@@ -664,6 +665,30 @@ internal sealed partial class MainWindow : Window, IDisposable
 		}
 	}
 
+	// A project Markdown link in a linked file opens in the Docs pane, as from any other preview.
+	private async Task OpenAgentFileLinkAsync(ProjectDocumentLink link)
+	{
+		if (EngineProbeController.ShownAgentFileProjectId is not { } projectId)
+		{
+			return;
+		}
+
+		EngineProbeController.CloseAgentFile();
+		await EngineProbeController.OpenProjectDocumentAsync(projectId, link.RelativePath, link.Heading, CancellationToken.None);
+	}
+
+	private void RefreshAgentFile()
+	{
+		if (EngineProbeController.ShownAgentFile is { } document)
+		{
+			AgentFile.Show(document, CenterPane);
+		}
+		else
+		{
+			AgentFile.Hide();
+		}
+	}
+
 	private void WireSelectionActionsEvents()
 	{
 		ObserveEvent<SessionViewModel>(
@@ -680,6 +705,25 @@ internal sealed partial class MainWindow : Window, IDisposable
 			handler => SelectionActions.CloseRequested += handler,
 			handler => SelectionActions.CloseRequested -= handler,
 			EngineProbeController.CloseSelectionActions);
+		ObserveEvent<AgentFileItem>(
+			handler => RightActions.AgentFileRequested += handler,
+			handler => RightActions.AgentFileRequested -= handler,
+			"open-agent-file",
+			item => EngineProbeController.OpenAgentFileAsync(item, CancellationToken.None));
+		ObserveEvent<AgentFileItem>(
+			handler => RightActions.AgentFileRemoveRequested += handler,
+			handler => RightActions.AgentFileRemoveRequested -= handler,
+			"remove-agent-file",
+			item => EngineProbeController.CurrentAgentFiles?.RemoveAsync(item, CancellationToken.None) ?? Task.CompletedTask);
+		ObserveAction(
+			handler => AgentFile.CloseRequested += handler,
+			handler => AgentFile.CloseRequested -= handler,
+			EngineProbeController.CloseAgentFile);
+		ObserveEvent<ProjectDocumentLink>(
+			handler => AgentFile.DocumentLinkFollowed += handler,
+			handler => AgentFile.DocumentLinkFollowed -= handler,
+			"agent-file-link",
+			OpenAgentFileLinkAsync);
 		ObserveAction<NotesSelectionCompletion>(
 			handler => NotesPane.SelectionCompleted += handler,
 			handler => NotesPane.SelectionCompleted -= handler,
@@ -1296,6 +1340,16 @@ internal sealed partial class MainWindow : Window, IDisposable
 			RightActions.Remarks = EngineProbeController.CurrentRemarks;
 		}
 
+		if (e.PropertyName == nameof(AvaloniaMainShellController.CurrentAgentFiles))
+		{
+			RightActions.AgentFiles = EngineProbeController.CurrentAgentFiles;
+		}
+
+		if (e.PropertyName == nameof(AvaloniaMainShellController.ShownAgentFile))
+		{
+			RefreshAgentFile();
+		}
+
 		if (e.PropertyName == nameof(AvaloniaMainShellController.CurrentDocsAndNotes))
 		{
 			NotesPane.Workspace = EngineProbeController.CurrentDocsAndNotes;
@@ -1523,9 +1577,11 @@ internal sealed partial class MainWindow : Window, IDisposable
 		_updateController?.Stop();
 		_usageRefreshCancellation.Cancel();
 		SelectionActions.DetachEventProducers();
+		AgentFile.Hide();
 		NotesPane.DetachEventProducers();
 		RightActions.Workspace = null;
 		RightActions.Changes = null;
+		RightActions.AgentFiles = null;
 		RightActions.ProjectScreen = null;
 		if (_gitFlyout?.Content is GitPanelView gitPanel)
 		{

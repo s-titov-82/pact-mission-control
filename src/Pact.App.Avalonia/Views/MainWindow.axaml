@@ -38,6 +38,7 @@
                    Text="Secondary surface selected" />
       </Border>
       <views:SelectionActionsPopover x:Name="SelectionActions" ZIndex="40" />
+      <views:AgentFilePanel x:Name="AgentFile" />
     </Grid>
     <GridSplitter x:Name="RightColumnSplitter" Grid.Column="3" ResizeDirection="Columns" />
     <Border Grid.Column="4" BorderBrush="{StaticResource AppPanelBorderBrush}" BorderThickness="1,0,0,0">

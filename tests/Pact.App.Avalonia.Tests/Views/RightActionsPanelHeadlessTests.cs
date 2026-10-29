@@ -5,6 +5,7 @@ using Avalonia.Interactivity;
 using Avalonia.LogicalTree;
 using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Pact.App.Avalonia.Views;
 using Pact.Core.Git;
 using Pact.Core.Projects;
@@ -77,6 +78,103 @@ public sealed class RightActionsPanelHeadlessTests
 		{
 			window.Close();
 		}
+	}
+
+	[AvaloniaTest]
+	public void Agent_files_show_under_the_changes_entry()
+	{
+		using var changes = Changes(Files("a.cs"), added: 1, removed: 0);
+		using var files = AgentFiles(@"D:\proj\docs\plan.md", @"C:\tools\bin\run.ps1");
+		RightActionsPanel panel = new() { Changes = changes, AgentFiles = files };
+		InThemedWindow(panel, () =>
+		{
+			var section = panel.FindControl<Control>("AgentFilesSection")!;
+
+			section.IsVisible.ShouldBeTrue();
+			var texts = section.GetVisualDescendants().OfType<TextBlock>().Select(text => text.Text).ToList();
+			texts.ShouldContain("Agent files");
+			texts.ShouldContain("plan.md");
+			texts.ShouldContain("project");
+			texts.ShouldContain("run.ps1");
+			texts.ShouldContain("bin");
+			Top(section, panel).ShouldBeGreaterThan(Top(panel.FindControl<Control>("ChangesEntry")!, panel));
+
+			panel.AgentFiles = null;
+			section.IsVisible.ShouldBeFalse();
+			using var empty = AgentFiles();
+			panel.AgentFiles = empty;
+			section.IsVisible.ShouldBeFalse();
+		});
+	}
+
+	[AvaloniaTest]
+	public void Clicking_an_agent_file_raises_the_request()
+	{
+		using var files = AgentFiles(@"C:\tools\a.txt");
+		RightActionsPanel panel = new() { AgentFiles = files };
+		InThemedWindow(panel, () =>
+		{
+			List<AgentFileItem> requested = [];
+			panel.AgentFileRequested += (_, item) => requested.Add(item);
+
+			AgentFileButtons(panel).First(button => button.Classes.Contains("agent-file"))
+				.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+			requested.ShouldBe([files.Items.Single()]);
+		});
+	}
+
+	[AvaloniaTest]
+	public void The_cross_raises_removal_and_not_the_open_request()
+	{
+		using var files = AgentFiles(@"C:\tools\a.txt");
+		RightActionsPanel panel = new() { AgentFiles = files };
+		InThemedWindow(panel, () =>
+		{
+			List<AgentFileItem> opened = [];
+			List<AgentFileItem> removed = [];
+			panel.AgentFileRequested += (_, item) => opened.Add(item);
+			panel.AgentFileRemoveRequested += (_, item) => removed.Add(item);
+
+			AgentFileButtons(panel).First(button => ToolTip.GetTip(button) as string == "Remove link")
+				.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+			removed.ShouldBe([files.Items.Single()]);
+			opened.ShouldBeEmpty();
+		});
+	}
+
+	private static IEnumerable<Button> AgentFileButtons(RightActionsPanel panel) =>
+		panel.FindControl<Control>("AgentFilesSection")!.GetVisualDescendants().OfType<Button>();
+
+	// The list's rows come from the theme's templates.
+	private static void InThemedWindow(RightActionsPanel panel, Action test)
+	{
+		FluentTheme theme = new();
+		Application.Current!.Styles.Add(theme);
+		Window window = new() { Content = panel, Height = 800 };
+		window.Show();
+		try
+		{
+			window.UpdateLayout();
+			test();
+		}
+		finally
+		{
+			window.Close();
+			Application.Current.Styles.Remove(theme);
+		}
+	}
+
+	private static AgentFilesViewModel AgentFiles(params string[] paths)
+	{
+		var at = DateTimeOffset.UtcNow;
+		SessionViewModel session = new(new SessionRecord(
+			"s1", Pact.Core.Agents.AgentKind.Claude, "Claude", @"D:\proj", "claude", null, SessionStatus.Stopped, at, at)
+		{
+			FileLinks = [.. paths.Select(path => new AgentFileLink(path, null, at))]
+		});
+		return new AgentFilesViewModel(session, @"D:\proj", [], (_, _, _) => Task.CompletedTask);
 	}
 
 	[AvaloniaTest]

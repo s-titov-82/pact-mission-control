@@ -1,0 +1,47 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:md="https://github.com/whistyun/Markdown.Avalonia"
+             xmlns:editing="clr-namespace:Pact.App.Avalonia.Views.Editing"
+             x:Class="Pact.App.Avalonia.Views.AgentFilePanel">
+  <!-- The terminal is a native WebView: only a popup, a window of its own, can lie over it. -->
+  <Popup x:Name="FilePopup"
+         IsLightDismissEnabled="False"
+         Placement="AnchorAndGravity"
+         PlacementAnchor="TopLeft"
+         PlacementGravity="BottomRight"
+         PlacementConstraintAdjustment="None">
+    <Border x:Name="PanelBorder"
+            Background="{DynamicResource AppSurfaceBrush}"
+            BorderBrush="{DynamicResource AppBorderBrush}"
+            BorderThickness="1,0,0,0"
+            BoxShadow="-6 0 24 0 #50000000"
+            Focusable="True"
+            KeyDown="OnPanelKeyDown">
+      <Grid RowDefinitions="Auto,*">
+        <Grid ColumnDefinitions="*,Auto" Margin="12,10,8,8">
+          <StackPanel Spacing="2">
+            <TextBlock x:Name="FileNameText" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+            <SelectableTextBlock x:Name="FullPathText" FontSize="11"
+                                 Foreground="{DynamicResource AppTextMutedBrush}" TextWrapping="Wrap" />
+          </StackPanel>
+          <Button x:Name="CloseButton" Grid.Column="1" Classes="compact-icon" VerticalAlignment="Top"
+                  ToolTip.Tip="Close" Content="✕" Click="OnCloseClicked" />
+        </Grid>
+        <Grid Grid.Row="1">
+          <editing:SourceEditor x:Name="TextView" Margin="10,0,10,10" IsReadOnly="True" IsVisible="False"
+                                FontFamily="Cascadia Mono, Consolas, monospace" FontSize="13"
+                                HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" />
+          <md:MarkdownScrollViewer x:Name="MarkdownView" Margin="10,0,10,10" IsVisible="False"
+                                   SelectionEnabled="True" />
+          <TextBlock x:Name="PlaceholderText" HorizontalAlignment="Center" VerticalAlignment="Center"
+                     Foreground="{DynamicResource AppTextMutedBrush}" IsVisible="False" />
+          <!-- Why a link went nowhere; it fades on its own. -->
+          <Border x:Name="LinkNotice" Margin="16,8" Padding="10,4" CornerRadius="4" HorizontalAlignment="Right"
+                  VerticalAlignment="Top" Background="{DynamicResource AppPopupBackgroundBrush}" IsVisible="False">
+            <TextBlock x:Name="LinkNoticeText" />
+          </Border>
+        </Grid>
+      </Grid>
+    </Border>
+  </Popup>
+</UserControl>

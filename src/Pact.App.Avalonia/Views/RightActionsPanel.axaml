@@ -17,6 +17,7 @@
       <Panel />
     </DockPanel>
     <Grid x:Name="DefaultActionsPanel" Grid.Row="1" RowDefinitions="Auto,0,Auto,Auto,*,Auto,Auto">
+      <StackPanel>
       <StackPanel x:Name="ChangesSection" Margin="0,20,0,0" IsVisible="False">
         <Button x:Name="ChangesEntry" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
                 Padding="10,6" Click="OnChangesEntryClicked">
@@ -30,6 +31,31 @@
         </Button>
         <TextBlock x:Name="NoChangesText" Foreground="{DynamicResource AppTextMutedBrush}"
                    Text="No uncommitted changes" IsVisible="False" />
+      </StackPanel>
+      <StackPanel x:Name="AgentFilesSection" Margin="0,20,0,0" IsVisible="False">
+        <TextBlock FontWeight="SemiBold" Text="Agent files" />
+        <ScrollViewer MaxHeight="240" Margin="0,8,0,0" VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+          <ItemsControl x:Name="AgentFilesList">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,4">
+                  <Button Classes="agent-file" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                          Padding="8,4" ToolTip.Tip="{Binding ToolTip}" Click="OnAgentFileClicked">
+                    <StackPanel>
+                      <TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis" />
+                      <TextBlock FontSize="11" Foreground="{DynamicResource AppTextMutedBrush}"
+                                 Text="{Binding Location}" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                  </Button>
+                  <Button Grid.Column="1" Classes="compact-icon" Margin="4,0,0,0" VerticalAlignment="Center"
+                          ToolTip.Tip="Remove link" Content="✕" Click="OnAgentFileRemoveClicked" />
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </StackPanel>
       </StackPanel>
       <Grid x:Name="DocumentsSection" Grid.Row="1" Margin="0,20,0,0"
             RowDefinitions="Auto,*" IsVisible="False">

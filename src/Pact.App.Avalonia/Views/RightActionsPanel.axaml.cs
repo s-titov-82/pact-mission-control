@@ -110,6 +110,61 @@ internal sealed partial class RightActionsPanel : UserControl
 	private void OnChangesEntryClicked(object? sender, RoutedEventArgs e) =>
 		ChangesEntryRequested?.Invoke(this, EventArgs.Empty);
 
+	/// <summary>Raised when a linked file is clicked.</summary>
+	public event EventHandler<AgentFileItem>? AgentFileRequested;
+
+	/// <summary>Raised when a linked file's ✕ is clicked.</summary>
+	public event EventHandler<AgentFileItem>? AgentFileRemoveRequested;
+
+	/// <summary>Files the shown session's agent linked; <see langword="null"/> or empty hides the list.</summary>
+	public AgentFilesViewModel? AgentFiles
+	{
+		get;
+		set
+		{
+			if (ReferenceEquals(field, value))
+			{
+				return;
+			}
+
+			field?.PropertyChanged -= OnAgentFilesPropertyChanged;
+			field = value;
+			field?.PropertyChanged += OnAgentFilesPropertyChanged;
+			RefreshAgentFiles();
+		}
+	}
+
+	private void OnAgentFilesPropertyChanged(object? sender, PropertyChangedEventArgs e)
+	{
+		if (e.PropertyName is nameof(AgentFilesViewModel.Items) or nameof(AgentFilesViewModel.HasItems))
+		{
+			RefreshAgentFiles();
+		}
+	}
+
+	private void RefreshAgentFiles()
+	{
+		AgentFilesSection.IsVisible = AgentFiles?.HasItems == true;
+		AgentFilesList.ItemsSource = AgentFiles?.Items;
+	}
+
+	private void OnAgentFileClicked(object? sender, RoutedEventArgs e)
+	{
+		if (sender is Control { DataContext: AgentFileItem item })
+		{
+			AgentFileRequested?.Invoke(this, item);
+		}
+	}
+
+	private void OnAgentFileRemoveClicked(object? sender, RoutedEventArgs e)
+	{
+		e.Handled = true;
+		if (sender is Control { DataContext: AgentFileItem item })
+		{
+			AgentFileRemoveRequested?.Invoke(this, item);
+		}
+	}
+
 	/// <summary>Shows a review log path as its file name.</summary>
 	public static FuncValueConverter<string?, string?> FileNameOnly { get; } =
 		new(path => path is null ? null : Path.GetFileNameWithoutExtension(path));

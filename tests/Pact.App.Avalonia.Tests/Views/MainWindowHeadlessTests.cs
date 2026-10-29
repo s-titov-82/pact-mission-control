@@ -223,6 +223,33 @@ public sealed class MainWindowHeadlessTests
 	}
 
 	[AvaloniaTest]
+	public async Task Shown_agent_file_opens_the_panel_over_the_center_pane_and_closing_hides_it()
+	{
+		await using SelectionWindowFixture fixture = new();
+		var token = TestContext.CurrentContext.CancellationToken;
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), token);
+		using MainWindow mainWindow = new(fixture.Controller);
+		using CenterPaneHost host = new(mainWindow);
+		await fixture.Controller.SelectSessionAsync(fixture.ViewModel.Sessions[0], startIfNeeded: true, cancellationToken: token);
+		fixture.Controller.AgentFileLoader = (path, _, _) =>
+			Task.FromResult(new AgentFileDocument(path, Path.GetFileName(path), "text", null, false, null, null));
+		host.UpdateLayout();
+		var popup = mainWindow.FindControl<AgentFilePanel>("AgentFile").ShouldNotBeNull()
+			.FindControl<Popup>("FilePopup").ShouldNotBeNull();
+
+		await fixture.Controller.OpenAgentFileAsync(new AgentFileItem(@"C:\x\a.txt", "a.txt", "x", ""), token);
+		Dispatcher.UIThread.RunJobs();
+
+		popup.IsOpen.ShouldBeTrue();
+		popup.PlacementTarget.ShouldBeSameAs(host.Pane);
+
+		fixture.Controller.CloseAgentFile();
+		Dispatcher.UIThread.RunJobs();
+
+		popup.IsOpen.ShouldBeFalse();
+	}
+
+	[AvaloniaTest]
 	public async Task Repeated_notes_pointer_release_over_unchanged_selection_keeps_anchor_and_expanded_targets()
 	{
 		await using SelectionWindowFixture fixture = new();
