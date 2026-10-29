@@ -8,7 +8,7 @@ namespace Pact.App.Avalonia.Views.Editing;
 /// <summary>Syntax colouring of an editor by file name, in the app's light or dark theme.</summary>
 internal static class EditorSyntax
 {
-	private static readonly RegistryOptions Registry = new(ThemeName.DarkPlus);
+	private static readonly SharedRegistryOptions Registry = new(new RegistryOptions(ThemeName.DarkPlus));
 
 	/// <summary>The grammar scope for a file's extension; <see langword="null"/> for unknown files.</summary>
 	public static string? ScopeFor(string path)

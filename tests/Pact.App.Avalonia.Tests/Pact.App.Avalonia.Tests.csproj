@@ -2,7 +2,17 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0-windows</TargetFramework>
+    <!-- The suite builds hundreds of windows; their garbage is collected in place rather than in the
+         background, so a capped heap is reclaimed before it runs out. -->
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- About 60 MB is live at any time; the cap keeps a lazy GC from taking gigabytes of the machine,
+         and conserving memory compacts the large object heap so big strings still find room. -->
+    <RuntimeHostConfigurationOption Include="System.GC.HeapHardLimit" Value="1610612736" />
+    <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="7" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Avalonia.Headless.NUnit" />
