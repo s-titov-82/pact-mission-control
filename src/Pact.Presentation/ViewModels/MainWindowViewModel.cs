@@ -825,6 +825,36 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 			cancellationToken);
 	}
 
+	/// <summary>Adds a file link to a session's list, newest first; not counted as activity.</summary>
+	public async Task AddSessionFileLinkAsync(
+		string sessionId,
+		AgentFileLink link,
+		CancellationToken cancellationToken)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+		ArgumentNullException.ThrowIfNull(link);
+		await UpdateSessionAsync(
+			sessionId,
+			session => session with { FileLinks = AgentFileLinks.Add(session.FileLinks, link) },
+			cancellationToken);
+	}
+
+	/// <summary>Removes the link to <paramref name="path"/> from a session's list.</summary>
+	public async Task RemoveSessionFileLinkAsync(
+		string sessionId,
+		string path,
+		CancellationToken cancellationToken)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+		ArgumentNullException.ThrowIfNull(path);
+		await UpdateSessionAsync(
+			sessionId,
+			session => AgentFileLinks.Remove(session.FileLinks, path) is var links && ReferenceEquals(links, session.FileLinks)
+				? session
+				: session with { FileLinks = links },
+			cancellationToken);
+	}
+
 	/// <summary>Persists a session title, falling back to a default when blank.</summary>
 	public async Task UpdateSessionTitleAsync(
 		string sessionId,

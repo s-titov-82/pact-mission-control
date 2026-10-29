@@ -1,5 +1,6 @@
 using Pact.App.Avalonia.Lifecycle;
 using Pact.Core.AgentControl;
+using Pact.Core.Sessions;
 using Pact.Presentation.Services.AgentControl;
 using Pact.Presentation.ViewModels;
 
@@ -150,4 +151,21 @@ internal sealed class AgentControlHost : IAgentControlHost
 			shown = await _openProjectDocumentAsync(projectId, relativePath, cancellationToken));
 		return shown;
 	}
+
+	public async Task<string?> GetSessionWorkingDirectoryAsync(string sessionId, CancellationToken cancellationToken)
+	{
+		string? directory = null;
+		await _uiDispatcher.InvokeAsync(() =>
+		{
+			directory = _viewModel.RootTabs.Sessions
+				.Concat(_viewModel.Workspaces.Concat(_viewModel.PausedWorkspaces).SelectMany(workspace => workspace.Sessions))
+				.FirstOrDefault(session => string.Equals(session.Record.Id, sessionId, StringComparison.Ordinal))
+				?.Record.WorkingDirectory;
+			return Task.CompletedTask;
+		});
+		return directory;
+	}
+
+	public Task AddSessionFileLinkAsync(string sessionId, AgentFileLink link, CancellationToken cancellationToken) =>
+		_uiDispatcher.InvokeAsync(() => _viewModel.AddSessionFileLinkAsync(sessionId, link, cancellationToken));
 }

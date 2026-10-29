@@ -20,6 +20,10 @@ The orchestrator targets a running project explicitly: use `pact_get_project_not
 
 For a project session, use `pact_open_document` with a Markdown `path` (relative to the project root, or absolute inside it) to show a file you wrote, such as a plan or spec, in the project's Docs pane. It switches the user to that document, so call it when they should read it now.
 
+## Files
+
+Use `pact_add_file_link` with a file `path` (absolute, or relative to your working directory) and an optional short `title` to add the file to this session's list in Pact's right column; the user opens it read-only over the terminal when they choose. Use it for a file you wrote outside the project, such as a script in your scratchpad or Temp, or any file the user should read. The file must already exist, and the call does not open it. For project Markdown the user should read now, use `pact_open_document` instead.
+
 ## Remarks
 
 The user can leave remarks on lines of the project's uncommitted changes in Pact and send them to you in one prompt; each has an id such as `C3`, the file and line, and the line's text as the user saw it. Answer every id with `pact_reply_remark` (`id`, `text`), and pass `resolve: true` once the remark is dealt with. A remark marked `(outdated)` points at a line that has changed since; work from its quoted text. If you lost the prompt, `pact_list_remarks` lists the open threads again.

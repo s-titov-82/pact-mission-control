@@ -210,6 +210,32 @@ public static class SessionTools
 					return await CompleteAsync(result, "Document opened.", "Agent action: document opened");
 				}),
 			new AgentControlTool(
+				"pact_add_file_link",
+				"Add a link to a file to this session's list in Pact's right column, so the user can open it "
+					+ "read-only over the terminal. Use it for a file you wrote outside the project (scratchpad, "
+					+ "Temp) or one the user should read. The file must exist. Does not open it.",
+				() => AgentControlSchema.Object(
+					new()
+					{
+						["path"] = AgentControlSchema.String("Absolute path, or relative to your working directory."),
+						["title"] = AgentControlSchema.String("Optional short label.")
+					},
+					"path"),
+				async (call, cancellationToken) =>
+				{
+					if (!TryGetRequiredString(call.Arguments, "path", out var path, out var error)
+						|| !TryGetOptionalString(call.Arguments, "title", out var title, out error))
+					{
+						return error;
+					}
+
+					var result = await dispatcher.AddFileLinkAsync(
+						call.SessionId ?? string.Empty,
+						new AddFileLinkRequest(path, title),
+						cancellationToken);
+					return await CompleteAsync(result, "File linked.", "Agent action: file linked");
+				}),
+			new AgentControlTool(
 				"pact_get_notes",
 				"Read this session's current project Notes text and revision.",
 				() => AgentControlSchema.Object(new()),

@@ -91,7 +91,11 @@ internal sealed class ProjectPersistenceCoordinator(IProjectStore projectStore)
 
 						var updatedProject = project with
 						{
-							LastActiveAt = updatedSession.LastActiveAt,
+							// The project's activity is its latest item's: an edit that leaves the
+							// session's time alone must not rewind it.
+							LastActiveAt = updatedSession.LastActiveAt > project.LastActiveAt
+								? updatedSession.LastActiveAt
+								: project.LastActiveAt,
 							Sessions = sessions
 						};
 						result = new ProjectSessionPersistenceResult(updatedProject, updatedSession);

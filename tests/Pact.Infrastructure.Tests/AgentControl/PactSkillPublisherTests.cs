@@ -55,6 +55,7 @@ public sealed class PactSkillPublisherTests
 			"pact_get_review_turn",
 			"pact_submit_review_turn",
 			"pact_open_document",
+			"pact_add_file_link",
 			"pact_get_project_notes",
 			"pact_replace_project_notes",
 			"pact_append_project_note",

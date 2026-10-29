@@ -38,3 +38,8 @@ public sealed record AgentControlFailure(string Code, string Message);
 /// <summary>A request to show a Markdown file of the caller's project in the Docs pane.</summary>
 /// <param name="Path">Path relative to the project root, or an absolute path inside it.</param>
 public sealed record OpenDocumentRequest(string Path);
+
+/// <summary>A request to add a file to the calling session's list of linked files.</summary>
+/// <param name="Path">Absolute path, or relative to the session's working directory.</param>
+/// <param name="Title">Optional short label.</param>
+public sealed record AddFileLinkRequest(string Path, string? Title);

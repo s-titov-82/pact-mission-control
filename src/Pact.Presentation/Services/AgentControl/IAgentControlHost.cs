@@ -1,4 +1,5 @@
 using Pact.Core.AgentControl;
+using Pact.Core.Sessions;
 
 namespace Pact.Presentation.Services.AgentControl;
 
@@ -47,4 +48,10 @@ public interface IAgentControlHost
 		string projectId,
 		string relativePath,
 		CancellationToken cancellationToken);
+
+	/// <summary>Reads the working directory of a live session; <see langword="null"/> for an unknown one.</summary>
+	Task<string?> GetSessionWorkingDirectoryAsync(string sessionId, CancellationToken cancellationToken);
+
+	/// <summary>Adds a file link to a session's list and saves it with the session.</summary>
+	Task AddSessionFileLinkAsync(string sessionId, AgentFileLink link, CancellationToken cancellationToken);
 }

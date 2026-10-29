@@ -28,6 +28,7 @@ public sealed class SessionToolsTests
 					"pact_get_notes",
 					"pact_replace_notes",
 					"pact_open_document",
+					"pact_add_file_link",
 					"pact_get_subscription_usage",
 					"pact_reply_remark",
 					"pact_list_remarks"
@@ -106,6 +107,15 @@ public sealed class SessionToolsTests
 
 		tool["inputSchema"]!["required"]!.AsArray().Select(value => (string?)value).ShouldBe(["path"]);
 		((string?)tool["inputSchema"]!["properties"]!["path"]!["type"]).ShouldBe("string");
+	}
+
+	[Test]
+	public void Add_file_link_requires_a_path()
+	{
+		var tool = FindTool(CreateTools(), "pact_add_file_link");
+
+		tool["inputSchema"]!["required"]!.AsArray().Select(value => (string?)value).ShouldBe(["path"]);
+		((string?)tool["inputSchema"]!["properties"]!["title"]!["type"]).ShouldBe("string");
 	}
 
 	[Test]

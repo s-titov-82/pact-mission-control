@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Pact.Core.AgentControl;
+using Pact.Core.Sessions;
 
 namespace Pact.Presentation.Services.AgentControl;
 
@@ -168,6 +169,59 @@ public sealed class AgentControlDispatcher
 			: AgentControlResult.Refused(
 				"not-listed",
 				$"The Docs pane does not list '{relativePath}'; files in generated folders such as .git, bin or .pact-reviews are not shown.");
+	}
+
+	/// <summary>
+	/// Adds an existing file to the calling session's linked files; a relative path is taken from
+	/// the session's working directory.
+	/// </summary>
+	public async Task<AgentControlResult> AddFileLinkAsync(
+		string sessionId,
+		AddFileLinkRequest request,
+		CancellationToken cancellationToken)
+	{
+		ArgumentNullException.ThrowIfNull(request);
+		var workingDirectory = await _host.GetSessionWorkingDirectoryAsync(sessionId, cancellationToken).ConfigureAwait(false);
+		if (workingDirectory is null)
+		{
+			return UnknownSession();
+		}
+
+		var path = request.Path.Trim().Trim('"', '\'').Trim();
+		if (path.Length == 0)
+		{
+			return AgentControlResult.Refused("invalid-argument", "Argument 'path' is required.");
+		}
+
+		string full;
+		try
+		{
+			if (path.StartsWith("~/", StringComparison.Ordinal) || path.StartsWith("~\\", StringComparison.Ordinal))
+			{
+				path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), path[2..]);
+			}
+
+			full = Path.GetFullPath(Path.Combine(workingDirectory, path));
+		}
+		catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+		{
+			return AgentControlResult.Refused("invalid-argument", $"'{request.Path}' is not a valid path.");
+		}
+
+		if (Directory.Exists(full))
+		{
+			return AgentControlResult.Refused("not-a-file", $"'{full}' is a folder; link a file.");
+		}
+
+		if (!File.Exists(full))
+		{
+			return AgentControlResult.Refused("file-not-found", $"No file at '{full}'. Write the file before linking it.");
+		}
+
+		var title = string.IsNullOrWhiteSpace(request.Title) ? null : request.Title.Trim();
+		await _host.AddSessionFileLinkAsync(sessionId, new AgentFileLink(full, title, DateTimeOffset.UtcNow), cancellationToken)
+			.ConfigureAwait(false);
+		return AgentControlResult.Ok(Serialize(new { path = full }));
 	}
 
 	/// <summary>Resolves the root of the calling session's project, or the refusal for ROOT and unknown sessions.</summary>

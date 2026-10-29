@@ -1,3 +1,4 @@
+using Pact.Core.Sessions;
 using Pact.Core.AgentControl;
 using Pact.Presentation.Services.AgentControl;
 
@@ -239,8 +240,120 @@ public sealed class AgentControlDispatcherTests
 		host.WebTabs.ShouldBeEmpty();
 	}
 
+	[Test]
+	public async Task AddFileLink_stores_an_absolute_path()
+	{
+		using var folder = TemporaryDirectory.Create();
+		var file = Path.Combine(folder.Path, "a.txt");
+		await File.WriteAllTextAsync(file, "x");
+		FakeAgentControlHost host = new();
+
+		var result = await new AgentControlDispatcher(host).AddFileLinkAsync(
+			ProjectSessionId,
+			new AddFileLinkRequest(file, "Plan"),
+			CancellationToken.None);
+
+		result.Succeeded.ShouldBeTrue(result.Failure?.Message);
+		var (sessionId, link) = host.AddedLinks.ShouldHaveSingleItem();
+		sessionId.ShouldBe(ProjectSessionId);
+		link.Path.ShouldBe(file);
+		link.Title.ShouldBe("Plan");
+		result.Payload.ShouldNotBeNull().ShouldContain("a.txt");
+	}
+
+	[Test]
+	public async Task A_relative_path_is_resolved_against_the_working_directory()
+	{
+		using var folder = TemporaryDirectory.Create();
+		Directory.CreateDirectory(Path.Combine(folder.Path, "out"));
+		var file = Path.Combine(folder.Path, "out", "a.txt");
+		await File.WriteAllTextAsync(file, "x");
+		FakeAgentControlHost host = new() { WorkingDirectory = folder.Path };
+		AgentControlDispatcher dispatcher = new(host);
+
+		await dispatcher.AddFileLinkAsync(ProjectSessionId, new AddFileLinkRequest(@".\out\a.txt", null), CancellationToken.None);
+		await dispatcher.AddFileLinkAsync(ProjectSessionId, new AddFileLinkRequest("\"out/a.txt\"", null), CancellationToken.None);
+
+		host.AddedLinks.Select(added => added.Link.Path).ShouldBe([file, file]);
+	}
+
+	[Test]
+	public async Task A_missing_file_is_refused_and_says_so()
+	{
+		using var folder = TemporaryDirectory.Create();
+		FakeAgentControlHost host = new() { WorkingDirectory = folder.Path };
+
+		var result = await new AgentControlDispatcher(host).AddFileLinkAsync(
+			ProjectSessionId,
+			new AddFileLinkRequest("none.txt", null),
+			CancellationToken.None);
+
+		result.Failure.ShouldNotBeNull().Code.ShouldBe("file-not-found");
+		result.Failure.Message.ShouldContain(Path.Combine(folder.Path, "none.txt"));
+		host.AddedLinks.ShouldBeEmpty();
+	}
+
+	[Test]
+	public async Task A_folder_is_refused()
+	{
+		using var folder = TemporaryDirectory.Create();
+		FakeAgentControlHost host = new();
+
+		var result = await new AgentControlDispatcher(host).AddFileLinkAsync(
+			ProjectSessionId,
+			new AddFileLinkRequest(folder.Path, null),
+			CancellationToken.None);
+
+		result.Failure.ShouldNotBeNull().Code.ShouldBe("not-a-file");
+		host.AddedLinks.ShouldBeEmpty();
+	}
+
+	[Test]
+	public async Task A_root_session_may_add_links()
+	{
+		using var folder = TemporaryDirectory.Create();
+		var file = Path.Combine(folder.Path, "a.txt");
+		await File.WriteAllTextAsync(file, "x");
+		FakeAgentControlHost host = new();
+
+		var result = await new AgentControlDispatcher(host).AddFileLinkAsync(
+			RootSessionId,
+			new AddFileLinkRequest(file, null),
+			CancellationToken.None);
+
+		result.Succeeded.ShouldBeTrue(result.Failure?.Message);
+		host.AddedLinks.ShouldHaveSingleItem().SessionId.ShouldBe(RootSessionId);
+	}
+
+	[Test]
+	public async Task An_unknown_session_is_refused()
+	{
+		FakeAgentControlHost host = new();
+
+		var result = await new AgentControlDispatcher(host).AddFileLinkAsync(
+			"gone",
+			new AddFileLinkRequest(@"C:\a.txt", null),
+			CancellationToken.None);
+
+		result.Failure.ShouldNotBeNull().Code.ShouldBe("unknown-session");
+		host.AddedLinks.ShouldBeEmpty();
+	}
+
 	internal sealed class FakeAgentControlHost : IAgentControlHost
 	{
+		public string WorkingDirectory { get; set; } = Path.GetTempPath();
+
+		public List<(string SessionId, AgentFileLink Link)> AddedLinks { get; } = [];
+
+		public Task<string?> GetSessionWorkingDirectoryAsync(string sessionId, CancellationToken cancellationToken) =>
+			Task.FromResult(TryGetOwner(sessionId, out _) ? WorkingDirectory : null);
+
+		public Task AddSessionFileLinkAsync(string sessionId, AgentFileLink link, CancellationToken cancellationToken)
+		{
+			AddedLinks.Add((sessionId, link));
+			return Task.CompletedTask;
+		}
+
 		public List<(string ProjectId, string Text)> AppendedNotes { get; } = [];
 
 		public List<string> ReadProjectIds { get; } = [];
