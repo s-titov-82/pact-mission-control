@@ -93,8 +93,11 @@ internal sealed partial class ProjectScreenView : UserControl
 		}
 	}
 
-	internal void ConfigureLifecycle(ObservedTaskGroup eventTasks) =>
+	internal void ConfigureLifecycle(ObservedTaskGroup eventTasks)
+	{
 		_eventTasks = eventTasks ?? throw new ArgumentNullException(nameof(eventTasks));
+		RenderedView.ConfigureLifecycle(eventTasks);
+	}
 
 	private void Attach(ProjectScreenViewModel? screen)
 	{
@@ -143,6 +146,7 @@ internal sealed partial class ProjectScreenView : UserControl
 		else if (e.PropertyName == nameof(ProjectChangesViewModel.ShownDiff))
 		{
 			RefreshRemarkMarks();
+			RefreshRendered();
 		}
 	}
 
@@ -189,6 +193,20 @@ internal sealed partial class ProjectScreenView : UserControl
 		var rendered = mode == DiffViewMode.Rendered;
 		RenderedHost.IsVisible = rendered;
 		DiffEditor.IsVisible = !rendered;
+		if (rendered)
+		{
+			CloseOverlay();
+		}
+
+		RefreshRendered();
+	}
+
+	private void RefreshRendered()
+	{
+		if (_changes is { EffectiveMode: DiffViewMode.Rendered, ShownDiff: { } shown })
+		{
+			RenderedView.Show(shown, _remarks);
+		}
 	}
 
 	private void OnDiffModeClicked(object? sender, RoutedEventArgs e) => SelectMode(DiffViewMode.Diff);
