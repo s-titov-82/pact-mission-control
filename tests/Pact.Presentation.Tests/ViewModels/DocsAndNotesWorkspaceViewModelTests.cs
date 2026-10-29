@@ -43,6 +43,21 @@ public sealed class DocsAndNotesWorkspaceViewModelTests : IDisposable
 		(workspace.ActiveDocument?.Text).ShouldBe("# Readme");
 	}
 
+	// A link to file.md#heading opens the file; the pane scrolls to the heading once it shows it.
+	[Test]
+	public async Task Opening_a_document_at_a_heading_asks_the_pane_to_scroll_there()
+	{
+		Write("README.md", "# Readme\n\n## Usage");
+		var workspace = CreateWorkspace();
+		await workspace.RefreshAsync(CancellationToken.None);
+
+		(await workspace.OpenDocumentAsync("README.md", CancellationToken.None, "usage")).ShouldBeTrue();
+
+		workspace.RequestedHeading.ShouldBe("usage");
+		workspace.TakeRequestedHeading().ShouldBe("usage");
+		workspace.RequestedHeading.ShouldBeNull();
+	}
+
 	[Test]
 	public async Task Opening_a_root_document_selects_it_in_the_docs_tree()
 	{

@@ -125,6 +125,26 @@ public sealed class ChangesRemarksViewModelTests : IDisposable
 		(await _book.LoadSnapshotLinesAsync(anchor.SnapshotId!, CancellationToken.None)).ShouldBe(["a", "b", "c"]);
 	}
 
+	// One screen shows several projects in turn; a file of the same name elsewhere is not this file.
+	[Test]
+	public async Task A_diff_from_another_project_with_the_same_path_takes_no_remark()
+	{
+		var remarks = await OpenAsync();
+		using var otherRoot = TemporaryDirectory.Create();
+		Reader otherReader = new();
+		otherReader.Texts[Path1] = "a\nb\nc\n";
+		otherReader.Diffs[Path1] = DefaultDiff();
+		using ProjectChangesViewModel other = new(otherRoot.Path, otherReader, _time, action => action());
+		using var observation = other.Observe();
+		await other.SelectFileAsync(other.Files[0], CancellationToken.None);
+		var foreign = other.ShownDiff!;
+
+		remarks.CanRemarkOn(foreign, 3).ShouldBeFalse();
+		(await remarks.AddRemarkAsync(foreign, 3, "wrong project", CancellationToken.None)).ShouldBeNull();
+		remarks.MapRow(foreign, 3, _changes!.ShownDiff!).ShouldBeNull();
+		_book!.Threads.ShouldBeEmpty();
+	}
+
 	[Test]
 	public async Task A_remark_started_before_an_edit_anchors_to_the_text_seen_when_typing_began()
 	{

@@ -138,7 +138,7 @@ internal sealed partial class AvaloniaMainShellController
 			new ProjectMarkdownFileStore(),
 			relativePath => IsReviewLogInUse(workspace, relativePath),
 			_projectRemarks.GetValueOrDefault(workspace.Id),
-			(relativePath, cancellationToken) => OpenProjectDocumentAsync(workspace.Id, relativePath, cancellationToken));
+			(relativePath, heading, cancellationToken) => OpenProjectDocumentAsync(workspace.Id, relativePath, heading, cancellationToken));
 		_projectScreens[workspace.Id] = screen;
 		WatchWorkspace(workspace);
 		return screen;

@@ -38,7 +38,7 @@ public sealed record ReviewLogBulkDeletion(int Deleted, int Kept);
 public sealed class ProjectScreenViewModel : INotifyPropertyChanged
 {
 	private readonly IProjectMarkdownFileStore _fileStore;
-	private readonly Func<string, CancellationToken, Task<bool>> _openDocument;
+	private readonly Func<string, string?, CancellationToken, Task<bool>> _openDocument;
 	private readonly Func<string, bool> _isLogInUse;
 	private int _logVersion;
 
@@ -55,10 +55,10 @@ public sealed class ProjectScreenViewModel : INotifyPropertyChanged
 		IProjectMarkdownFileStore fileStore,
 		Func<string, bool>? isLogInUse = null,
 		ChangesRemarksViewModel? remarks = null,
-		Func<string, CancellationToken, Task<bool>>? openDocument = null)
+		Func<string, string?, CancellationToken, Task<bool>>? openDocument = null)
 	{
 		Remarks = remarks;
-		_openDocument = openDocument ?? (static (_, _) => Task.FromResult(false));
+		_openDocument = openDocument ?? (static (_, _, _) => Task.FromResult(false));
 		Workspace = workspace ?? throw new ArgumentNullException(nameof(workspace));
 		Changes = changes;
 		_fileStore = fileStore ?? throw new ArgumentNullException(nameof(fileStore));
@@ -90,12 +90,15 @@ public sealed class ProjectScreenViewModel : INotifyPropertyChanged
 	/// <summary>Project root folder.</summary>
 	public string RootPath => Workspace.RootPath;
 
-	/// <summary>Shows a project Markdown file in the project's Docs pane, as a link in a log or a rendered file asks.</summary>
+	/// <summary>
+	/// Shows a project Markdown file in the project's Docs pane, at a heading when one is given, as
+	/// a link in a log or a rendered file asks.
+	/// </summary>
 	/// <returns><see langword="false"/> when the pane cannot show it.</returns>
-	public Task<bool> OpenDocumentAsync(string relativePath, CancellationToken cancellationToken)
+	public Task<bool> OpenDocumentAsync(string relativePath, string? heading, CancellationToken cancellationToken)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(relativePath);
-		return _openDocument(relativePath, cancellationToken);
+		return _openDocument(relativePath, heading, cancellationToken);
 	}
 
 	/// <summary>Current branch, empty outside git or before the first read.</summary>

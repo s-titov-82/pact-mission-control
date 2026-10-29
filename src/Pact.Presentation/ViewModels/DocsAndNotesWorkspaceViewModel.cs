@@ -256,7 +256,7 @@ public sealed class DocsAndNotesWorkspaceViewModel : INotifyPropertyChanged
 	/// when the file is not in the tree yet, as for one written after the last refresh.
 	/// </summary>
 	/// <returns><see langword="false"/> when the pane does not list the file.</returns>
-	public async Task<bool> OpenDocumentAsync(string relativePath, CancellationToken cancellationToken)
+	public async Task<bool> OpenDocumentAsync(string relativePath, CancellationToken cancellationToken, string? heading = null)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(relativePath);
 		const DocsAndNotesSection section = DocsAndNotesSection.Docs;
@@ -275,7 +275,20 @@ public sealed class DocsAndNotesWorkspaceViewModel : INotifyPropertyChanged
 		SelectedSection = section;
 		_visitedSections.Add(section);
 		await ActivateAsync(node, cancellationToken);
+		RequestedHeading = string.IsNullOrEmpty(heading) ? null : heading;
+		OnPropertyChanged(nameof(RequestedHeading));
 		return true;
+	}
+
+	/// <summary>A heading the opened document should be scrolled to once it is shown.</summary>
+	public string? RequestedHeading { get; private set; }
+
+	/// <summary>Hands over <see cref="RequestedHeading"/> to the view that scrolls to it, once.</summary>
+	public string? TakeRequestedHeading()
+	{
+		var heading = RequestedHeading;
+		RequestedHeading = null;
+		return heading;
 	}
 
 	/// <summary>Flips a folder's expansion; document nodes and stale nodes are ignored.</summary>

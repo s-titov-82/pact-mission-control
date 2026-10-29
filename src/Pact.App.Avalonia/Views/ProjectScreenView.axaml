@@ -52,7 +52,7 @@
 
     <Grid x:Name="ReviewLogsPanel" Grid.Row="1" IsVisible="False">
       <md:MarkdownScrollViewer x:Name="ReviewLogPreview" Margin="10" IsVisible="{Binding HasReviewLogs}"
-                               SelectionEnabled="True" Markdown="{Binding ReviewLogText}" />
+                               SelectionEnabled="True" />
       <TextBlock x:Name="NoReviewLogsText" Margin="12" Opacity="0.7" IsVisible="{Binding !HasReviewLogs}"
                  Text="No review logs yet. Logs of reviews run in this project appear here." />
     </Grid>

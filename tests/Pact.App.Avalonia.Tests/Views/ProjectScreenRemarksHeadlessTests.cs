@@ -727,6 +727,28 @@ public sealed class ProjectScreenRemarksHeadlessTests
 		});
 	}
 
+	// The save of a first remark finishes after the user opened another line and typed there.
+	[AvaloniaTest]
+	public async Task A_finished_add_leaves_a_remark_typed_on_another_line()
+	{
+		await WithScreenAsync(async fixture =>
+		{
+			fixture.ClickMargin(5);
+			var box = fixture.Overlay.FindControl<TextBox>("NewRemarkBox")!;
+			box.Text = "first";
+			CtrlEnter(box);
+			fixture.ClickMargin(9);
+			box.Text = "second";
+
+			await EventuallyAsync(fixture.Window, () => fixture.Book.Threads.Count == 1);
+			await Task.Delay(100);
+			fixture.Window.UpdateLayout();
+
+			box.Text.ShouldBe("second");
+			fixture.Book.Threads.Single().Anchor.Line.ShouldBe(4);
+		});
+	}
+
 	[AvaloniaTest]
 	public async Task Selecting_another_file_still_starts_at_the_top_and_closes_the_overlay()
 	{

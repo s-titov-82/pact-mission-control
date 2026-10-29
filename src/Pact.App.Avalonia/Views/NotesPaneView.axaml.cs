@@ -283,13 +283,9 @@ internal sealed partial class NotesPaneView : UserControl
 			case ProjectDocumentLink document when Workspace is { } workspace:
 				RunEvent("notes-open-link", async () =>
 				{
-					if (!await workspace.OpenDocumentAsync(document.RelativePath, CancellationToken.None))
+					if (!await workspace.OpenDocumentAsync(document.RelativePath, CancellationToken.None, document.Heading))
 					{
 						ShowLinkNotice($"Not found: {document.RelativePath}");
-					}
-					else if (document.Heading is { } heading)
-					{
-						Dispatcher.UIThread.Post(() => ScrollToHeading(heading), DispatcherPriority.Loaded);
 					}
 				});
 				break;
@@ -461,6 +457,20 @@ internal sealed partial class NotesPaneView : UserControl
 			or nameof(DocsAndNotesWorkspaceViewModel.VisibleTree))
 		{
 			RefreshWorkspace();
+		}
+		else if (e.PropertyName == nameof(DocsAndNotesWorkspaceViewModel.RequestedHeading)
+			&& Workspace?.RequestedHeading is not null)
+		{
+			// Once the opened document is laid out in the preview.
+			Dispatcher.UIThread.Post(ScrollToRequestedHeading, DispatcherPriority.Loaded);
+		}
+	}
+
+	private void ScrollToRequestedHeading()
+	{
+		if (Workspace?.TakeRequestedHeading() is { } heading && Preview.IsVisible)
+		{
+			ScrollToHeading(heading);
 		}
 	}
 

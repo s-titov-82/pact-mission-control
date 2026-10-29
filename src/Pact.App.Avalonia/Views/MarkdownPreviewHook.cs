@@ -27,9 +27,11 @@ internal static partial class MarkdownPreviewHook
 		ArgumentNullException.ThrowIfNull(navigate);
 		if (viewer.Engine is global::Markdown.Avalonia.Markdown engine)
 		{
-			engine.HyperlinkCommand = new LinkCommand(href => navigate(document() is { } shown
-				? MarkdownLinks.Resolve(shown.ProjectRoot, shown.DocumentRelativePath, href)
-				: new RefusedLink($"Not found: {href}")));
+			engine.HyperlinkCommand = new LinkCommand(href =>
+			{
+				var shown = document();
+				navigate(MarkdownLinks.Resolve(shown?.ProjectRoot, shown?.DocumentRelativePath, href));
+			});
 		}
 	}
 
@@ -48,35 +50,106 @@ internal static partial class MarkdownPreviewHook
 
 	/// <summary>
 	/// The text to show for a document in <paramref name="folder"/>: an image whose local file is
-	/// missing becomes its alt text, since the engine would draw only a broken-image mark.
+	/// missing or cannot be decoded becomes its alt text, since the engine would draw only a
+	/// broken-image mark. Code, fenced or inline, is left as written.
 	/// </summary>
 	public static string Prepare(string markdown, string? folder)
 	{
 		ArgumentNullException.ThrowIfNull(markdown);
-		return folder is null
-			? markdown
-			: ImagePattern().Replace(markdown, match =>
+		if (folder is null || !markdown.Contains("![", StringComparison.Ordinal))
+		{
+			return markdown;
+		}
+
+		var lines = markdown.Split('\n');
+		(char Character, int Length)? fence = null;
+		for (var index = 0; index < lines.Length; index++)
+		{
+			var trimmed = lines[index].TrimStart();
+			var run = trimmed.Length > 0 && trimmed[0] is '`' or '~' ? trimmed.TakeWhile(character => character == trimmed[0]).Count() : 0;
+			if (fence is { } open)
 			{
-				var source = Uri.UnescapeDataString(match.Groups["source"].Value);
-				if (source.Contains("://", StringComparison.Ordinal) || source.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+				if (run >= open.Length && trimmed[0] == open.Character && trimmed.Trim().Length == run)
 				{
-					return match.Value;
+					fence = null;
 				}
 
-				var path = Path.Combine(folder, source.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
-				if (File.Exists(path))
-				{
-					return match.Value;
-				}
+				continue;
+			}
 
-				var alt = match.Groups["alt"].Value;
-				return alt.Length > 0 ? $"*{alt}*" : $"*(missing image: {source})*";
-			});
+			if (run >= 3)
+			{
+				fence = (trimmed[0], run);
+				continue;
+			}
+
+			lines[index] = OutsideInlineCode(lines[index], segment => ReplaceMissingImages(segment, folder));
+		}
+
+		return string.Join('\n', lines);
 	}
 
-	[GeneratedRegex(@"!\[(?<alt>[^\]]*)\]\((?<source>[^)\s]+)(\s+""[^""]*"")?\)")]
-	private static partial Regex ImagePattern();
+	// Backtick spans are code: only the text between them is looked at.
+	private static string OutsideInlineCode(string line, Func<string, string> replace)
+	{
+		if (!line.Contains('`', StringComparison.Ordinal))
+		{
+			return replace(line);
+		}
 
+		var parts = line.Split('`');
+		for (var index = 0; index < parts.Length; index += 2)
+		{
+			parts[index] = replace(parts[index]);
+		}
+
+		return string.Join('`', parts);
+	}
+
+	private static string ReplaceMissingImages(string text, string folder) =>
+		ImagePattern().Replace(text, match =>
+		{
+			var source = Uri.UnescapeDataString(match.Groups["angle"].Success ? match.Groups["angle"].Value : match.Groups["source"].Value);
+			if (source.Contains("://", StringComparison.Ordinal) || source.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+			{
+				return match.Value;
+			}
+
+			if (CanDecode(Path.Combine(folder, source.TrimStart('/').Replace('/', Path.DirectorySeparatorChar))))
+			{
+				return match.Value;
+			}
+
+			var alt = match.Groups["alt"].Value;
+			return alt.Length > 0 ? $"*{alt}*" : $"*(missing image: {source})*";
+		});
+
+	// A file the engine can draw starts as an image does; anything else would show a broken mark.
+	private static bool CanDecode(string path)
+	{
+		try
+		{
+			using var stream = File.OpenRead(path);
+			Span<byte> head = stackalloc byte[16];
+			var read = stream.Read(head);
+			return LooksLikeImage(head[..read]);
+		}
+		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+		{
+			return false;
+		}
+	}
+
+	private static bool LooksLikeImage(ReadOnlySpan<byte> head) =>
+		head.StartsWith((ReadOnlySpan<byte>)[0x89, 0x50, 0x4E, 0x47])
+		|| head.StartsWith((ReadOnlySpan<byte>)[0xFF, 0xD8, 0xFF])
+		|| head.StartsWith("GIF8"u8)
+		|| head.StartsWith("BM"u8)
+		|| (head.Length >= 12 && head.StartsWith("RIFF"u8) && head[8..12].SequenceEqual("WEBP"u8))
+		|| head.StartsWith((ReadOnlySpan<byte>)[0x00, 0x00, 0x01, 0x00])
+		|| head.TrimStart((ReadOnlySpan<byte>)[0xEF, 0xBB, 0xBF, 0x20, 0x09, 0x0D, 0x0A]).StartsWith("<"u8);
+	[GeneratedRegex(@"!\[(?<alt>[^\]]*)\]\((?:<(?<angle>[^>]+)>|(?<source>[^)\s]+))(\s+""[^""]*"")?\)")]
+	private static partial Regex ImagePattern();
 	/// <summary>Opens a web link in the system browser, off the UI thread.</summary>
 	public static void OpenWeb(Uri uri)
 	{

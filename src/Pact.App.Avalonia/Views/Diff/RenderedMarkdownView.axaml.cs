@@ -37,6 +37,8 @@ internal sealed partial class RenderedMarkdownView : UserControl
 	// What the open editor was opened on, never moved, and the block it is drawn under now.
 	private (ShownDiff Diff, int Row)? _capture;
 	private int? _editorBlock;
+	// Counts editor openings, so a save that finishes late closes only the editor it came from.
+	private int _editorActivation;
 
 	public RenderedMarkdownView()
 	{
@@ -61,7 +63,9 @@ internal sealed partial class RenderedMarkdownView : UserControl
 	public void Show(ShownDiff shown, ChangesRemarksViewModel? remarks)
 	{
 		ArgumentNullException.ThrowIfNull(shown);
-		if (!ReferenceEquals(remarks, _remarks))
+		// Another project's remarks: nothing typed here belongs to it, whatever the file is called.
+		var sameOwner = ReferenceEquals(remarks, _remarks);
+		if (!sameOwner)
 		{
 			_remarks?.PropertyChanged -= OnRemarksPropertyChanged;
 			_remarks = remarks;
@@ -70,7 +74,7 @@ internal sealed partial class RenderedMarkdownView : UserControl
 
 		if (!ReferenceEquals(shown, _shown))
 		{
-			var samePath = string.Equals(shown.Path, _shown?.Path, StringComparison.Ordinal);
+			var samePath = sameOwner && string.Equals(shown.Path, _shown?.Path, StringComparison.Ordinal);
 			var offset = Scroller.Offset;
 			_shown = shown;
 			_items = RenderedMarkdown.Build(shown);
@@ -244,6 +248,7 @@ internal sealed partial class RenderedMarkdownView : UserControl
 		}
 
 		CloseEditor();
+		_editorActivation++;
 		_capture = (shown, block.Row);
 		_editor.Show([], canAdd: true);
 		AttachEditor(block.FirstLine);
@@ -310,11 +315,13 @@ internal sealed partial class RenderedMarkdownView : UserControl
 			return;
 		}
 
+		var activation = _editorActivation;
 		_eventTasks.TryRun(
 			"rendered-remark-add",
 			async () =>
 			{
-				if (await remarks.AddRemarkAsync(capture.Diff, capture.Row, text, CancellationToken.None) is not null)
+				if (await remarks.AddRemarkAsync(capture.Diff, capture.Row, text, CancellationToken.None) is not null
+					&& activation == _editorActivation)
 				{
 					CloseEditor();
 				}

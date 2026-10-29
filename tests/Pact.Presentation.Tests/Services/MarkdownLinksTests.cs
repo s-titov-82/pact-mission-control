@@ -61,5 +61,14 @@ public sealed class MarkdownLinksTests : IDisposable
 	public void An_empty_link_is_refused() =>
 		Resolve(" ").ShouldBeOfType<RefusedLink>();
 
+	// Notes have no place in the project, yet web links and their own headings still work.
+	[Test]
+	public void Without_a_document_web_links_and_headings_still_resolve()
+	{
+		MarkdownLinks.Resolve(null, null, "https://example.com").ShouldBe(new WebLink(new Uri("https://example.com")));
+		MarkdownLinks.Resolve(null, null, "#usage").ShouldBe(new HeadingLink("usage"));
+		MarkdownLinks.Resolve(null, null, "other.md").ShouldBe(new RefusedLink("Not found: other.md"));
+	}
+
 	private MarkdownLinkTarget Resolve(string href) => MarkdownLinks.Resolve(_root.Path, Document, href);
 }

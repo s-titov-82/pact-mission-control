@@ -177,6 +177,42 @@ public sealed class RenderedMarkdownViewHeadlessTests
 		});
 	}
 
+	// The save of a first remark finishes after the user moved on to another block and typed there.
+	[AvaloniaTest]
+	public async Task A_finished_add_leaves_a_newer_editor_open()
+	{
+		await WithRenderedAsync(async fixture =>
+		{
+			fixture.Click(AddButton(fixture.Block(3)));
+			var first = fixture.NewRemarkBox(3);
+			first.Text = "first";
+			CtrlEnter(first);
+			fixture.Click(AddButton(fixture.Block(9)));
+			fixture.NewRemarkBox(9).Text = "second";
+
+			await EventuallyAsync(fixture.Window, () => fixture.Book.Threads.Count == 1);
+			await Task.Delay(100);
+			fixture.Window.UpdateLayout();
+
+			fixture.NewRemarkBox(9).Text.ShouldBe("second");
+		});
+	}
+
+	[AvaloniaTest]
+	public async Task A_link_to_a_heading_of_another_document_carries_the_heading()
+	{
+		await WithRenderedAsync(
+			async fixture =>
+			{
+				var viewer = fixture.Block(1).GetLogicalDescendants().OfType<MarkdownScrollViewer>().First();
+				((global::Markdown.Avalonia.Markdown)viewer.Engine).HyperlinkCommand!.Execute("guide.md#usage");
+
+				await EventuallyAsync(fixture.Window, () => fixture.Opened.Count == 1);
+				fixture.Opened.ShouldBe([("docs/guide.md", "usage")]);
+			},
+			files: ["docs/guide.md"]);
+	}
+
 	[AvaloniaTest]
 	public async Task A_nested_list_and_an_ordered_item_render_as_in_the_docs_preview()
 	{
@@ -239,7 +275,8 @@ public sealed class RenderedMarkdownViewHeadlessTests
 		Func<Fixture, Task> act,
 		string text = Text,
 		FileDiff? diff = null,
-		Func<ProjectChangesViewModel, ChangesRemarksViewModel, Task>? before = null)
+		Func<ProjectChangesViewModel, ChangesRemarksViewModel, Task>? before = null,
+		string[]? files = null)
 	{
 		FluentTheme theme = new();
 		StyleInclude editorStyle = new(new Uri("avares://Pact.App.Avalonia.Tests/"))
@@ -249,9 +286,17 @@ public sealed class RenderedMarkdownViewHeadlessTests
 		Application.Current!.Styles.Add(theme);
 		Application.Current.Styles.Add(editorStyle);
 		using var root = TemporaryDirectory.Create();
+		foreach (var file in files ?? [])
+		{
+			var full = Path.Combine(root.Path, file.Replace('/', Path.DirectorySeparatorChar));
+			Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+			await File.WriteAllTextAsync(full, "# File");
+		}
+
 		var now = DateTimeOffset.UtcNow;
 		WorkspaceViewModel workspace = new(new ProjectRecord("p1", "Pact", root.Path, now, now, null), _ => true);
 		Reader reader = new() { Text = text, Diff = diff ?? Changes() };
+		List<(string Path, string? Heading)> opened = [];
 		ManualTimeProvider time = new();
 		using ProjectChangesViewModel changes = new(root.Path, reader, time, action => action());
 		using var observation = changes.Observe();
@@ -263,7 +308,16 @@ public sealed class RenderedMarkdownViewHeadlessTests
 			(_, _, _) => Task.FromResult(new PromptDeliveryResult(PromptDeliveryOutcome.Confirmed, WriteAttempted: true, SubmitAttempted: true)),
 			action => global::Avalonia.Threading.Dispatcher.UIThread.Post(action));
 		await book.EnsureLoadedAsync(CancellationToken.None);
-		ProjectScreenViewModel screen = new(workspace, changes, new ProjectMarkdownFileStore(), remarks: remarks);
+		ProjectScreenViewModel screen = new(
+			workspace,
+			changes,
+			new ProjectMarkdownFileStore(),
+			remarks: remarks,
+			openDocument: (path, heading, _) =>
+			{
+				opened.Add((path, heading));
+				return Task.FromResult(true);
+			});
 		ProjectScreenView view = new() { DataContext = screen };
 		Window window = new() { Content = view, Width = 1000, Height = 900 };
 		window.Show();
@@ -281,7 +335,7 @@ public sealed class RenderedMarkdownViewHeadlessTests
 			}
 
 			window.UpdateLayout();
-			await act(new Fixture(window, view, book, remarks, changes, reader, time));
+			await act(new Fixture(window, view, book, remarks, changes, reader, time, opened));
 		}
 		finally
 		{
@@ -310,7 +364,8 @@ public sealed class RenderedMarkdownViewHeadlessTests
 		ChangesRemarksViewModel Remarks,
 		ProjectChangesViewModel Changes,
 		Reader Reader,
-		ManualTimeProvider Time)
+		ManualTimeProvider Time,
+		List<(string Path, string? Heading)> Opened)
 	{
 		public RenderedMarkdownView Rendered => View.FindControl<RenderedMarkdownView>("RenderedView")!;
 

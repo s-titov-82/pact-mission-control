@@ -109,18 +109,18 @@ public sealed class MarkdownPreviewHeadlessTests
 		var folder = Path.Combine(root.Path, ".pact", "reviews");
 		Directory.CreateDirectory(folder);
 		const string log = ".pact/reviews/2026-10-29-1200-code-review-a.md";
-		await File.WriteAllTextAsync(Path.Combine(folder, "2026-10-29-1200-code-review-a.md"), "[readme](../../README.md)");
+		await File.WriteAllTextAsync(Path.Combine(folder, "2026-10-29-1200-code-review-a.md"), "[readme](../../README.md#usage)\n\n![shot](missing.png)");
 		await File.WriteAllTextAsync(Path.Combine(root.Path, "README.md"), "# Readme");
 		var now = DateTimeOffset.UtcNow;
 		WorkspaceViewModel workspace = new(new ProjectRecord("p1", "Pact", root.Path, now, now, null), _ => true);
-		List<string> opened = [];
+		List<(string Path, string? Heading)> opened = [];
 		ProjectScreenViewModel screen = new(
 			workspace,
 			null,
 			new ProjectMarkdownFileStore(),
-			openDocument: (path, _) =>
+			openDocument: (path, heading, _) =>
 			{
-				opened.Add(path);
+				opened.Add((path, heading));
 				return Task.FromResult(true);
 			});
 		ProjectScreenView view = new() { DataContext = screen };
@@ -131,16 +131,89 @@ public sealed class MarkdownPreviewHeadlessTests
 			await screen.OpenReviewLogAsync(log, CancellationToken.None);
 			window.UpdateLayout();
 
-			Link(view.FindControl<MarkdownScrollViewer>("ReviewLogPreview")!, "../../README.md");
+			var preview = view.FindControl<MarkdownScrollViewer>("ReviewLogPreview")!;
+			Link(preview, "../../README.md#usage");
 
 			await EventuallyAsync(window, () => opened.Count == 1);
-			opened.ShouldBe(["README.md"]);
+			opened.ShouldBe([("README.md", "usage")]);
+			// A missing image in a log shows its alt text, as in Docs.
+			await EventuallyAsync(window, () => Texts(preview).Any(text => text.Contains("shot", StringComparison.Ordinal)));
 		}
 		finally
 		{
 			window.Close();
 			Application.Current.Styles.Remove(theme);
 		}
+	}
+
+	[AvaloniaTest]
+	public async Task A_heading_link_in_notes_scrolls_the_notes_preview()
+	{
+		FluentTheme theme = new();
+		Application.Current!.Styles.Add(theme);
+		using var root = TemporaryDirectory.Create();
+		var filler = string.Join("\n\n", Enumerable.Range(1, 80).Select(index => $"Paragraph {index}."));
+		DocsAndNotesWorkspaceViewModel workspace = new(
+			root.Path,
+			new ProjectNoteDocument(new FakeNotesStore($"# Top\n\n{filler}\n\n## Part Two\n\nEnd."), root.Path, TimeSpan.FromHours(1)),
+			new ProjectMarkdownFileStore(),
+			TimeSpan.FromHours(1));
+		await workspace.RefreshAsync(CancellationToken.None);
+		NotesPaneView notes = new() { Workspace = workspace };
+		Window window = new() { Content = notes, Width = 900, Height = 600 };
+		window.Show();
+		try
+		{
+			notes.FindControl<global::Avalonia.Controls.Primitives.ToggleButton>("PreviewModeButton")!
+				.RaiseEvent(new global::Avalonia.Interactivity.RoutedEventArgs(global::Avalonia.Controls.Primitives.ToggleButton.ClickEvent));
+			window.UpdateLayout();
+			var preview = notes.FindControl<MarkdownScrollViewer>("Preview")!;
+			var scroller = global::Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(preview).OfType<ScrollViewer>().First();
+
+			Link(preview, "#part-two");
+
+			await EventuallyAsync(window, () => scroller.Offset.Y > 100);
+		}
+		finally
+		{
+			window.Close();
+			Application.Current.Styles.Remove(theme);
+		}
+	}
+
+	[AvaloniaTest]
+	public async Task A_link_to_a_heading_of_another_document_scrolls_there_once_it_shows()
+	{
+		var filler = string.Join("\n\n", Enumerable.Range(1, 80).Select(index => $"Paragraph {index}."));
+		await WithDocsAsync(
+			("docs/a.md", "[usage](other.md#usage)"),
+			("docs/other.md", $"# Other\n\n{filler}\n\n## Usage\n\nEnd."),
+			async (workspace, notes, window) =>
+			{
+				Link(notes.FindControl<MarkdownScrollViewer>("Preview")!, "other.md#usage");
+
+				var preview = notes.FindControl<MarkdownScrollViewer>("Preview")!;
+				await EventuallyAsync(window, () => workspace.SelectedNode?.RelativePath == "docs/other.md"
+					&& global::Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(preview).OfType<ScrollViewer>().First().Offset.Y > 100);
+			});
+	}
+
+	// The route links from the project screen take: the pane is asked to open a file at a heading.
+	[AvaloniaTest]
+	public async Task Opening_a_document_at_a_heading_from_outside_scrolls_the_preview_there()
+	{
+		var filler = string.Join("\n\n", Enumerable.Range(1, 80).Select(index => $"Paragraph {index}."));
+		await WithDocsAsync(
+			("docs/a.md", "# A"),
+			("docs/other.md", $"# Other\n\n{filler}\n\n## Usage\n\nEnd."),
+			async (workspace, notes, window) =>
+			{
+				(await workspace.OpenDocumentAsync("docs/other.md", CancellationToken.None, "usage")).ShouldBeTrue();
+
+				var preview = notes.FindControl<MarkdownScrollViewer>("Preview")!;
+				await EventuallyAsync(window, () => global::Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(preview)
+					.OfType<ScrollViewer>().First().Offset.Y > 100);
+			});
 	}
 
 	// What a click on a link runs.
@@ -243,10 +316,10 @@ public sealed class MarkdownPreviewHeadlessTests
 		condition().ShouldBeTrue();
 	}
 
-	private sealed class FakeNotesStore : IProjectNotesStore
+	private sealed class FakeNotesStore(string text = "") : IProjectNotesStore
 	{
 		public Task<string> LoadAsync(string projectRootPath, CancellationToken cancellationToken) =>
-			Task.FromResult(string.Empty);
+			Task.FromResult(text);
 
 		public Task SaveAsync(string projectRootPath, string value, CancellationToken cancellationToken) =>
 			Task.CompletedTask;

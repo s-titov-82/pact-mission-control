@@ -21,12 +21,11 @@ public static class MarkdownLinks
 	/// <summary>
 	/// Where <paramref name="href"/>, written in <paramref name="documentRelativePath"/>, leads:
 	/// relative to the document's folder, or to the project root after a leading <c>/</c>. A file is
-	/// opened only when it is Markdown inside the project and exists.
+	/// opened only when it is Markdown inside the project and exists. Without a document, as for
+	/// notes, only web links and headings lead anywhere.
 	/// </summary>
-	public static MarkdownLinkTarget Resolve(string projectRoot, string documentRelativePath, string href)
+	public static MarkdownLinkTarget Resolve(string? projectRoot, string? documentRelativePath, string href)
 	{
-		ArgumentException.ThrowIfNullOrWhiteSpace(projectRoot);
-		ArgumentNullException.ThrowIfNull(documentRelativePath);
 		ArgumentNullException.ThrowIfNull(href);
 		var link = href.Trim();
 		if (link.Length == 0)
@@ -47,6 +46,11 @@ public static class MarkdownLinks
 			return heading is { Length: > 0 }
 				? new HeadingLink(heading)
 				: new RefusedLink($"Not found: {href}");
+		}
+
+		if (string.IsNullOrWhiteSpace(projectRoot) || documentRelativePath is null)
+		{
+			return new RefusedLink($"Not found: {href}");
 		}
 
 		var root = Path.GetFullPath(projectRoot);

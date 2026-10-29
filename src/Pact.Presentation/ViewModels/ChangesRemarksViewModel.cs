@@ -32,6 +32,9 @@ public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposabl
 	private readonly Func<string, string, CancellationToken, Task<PromptDeliveryResult>> _deliver;
 	private readonly Action<Action> _postToUi;
 	private readonly Dictionary<string, RemarkThreadViewModel> _threads = new(StringComparer.Ordinal);
+	// Every diff this project's changes have shown: one screen shows several projects in turn, and a
+	// file of the same name in another project is not this file.
+	private readonly System.Runtime.CompilerServices.ConditionalWeakTable<ShownDiff, object> _ownDiffs = [];
 	private int _version;
 	private bool _setAsideReported;
 	private volatile bool _disposed;
@@ -56,6 +59,7 @@ public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposabl
 		_postToUi = postToUi ?? throw new ArgumentNullException(nameof(postToUi));
 		_changes.PropertyChanged += OnChangesPropertyChanged;
 		_book.Changed += OnBookChanged;
+		Own(_changes.ShownDiff);
 		_ = LoadAsync();
 		Recompute();
 	}
@@ -248,8 +252,21 @@ public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposabl
 		_book.Changed -= OnBookChanged;
 	}
 
+	private void Own(ShownDiff? shown)
+	{
+		if (shown is not null)
+		{
+			_ownDiffs.TryAdd(shown, shown);
+		}
+	}
+
 	private void OnChangesPropertyChanged(object? sender, PropertyChangedEventArgs e)
 	{
+		if (e.PropertyName == nameof(ProjectChangesViewModel.ShownDiff))
+		{
+			Own(_changes.ShownDiff);
+		}
+
 		if (e.PropertyName is nameof(ProjectChangesViewModel.ShownDiff)
 			or nameof(ProjectChangesViewModel.Files)
 			or nameof(ProjectChangesViewModel.HeadCommit))
@@ -446,7 +463,8 @@ public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposabl
 	}
 
 	private bool IsOfShownFile(ShownDiff shown) =>
-		_changes.ShownDiff is { } current && string.Equals(shown.Path, current.Path, StringComparison.Ordinal);
+		_changes.ShownDiff is { } current && string.Equals(shown.Path, current.Path, StringComparison.Ordinal)
+		&& (ReferenceEquals(shown, current) || _ownDiffs.TryGetValue(shown, out _));
 
 	private static int? RowOf(ShownDiff shown, RemarkSide side, int line)
 	{

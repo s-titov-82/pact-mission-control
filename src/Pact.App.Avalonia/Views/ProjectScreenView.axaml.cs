@@ -43,6 +43,8 @@ internal sealed partial class ProjectScreenView : UserControl
 	// What the overlay was opened on, never moved: a new remark anchors to it and follows it from there.
 	private ShownDiff? _overlayDiff;
 	private int _overlayCapturedRow;
+	// Counts overlay openings, so a save that finishes late clears only the box it came from.
+	private int _overlayActivation;
 
 	public ProjectScreenView()
 	{
@@ -132,6 +134,18 @@ internal sealed partial class ProjectScreenView : UserControl
 		CloseOverlay();
 		RefreshTab();
 		RefreshChanges();
+		RefreshReviewLog();
+	}
+
+	// The log's images come from its folder, and a missing one shows its alt text, as in Docs.
+	private void RefreshReviewLog()
+	{
+		MarkdownPreviewHook.SetDocument(ReviewLogPreview, _screen?.RootPath, _screen?.SelectedReviewLog);
+		var text = MarkdownPreviewHook.Prepare(_screen?.ReviewLogText ?? string.Empty, ReviewLogPreview.AssetPathRoot);
+		if (!string.Equals(ReviewLogPreview.Markdown, text, StringComparison.Ordinal))
+		{
+			ReviewLogPreview.Markdown = text;
+		}
 	}
 
 	private void OnScreenPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -140,9 +154,9 @@ internal sealed partial class ProjectScreenView : UserControl
 		{
 			RefreshTab();
 		}
-		else if (e.PropertyName == nameof(ProjectScreenViewModel.SelectedReviewLog))
+		else if (e.PropertyName is nameof(ProjectScreenViewModel.SelectedReviewLog) or nameof(ProjectScreenViewModel.ReviewLogText))
 		{
-			MarkdownPreviewHook.SetDocument(ReviewLogPreview, _screen?.RootPath, _screen?.SelectedReviewLog);
+			RefreshReviewLog();
 		}
 	}
 
@@ -238,7 +252,7 @@ internal sealed partial class ProjectScreenView : UserControl
 					"project-screen-link",
 					async () =>
 					{
-						if (!await screen.OpenDocumentAsync(document.RelativePath, CancellationToken.None))
+						if (!await screen.OpenDocumentAsync(document.RelativePath, document.Heading, CancellationToken.None))
 						{
 							ShowLinkNotice($"Not found: {document.RelativePath}");
 						}
@@ -378,6 +392,7 @@ internal sealed partial class ProjectScreenView : UserControl
 		_overlayRow = row;
 		_overlayDiff = shown;
 		_overlayCapturedRow = row;
+		_overlayActivation++;
 		RemarkOverlay.Show(threads, canAdd);
 		RemarkOverlay.IsVisible = true;
 		PositionOverlay();
@@ -525,12 +540,13 @@ internal sealed partial class ProjectScreenView : UserControl
 		}
 
 		var row = _overlayCapturedRow;
-
+		var activation = _overlayActivation;
 		_eventTasks.TryRun(
 			"remark-add",
 			async () =>
 			{
-				if (await remarks.AddRemarkAsync(shown, row, text, CancellationToken.None) is not null)
+				if (await remarks.AddRemarkAsync(shown, row, text, CancellationToken.None) is not null
+					&& activation == _overlayActivation)
 				{
 					RemarkOverlay.ClearNewRemark();
 				}

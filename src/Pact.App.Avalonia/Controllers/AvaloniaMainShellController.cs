@@ -742,10 +742,18 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 	/// closed, and switches the user to it.
 	/// </summary>
 	/// <returns><see langword="false"/> when the project is not open or its Docs pane does not list the file.</returns>
+	public Task<bool> OpenProjectDocumentAsync(
+		string projectId,
+		string relativePath,
+		CancellationToken cancellationToken = default) =>
+		OpenProjectDocumentAsync(projectId, relativePath, heading: null, cancellationToken);
+
+	/// <summary>As <see cref="OpenProjectDocumentAsync(string, string, CancellationToken)"/>, then at a heading of the document.</summary>
 	public async Task<bool> OpenProjectDocumentAsync(
 		string projectId,
 		string relativePath,
-		CancellationToken cancellationToken = default)
+		string? heading,
+		CancellationToken cancellationToken)
 	{
 		if (ViewModel.Workspaces.FirstOrDefault(workspace => string.Equals(
 				workspace.Id,
@@ -763,7 +771,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		var note = await ViewModel.ShowNotesTabAsync(workspace.Id, cancellationToken);
 		await SelectNoteAsync(note, cancellationToken);
 		return await ViewModel.GetOrCreateDocsAndNotesWorkspace(note)
-			.OpenDocumentAsync(relativePath, cancellationToken);
+			.OpenDocumentAsync(relativePath, cancellationToken, heading);
 	}
 
 	public async Task RunQuickActionAsync(PromptTemplateRecord template, CancellationToken cancellationToken = default)
