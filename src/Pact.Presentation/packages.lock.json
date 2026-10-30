@@ -10,9 +10,9 @@
       },
       "Microsoft.Extensions.DependencyInjection.Abstractions": {
         "type": "Direct",
-        "requested": "[10.0.0, )",
-        "resolved": "10.0.0",
-        "contentHash": "L3AdmZ1WOK4XXT5YFPEwyt0ep6l8lGIPs7F5OOBZc77Zqeo01Of7XXICy47628sdVl0v/owxYJTe86DTgFwKCA=="
+        "requested": "[10.0.14, )",
+        "resolved": "10.0.14",
+        "contentHash": "QtpQzuSZVyTPCuHW058yCs9Nj0394uUkNyFHS813nOmK9UgUdBdaprJ5PPsBgsQIpxADTsTkbaMMonykem6qdw=="
       },
       "pact.core": {
         "type": "Project"
@@ -20,7 +20,7 @@
       "pact.infrastructure": {
         "type": "Project",
         "dependencies": {
-          "Pact.Core": "[0.1.0, )",
+          "Pact.Core": "[0.1.12, )",
           "YamlDotNet": "[16.3.0, )"
         }
       },
