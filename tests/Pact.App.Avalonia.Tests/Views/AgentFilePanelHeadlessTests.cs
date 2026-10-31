@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
@@ -105,17 +106,21 @@ public sealed class AgentFilePanelHeadlessTests
 
 		host.Panel.Show(Document(@"C:\x\a.txt", "a"), host.Pane);
 		host.Window.UpdateLayout();
+		Dispatcher.UIThread.RunJobs();
 
 		host.Popup.HorizontalOffset.ShouldBe(400);
 		host.Popup.VerticalOffset.ShouldBe(0);
-		(border.Width, border.Height).ShouldBe((600, 600));
+		border.Bounds.Size.ShouldBe(new Size(600, 600));
+		border.PointToScreen(default).ShouldBe(host.Pane.PointToScreen(new Point(400, 0)));
 
 		host.Pane.Width = 800;
 		host.Pane.Height = 500;
 		host.Window.UpdateLayout();
+		Dispatcher.UIThread.RunJobs();
 
 		host.Popup.HorizontalOffset.ShouldBe(320);
-		(border.Width, border.Height).ShouldBe((480, 500));
+		border.Bounds.Size.ShouldBe(new Size(480, 500));
+		border.PointToScreen(default).ShouldBe(host.Pane.PointToScreen(new Point(320, 0)));
 	}
 
 	[AvaloniaTest]
@@ -154,6 +159,58 @@ public sealed class AgentFilePanelHeadlessTests
 		Dispatcher.UIThread.RunJobs();
 
 		requests.ShouldBe(1);
+	}
+
+	[AvaloniaTest]
+	public void Clicking_outside_closes_and_notifies_the_owner_once()
+	{
+		using var host = new PanelHost();
+		var requests = 0;
+		host.Panel.CloseRequested += (_, _) => { requests++; host.Panel.Hide(); };
+		host.Panel.Show(Document(@"C:\x\a.txt", "a"), host.Pane);
+		Dispatcher.UIThread.RunJobs();
+
+		host.Window.MouseDown(new Point(10, 10), MouseButton.Left);
+		host.Window.MouseUp(new Point(10, 10), MouseButton.Left);
+		Dispatcher.UIThread.RunJobs();
+
+		host.Panel.IsOpen.ShouldBeFalse();
+		requests.ShouldBe(1);
+	}
+
+	[AvaloniaTest]
+	public void Escape_after_focus_moves_to_the_owner_closes()
+	{
+		using var host = new PanelHost();
+		var outside = new Button { Content = "outside" };
+		host.Pane.Children.Add(outside);
+		var requests = 0;
+		host.Panel.CloseRequested += (_, _) => { requests++; host.Panel.Hide(); };
+		host.Panel.Show(Document(@"C:\x\a.txt", "a"), host.Pane);
+		Dispatcher.UIThread.RunJobs();
+		outside.Focus();
+
+		host.Window.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
+		Dispatcher.UIThread.RunJobs();
+
+		host.Panel.IsOpen.ShouldBeFalse();
+		requests.ShouldBe(1);
+	}
+
+	[AvaloniaTest]
+	public void Programmatic_hide_does_not_request_another_close()
+	{
+		using var host = new PanelHost();
+		var requests = 0;
+		host.Panel.CloseRequested += (_, _) => requests++;
+		host.Panel.Show(Document(@"C:\x\a.txt", "a"), host.Pane);
+		Dispatcher.UIThread.RunJobs();
+
+		host.Panel.Hide();
+		Dispatcher.UIThread.RunJobs();
+
+		host.Panel.IsOpen.ShouldBeFalse();
+		requests.ShouldBe(0);
 	}
 
 	[AvaloniaTest]

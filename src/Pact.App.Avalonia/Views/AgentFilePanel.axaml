@@ -5,7 +5,8 @@
              x:Class="Pact.App.Avalonia.Views.AgentFilePanel">
   <!-- The terminal is a native WebView: only a popup, a window of its own, can lie over it. -->
   <Popup x:Name="FilePopup"
-         IsLightDismissEnabled="False"
+         IsLightDismissEnabled="True"
+         Closed="OnPopupClosed"
          Placement="AnchorAndGravity"
          PlacementAnchor="TopLeft"
          PlacementGravity="BottomRight"

@@ -22,6 +22,7 @@ internal sealed partial class AgentFilePanel : UserControl
 	private Control? _pane;
 	private Window? _window;
 	private AgentFileDocument? _document;
+	private bool _requestCloseOnPopupClosed;
 
 	public AgentFilePanel()
 	{
@@ -38,7 +39,7 @@ internal sealed partial class AgentFilePanel : UserControl
 		};
 	}
 
-	/// <summary>Raised by the ✕ and by Esc.</summary>
+	/// <summary>Raised by the ✕, Esc, or a click outside the panel.</summary>
 	public event EventHandler? CloseRequested;
 
 	/// <summary>Raised for a link to a Markdown file of the project, for the Docs pane to open.</summary>
@@ -78,14 +79,22 @@ internal sealed partial class AgentFilePanel : UserControl
 		}
 
 		Place();
+		_requestCloseOnPopupClosed = true;
 		FilePopup.IsOpen = true;
 		// The click that opened the panel left focus in the right column; Esc must reach the panel.
-		Dispatcher.UIThread.Post(() => PanelBorder.Focus(), DispatcherPriority.Input);
+		Dispatcher.UIThread.Post(() =>
+		{
+			if (IsOpen)
+			{
+				PanelBorder.Focus();
+			}
+		}, DispatcherPriority.Input);
 	}
 
 	/// <summary>Closes the panel.</summary>
 	public void Hide()
 	{
+		_requestCloseOnPopupClosed = false;
 		FilePopup.IsOpen = false;
 		_document = null;
 		Detach();
@@ -104,8 +113,10 @@ internal sealed partial class AgentFilePanel : UserControl
 		if (!ReferenceEquals(_window, window))
 		{
 			_window?.PositionChanged -= OnWindowPositionChanged;
+			_window?.RemoveHandler(KeyDownEvent, OnPanelKeyDown);
 			_window = window;
 			_window?.PositionChanged += OnWindowPositionChanged;
+			_window?.AddHandler(KeyDownEvent, OnPanelKeyDown, RoutingStrategies.Tunnel);
 		}
 	}
 
@@ -114,6 +125,7 @@ internal sealed partial class AgentFilePanel : UserControl
 		_pane?.PropertyChanged -= OnPanePropertyChanged;
 		_pane = null;
 		_window?.PositionChanged -= OnWindowPositionChanged;
+		_window?.RemoveHandler(KeyDownEvent, OnPanelKeyDown);
 		_window = null;
 	}
 
@@ -137,8 +149,10 @@ internal sealed partial class AgentFilePanel : UserControl
 
 		var size = pane.Bounds.Size;
 		var width = Math.Round(size.Width * WidthShare);
-		PanelBorder.Width = width;
-		PanelBorder.Height = size.Height;
+		// Size the native host, not just its child: auto-sizing can be capped by another
+		// monitor's work area and center an oversized child above the pane, hiding its header.
+		FilePopup.Width = width;
+		FilePopup.Height = size.Height;
 		FilePopup.PlacementTarget = pane;
 		FilePopup.HorizontalOffset = size.Width - width;
 		FilePopup.VerticalOffset = 0;
@@ -146,9 +160,19 @@ internal sealed partial class AgentFilePanel : UserControl
 
 	private void OnCloseClicked(object? sender, RoutedEventArgs e) => CloseRequested?.Invoke(this, EventArgs.Empty);
 
+	private void OnPopupClosed(object? sender, EventArgs e)
+	{
+		Detach();
+		if (_requestCloseOnPopupClosed)
+		{
+			_requestCloseOnPopupClosed = false;
+			CloseRequested?.Invoke(this, EventArgs.Empty);
+		}
+	}
+
 	private void OnPanelKeyDown(object? sender, KeyEventArgs e)
 	{
-		if (e.Key == Key.Escape)
+		if (e.Key == Key.Escape && !e.Handled && IsOpen)
 		{
 			e.Handled = true;
 			CloseRequested?.Invoke(this, EventArgs.Empty);
