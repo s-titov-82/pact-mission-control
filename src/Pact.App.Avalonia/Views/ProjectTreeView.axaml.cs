@@ -84,6 +84,56 @@ internal sealed partial class ProjectTreeView : UserControl
 	}
 
 	public event EventHandler<object?>? SelectedItemChanged;
+	public event EventHandler<SessionViewModel>? ReadLaterToggleRequested;
+
+	private void OnSessionDoubleTapped(object? sender, TappedEventArgs args)
+	{
+		if (args.Source is Visual source && source.GetSelfAndVisualAncestors().OfType<Button>().Any())
+		{
+			return;
+		}
+		var session = (sender as Control)?.DataContext switch
+		{
+			SessionViewModel item => item,
+			OrchestratorSlotViewModel slot => slot.Session,
+			_ => null
+		};
+		if (session is not null)
+		{
+			args.Handled = true;
+			ReadLaterToggleRequested?.Invoke(this, session);
+		}
+	}
+
+	/// <summary>Reveals an already-activated target without raising a second selection request.</summary>
+	internal void RevealAttentionItem(AttentionItem item)
+	{
+		ArgumentNullException.ThrowIfNull(item);
+		if (item.IsOrchestrator)
+		{
+			OrchestratorTier.BringIntoView();
+			return;
+		}
+		TreeViewItem? owner;
+		if (item.Workspace is { } workspace)
+		{
+			ProjectTree.ScrollIntoView(workspace);
+			UpdateLayout();
+			owner = ProjectTree.ContainerFromItem(workspace) as TreeViewItem;
+		}
+		else
+		{
+			owner = RootSectionItem;
+		}
+		if (owner is null || !owner.Items.Contains(item.Target))
+		{
+			return;
+		}
+		owner.IsExpanded = true;
+		UpdateLayout();
+		owner.ScrollIntoView(item.Target);
+		owner.ContainerFromItem(item.Target)?.BringIntoView();
+	}
 	public event EventHandler? SelectOrchestratorRequested;
 	public event EventHandler? StartOrchestratorRequested;
 	public event EventHandler? StopOrchestratorRequested;

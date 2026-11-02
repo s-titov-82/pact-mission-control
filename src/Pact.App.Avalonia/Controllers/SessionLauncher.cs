@@ -94,6 +94,11 @@ internal sealed class SessionLauncher(
 			injection.EnvironmentVariables);
 		try
 		{
+			// Old-process readiness must be cleared before any new-process screen can arrive.
+			_viewModel.TerminalTabStatuses.OnSessionStarted(
+				session.Record.Id,
+				startPlan.Mode,
+				DateTimeOffset.UtcNow);
 			await StartProcessAsync(
 				session.Record.Id,
 				session.Record.Kind,
@@ -101,10 +106,6 @@ internal sealed class SessionLauncher(
 				OnControllerExited,
 				cancellationToken);
 			await _viewModel.UpdateSessionStatusAsync(session.Record.Id, SessionStatus.Running, cancellationToken);
-			_viewModel.TerminalTabStatuses.OnSessionStarted(
-				session.Record.Id,
-				startPlan.Mode,
-				DateTimeOffset.UtcNow);
 			return startPlan;
 		}
 		catch

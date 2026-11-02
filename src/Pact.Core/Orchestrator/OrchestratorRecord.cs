@@ -29,6 +29,9 @@ public sealed record OrchestratorRecord(
 	string LockPrompt,
 	string UnlockPrompt)
 {
+	/// <summary>Durable manual attention bookmark for the singular orchestrator session.</summary>
+	public bool IsMarkedForLater { get; init; }
+
 	/// <summary>Creates the disabled, unprovisioned first-run document.</summary>
 	public static OrchestratorRecord CreateDefault() => new(
 		SchemaVersion: 1,

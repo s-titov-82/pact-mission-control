@@ -11,6 +11,19 @@ namespace Pact.App.Avalonia.Tests.Controllers;
 public sealed class SoftRestartSnapshotBuilderTests
 {
 	[Test]
+	public void A_selected_paused_root_item_is_retained_without_becoming_live()
+	{
+		var viewModel = CreateViewModel();
+		viewModel.RootTabs.UpdateRecord(new RootTabsRecord(1, "paused-root", [Session("paused-root")], [], ["paused-root"]));
+		viewModel.SelectedSession = viewModel.RootTabs.Sessions.Single();
+		SoftRestartSnapshotBuilder builder = new(viewModel, () => [],
+			() => new Dictionary<string, TerminalClassifierDiagnostics>(), () => []);
+		var state = builder.Capture();
+		state.LiveTerminalIds.ShouldBeEmpty();
+		state.Selection.ShouldBe(new Pact.Core.Updates.SoftRestartSelection(null, "paused-root"));
+	}
+
+	[Test]
 	public void Snapshot_keeps_only_live_unpaused_runtime_surfaces_and_metadata()
 	{
 		var viewModel = CreateViewModel();

@@ -93,11 +93,11 @@ public sealed class SoftRestartRestorerTests
 		order.ShouldBe([
 			"terminal:resumed",
 			"terminal:cold",
-			"unread:cold",
 			"web:web",
 			"orchestrator",
-			"unread:orchestrator",
-			"selection"
+			"selection",
+			"unread:cold",
+			"unread:orchestrator"
 		]);
 	}
 

@@ -103,6 +103,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 		TerminalTabStatuses = terminalTabStatuses
 			?? throw new ArgumentNullException(nameof(terminalTabStatuses));
 		Sessions.CollectionChanged += OnSessionsCollectionChanged;
+		Attention = new(Workspaces, RootTabs, OrchestratorSlot);
 	}
 
 	/// <inheritdoc />
@@ -120,6 +121,9 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 
 	/// <summary>Singular orchestration tier shown above ROOT.</summary>
 	public OrchestratorSlotViewModel OrchestratorSlot { get; } = new();
+
+	/// <summary>Current tab attention across running projects, ROOT and the orchestrator.</summary>
+	public AttentionFeedViewModel Attention { get; }
 
 	/// <summary>Every session across open projects, flattened.</summary>
 	public ObservableCollection<SessionViewModel> Sessions { get; } = [];
@@ -875,6 +879,27 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 				LastActiveAt = occurredAt
 			},
 			cancellationToken);
+	}
+
+	private Task _readLaterUpdate = Task.CompletedTask;
+
+	/// <summary>Serializes explicit bookmark toggles and persists each against the latest owner record.</summary>
+	public Task ToggleReadLaterAsync(SessionViewModel session, CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(session);
+		return _readLaterUpdate = ToggleAfterAsync(_readLaterUpdate, session, cancellationToken);
+	}
+
+	private async Task ToggleAfterAsync(Task previous, SessionViewModel session, CancellationToken cancellationToken)
+	{
+		await previous.ConfigureAwait(ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
+		cancellationToken.ThrowIfCancellationRequested();
+		if (!RootTabs.Sessions.Contains(session) && !Workspaces.Any(workspace => workspace.Sessions.Contains(session)))
+		{
+			return;
+		}
+		await UpdateSessionAsync(session.Record.Id,
+			record => record with { IsMarkedForLater = !record.IsMarkedForLater }, cancellationToken);
 	}
 
 	private async Task<SessionRecord?> UpdateSessionAsync(

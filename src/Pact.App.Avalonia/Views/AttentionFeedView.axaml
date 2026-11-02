@@ -1,0 +1,49 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:Pact.App.Avalonia.Views"
+             x:Class="Pact.App.Avalonia.Views.AttentionFeedView"
+             x:CompileBindings="False"
+             IsVisible="{Binding HasItems, FallbackValue=False, TargetNullValue=False}">
+  <UserControl.Resources>
+    <local:TerminalTabIndicatorGlyphConverter x:Key="Glyph" />
+    <local:TerminalTabIndicatorEqualsConverter x:Key="IndicatorEquals" />
+  </UserControl.Resources>
+  <UserControl.Styles>
+    <Style Selector="TextBlock.attention-glyph">
+      <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" />
+    </Style>
+    <Style Selector="TextBlock.attention-glyph.question">
+      <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" />
+    </Style>
+    <Style Selector="TextBlock.attention-glyph.failed">
+      <Setter Property="Foreground" Value="{DynamicResource AppDangerBrush}" />
+    </Style>
+  </UserControl.Styles>
+  <StackPanel Margin="0,16,0,0" Spacing="8">
+    <TextBlock Text="Needs attention" FontWeight="SemiBold" />
+    <ScrollViewer MaxHeight="160" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <ItemsControl ItemsSource="{Binding Items}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                    Padding="8,5" Margin="0,0,0,4" ToolTip.Tip="{Binding ToolTip}">
+              <Grid ColumnDefinitions="18,*">
+                <TextBlock Classes="attention-glyph" FontWeight="Bold" VerticalAlignment="Center"
+                           Classes.question="{Binding Indicator, Converter={StaticResource IndicatorEquals}, ConverterParameter=InputRequested}"
+                           Classes.failed="{Binding Indicator, Converter={StaticResource IndicatorEquals}, ConverterParameter=Failed}"
+                           Text="{Binding Indicator, Converter={StaticResource Glyph}}" />
+                <StackPanel Grid.Column="1" Spacing="1">
+                  <TextBlock Text="{Binding OwnerName}" FontSize="11" TextTrimming="CharacterEllipsis"
+                             Foreground="{DynamicResource AppTextMutedBrush}" />
+                  <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="◇ Read later" IsVisible="{Binding IsMarkedForLater}" FontSize="11"
+                             Foreground="{DynamicResource AppAccentBrush}" />
+                </StackPanel>
+              </Grid>
+            </Button>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+  </StackPanel>
+</UserControl>

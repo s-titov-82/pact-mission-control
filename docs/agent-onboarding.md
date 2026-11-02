@@ -398,9 +398,16 @@ terminal ticket outcome, and relaunches the exact Pact path. The ticket path is
 derived directly from the opaque restart id; restoration never scans sibling
 handoffs.
 
-Soft restart is an overlay on durable project, ROOT, layout, and browser state.
+Ordinary startup and soft restart share an overlay on durable project, ROOT,
+layout, and browser state. Ordinary startup reads `Settings/session-state.json`;
+a valid one-time update ticket takes precedence. The checkpoint is frozen before
+shutdown's resume capture and process stop, and held during startup restoration.
 It restores only the terminal/browser set that was active at capture time,
 selection, orchestrator state, and unread markers; paused items remain paused.
+Unread is applied after final selection, so a temporary startup selection cannot
+acknowledge another tab. Historical busy/input-request/composer/readiness facts
+are never restored. Manual `Read later` bookmarks live in their owner records,
+survive restart, and clear only through a second double-click on the agent row.
 Agent resume uses the configured resume command; an extracted conversation id
 resumes that conversation directly, and without one the agent opens its own
 conversation picker. When no usable resume command is configured, Pact

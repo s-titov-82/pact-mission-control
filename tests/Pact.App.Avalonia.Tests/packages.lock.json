@@ -152,62 +152,21 @@
           "Avalonia.Skia": "12.1.0"
         }
       },
-      "ClassIsland.ColorDocument.Avalonia": {
+      "ColorDocument.Avalonia": {
         "type": "Transitive",
-        "resolved": "12.0.0",
-        "contentHash": "Ek/5czEHBLx3iimp4kSOAgb2sqfXl6KR5tLmt7f3tUIKAQ48k9ZNbXENy4v1JO5Fb4L+yfKvCU08V+uXixbn4Q==",
+        "resolved": "12.0.2",
+        "contentHash": "VJTbhop5m3FgWcbw4OLR2OfQPbdwwsbPYhXaNvSJCWb1Ft4uDWCYW866IKGY070sSwuGxu/s6Zt6jOtG/kYuoA==",
         "dependencies": {
           "Avalonia": "12.0.0",
-          "ClassIsland.ColorTextBlock.Avalonia": "12.0.0"
+          "ColorTextBlock.Avalonia": "12.0.2"
         }
       },
-      "ClassIsland.ColorTextBlock.Avalonia": {
+      "ColorTextBlock.Avalonia": {
         "type": "Transitive",
-        "resolved": "12.0.0",
-        "contentHash": "GR2V71l/YcR1NNCHaEyW0hRi8y+y3NLy6BIKy+Tp6skU382A9Bnqc99k+UHjPohtPF9LFx5Dtccb2oVk2jXhDA==",
+        "resolved": "12.0.2",
+        "contentHash": "mUmQFWakT0/nrPmi54RETLqkuaY3CkErYMtrrf3A93loy5B+uZonun/9sWhJHwCVYRWdouETIo66cua7MLyMUg==",
         "dependencies": {
           "Avalonia": "12.0.0"
-        }
-      },
-      "ClassIsland.Markdown.Avalonia.Html": {
-        "type": "Transitive",
-        "resolved": "12.0.0",
-        "contentHash": "w+TaMjZbXhcF2Q7iP3R0PYiCpwwYNdGbXjXEau5A9asScmUN2KYIrwGUFm8ZQn8OhbaNHb83GUWtFnmyxgt3CQ==",
-        "dependencies": {
-          "Avalonia": "12.0.0",
-          "ClassIsland.ColorTextBlock.Avalonia": "12.0.0",
-          "ClassIsland.Markdown.Avalonia.SyntaxHigh": "12.0.0",
-          "ClassIsland.Markdown.Avalonia.Tight": "12.0.0",
-          "HtmlAgilityPack": "1.11.42"
-        }
-      },
-      "ClassIsland.Markdown.Avalonia.Svg": {
-        "type": "Transitive",
-        "resolved": "12.0.0",
-        "contentHash": "LcuaJAZbEi5KqMWUD8xCNsRKpxvgGZ1DBfFVXgUruA25NNCjl3EOHM0/ecUmfuOecQ1kqcilWYvp7jLua3V23Q==",
-        "dependencies": {
-          "Avalonia": "12.0.0",
-          "ClassIsland.Markdown.Avalonia.Tight": "12.0.0",
-          "Svg.Controls.Avalonia": "12.0.0.5"
-        }
-      },
-      "ClassIsland.Markdown.Avalonia.SyntaxHigh": {
-        "type": "Transitive",
-        "resolved": "12.0.0",
-        "contentHash": "POfIH29cKlouITJuvIM5Lpy5c12v3YRLwrRaJ3kqT5MHF7azz3utU2KI/oQ8/GQzExaesdMtqd0SddAPdwnQcQ==",
-        "dependencies": {
-          "Avalonia": "12.0.0",
-          "Avalonia.AvaloniaEdit": "12.0.0-rc1"
-        }
-      },
-      "ClassIsland.Markdown.Avalonia.Tight": {
-        "type": "Transitive",
-        "resolved": "12.0.0",
-        "contentHash": "2LwHEFyytRoKNSSMhPnuPjBUWu3xE+KlvcGuCkT/60pYAGZw1RB/Z4FBRIiwMXBZ1x+vqrO1c8NTeChKxpsK+g==",
-        "dependencies": {
-          "Avalonia": "12.0.0",
-          "ClassIsland.ColorDocument.Avalonia": "12.0.0",
-          "ClassIsland.ColorTextBlock.Avalonia": "12.0.0"
         }
       },
       "DiffEngine": {
@@ -262,6 +221,48 @@
         "type": "Transitive",
         "resolved": "1.11.42",
         "contentHash": "LDc1bEfF14EY2DZzak4xvzWvbpNXK3vi1u0KQbBpLUN4+cx/VrvXhgCAMSJhSU5vz0oMfW9JZIR20vj/PkDHPA=="
+      },
+      "Markdown.Avalonia.Html": {
+        "type": "Transitive",
+        "resolved": "12.0.2",
+        "contentHash": "p+q46vs0LDdrBmaT8iW0AnQ7JqHiP455df8+Hu2mB7WfkpEHUY7fG3PVnFO5nFyyt7pO5hQ1SeKSczs6RI/aSw==",
+        "dependencies": {
+          "Avalonia": "12.0.0",
+          "ColorDocument.Avalonia": "12.0.2",
+          "ColorTextBlock.Avalonia": "12.0.2",
+          "HtmlAgilityPack": "1.11.42",
+          "Markdown.Avalonia.SyntaxHigh": "12.0.2",
+          "Markdown.Avalonia.Tight": "12.0.2"
+        }
+      },
+      "Markdown.Avalonia.Svg": {
+        "type": "Transitive",
+        "resolved": "12.0.2",
+        "contentHash": "gwJuQQTvsrQ/EzI4+4fepfFHmTBiGfhDUXijWUBwJKQcOdnfGhawDIMUEq5YKALkyXj1jbfLGUu1ThZRo9SXsQ==",
+        "dependencies": {
+          "Avalonia": "12.0.0",
+          "Markdown.Avalonia.Tight": "12.0.2",
+          "Svg.Controls.Avalonia": "12.0.0.1"
+        }
+      },
+      "Markdown.Avalonia.SyntaxHigh": {
+        "type": "Transitive",
+        "resolved": "12.0.2",
+        "contentHash": "ybzSHE8YvV6ueCPGTnGDVsrZakZgkh1DDw7C+QrUQCQaB/KJpkqVjJy99fcjwXJuSqmti/2JehWoEkvjKSJHag==",
+        "dependencies": {
+          "Avalonia": "12.0.0",
+          "Avalonia.AvaloniaEdit": "12.0.0"
+        }
+      },
+      "Markdown.Avalonia.Tight": {
+        "type": "Transitive",
+        "resolved": "12.0.2",
+        "contentHash": "QZsXGBu9gbrLZPcILvikdlAPKlOOGrJNQEH3mz6f9FBJsat0JF5ue6LrDkfLsFHkkt0tXknefZvMJ5BjH8MHSQ==",
+        "dependencies": {
+          "Avalonia": "12.0.0",
+          "ColorDocument.Avalonia": "12.0.2",
+          "ColorTextBlock.Avalonia": "12.0.2"
+        }
       },
       "MicroCom.Runtime": {
         "type": "Transitive",
@@ -439,8 +440,8 @@
       },
       "ShimSkiaSharp": {
         "type": "Transitive",
-        "resolved": "4.5.0",
-        "contentHash": "RfQcMCXfdmaMdxeXzKV9jSev0kMqW6ea6AmQqCKW+oafiC5dFtx496h4BYqEwX0G84VINrA5UvLyA5W/jgr2ew=="
+        "resolved": "4.1.0",
+        "contentHash": "ivo4qGw4MyozDpkjf/JsDS1YDKMyKw+Nrb9UNfwLWNsadVlf0pI1unb5PQ6JiIcEzqBDdlJXyAMzx+gocBVB7w=="
       },
       "SkiaSharp": {
         "type": "Transitive",
@@ -473,39 +474,39 @@
       },
       "Svg.Controls.Avalonia": {
         "type": "Transitive",
-        "resolved": "12.0.0.5",
-        "contentHash": "8F0dNmrBpmdwzAeSnBK6evyDCbw++1EkMB4WlF/MMih1XyYtfojIP44lazT8ZyWsJRbWNwx4P88wG5AjdLYqiA==",
+        "resolved": "12.0.0.1",
+        "contentHash": "VzeANFBwPxQvd7iIZ5OUxCudxylOtKRsRTbHAWYts8y03BUyEBlKYF/CiZ0xZJbARsn2gKyOSXQaevWRkIkyvA==",
         "dependencies": {
           "Avalonia": "12.0.0",
-          "Svg.Model": "4.5.0",
-          "Svg.SceneGraph": "4.5.0"
+          "Svg.Model": "4.1.0",
+          "Svg.SceneGraph": "4.1.0"
         }
       },
       "Svg.Custom": {
         "type": "Transitive",
-        "resolved": "4.5.0",
-        "contentHash": "XKd1NTKf+8XIu0xuNC83CA4vR/OL3vuYCU9R+HZ0R9yYeGqRAKMd+Um9XQ0Yi/4/zoXMe8fhoOSrYYTtuHuejw==",
+        "resolved": "4.1.0",
+        "contentHash": "NGoJFa+cXV783x/trg+HEy1ew4LPfELEaPkNrdncjSPhY4ZIFMSL/lwqcCY+jyq5Ef/Q1Wj2t3FBkbGXMPoDXA==",
         "dependencies": {
           "ExCSS": "4.3.1"
         }
       },
       "Svg.Model": {
         "type": "Transitive",
-        "resolved": "4.5.0",
-        "contentHash": "+Tdtfgazq5WtXox/8NBgnXeWL2224GW9P4t4qNgGW4MKbU5aJ4w2CWdR43BIueaeBlphPaW0UfjqI4xyQolSmw==",
+        "resolved": "4.1.0",
+        "contentHash": "gZ21aaCul5QyqgDR9yFt1qLrz0XkXE3/CRY73Sj9vP/HuqrfE/WUY59xlSs11dpbBFd4ZpC9teaHLqS2RxecSg==",
         "dependencies": {
-          "ShimSkiaSharp": "4.5.0",
-          "Svg.Custom": "4.5.0"
+          "ShimSkiaSharp": "4.1.0",
+          "Svg.Custom": "4.1.0"
         }
       },
       "Svg.SceneGraph": {
         "type": "Transitive",
-        "resolved": "4.5.0",
-        "contentHash": "mxkCFZOvMEXbuefEPeGBT5vcbjK4jc640ySur0LQynadwrvrQlf96ANXM0aPUg3/cvM3iYhuMA3QxVu/bgbSWw==",
+        "resolved": "4.1.0",
+        "contentHash": "Z3exGx3xqlvUdF2IWFGtDcMSGkVwOV7ciYcCpUeZwcrZcUtofaMPYQcC5mFORQLGZtmDdyaLmdMoJYzw+XsaBQ==",
         "dependencies": {
-          "ShimSkiaSharp": "4.5.0",
-          "Svg.Custom": "4.5.0",
-          "Svg.Model": "4.5.0"
+          "ShimSkiaSharp": "4.1.0",
+          "Svg.Custom": "4.1.0",
+          "Svg.Model": "4.1.0"
         }
       },
       "System.CodeDom": {
@@ -552,7 +553,7 @@
           "Avalonia.Labs.Gif": "[12.0.2, )",
           "Avalonia.Themes.Fluent": "[12.1.0, )",
           "AvaloniaEdit.TextMate": "[12.0.0, )",
-          "ClassIsland.Markdown.Avalonia": "[12.0.0, )",
+          "Markdown.Avalonia": "[12.0.2, )",
           "Microsoft.Extensions.DependencyInjection": "[10.0.0, )",
           "Microsoft.Extensions.Http": "[10.0.0, )",
           "Microsoft.Web.WebView2": "[1.0.4078.44, )",
@@ -653,23 +654,23 @@
           "TextMateSharp.Grammars": "2.0.3"
         }
       },
-      "ClassIsland.Markdown.Avalonia": {
-        "type": "CentralTransitive",
-        "requested": "[12.0.0, )",
-        "resolved": "12.0.0",
-        "contentHash": "OgtxpsOhfJSZGTkFnWwtvvueDJ8i0r2kM/4HTYZ7KmvfPV3Hb7tjcuhYIvMGDmYW7rlHC3P3BFsipPNgaX1XdA==",
-        "dependencies": {
-          "ClassIsland.Markdown.Avalonia.Html": "12.0.0",
-          "ClassIsland.Markdown.Avalonia.Svg": "12.0.0",
-          "ClassIsland.Markdown.Avalonia.SyntaxHigh": "12.0.0",
-          "ClassIsland.Markdown.Avalonia.Tight": "12.0.0"
-        }
-      },
       "CommunityToolkit.Mvvm": {
         "type": "CentralTransitive",
         "requested": "[8.4.2, )",
         "resolved": "8.4.2",
         "contentHash": "WadCzGEc2U+3e20avRLng4qNtt4zoOGWrdUISqJWrHe3/FSnrYjuM5Sb4yQb09LhkBXrrI4Zt3dLKgRMbItsrg=="
+      },
+      "Markdown.Avalonia": {
+        "type": "CentralTransitive",
+        "requested": "[12.0.2, )",
+        "resolved": "12.0.2",
+        "contentHash": "R0I1BtyAPRwjjYXhg7w2rdsRRNo6bsKnvkvhI6fcNTqZwvOwE8hRberBdmyloS7l/S+Gydt6dzbcvOCLgNUekA==",
+        "dependencies": {
+          "Markdown.Avalonia.Html": "12.0.2",
+          "Markdown.Avalonia.Svg": "12.0.2",
+          "Markdown.Avalonia.SyntaxHigh": "12.0.2",
+          "Markdown.Avalonia.Tight": "12.0.2"
+        }
       },
       "Microsoft.Extensions.DependencyInjection": {
         "type": "CentralTransitive",

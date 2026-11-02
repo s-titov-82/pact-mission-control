@@ -36,6 +36,9 @@ public sealed record SessionRecord(
 	DateTimeOffset CreatedAt,
 	DateTimeOffset LastActiveAt)
 {
+	/// <summary>Manual attention bookmark, cleared only by an explicit user toggle.</summary>
+	public bool IsMarkedForLater { get; init; }
+
 	/// <summary>Files the agent linked for the user, newest first; dropped with the session.</summary>
 	public IReadOnlyList<AgentFileLink> FileLinks { get; init; } = [];
 }

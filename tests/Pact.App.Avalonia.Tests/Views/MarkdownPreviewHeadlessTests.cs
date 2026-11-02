@@ -86,6 +86,26 @@ public sealed class MarkdownPreviewHeadlessTests
 	}
 
 	[AvaloniaTest]
+	public async Task A_relative_svg_is_drawn_with_its_declared_size()
+	{
+		await WithDocsAsync(
+			("docs/a.md", "![vector](img/pic.svg)"),
+			null,
+			async (_, notes, _) =>
+			{
+				var preview = notes.FindControl<MarkdownScrollViewer>("Preview")!;
+				var image = Images(preview).ShouldHaveSingleItem();
+				var loaded = image.Task is { } pending
+					? await pending.WaitAsync(TimeSpan.FromSeconds(5))
+					: image.Image;
+
+				loaded.ShouldNotBeNull().Size.ShouldBe(new Size(12, 8));
+			},
+			image: "docs/img/pic.svg",
+			imageText: "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"12\" height=\"8\"><rect width=\"12\" height=\"8\" fill=\"red\"/></svg>");
+	}
+
+	[AvaloniaTest]
 	public async Task A_missing_image_leaves_its_alt_text_and_the_rest_renders()
 	{
 		await WithDocsAsync(
@@ -258,7 +278,8 @@ public sealed class MarkdownPreviewHeadlessTests
 		(string Path, string Text) document,
 		(string Path, string Text)? other,
 		Func<DocsAndNotesWorkspaceViewModel, NotesPaneView, Window, Task> act,
-		string? image = null)
+		string? image = null,
+		string? imageText = null)
 	{
 		FluentTheme theme = new();
 		Application.Current!.Styles.Add(theme);
@@ -272,7 +293,14 @@ public sealed class MarkdownPreviewHeadlessTests
 		{
 			var full = Path.Combine(root.Path, image.Replace('/', Path.DirectorySeparatorChar));
 			Directory.CreateDirectory(Path.GetDirectoryName(full)!);
-			await File.WriteAllBytesAsync(full, Convert.FromBase64String(OnePixelPng));
+			if (imageText is not null)
+			{
+				await File.WriteAllTextAsync(full, imageText);
+			}
+			else
+			{
+				await File.WriteAllBytesAsync(full, Convert.FromBase64String(OnePixelPng));
+			}
 		}
 
 		DocsAndNotesWorkspaceViewModel workspace = new(

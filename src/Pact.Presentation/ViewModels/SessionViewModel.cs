@@ -39,6 +39,9 @@ public sealed class SessionViewModel : INotifyPropertyChanged
 	/// <summary>Persisted session state.</summary>
 	public SessionRecord Record { get; private set; }
 
+	/// <summary>Durable manual attention bookmark, independent of screen classification.</summary>
+	public bool IsMarkedForLater => Record.IsMarkedForLater;
+
 	/// <summary>Whether the session belongs to the project-independent ROOT area.</summary>
 	public bool IsRootItem { get; }
 
@@ -201,6 +204,7 @@ public sealed class SessionViewModel : INotifyPropertyChanged
 
 		Record = record;
 		OnPropertyChanged(nameof(Record));
+		OnPropertyChanged(nameof(IsMarkedForLater));
 		OnPropertyChanged(nameof(Title));
 		OnPropertyChanged(nameof(TargetDisplayName));
 		OnPropertyChanged(nameof(TerminalKind));

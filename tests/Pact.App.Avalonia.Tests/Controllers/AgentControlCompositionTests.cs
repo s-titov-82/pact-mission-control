@@ -897,10 +897,19 @@ public sealed class AgentControlCompositionTests
 		public async Task MakeReviewerReadyAsync(FakeTerminalBackend backend)
 		{
 			await backend.StartStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
-			backend.EmitOutput("reviewer ready");
-			await backend.FirstOutputProcessed.Task.WaitAsync(TimeSpan.FromSeconds(5));
 			var reviewer = Sessions(ProjectA).Single(session =>
 				session.Title.StartsWith("Review ·", StringComparison.Ordinal));
+			// Backend.StartStarted precedes the launcher's Running publication. A screen is
+			// meaningful only after the classifier has entered that lifecycle.
+			using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+			while (!ViewModel.TerminalTabStatuses.TryGetDiagnostics(reviewer.Record.Id, out var diagnostics)
+				|| diagnostics.LifecycleStatus != SessionStatus.Running)
+			{
+				timeout.Token.ThrowIfCancellationRequested();
+				await Task.Yield();
+			}
+			backend.EmitOutput("reviewer ready");
+			await backend.FirstOutputProcessed.Task.WaitAsync(TimeSpan.FromSeconds(5));
 			Host.RaiseScreenSnapshotReceived(
 				reviewer.Record.Id,
 				reviewer.Record.Kind == AgentKind.Codex

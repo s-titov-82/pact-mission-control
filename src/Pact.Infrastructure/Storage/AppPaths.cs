@@ -30,6 +30,7 @@ public sealed class AppPaths
 
 		ProjectsPath = Path.Combine(SettingsDirectory, "projects.json");
 		RootTabsPath = Path.Combine(SettingsDirectory, "root-tabs.json");
+		SessionRestorationPath = Path.Combine(SettingsDirectory, "session-state.json");
 		ShellProfilesPath = Path.Combine(SettingsDirectory, "shell-profiles.json");
 		ReviewProfilesPath = Path.Combine(SettingsDirectory, "review-profiles.json");
 		AgentControlSettingsPath = Path.Combine(SettingsDirectory, "agent-control.json");
@@ -51,6 +52,9 @@ public sealed class AppPaths
 
 	/// <summary>Gets the durable user and application settings directory.</summary>
 	public string SettingsDirectory { get; }
+
+	/// <summary>Gets the durable content-free startup checkpoint path.</summary>
+	public string SessionRestorationPath { get; }
 
 	/// <summary>Gets the shared WebView2 user-data directory.</summary>
 	public string WebViewDirectory { get; }

@@ -81,8 +81,11 @@ until both PACT and its bundled ConPTY executable are no longer locked, updates
 the directory containing the running `Pact.App.Avalonia.exe`, deletes the Setup
 package, and relaunches PACT without requesting a Windows reboot.
 
-The update restart restores the tabs that were active immediately before the
-handoff, their selection, and unread completion markers. An agent terminal with
+Every launch restores the tabs that were active before the previous exit,
+their selection, unread completion markers, and manual `Read later` bookmarks.
+Double-click a ready agent row to toggle `Read later`; visiting it does not clear
+that bookmark. Busy and input-request states wait for fresh agent screen evidence.
+An agent terminal with
 an extracted conversation id resumes that conversation directly; one with only a
 resume command template resumes into the agent's own conversation picker, which
 is also how a session survives an unexpected exit. Other terminals cold-start

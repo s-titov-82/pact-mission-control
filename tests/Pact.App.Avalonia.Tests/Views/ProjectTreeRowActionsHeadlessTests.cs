@@ -24,6 +24,49 @@ namespace Pact.App.Avalonia.Tests.Views;
 public sealed class ProjectTreeRowActionsHeadlessTests
 {
 	[AvaloniaTest]
+	public void Double_tap_requests_the_same_manual_toggle_on_project_and_root_rows_but_not_buttons()
+	{
+		var session = CreateSession();
+		ProjectTreeView view = new();
+		List<SessionViewModel> requested = [];
+		view.ReadLaterToggleRequested += (_, item) => requested.Add(item);
+		FluentTheme theme = new();
+		Application.Current!.Styles.Add(theme);
+		Window window = new() { Width = 600, Height = 650 };
+		try
+		{
+			window.Show();
+			PointerPressedEventArgs? pressed = null;
+			window.PointerPressed += (_, args) => pressed = args;
+			window.MouseDown(new Point(5, 5), MouseButton.Left);
+			window.MouseUp(new Point(5, 5), MouseButton.Left);
+			pressed.ShouldNotBeNull();
+			foreach (var row in new[] { BuildRow(view, session), BuildRootRow(view, session) })
+			{
+				window.Content = row;
+				window.UpdateLayout();
+				row.RaiseEvent(new TappedEventArgs(InputElement.DoubleTappedEvent, pressed));
+				row.RaiseEvent(new TappedEventArgs(InputElement.DoubleTappedEvent, pressed));
+				var count = requested.Count;
+				row.GetVisualDescendants().OfType<Button>().First()
+					.RaiseEvent(new TappedEventArgs(InputElement.DoubleTappedEvent, pressed));
+				requested.Count.ShouldBe(count);
+				session.UpdateRecord(session.Record with { IsMarkedForLater = true });
+				Dispatcher.UIThread.RunJobs();
+				row.GetVisualDescendants().OfType<TextBlock>()
+					.Single(text => text.Text == "◇ Read later").IsVisible.ShouldBeTrue();
+			}
+			requested.Count.ShouldBe(4);
+			requested.ShouldAllBe(item => ReferenceEquals(item, session));
+		}
+		finally
+		{
+			window.Close();
+			Application.Current.Styles.Remove(theme);
+		}
+	}
+
+	[AvaloniaTest]
 	public void Review_delivery_attention_is_visible_on_both_rows_and_clears_without_rebuilding_them()
 	{
 		var author = CreateSession();

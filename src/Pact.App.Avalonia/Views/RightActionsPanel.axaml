@@ -5,7 +5,7 @@
              xmlns:remarks="clr-namespace:Pact.App.Avalonia.Views.Remarks"
              x:Class="Pact.App.Avalonia.Views.RightActionsPanel"
              x:CompileBindings="False">
-  <Grid Margin="20,18" RowDefinitions="Auto,*">
+  <Grid Margin="20,18" RowDefinitions="Auto,Auto,*">
     <DockPanel>
       <Button x:Name="SettingsButton" DockPanel.Dock="Right" Width="34" Height="30" Padding="0"
               HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
@@ -16,7 +16,8 @@
               Click="OnRestartAndUpdateClicked" />
       <Panel />
     </DockPanel>
-    <Grid x:Name="DefaultActionsPanel" Grid.Row="1" RowDefinitions="Auto,0,Auto,Auto,*,Auto,Auto">
+    <local:AttentionFeedView x:Name="AttentionFeed" Grid.Row="1" DataContext="{Binding Attention}" />
+    <Grid x:Name="DefaultActionsPanel" Grid.Row="2" RowDefinitions="Auto,0,Auto,Auto,*,Auto,Auto">
       <StackPanel>
       <StackPanel x:Name="ChangesSection" Margin="0,20,0,0" IsVisible="False">
         <Button x:Name="ChangesEntry" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"

@@ -30,7 +30,7 @@
                      Foreground="White" />
           <TextBlock MaxWidth="360" HorizontalAlignment="Center" TextAlignment="Center"
                      FontSize="12" Foreground="{StaticResource AppTextMutedBrush}"
-                     Text="Use the Resume button in the ROOT row to start this item again." />
+                     Text="Use the row's Resume or Start button to start this item again." />
         </StackPanel>
       </Border>
       <Border x:Name="EmptyPane" Background="{StaticResource AppPaneBackgroundBrush}" IsVisible="False">

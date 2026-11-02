@@ -6,6 +6,7 @@ using Pact.App.Avalonia.SelectionActions;
 using Pact.App.Avalonia.Tests.Fakes;
 using Pact.Core.Agents;
 using Pact.Core.Git;
+using Pact.Core.Orchestrator;
 using Pact.Core.Platform;
 using Pact.Core.Presentation;
 using Pact.Core.Projects;
@@ -3043,6 +3044,157 @@ public sealed class AvaloniaMainShellControllerTests
 		fixture.Host.RaiseScreenSnapshotReceived(session.Record.Id, "Worked for 1s");
 
 		session.Indicator.ShouldBe(TerminalTabIndicator.None);
+	}
+
+	[Test]
+	public async Task Read_later_requires_ready_evidence_and_only_another_toggle_clears_it()
+	{
+		await using ControllerFixture fixture = new(firstResumeCommand: string.Empty);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var session = fixture.ViewModel.Sessions[0];
+		await fixture.Controller.ToggleReadLaterAsync(session);
+		session.IsMarkedForLater.ShouldBeFalse();
+		fixture.Host.RaiseScreenSnapshotReceived(session.Record.Id, "Worked for 1s");
+		await fixture.Controller.ToggleReadLaterAsync(session);
+		session.IsMarkedForLater.ShouldBeTrue();
+		await fixture.Controller.SelectSessionAsync(fixture.ViewModel.Sessions[1], startIfNeeded: true);
+		await fixture.Controller.SelectSessionAsync(session, startIfNeeded: true);
+		fixture.Host.RaiseInputReceived(session.Record.Id, "\r");
+		await WaitForEventTasksAsync(fixture);
+		session.Indicator.ShouldBe(TerminalTabIndicator.Busy);
+		session.IsMarkedForLater.ShouldBeTrue();
+		await fixture.Controller.ToggleReadLaterAsync(session);
+		session.IsMarkedForLater.ShouldBeFalse();
+		session.Indicator.ShouldBe(TerminalTabIndicator.Busy);
+	}
+
+	[Test]
+	public async Task Fresh_ready_screen_received_while_publishing_running_status_is_not_erased()
+	{
+		await using ControllerFixture fixture = new(firstResumeCommand: string.Empty);
+		var injected = false;
+		fixture.ViewModel.TerminalTabStatuses.DiagnosticsChanged += (_, args) =>
+		{
+			if (!injected && args.Diagnostics.SessionId == "session-1"
+				&& args.Diagnostics.LifecycleStatus == SessionStatus.Running)
+			{
+				injected = true;
+				fixture.Host.RaiseScreenSnapshotReceived("session-1", "Worked for 1s");
+			}
+		};
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		injected.ShouldBeTrue();
+		fixture.ViewModel.TerminalTabStatuses.TryGetScreenState("session-1", out var state).ShouldBeTrue();
+		state.VerdictState.ShouldBe(TerminalScreenVerdictState.Done);
+	}
+
+	[Test]
+	public async Task Ordinary_startup_restores_live_tabs_selection_and_unread_without_old_classifier_facts()
+	{
+		await using ControllerFixture fixture = new(firstResumeCommand: string.Empty);
+		fixture.Controller.WebPageHostFactory = new FakeWebPageHostFactory();
+		fixture.Controller.SetTerminalWindowFacts(true, true, DateTimeOffset.UtcNow);
+		SessionRestorationStore store = new(Path.Combine(fixture.Paths.SettingsDirectory, "session-state.json"));
+		await store.SaveAsync(new(["session-1", "session-2"], ["web-1"], ["session-1"],
+			new("project-1", "session-2"), false), CancellationToken.None);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		fixture.Backends.Count.ShouldBe(2);
+		fixture.ViewModel.SelectedSession?.Record.Id.ShouldBe("session-2");
+		fixture.ViewModel.Sessions[0].Indicator.ShouldBe(TerminalTabIndicator.Unread);
+		fixture.ViewModel.TerminalTabStatuses.TryGetScreenState("session-1", out var state).ShouldBeTrue();
+		state.InputRequested.ShouldBeFalse();
+		state.VerdictState.ShouldBeNull();
+		fixture.Controller.GetWebPageHostForDiagnostics("web-1").ShouldNotBeNull();
+	}
+
+	[Test]
+	public async Task Ordinary_shutdown_keeps_the_live_set_before_processes_and_selection_are_stopped()
+	{
+		await using ControllerFixture fixture = new(firstResumeCommand: string.Empty);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		await fixture.Controller.SelectSessionAsync(fixture.ViewModel.Sessions[1], startIfNeeded: true);
+		fixture.Host.RaiseInputReceived("session-1", "\r");
+		await WaitForEventTasksAsync(fixture);
+		fixture.Host.RaiseScreenSnapshotReceived("session-1", "Worked for 1s");
+		await fixture.Controller.ShutdownAsync();
+		SessionRestorationStore store = new(Path.Combine(fixture.Paths.SettingsDirectory, "session-state.json"));
+		var state = (await store.LoadAsync(CancellationToken.None)).ShouldNotBeNull();
+		state.LiveTerminalIds.ShouldBe(["session-1", "session-2"]);
+		state.UnreadTerminalIds.ShouldBe(["session-1"]);
+		state.Selection?.ItemId.ShouldBe("session-2");
+	}
+
+	[Test]
+	public async Task Ordinary_startup_keeps_a_selected_paused_root_terminal_paused()
+	{
+		var now = DateTimeOffset.UtcNow;
+		SessionRecord root = new("paused", AgentKind.Codex, "Paused", Path.GetTempPath(), "codex", null, SessionStatus.Stopped, now, now);
+		await using ControllerFixture fixture = new(firstResumeCommand: string.Empty,
+			rootTabs: new RootTabsRecord(1, "paused", [root], [], ["paused"]));
+		SessionRestorationStore store = new(fixture.Paths.SessionRestorationPath);
+		await store.SaveAsync(new(["session-1"], [], [], new(null, "paused"), false), CancellationToken.None);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		fixture.Backends.Count.ShouldBe(1);
+		fixture.ViewModel.SelectedSession?.Record.Id.ShouldBe("paused");
+		fixture.Controller.IsPausedItemVisible.ShouldBeTrue();
+	}
+
+	[Test]
+	public async Task Malformed_startup_checkpoint_uses_the_existing_first_run_selection()
+	{
+		await using ControllerFixture fixture = new(firstResumeCommand: string.Empty);
+		await File.WriteAllTextAsync(fixture.Paths.SessionRestorationPath, "{");
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		fixture.Backends.Count.ShouldBe(1);
+		fixture.ViewModel.SelectedSession?.Record.Id.ShouldBe("session-1");
+	}
+
+	[Test]
+	public async Task Startup_does_not_acknowledge_browser_unread_on_the_temporary_root_selection()
+	{
+		var now = DateTimeOffset.UtcNow;
+		WebPageRecord root = new("root-web", "Root", "https://example.test/", "https://example.test/", now, now);
+		await using ControllerFixture fixture = new(firstResumeCommand: string.Empty,
+			rootTabs: new RootTabsRecord(1, "root-web", [], [root], []));
+		await SaveMonitorRulesAsync(fixture, MonitorRule());
+		await fixture.SnapshotStore.SaveAsync(Snapshot("root-web", unread: true), CancellationToken.None);
+		SessionRestorationStore store = new(fixture.Paths.SessionRestorationPath);
+		await store.SaveAsync(new(["session-1"], ["root-web"], [], new("project-1", "session-1"), false), CancellationToken.None);
+		fixture.Controller.WebPageHostFactory = new FakeWebPageHostFactory();
+		fixture.Controller.SetWebMonitorWindowFacts(true, true);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		fixture.ViewModel.SelectedSession?.Record.Id.ShouldBe("session-1");
+		fixture.ViewModel.RootTabs.WebPages.Single().HasMonitorUnread.ShouldBeTrue();
+		(await fixture.SnapshotStore.LoadAsync("root-web", CancellationToken.None)).ShouldNotBeNull().Unread.ShouldBeTrue();
+	}
+
+	[Test]
+	public async Task A_stopped_orchestrator_bookmark_is_visible_and_clearable_after_startup_without_starting_it()
+	{
+		await using ControllerFixture fixture = new(firstResumeCommand: string.Empty);
+		OrchestratorStore store = new(fixture.Paths.OrchestratorPath);
+		await store.SaveAsync(OrchestratorRecord.CreateDefault() with
+		{
+			Enabled = true,
+			LaunchCommand = "hermes",
+			WorkingDirectory = fixture.Root,
+			Credential = "test-orchestrator",
+			IsMarkedForLater = true
+		}, CancellationToken.None);
+		SessionRestorationStore checkpoint = new(fixture.Paths.SessionRestorationPath);
+		await checkpoint.SaveAsync(new(["session-1"], [], [], new("project-1", "session-1"), false), CancellationToken.None);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var session = fixture.ViewModel.OrchestratorSlot.Session.ShouldNotBeNull();
+		session.IsMarkedForLater.ShouldBeTrue();
+		fixture.ViewModel.OrchestratorSlot.IsRunning.ShouldBeFalse();
+		fixture.ViewModel.Attention.Items.ShouldContain(item => ReferenceEquals(item.Target, session));
+		await fixture.Controller.SelectOrchestratorAsync();
+		fixture.ViewModel.SelectedSession.ShouldBeSameAs(session);
+		fixture.Controller.IsPausedItemVisible.ShouldBeTrue();
+		await fixture.Controller.ToggleReadLaterAsync(session);
+		session.IsMarkedForLater.ShouldBeFalse();
+		(await store.LoadAsync(CancellationToken.None)).IsMarkedForLater.ShouldBeFalse();
+		fixture.Backends.Count.ShouldBe(1);
 	}
 
 	[Test]

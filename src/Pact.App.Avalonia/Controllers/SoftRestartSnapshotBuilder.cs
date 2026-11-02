@@ -5,16 +5,6 @@ using Pact.Presentation.ViewModels;
 namespace Pact.App.Avalonia.Controllers;
 
 /// <summary>
-/// Contains only stable ids and flags required to rebuild runtime surfaces after a restart.
-/// </summary>
-internal sealed record SoftRestartSnapshot(
-	IReadOnlyList<string> LiveTerminalIds,
-	IReadOnlyList<string> LoadedWebPageIds,
-	IReadOnlyList<string> UnreadTerminalIds,
-	SoftRestartSelection? Selection,
-	bool OrchestratorWasRunning);
-
-/// <summary>
 /// Intersects live runtime identities with the currently active project and ROOT projections.
 /// It deliberately never reads terminal text, browser content, prompts, or credentials.
 /// </summary>
@@ -41,7 +31,7 @@ internal sealed class SoftRestartSnapshotBuilder
 			?? throw new ArgumentNullException(nameof(getLoadedPageIds));
 	}
 
-	public SoftRestartSnapshot Capture()
+	public SessionRestorationState Capture()
 	{
 		var eligibleTerminalIds = GetEligibleTerminalIds();
 		var liveTerminalIds = _getActiveSessionIds()
@@ -65,7 +55,7 @@ internal sealed class SoftRestartSnapshotBuilder
 			&& orchestratorId is not null
 			&& liveTerminalIds.Contains(orchestratorId, StringComparer.Ordinal);
 
-		return new SoftRestartSnapshot(
+		return new SessionRestorationState(
 			liveTerminalIds,
 			loadedPageIds,
 			unreadTerminalIds,
@@ -107,6 +97,13 @@ internal sealed class SoftRestartSnapshotBuilder
 		HashSet<string> eligibleTerminalIds,
 		HashSet<string> eligiblePageIds)
 	{
+		// Paused ROOT rows retain selection without becoming eligible for a process launch.
+		eligibleTerminalIds.UnionWith(_viewModel.RootTabs.Sessions.Select(session => session.Record.Id));
+		eligiblePageIds.UnionWith(_viewModel.RootTabs.WebPages.Select(page => page.Record.Id));
+		if (_viewModel.OrchestratorSlot.Session is { } slotSession)
+		{
+			eligibleTerminalIds.Add(slotSession.Record.Id);
+		}
 		var selectedItemId = _viewModel.SelectedSession?.Record.Id
 			?? _viewModel.SelectedWebPage?.Record.Id
 			?? _viewModel.SelectedProjectNote?.Record.Id;

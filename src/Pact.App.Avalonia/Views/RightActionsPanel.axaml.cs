@@ -17,6 +17,7 @@ internal sealed partial class RightActionsPanel : UserControl
 	public RightActionsPanel()
 	{
 		InitializeComponent();
+		AttentionFeed.ItemRequested += (_, item) => AttentionItemRequested?.Invoke(this, item);
 		// The remark lists open over the diff, right up to this panel.
 		RemarksPanel.AlignTarget = this;
 	}
@@ -29,6 +30,8 @@ internal sealed partial class RightActionsPanel : UserControl
 
 	public event EventHandler<PromptTemplateRecord>? QuickActionRequested;
 	public event EventHandler? SettingsRequested;
+	/// <summary>Requests activation of a current global attention target.</summary>
+	public event EventHandler<AttentionItem>? AttentionItemRequested;
 	public event EventHandler? RestartAndUpdateRequested;
 
 	/// <summary>Raised when the user clicks the Changes entry.</summary>

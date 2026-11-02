@@ -45,17 +45,28 @@ internal sealed class SoftRestartRestorer
 		_timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
 	}
 
-	public async Task<RestorationSummary> RestoreAsync(
+	public Task<RestorationSummary> RestoreAsync(
 		SoftRestartTicket ticket,
 		CancellationToken cancellationToken)
 	{
 		ArgumentNullException.ThrowIfNull(ticket);
+		return RestoreAsync(new SessionRestorationState(ticket.LiveTerminalIds, ticket.LoadedWebPageIds,
+			ticket.UnreadTerminalIds, ticket.Selection, ticket.OrchestratorWasRunning), cancellationToken,
+			ticket.Outcome.Kind == SoftRestartOutcomeKind.UpdateNotApplied ? ticket.Outcome.ErrorCategory : null);
+	}
+
+	public async Task<RestorationSummary> RestoreAsync(
+		SessionRestorationState state,
+		CancellationToken cancellationToken,
+		string? updateFailure = null)
+	{
+		ArgumentNullException.ThrowIfNull(state);
 		List<string> restoredTerminals = [];
 		List<string> coldFallbacks = [];
 		List<string> restoredPages = [];
 		List<string> failures = [];
 
-		foreach (var sessionId in ticket.LiveTerminalIds)
+		foreach (var sessionId in state.LiveTerminalIds.Distinct(StringComparer.Ordinal))
 		{
 			cancellationToken.ThrowIfCancellationRequested();
 			if (_isOrchestratorSession(sessionId))
@@ -88,21 +99,7 @@ internal sealed class SoftRestartRestorer
 			}
 		}
 
-		var occurredAt = _timeProvider.GetUtcNow();
-		foreach (var sessionId in ticket.UnreadTerminalIds)
-		{
-			if (_isOrchestratorSession(sessionId))
-			{
-				continue;
-			}
-
-			if (!_restoreUnread(sessionId, occurredAt))
-			{
-				failures.Add($"terminal:{sessionId}:unread-not-restored");
-			}
-		}
-
-		foreach (var pageId in ticket.LoadedWebPageIds)
+		foreach (var pageId in state.LoadedWebPageIds.Distinct(StringComparer.Ordinal))
 		{
 			cancellationToken.ThrowIfCancellationRequested();
 			var page = _findWebPage(pageId);
@@ -127,7 +124,7 @@ internal sealed class SoftRestartRestorer
 		}
 
 		var orchestratorRestored = false;
-		if (ticket.OrchestratorWasRunning)
+		if (state.OrchestratorWasRunning)
 		{
 			try
 			{
@@ -146,16 +143,8 @@ internal sealed class SoftRestartRestorer
 				failures.Add("orchestrator:start-failed");
 			}
 		}
-		foreach (var sessionId in ticket.UnreadTerminalIds.Where(_isOrchestratorSession))
-		{
-			if (!_restoreUnread(sessionId, occurredAt))
-			{
-				failures.Add($"terminal:{sessionId}:unread-not-restored");
-			}
-		}
-
 		var selectionRestored = false;
-		if (ticket.Selection is { } selection)
+		if (state.Selection is { } selection)
 		{
 			try
 			{
@@ -175,6 +164,16 @@ internal sealed class SoftRestartRestorer
 			}
 		}
 
+		// Apply unread only after final selection, so a temporary startup selection cannot acknowledge it.
+		var occurredAt = _timeProvider.GetUtcNow();
+		foreach (var sessionId in state.UnreadTerminalIds.Distinct(StringComparer.Ordinal))
+		{
+			if (!_restoreUnread(sessionId, occurredAt))
+			{
+				failures.Add($"terminal:{sessionId}:unread-not-restored");
+			}
+		}
+
 		return new RestorationSummary(
 			restoredTerminals,
 			coldFallbacks,
@@ -182,8 +181,6 @@ internal sealed class SoftRestartRestorer
 			failures,
 			orchestratorRestored,
 			selectionRestored,
-			ticket.Outcome.Kind == SoftRestartOutcomeKind.UpdateNotApplied
-				? ticket.Outcome.ErrorCategory
-				: null);
+			updateFailure);
 	}
 }

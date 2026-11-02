@@ -61,6 +61,13 @@ internal sealed class OrchestratorSupervisor(
 	/// <summary>The orchestrator's session once it has been started at least once.</summary>
 	public SessionViewModel? Session { get; private set; }
 
+	/// <summary>Applies an already-persisted manual bookmark without starting or restarting the slot.</summary>
+	public void SetReadLater(bool marked)
+	{
+		Record = Record with { IsMarkedForLater = marked };
+		Session?.UpdateRecord(Session.Record with { IsMarkedForLater = marked });
+	}
+
 	public async Task ApplySettingsAsync(
 		OrchestratorRecord record,
 		CancellationToken cancellationToken)
@@ -76,6 +83,20 @@ internal sealed class OrchestratorSupervisor(
 		}
 
 		Record = record;
+		if (Session is null && record.IsMarkedForLater)
+		{
+			var now = _timeProvider.GetUtcNow();
+			Session = new SessionViewModel(new SessionRecord(SessionId, AgentKind.Hermes, "Orchestrator",
+				record.WorkingDirectory, record.LaunchCommand, null, SessionStatus.Stopped, now, now)
+			{
+				IsMarkedForLater = true
+			});
+			_viewModel.OrchestratorSlot.AttachSession(Session);
+		}
+		else
+		{
+			Session?.UpdateRecord(Session.Record with { IsMarkedForLater = record.IsMarkedForLater });
+		}
 		_agentControlTokens.SetOrchestratorCredential(
 			record.Enabled && record.IsProvisioned ? record.Credential : null);
 		RefreshWorkstationLockMonitor();
@@ -199,7 +220,10 @@ internal sealed class OrchestratorSupervisor(
 				ResumeCommand: null,
 				SessionStatus.Starting,
 				now,
-				now);
+				now)
+			{
+				IsMarkedForLater = Record.IsMarkedForLater
+			};
 			Session ??= new SessionViewModel(record);
 			Session.UpdateRecord(record);
 			_viewModel.OrchestratorSlot.AttachSession(Session);
@@ -214,6 +238,10 @@ internal sealed class OrchestratorSupervisor(
 			};
 			_intentionalStop = false;
 			_startedAt = _timeProvider.GetUtcNow();
+			_viewModel.TerminalTabStatuses.OnSessionStarted(
+				SessionId,
+				TerminalStartMode.Normal,
+				DateTimeOffset.UtcNow);
 			await _launcher.StartProcessAsync(
 				SessionId,
 				record.Kind,
@@ -226,10 +254,6 @@ internal sealed class OrchestratorSupervisor(
 				OnExited,
 				cancellationToken);
 			Session.UpdateRecord(record with { Status = SessionStatus.Running });
-			_viewModel.TerminalTabStatuses.OnSessionStarted(
-				SessionId,
-				TerminalStartMode.Normal,
-				DateTimeOffset.UtcNow);
 			_viewModel.OrchestratorSlot.Apply(
 				isProvisioned: true,
 				isEnabled: true,

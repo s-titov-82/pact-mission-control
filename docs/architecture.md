@@ -176,6 +176,21 @@ messages are retained in memory only.
 sessions. Project Markdown files remain in their repositories; Pact-owned
 notes live under `Settings/Notes`.
 
+Markdown previews use the official `Markdown.Avalonia` renderer and its native
+Avalonia controls, without a browser surface. The package and its transitive
+rendering dependencies are pinned by the central package version and lock files.
+
+`AttentionFeedViewModel` projects existing terminal, browser and review indicators
+across running projects, ROOT and the enabled orchestrator. It observes current
+owner membership and detaches removed sources; it has no journal, storage or
+poller. `AttentionFeedView` is a separate, relocatable view currently hosted below
+Settings in the right panel. Navigation revalidates the captured owner/target,
+uses ordinary tab activation and then reveals its tree row without selecting it
+again. Existing tab visibility and review acknowledgement rules clear automatic
+attention. A separate `SessionRecord.IsMarkedForLater` bookmark (or the singular
+orchestrator setting) remains until the user toggles it off with a double-click.
+It never changes classifier state, and appears alongside other attention reasons.
+
 `Settings/root-tabs.json` separately owns project-independent terminal and web
 tabs, their last selected item, and explicit per-item pause state. ROOT is not a
 sentinel project: it has no project close/pause lifecycle, Git panel, documents,
@@ -325,8 +340,18 @@ back to `%LOCALAPPDATA%\Programs\Pact Mission Control`. The helper forbids
 Windows restart, records one terminal outcome in the same ticket, deletes the
 staged Setup, and relaunches the exact Pact path.
 
-Restoration consumes only the ticket derived from the supplied restart id and
-does so once. Persisted tabs remain the durable base; the overlay starts the
+Update restoration consumes only the ticket derived from the supplied restart id
+and does so once. Ordinary startup uses `Settings/session-state.json`; a valid
+update ticket takes precedence. Both use `SessionRestorationState` and the same
+restorer. The checkpoint contains only runtime ids, global selection, terminal
+unread ids, and orchestrator running intent. Event-driven writes are serialized
+and skip equal projections. Startup holds writes until restoration completes;
+shutdown freezes and flushes the checkpoint before resume capture or stopping
+processes can change selection and lifecycle state. Unexpected exits recover the
+last complete atomic checkpoint. Busy, questions, readiness and composer facts
+always require fresh screen evidence; no terminal text is persisted.
+
+Persisted tabs remain the durable base; the overlay starts the
 previously active terminal and browser set, restores unread markers and
 selection, and starts the orchestrator through its separate provisioned path.
 An agent terminal with both its command template and an extracted id resumes

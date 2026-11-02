@@ -200,6 +200,34 @@ internal sealed partial class MainWindow : Window, IDisposable
 
 	private void WireProjectTreeEvents()
 	{
+		ObserveEvent<SessionViewModel>(
+			handler => ProjectTree.ReadLaterToggleRequested += handler,
+			handler => ProjectTree.ReadLaterToggleRequested -= handler,
+			"read-later", session => EngineProbeController.ToggleReadLaterAsync(session));
+		ObserveEvent<AttentionItem>(
+			handler => RightActions.AttentionItemRequested += handler,
+			handler => RightActions.AttentionItemRequested -= handler,
+			"select-attention-item",
+			async item =>
+			{
+				var feed = EngineProbeController.ViewModel.Attention;
+				if (!feed.Contains(item))
+				{
+					return;
+				}
+				if (item.IsOrchestrator)
+				{
+					await EngineProbeController.SelectOrchestratorAsync();
+				}
+				else
+				{
+					await EngineProbeController.SelectItemAsync(item.Target);
+				}
+				if (feed.Owns(item))
+				{
+					ProjectTree.RevealAttentionItem(item);
+				}
+			});
 		ObserveEvent(
 			handler => ProjectTree.SelectOrchestratorRequested += handler,
 			handler => ProjectTree.SelectOrchestratorRequested -= handler,

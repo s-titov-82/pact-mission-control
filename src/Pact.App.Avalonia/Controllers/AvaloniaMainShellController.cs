@@ -80,6 +80,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 	private int _selectionCaptureVersion;
 	private int _rightClickPasteInProgress;
 	private bool _webMonitorStartupRulesApplied;
+	private bool _restoringStartup = true;
 	private bool _webMonitorWindowVisible;
 	private bool _webMonitorWindowActive;
 	private bool _terminalHostInitialized;
@@ -90,7 +91,10 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 	private bool _externalProcessMetricsEnabled;
 	private readonly ISoftRestartTicketStore? _softRestartTicketStore;
 	private readonly AppLaunchOptions? _launchOptions;
-	private readonly SoftRestartRestorer? _softRestartRestorer;
+	private readonly SoftRestartRestorer _softRestartRestorer;
+	private readonly SessionRestorationStore _sessionRestorationStore;
+	private readonly SessionRestorationCheckpoint _startupCheckpoint;
+	private Task _startupCheckpointFlush = Task.CompletedTask;
 
 	internal AvaloniaMainShellController(
 		MainWindowViewModel viewModel,
@@ -301,7 +305,8 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 			updateController?.ConfigureRestart(
 				safetyPolicy.Evaluate,
 				SoftRestartCoordinator.RequestApplyUpdateAsync);
-			_softRestartRestorer = new SoftRestartRestorer(
+		}
+		_softRestartRestorer = new SoftRestartRestorer(
 				FindRestorableSession,
 				StartRestoredSessionAsync,
 				FindRestorableWebPage,
@@ -311,7 +316,15 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 				RestoreSelectionAsync,
 				id => string.Equals(id, OrchestratorSupervisor.SessionId, StringComparison.Ordinal),
 				_timeProvider);
-		}
+		_sessionRestorationStore = new SessionRestorationStore(_appPaths.SessionRestorationPath);
+		SoftRestartSnapshotBuilder startupSnapshot = new(ViewModel,
+			_runtimeCoordinator.GetActiveSessionIds, ViewModel.TerminalTabStatuses.GetDiagnosticsSnapshot,
+			() => ViewModel.Workspaces.SelectMany(workspace => workspace.WebPages)
+				.Concat(ViewModel.RootTabs.WebPages).Where(page => page.IsBrowserLoaded)
+				.Select(page => page.Record.Id).ToArray());
+		_startupCheckpoint = new SessionRestorationCheckpoint(startupSnapshot.Capture,
+			state => _sessionRestorationStore.SaveAsync(state, CancellationToken.None),
+			exception => RecordDiagnostic("startup-checkpoint-save-failed", $"category={exception.GetType().Name}"));
 	}
 
 	public event PropertyChangedEventHandler? PropertyChanged;
@@ -384,7 +397,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 	public GitPanelViewModel? CurrentGitPanel { get; private set { if (ReferenceEquals(field, value)) { return; } field = value; OnPropertyChanged(); } }
 	public bool IsTerminalVisible => PresentedSurface is PresentedSurface.Terminal;
 	/// <summary>
-	/// Whether the selected ROOT item is intentionally paused and should show the paused
+	/// Whether the selected item is paused or the orchestrator is stopped and should show the paused
 	/// placeholder instead of starting or loading its surface.
 	/// </summary>
 	public bool IsPausedItemVisible =>
@@ -446,7 +459,8 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		await ReloadExternalSettingsAsync(cancellationToken);
 		await _terminalHost.InitializeAsync(terminalPage, cancellationToken);
 		_terminalHostInitialized = true;
-		if (!await TryRestoreSoftRestartAsync(cancellationToken))
+		if (!await TryRestoreSoftRestartAsync(cancellationToken)
+			&& !await TryRestoreStartupStateAsync(cancellationToken))
 		{
 			if (_orchestrator.Record.Enabled
 				&& _orchestrator.Record.IsProvisioned
@@ -467,6 +481,10 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 				await SelectWorkspaceAsync(workspace);
 			}
 		}
+		_restoringStartup = false;
+		PublishWebMonitorPresentationFacts();
+		ObserveStartupState();
+		_startupCheckpoint.Start();
 	}
 
 	private async Task RestoreRetainedWebMonitorStateAsync(
@@ -536,6 +554,10 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		LastRestorationSummary = await _softRestartRestorer.RestoreAsync(
 			ticket,
 			cancellationToken);
+		if (!ticket.OrchestratorWasRunning)
+		{
+			await _orchestrator.StopAsync();
+		}
 		return true;
 	}
 
@@ -570,6 +592,44 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		_ => Task.CompletedTask
 	};
 
+	private Task _readLaterToggle = Task.CompletedTask;
+
+	/// <summary>Toggles a bookmark; setting requires fresh ready evidence from a live agent.</summary>
+	internal Task ToggleReadLaterAsync(SessionViewModel session, CancellationToken cancellationToken = default) =>
+		_readLaterToggle = ToggleReadLaterAfterAsync(_readLaterToggle, session, cancellationToken);
+
+	private async Task ToggleReadLaterAfterAsync(Task previous, SessionViewModel session, CancellationToken cancellationToken)
+	{
+		await previous.ConfigureAwait(ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
+		cancellationToken.ThrowIfCancellationRequested();
+		var isOrchestrator = ReferenceEquals(ViewModel.OrchestratorSlot.Session, session);
+		if (!isOrchestrator && !ViewModel.RootTabs.Sessions.Contains(session)
+			&& !ViewModel.Workspaces.Any(workspace => workspace.Sessions.Contains(session)))
+		{
+			return;
+		}
+		if (!session.IsMarkedForLater
+			&& (session.IsManuallyPaused || session.Record.Status != SessionStatus.Running
+				|| session.Record.Kind is not (AgentKind.Codex or AgentKind.Claude or AgentKind.Hermes)
+				|| !_runtimeCoordinator.TryGetActiveController(session.Record.Id, out _, out _)
+				|| !ViewModel.TerminalTabStatuses.TryGetScreenState(session.Record.Id, out var state)
+				|| state.IsBusy || state.InputRequested
+				|| (state.VerdictState != TerminalScreenVerdictState.Done && state.StablePromptIsEmpty != true)))
+		{
+			return;
+		}
+		if (isOrchestrator)
+		{
+			var record = _orchestrator.Record with { IsMarkedForLater = !session.IsMarkedForLater };
+			await _orchestratorStore.SaveAsync(record, cancellationToken);
+			_orchestrator.SetReadLater(record.IsMarkedForLater);
+		}
+		else
+		{
+			await ViewModel.ToggleReadLaterAsync(session, cancellationToken);
+		}
+	}
+
 	// A user click on a project row: the git popup's selection plus the project's screen.
 	private async Task SelectProjectRowAsync(WorkspaceViewModel workspace, CancellationToken cancellationToken)
 	{
@@ -591,7 +651,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		timing.Mark("note");
 		await HideActiveWebPageAsync(cancellationToken);
 		timing.Mark("web");
-		if (session.IsManuallyPaused)
+		if (session.IsManuallyPaused || (ReferenceEquals(_orchestrator.Session, session) && !_orchestrator.IsRunning))
 		{
 			ViewModel.SelectedSession = session;
 			await ViewModel.SetActiveItemAsync(session.Record.Id, cancellationToken);
@@ -1324,7 +1384,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 	internal Task StopOrchestratorAsync() => _orchestrator.StopAsync();
 
 	internal Task SelectOrchestratorAsync(CancellationToken cancellationToken = default) =>
-		_orchestrator.Session is { } session && _orchestrator.IsRunning
+		_orchestrator.Session is { } session
 			? SelectSessionAsync(
 				session,
 				startIfNeeded: false,
@@ -1982,6 +2042,8 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 			}
 
 			_shutdownBegun = true;
+			_startupCheckpointFlush = _startupCheckpoint.FreezeAsync();
+			DetachStartupState();
 			Interlocked.Exchange(ref _acceptingInput, 0);
 			_runtimeCoordinator.CancelActivation();
 			// MCP handlers still drain for a while; a review they end must stay quiet.
@@ -2003,6 +2065,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		}
 
 		List<Exception> failures = [];
+		await RunCleanupStepAsync(() => _startupCheckpointFlush, failures);
 		try
 		{
 			var endpointShutdown = await _agentControlEndpoint.ShutdownAsync(
@@ -2067,6 +2130,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		finally
 		{
 			DisposeProjectScreens();
+			ViewModel.Attention.Dispose();
 			DisposeAgentFiles();
 			RemarkBooks.Dispose();
 			_processMetricsMonitor.MetricsChanged -= OnProcessMetricsChanged;
@@ -2127,14 +2191,13 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		if (selection.ItemId is { } itemId)
 		{
 			if (_orchestrator.Session is not null
-				&& string.Equals(itemId, OrchestratorSupervisor.SessionId, StringComparison.Ordinal)
-				&& IsOrchestratorRunning)
+				&& string.Equals(itemId, OrchestratorSupervisor.SessionId, StringComparison.Ordinal))
 			{
 				await SelectOrchestratorAsync(cancellationToken);
 				return true;
 			}
 
-			var session = FindRestorableSession(itemId);
+			var session = FindRestorableSession(itemId) ?? ViewModel.RootTabs.Sessions.FirstOrDefault(item => item.Record.Id == itemId);
 			if (session is not null)
 			{
 				await SelectSessionAsync(
@@ -2143,7 +2206,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 					cancellationToken: cancellationToken);
 				return true;
 			}
-			var page = FindRestorableWebPage(itemId);
+			var page = FindRestorableWebPage(itemId) ?? ViewModel.RootTabs.WebPages.FirstOrDefault(item => item.Record.Id == itemId);
 			if (page is not null)
 			{
 				await SelectWebPageAsync(page, cancellationToken);
@@ -2744,6 +2807,11 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 
 	private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
 	{
+		if (e.PropertyName is nameof(MainWindowViewModel.SelectedSession) or nameof(MainWindowViewModel.SelectedWebPage)
+			or nameof(MainWindowViewModel.SelectedProjectNote) or nameof(MainWindowViewModel.SelectedWorkspace))
+		{
+			_startupCheckpoint?.Publish();
+		}
 		UpdateController?.RefreshRestartSafety();
 		if (e.PropertyName == nameof(MainWindowViewModel.SelectedWebPage))
 		{
@@ -2781,6 +2849,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		object? sender,
 		TerminalClassifierDiagnosticsChangedEventArgs e)
 	{
+		_startupCheckpoint?.Publish();
 		_reviewRelay.NotifyStatusChanged(e.Diagnostics.SessionId);
 		UpdateController?.RefreshRestartSafety();
 		if (string.Equals(
@@ -2925,8 +2994,8 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 			+ $"visible={_webMonitorWindowVisible};active={_webMonitorWindowActive}");
 		_webMonitorCoordinator.SetPresentationFacts(
 			ViewModel.SelectedWebPage?.Record.Id,
-			_webMonitorWindowVisible,
-			_webMonitorWindowActive);
+			_webMonitorWindowVisible && !_restoringStartup,
+			_webMonitorWindowActive && !_restoringStartup);
 	}
 
 	private void OnWebMonitorStableUrlChanged(

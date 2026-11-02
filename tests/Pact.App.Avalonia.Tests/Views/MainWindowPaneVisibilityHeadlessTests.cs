@@ -28,6 +28,86 @@ namespace Pact.App.Avalonia.Tests.Views;
 public sealed class MainWindowPaneVisibilityHeadlessTests
 {
 	[AvaloniaTest]
+	public async Task Attention_card_opens_its_tab_once_and_reveals_a_collapsed_project()
+	{
+		TestContext.Progress.WriteLine("attention navigation: setup");
+		using ApplicationStyleScope styles = new();
+		await using WindowFixture fixture = new();
+		await fixture.Store.UpdateAsync(document => document with
+		{
+			Projects = [.. Enumerable.Range(0, 30).Select(index => document.Projects.Single() with
+			{
+				Id = $"filler-{index}",
+				Name = $"Filler {index}",
+				Sessions = [],
+				WebPages = [],
+				ActiveItemId = null
+			}), .. document.Projects]
+		}, TestContext.CurrentContext.CancellationToken);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), TestContext.CurrentContext.CancellationToken);
+		TestContext.Progress.WriteLine("attention navigation: initialized");
+		var project = fixture.ViewModel.Workspaces.Single(workspace => workspace.Id == "project-1");
+		using MainWindow window = new(fixture.Controller);
+		List<string> errors = [];
+		window.ShowMessageDialogAsyncOverride = request =>
+		{
+			errors.Add(request.Message);
+			return Task.FromResult(MessageDialogResult.No);
+		};
+		var centerPane = window.FindControl<Grid>("CenterPane")!;
+		centerPane.Children.Remove(window.FindControl<TerminalPaneView>("TerminalPane")!);
+		centerPane.Children.Remove(window.FindControl<BrowserPaneView>("BrowserPane")!);
+		window.Show();
+		TestContext.Progress.WriteLine("attention navigation: shown");
+		var target = project.WebPages.Last();
+		project.WebPages.First().SetMonitorUnread(true);
+		target.SetMonitorUnread(true);
+		await fixture.Controller.OpenProjectScreenAsync(project, ProjectScreenTab.Overview);
+		TestContext.Progress.WriteLine("attention navigation: overview");
+		Dispatcher.UIThread.RunJobs();
+		window.UpdateLayout();
+		var feed = window.GetVisualDescendants().OfType<AttentionFeedView>().ShouldHaveSingleItem();
+		feed.IsEffectivelyVisible.ShouldBeTrue();
+		var tree = window.FindControl<ProjectTreeView>("ProjectTree")!.FindControl<TreeView>("ProjectTree")!;
+		tree.ScrollIntoView(project);
+		window.UpdateLayout();
+		var container = tree.ContainerFromItem(project).ShouldBeOfType<TreeViewItem>();
+		container.IsExpanded = false;
+		Dispatcher.UIThread.RunJobs();
+		await fixture.Controller.GetEventTasks().WaitForIdleAsync();
+		TestContext.Progress.WriteLine("attention navigation: collapsed");
+		tree.ScrollIntoView(fixture.ViewModel.Workspaces[0]);
+		window.UpdateLayout();
+		var button = feed.GetVisualDescendants().OfType<Button>()
+			.Single(candidate => candidate.DataContext is AttentionItem item && ReferenceEquals(item.Target, target));
+		var switches = 0;
+		fixture.ViewModel.PropertyChanged += (_, args) =>
+		{
+			if (args.PropertyName == nameof(MainWindowViewModel.SelectedWebPage))
+			{
+				switches++;
+			}
+		};
+		button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+		TestContext.Progress.WriteLine("attention navigation: clicked");
+		await fixture.Controller.GetEventTasks().WaitForIdleAsync();
+		TestContext.Progress.WriteLine("attention navigation: activated");
+		errors.ShouldBeEmpty();
+		Dispatcher.UIThread.RunJobs();
+		window.UpdateLayout();
+		fixture.ViewModel.SelectedWebPage.ShouldBeSameAs(target);
+		switches.ShouldBe(1);
+		var revealed = tree.ContainerFromItem(project).ShouldBeOfType<TreeViewItem>();
+		revealed.IsExpanded.ShouldBeTrue();
+		var row = revealed.ContainerFromItem(target).ShouldBeOfType<TreeViewItem>();
+		row.IsEffectivelyVisible.ShouldBeTrue();
+		var at = row.TranslatePoint(default, tree).ShouldNotBeNull();
+		at.Y.ShouldBeGreaterThanOrEqualTo(0);
+		at.Y.ShouldBeLessThan(tree.Bounds.Height);
+		feed.IsEffectivelyVisible.ShouldBeTrue(); // It also remains available on the Web surface.
+	}
+
+	[AvaloniaTest]
 	public async Task Live_process_confirmation_lists_impacted_sessions_and_defaults_to_no()
 	{
 		await using WindowFixture fixture = new(includeSession: true);
