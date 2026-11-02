@@ -117,7 +117,8 @@ public sealed class ProjectScreenViewModel : INotifyPropertyChanged
 	public string ReviewLogText { get; private set; } = string.Empty;
 
 	/// <summary>
-	/// Shows a tab. Changes is ignored outside git; Review logs re-lists the logs and re-reads the
+	/// Shows a tab. Changes opens the first file when none is selected and is ignored outside git;
+	/// Review logs re-lists the logs and re-reads the
 	/// open one, or opens the newest when none is selected.
 	/// </summary>
 	public async Task SelectTabAsync(ProjectScreenTab tab, CancellationToken cancellationToken)
@@ -128,6 +129,10 @@ public sealed class ProjectScreenViewModel : INotifyPropertyChanged
 		}
 
 		SetTab(tab);
+		if (Changes is { } changes)
+		{
+			await changes.SetAutoSelectFirstFileAsync(tab == ProjectScreenTab.Changes, cancellationToken).ConfigureAwait(true);
+		}
 		if (tab == ProjectScreenTab.ReviewLogs)
 		{
 			RefreshReviewLogs();
@@ -201,6 +206,10 @@ public sealed class ProjectScreenViewModel : INotifyPropertyChanged
 		}
 
 		SetTab(ProjectScreenTab.ReviewLogs);
+		if (Changes is { } changes)
+		{
+			await changes.SetAutoSelectFirstFileAsync(false, cancellationToken).ConfigureAwait(true);
+		}
 		await SelectReviewLogAsync(match, cancellationToken).ConfigureAwait(true);
 		return true;
 	}

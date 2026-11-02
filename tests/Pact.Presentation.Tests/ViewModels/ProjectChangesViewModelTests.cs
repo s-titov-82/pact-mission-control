@@ -9,6 +9,68 @@ public sealed class ProjectChangesViewModelTests
 	private readonly FakeReader _reader = new();
 
 	[Test]
+	public async Task Entering_diff_opens_the_first_file_and_preserves_an_existing_pick()
+	{
+		_reader.Current = Changes("a", "b");
+		_reader.Diffs["a"] = Diff("first");
+		using var changes = Create();
+		using var observation = changes.Observe();
+		changes.SelectedFile.ShouldBeNull();
+		await changes.SetAutoSelectFirstFileAsync(true, CancellationToken.None);
+		changes.SelectedFile.ShouldNotBeNull().Path.ShouldBe("a");
+		changes.DiffRows.ShouldContain(row => row.Text == "first");
+		await changes.SelectFileAsync(changes.Files[1], CancellationToken.None);
+		await changes.SetAutoSelectFirstFileAsync(false, CancellationToken.None);
+		await changes.SetAutoSelectFirstFileAsync(true, CancellationToken.None);
+		changes.SelectedFile.ShouldNotBeNull().Path.ShouldBe("b");
+	}
+
+	[Test]
+	public async Task First_file_is_opened_when_a_previously_empty_list_arrives()
+	{
+		using var changes = Create();
+		using var observation = changes.Observe();
+		await changes.SetAutoSelectFirstFileAsync(true, CancellationToken.None);
+		changes.SelectedFile.ShouldBeNull();
+		_reader.Current = Changes("a");
+		_reader.Diffs["a"] = Diff("loaded later");
+		_time.Advance(ProjectChangesViewModel.ReconcileInterval);
+		changes.SelectedFile.ShouldNotBeNull().Path.ShouldBe("a");
+		changes.DiffRows.ShouldContain(row => row.Text == "loaded later");
+	}
+
+	[Test]
+	public async Task A_manual_pick_wins_over_the_pending_automatic_first_diff()
+	{
+		_reader.Current = Changes("a", "b");
+		_reader.Diffs["b"] = Diff("user pick");
+		TaskCompletionSource<FileDiff> gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		_reader.DiffGates["a"] = gate;
+		using var changes = Create();
+		using var observation = changes.Observe();
+		var first = changes.SetAutoSelectFirstFileAsync(true, CancellationToken.None);
+		await changes.SelectFileAsync(changes.Files[1], CancellationToken.None);
+		gate.SetResult(Diff("automatic pick"));
+		await first;
+		changes.SelectedFile.ShouldNotBeNull().Path.ShouldBe("b");
+		changes.DiffRows.ShouldContain(row => row.Text == "user pick");
+		changes.DiffRows.ShouldNotContain(row => row.Text == "automatic pick");
+	}
+
+	[Test]
+	public async Task Leaving_diff_before_the_list_arrives_does_not_open_a_file_in_background()
+	{
+		using var changes = Create();
+		using var observation = changes.Observe();
+		await changes.SetAutoSelectFirstFileAsync(true, CancellationToken.None);
+		await changes.SetAutoSelectFirstFileAsync(false, CancellationToken.None);
+		_reader.Current = Changes("a");
+		_time.Advance(ProjectChangesViewModel.ReconcileInterval);
+		changes.SelectedFile.ShouldBeNull();
+		changes.ShownDiff.ShouldBeNull();
+	}
+
+	[Test]
 	public void Observing_reads_at_once_and_then_every_reconcile_interval()
 	{
 		using var changes = Create();

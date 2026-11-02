@@ -159,6 +159,7 @@ public sealed class ProjectChangesViewModel : INotifyPropertyChanged, IDisposabl
 	private int _selectionVersion;
 	private LoadedDiff? _selectedDiff;
 	private bool _showAll;
+	private bool _autoSelectFirstFile;
 	// Folds the user opened, by the first old line of their run, for the file they were opened in.
 	private readonly HashSet<int> _expandedOldStarts = [];
 	private string? _expandedPath;
@@ -337,6 +338,15 @@ public sealed class ProjectChangesViewModel : INotifyPropertyChanged, IDisposabl
 		}
 
 		StartRefresh();
+	}
+
+	/// <summary>While enabled, opens the first available file when nothing is selected; preserves an existing pick.</summary>
+	public Task SetAutoSelectFirstFileAsync(bool enabled, CancellationToken cancellationToken)
+	{
+		_autoSelectFirstFile = enabled;
+		return enabled && SelectedFile is null && Files.Count > 0
+			? SelectFileAsync(Files[0], cancellationToken)
+			: Task.CompletedTask;
 	}
 
 	/// <summary>Selects a file and reads its diff.</summary>
@@ -540,6 +550,23 @@ public sealed class ProjectChangesViewModel : INotifyPropertyChanged, IDisposabl
 			// flight must not land on top of them.
 			Interlocked.Increment(ref _selectionVersion);
 			ApplyDiff(diff);
+		}
+		if (_autoSelectFirstFile && SelectedFile is null && Files.Count > 0)
+		{
+			_ = SelectInitialFileAfterRefreshAsync();
+		}
+	}
+
+	private async Task SelectInitialFileAfterRefreshAsync()
+	{
+		try
+		{
+			await SetAutoSelectFirstFileAsync(_autoSelectFirstFile, _disposal.Token).ConfigureAwait(true);
+		}
+		catch (Exception exception) when (exception is OperationCanceledException or ObjectDisposedException
+			or IOException or InvalidOperationException or UnauthorizedAccessException)
+		{
+			// Reconciliation retries a diff read just as it retries a failed status read.
 		}
 	}
 

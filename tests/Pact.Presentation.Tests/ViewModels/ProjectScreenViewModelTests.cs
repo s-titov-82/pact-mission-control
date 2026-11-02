@@ -12,6 +12,36 @@ public sealed class ProjectScreenViewModelTests : IDisposable
 	private readonly List<ProjectChangesViewModel> _changes = [];
 
 	[Test]
+	public async Task Entering_changes_selects_the_first_file_but_returning_keeps_the_users_file()
+	{
+		var screen = Create(git: true, reader: new MainBranchReader("a", "b"));
+		using var observation = screen.Changes!.Observe();
+		screen.Changes.SelectedFile.ShouldBeNull();
+		await screen.SelectTabAsync(ProjectScreenTab.Changes, CancellationToken.None);
+		screen.Changes.SelectedFile.ShouldNotBeNull().Path.ShouldBe("a");
+		await screen.Changes.SelectFileAsync(screen.Changes.Files[1], CancellationToken.None);
+		await screen.SelectTabAsync(ProjectScreenTab.Overview, CancellationToken.None);
+		await screen.SelectTabAsync(ProjectScreenTab.Changes, CancellationToken.None);
+		screen.Changes.SelectedFile.ShouldNotBeNull().Path.ShouldBe("b");
+	}
+
+	[Test]
+	public async Task Opening_a_log_directly_disables_pending_first_diff_selection()
+	{
+		MainBranchReader reader = new();
+		var screen = Create(git: true, reader: reader);
+		using var observation = screen.Changes!.Observe();
+		await screen.SelectTabAsync(ProjectScreenTab.Changes, CancellationToken.None);
+		WriteLog("review.md", "# Review");
+		(await screen.OpenReviewLogAsync(".pact/reviews/review.md", CancellationToken.None)).ShouldBeTrue();
+		reader.Paths = ["a"];
+		_time.Advance(ProjectChangesViewModel.ReconcileInterval);
+		screen.SelectedTab.ShouldBe(ProjectScreenTab.ReviewLogs);
+		screen.Changes.SelectedFile.ShouldBeNull();
+		screen.Changes.ShownDiff.ShouldBeNull();
+	}
+
+	[Test]
 	public async Task Opening_a_review_log_selects_the_tab_and_loads_its_text()
 	{
 		WriteLog("2026-10-24-1400-code-review-a.md", "# First");
@@ -229,14 +259,15 @@ public sealed class ProjectScreenViewModelTests : IDisposable
 		_root.Dispose();
 	}
 
-	private ProjectScreenViewModel Create(bool git, IProjectMarkdownFileStore? store = null, Func<string, bool>? logInUse = null)
+	private ProjectScreenViewModel Create(bool git, IProjectMarkdownFileStore? store = null, Func<string, bool>? logInUse = null,
+		IGitWorkingTreeReader? reader = null)
 	{
 		var now = DateTimeOffset.UtcNow;
 		WorkspaceViewModel workspace = new(new ProjectRecord("p1", "Pact", _root.Path, now, now, null), _ => git);
 		ProjectChangesViewModel? changes = null;
 		if (git)
 		{
-			changes = new ProjectChangesViewModel(_root.Path, new MainBranchReader(), _time, action => action());
+			changes = new ProjectChangesViewModel(_root.Path, reader ?? new MainBranchReader(), _time, action => action());
 			_changes.Add(changes);
 		}
 
@@ -281,13 +312,15 @@ public sealed class ProjectScreenViewModelTests : IDisposable
 		File.WriteAllText(Path.Combine(folder, name), text);
 	}
 
-	private sealed class MainBranchReader : IGitWorkingTreeReader
+	private sealed class MainBranchReader(params string[] paths) : IGitWorkingTreeReader
 	{
+		public string[] Paths { get; set; } = paths;
 		public Task<string?> ReadWorkingTextAsync(string root, string path, CancellationToken cancellationToken) =>
 			Task.FromResult<string?>(null);
 
 		public Task<WorkingTreeChanges?> ReadChangesAsync(string root, CancellationToken cancellationToken) =>
-			Task.FromResult<WorkingTreeChanges?>(new WorkingTreeChanges("head", "main", [], 0, 0));
+			Task.FromResult<WorkingTreeChanges?>(new WorkingTreeChanges("head", "main",
+				Paths.Select(path => new GitFileEntry(path, null, GitChangeKind.Modified)).ToArray(), 0, 0));
 
 		public Task<FileDiff> ReadDiffAsync(
 			string root,
