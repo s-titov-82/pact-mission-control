@@ -18,7 +18,11 @@ public sealed record ReviewSummary(
 	int Iteration,
 	ReviewRole? Turn,
 	string LogPath,
-	int MaxIterations);
+	int MaxIterations)
+{
+	/// <summary>Why the current turn's notification needs manual attention; null after delivery or retrieval.</summary>
+	public string? DeliveryIssue { get; init; }
+}
 
 /// <summary>
 /// Runs reviews between two agents through Pact: starts the reviewer, hands turns from one side
@@ -224,6 +228,8 @@ public sealed class ReviewRelay
 	/// </summary>
 	public AgentControlResult GetTurn(string sessionId)
 	{
+		var changed = false;
+		AgentControlResult result;
 		lock (_gate)
 		{
 			var review = FindActive(sessionId) ?? _finished.GetValueOrDefault(sessionId);
@@ -255,8 +261,20 @@ public sealed class ReviewRelay
 			var role = conversation.RoleOf(sessionId);
 			var turn = conversation.CurrentTurn!;
 			var yourTurn = turn.Role == role;
+			if (yourTurn)
+			{
+				review.RetrievedTurnId = turn.TurnId;
+				if (review.Trigger is { } trigger && trigger.Label == turn.TurnId)
+				{
+					changed = trigger.DeliveryIssue is not null;
+					trigger.DeliveryIssue = null;
+					trigger.WaitingForReady = false;
+					trigger.RetryRequested = false;
+				}
+			}
+
 			var previousTurn = conversation.LastText(role == ReviewRole.Author ? ReviewRole.Reviewer : ReviewRole.Author);
-			return AgentControlResult.Ok(JsonSerializer.Serialize(
+			result = AgentControlResult.Ok(JsonSerializer.Serialize(
 				new TurnView(
 					review.Id,
 					conversation.State.ToString(),
@@ -270,6 +288,13 @@ public sealed class ReviewRelay
 					FinalFrom: null),
 				JsonOptions));
 		}
+
+		if (changed)
+		{
+			OnChanged();
+		}
+
+		return result;
 	}
 
 	/// <summary>Takes the caller's answer to its turn and hands the turn to the other side.</summary>
@@ -719,7 +744,7 @@ public sealed class ReviewRelay
 		Trigger trigger = new(sessionId, label);
 		lock (_gate)
 		{
-			if (review.Quiet || (review.Ended && label != "final"))
+			if (review.Quiet || (review.Ended && label != "final") || review.RetrievedTurnId == label)
 			{
 				return;
 			}
@@ -734,7 +759,7 @@ public sealed class ReviewRelay
 	{
 		lock (_gate)
 		{
-			if (trigger.Running || trigger.Cancellation.IsCancellationRequested)
+			if (trigger.Running || trigger.Cancellation.IsCancellationRequested || review.RetrievedTurnId == trigger.Label)
 			{
 				return;
 			}
@@ -744,37 +769,64 @@ public sealed class ReviewRelay
 		}
 
 		var nothingWritten = false;
+		string? issue = null;
 		try
 		{
 			var result = await _host.DeliverTriggerAsync(trigger.SessionId, TriggerText, trigger.Cancellation.Token)
 				.ConfigureAwait(false);
 			nothingWritten = !result.WriteAttempted && !result.IsSent;
+			issue = PromptDeliveryText.DescribeUndelivered(result);
 			_host.Trace(
 				$"review phase=trigger review={review.Id} turn={trigger.Label} session={trigger.SessionId} "
 				+ $"outcome={result.Outcome} written={result.WriteAttempted} retry={nothingWritten}");
 		}
 		catch (OperationCanceledException)
 		{
+			issue = "notification delivery was cancelled before completion";
 			_host.Trace($"review phase=trigger review={review.Id} turn={trigger.Label} session={trigger.SessionId} outcome=cancelled");
 		}
 		catch (Exception exception)
 		{
+			issue = $"notification delivery failed ({exception.GetType().Name})";
 			_host.Trace($"review phase=trigger review={review.Id} turn={trigger.Label} session={trigger.SessionId} error={exception.GetType().Name}");
 		}
 		finally
 		{
 			bool retryNow;
+			var changed = false;
+			var needsAttention = false;
 			lock (_gate)
 			{
 				// The pending state and the end of the run change together, so a status change
 				// seen while the delivery was finishing is never lost.
-				var pending = nothingWritten && !trigger.Cancellation.IsCancellationRequested;
+				var pending = nothingWritten && !trigger.Cancellation.IsCancellationRequested
+					&& review.RetrievedTurnId != trigger.Label;
 				retryNow = pending && trigger.RetryRequested && !review.Quiet;
 				trigger.RetryRequested = false;
 				trigger.WaitingForReady = pending && !retryNow;
+				if (ReferenceEquals(review.Trigger, trigger) && !review.Ended && !review.Quiet
+					&& !trigger.Cancellation.IsCancellationRequested
+					&& review.Conversation?.CurrentTurn?.TurnId == trigger.Label
+					&& review.RetrievedTurnId != trigger.Label)
+				{
+					var side = trigger.SessionId == review.AuthorSessionId ? "author" : "reviewer";
+					var deliveryIssue = issue is null ? null : $"Notification to {side}: {issue}.";
+					changed = trigger.DeliveryIssue != deliveryIssue;
+					trigger.DeliveryIssue = deliveryIssue;
+				}
+
+				needsAttention = trigger.DeliveryIssue is not null;
 				trigger.Running = false;
 				trigger.Idle.TrySetResult();
 			}
+
+			if (changed)
+			{
+				OnChanged();
+			}
+
+			_host.Trace($"review phase=trigger-settled review={review.Id} turn={trigger.Label} "
+				+ $"attention={needsAttention} retry={retryNow}");
 
 			if (retryNow)
 			{
@@ -876,7 +928,12 @@ public sealed class ReviewRelay
 		review.Conversation?.CurrentTurn?.Iteration ?? 0,
 		review.Conversation?.CurrentTurn?.Role,
 		review.LogPath ?? string.Empty,
-		review.MaxIterations);
+		review.MaxIterations)
+	{
+		DeliveryIssue = review.Trigger is { } trigger
+			&& review.Conversation?.CurrentTurn?.TurnId == trigger.Label
+			? trigger.DeliveryIssue : null
+	};
 
 	private static AgentControlResult AlreadyActive() =>
 		AgentControlResult.Refused(
@@ -935,6 +992,7 @@ public sealed class ReviewRelay
 		public ReviewConversation? Conversation { get; set; }
 		public string? LogPath { get; set; }
 		public Trigger? Trigger { get; set; }
+		public string? RetrievedTurnId { get; set; }
 		public bool Ended { get; set; }
 		public ReviewState EndState { get; set; } = ReviewState.Running;
 		public string EndReason { get; set; } = string.Empty;
@@ -952,6 +1010,7 @@ public sealed class ReviewRelay
 		public bool Running { get; set; }
 		public bool WaitingForReady { get; set; }
 		public bool RetryRequested { get; set; }
+		public string? DeliveryIssue { get; set; }
 		public TaskCompletionSource? Idle { get; set; }
 	}
 }

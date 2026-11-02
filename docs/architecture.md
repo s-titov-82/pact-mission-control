@@ -250,6 +250,16 @@ session was not running) is retried when the session's status next says it can
 take a prompt; one that wrote anything is never retyped, since the agent can
 always pull its turn. Nothing is locked: the user can type into either tab.
 
+When a turn notification fails or its delivery is unconfirmed, both participants
+show `Review needs attention` with a danger-colored badge and recovery guidance.
+The project row also shows attention, so a collapsed project cannot hide the warning.
+The turn stays available for manual continuation; a possible write is never
+repasted. Fetching that turn with `pact_get_review_turn` by its owning participant
+acknowledges the notification and clears attention, including a late delivery
+failure. A waiting participant's poll does not acknowledge the other side's turn.
+The issue is an in-memory part of the existing review summary, not a journal or
+terminal transcript.
+
 Every review keeps a Markdown log in `.pact/reviews/` of the author's project
 (header, each accepted turn as submitted, footer), appended after each turn;
 `.pact/.gitignore` ignores the folder. On Completed or MaxIterationsReached the

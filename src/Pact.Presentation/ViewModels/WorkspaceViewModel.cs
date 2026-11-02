@@ -94,6 +94,30 @@ public sealed class WorkspaceViewModel : INotifyPropertyChanged
 	/// <summary>Whether the project's own screen is what the shell shows.</summary>
 	public bool IsCurrentProject { get; private set; }
 
+	/// <summary>Recovery guidance for a review in this project, including while its sessions are collapsed.</summary>
+	public string? ReviewAttentionToolTip { get; private set; }
+
+	/// <summary>Whether at least one of this project's sessions has a review delivery warning.</summary>
+	public bool HasReviewAttention => ReviewAttentionToolTip is not null;
+
+	/// <summary>Refreshes the project warning after its sessions' review badges have been updated.</summary>
+	public void RefreshReviewAttention()
+	{
+		var affected = Sessions.FirstOrDefault(session => session.Review is { HasDeliveryIssue: true, IsOwnTurn: true })
+			?? Sessions.FirstOrDefault(session => session.Review?.HasDeliveryIssue == true);
+		var toolTip = affected is null
+			? null
+			: $"{affected.Title}: {affected.Review!.DeliveryIssue} {affected.Review.RecoveryInstruction}";
+		if (ReviewAttentionToolTip == toolTip)
+		{
+			return;
+		}
+
+		ReviewAttentionToolTip = toolTip;
+		OnPropertyChanged(nameof(ReviewAttentionToolTip));
+		OnPropertyChanged(nameof(HasReviewAttention));
+	}
+
 	/// <summary>Marks the project row as the shown item.</summary>
 	public void SetCurrentProject(bool isCurrent)
 	{

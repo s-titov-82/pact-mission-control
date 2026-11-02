@@ -4,21 +4,163 @@ using Avalonia.Headless;
 using Avalonia.Headless.NUnit;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Media;
+using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Pact.App.Avalonia.Views;
 using Pact.Core.Agents;
 using Pact.Core.Projects;
+using Pact.Core.Reviews;
 using Pact.Core.Sessions;
 using Pact.Core.Web;
 using Pact.Core.Web.Monitoring;
 using Pact.Presentation.Services;
+using Pact.Presentation.Services.Reviews;
 using Pact.Presentation.ViewModels;
 
 namespace Pact.App.Avalonia.Tests.Views;
 
 public sealed class ProjectTreeRowActionsHeadlessTests
 {
+	[AvaloniaTest]
+	public void Review_delivery_attention_is_visible_on_both_rows_and_clears_without_rebuilding_them()
+	{
+		var author = CreateSession();
+		SessionViewModel reviewer = new(author.Record with { Id = "reviewer-1", Title = "Reviewer" });
+		ProjectTreeView view = new();
+		view.FindControl<TreeView>("ProjectTree")!.ItemsSource = new[] { author, reviewer };
+		ReviewSummary summary = new("review-1", "project-1", author.Record.Id, reviewer.Record.Id,
+			ReviewState.Running, 1, ReviewRole.Reviewer, "log.md", 3);
+		author.ApplyReviews([summary]);
+		reviewer.ApplyReviews([summary]);
+		SolidColorBrush danger = new(Color.Parse("#CC1234"));
+		FluentTheme theme = new();
+		Application.Current!.Styles.Add(theme);
+		Window window = new() { Width = 600, Height = 650, Content = view };
+		window.Resources["AppDangerBrush"] = danger;
+		try
+		{
+			window.Show();
+			window.UpdateLayout();
+			Dispatcher.UIThread.RunJobs();
+			window.UpdateLayout();
+			Dispatcher.UIThread.RunJobs();
+			var badges = view.GetVisualDescendants().OfType<Button>()
+				.Where(button => button.Classes.Contains("review-badge") && button.IsVisible).ToArray();
+			badges.Length.ShouldBe(2);
+			foreach (var badge in badges)
+			{
+				badge.Content.ShouldBeOfType<TextBlock>().Text.ShouldBe("⇄");
+				badge.Foreground.ShouldNotBeSameAs(danger);
+			}
+
+			var failed = summary with { DeliveryIssue = "Notification to reviewer: the pasted text never showed." };
+			author.ApplyReviews([failed]);
+			reviewer.ApplyReviews([failed]);
+			Dispatcher.UIThread.RunJobs();
+
+			var warnings = view.GetVisualDescendants().OfType<TextBlock>()
+				.Where(text => text.Text == "Review needs attention" && text.IsVisible).ToArray();
+			warnings.Length.ShouldBe(2);
+			foreach (var warning in warnings)
+			{
+				warning.Foreground.ShouldBeSameAs(danger);
+			}
+			foreach (var badge in badges)
+			{
+				badge.Content.ShouldBeOfType<TextBlock>().Text.ShouldBe("!");
+				badge.Foreground.ShouldBeSameAs(danger);
+				ToolTip.GetTip(badge)!.ToString()!.ShouldContain("pact_get_review_turn");
+			}
+
+			author.ApplyReviews([summary]);
+			reviewer.ApplyReviews([summary]);
+			Dispatcher.UIThread.RunJobs();
+
+			foreach (var warning in warnings)
+			{
+				warning.IsVisible.ShouldBeFalse();
+			}
+			foreach (var badge in badges)
+			{
+				badge.Content.ShouldBeOfType<TextBlock>().Text.ShouldBe("⇄");
+				badge.Foreground.ShouldNotBeSameAs(danger);
+			}
+
+			author.ApplyReviews([]);
+			reviewer.ApplyReviews([]);
+			Dispatcher.UIThread.RunJobs();
+
+			foreach (var warning in warnings)
+			{
+				warning.IsVisible.ShouldBeFalse();
+			}
+			foreach (var badge in badges)
+			{
+				badge.IsVisible.ShouldBeFalse();
+			}
+		}
+		finally
+		{
+			window.Close();
+			Application.Current.Styles.Remove(theme);
+		}
+	}
+
+	[AvaloniaTest]
+	public void Review_delivery_attention_stays_visible_when_the_project_is_collapsed()
+	{
+		var now = DateTimeOffset.UtcNow;
+		var author = CreateSession();
+		SessionViewModel reviewer = new(author.Record with { Id = "reviewer-1", Title = "Reviewer" });
+		WorkspaceViewModel workspace = new(new ProjectRecord("project-1", "Project", @"C:\repo", now, now, null)
+		{
+			IsCollapsed = true
+		});
+		workspace.Sessions.Add(author);
+		workspace.Sessions.Add(reviewer);
+		ReviewSummary review = new("review-1", workspace.Id, author.Record.Id, reviewer.Record.Id,
+			ReviewState.Running, 2, ReviewRole.Author, "log.md", 3);
+		var failed = review with { DeliveryIssue = "Notification to author: the pasted text never showed." };
+		author.ApplyReviews([failed]);
+		reviewer.ApplyReviews([failed]);
+		workspace.RefreshReviewAttention();
+		ProjectTreeView view = new();
+		var tree = view.FindControl<TreeView>("ProjectTree")!;
+		tree.ItemsSource = new[] { workspace };
+		FluentTheme theme = new();
+		Application.Current!.Styles.Add(theme);
+		Window window = new() { Width = 600, Height = 650, Content = view };
+		try
+		{
+			window.Show();
+			Dispatcher.UIThread.RunJobs();
+			window.UpdateLayout();
+			Dispatcher.UIThread.RunJobs();
+			var project = tree.ContainerFromItem(workspace).ShouldBeOfType<TreeViewItem>();
+			project.IsExpanded.ShouldBeFalse();
+			var warning = project.GetVisualDescendants().OfType<TextBlock>()
+				.SingleOrDefault(text => text.Text == "Review needs attention" && text.IsVisible).ShouldNotBeNull();
+			ToolTip.GetTip(warning)!.ToString()!.ShouldContain("Codex");
+			ToolTip.GetTip(warning)!.ToString()!.ShouldContain("author's session");
+			ToolTip.GetTip(warning)!.ToString()!.ShouldNotContain("Click to open the log");
+
+			author.ApplyReviews([review]);
+			reviewer.ApplyReviews([review]);
+			workspace.RefreshReviewAttention();
+			Dispatcher.UIThread.RunJobs();
+
+			warning.IsVisible.ShouldBeFalse();
+			project.IsExpanded.ShouldBeFalse();
+		}
+		finally
+		{
+			window.Close();
+			Application.Current.Styles.Remove(theme);
+		}
+	}
+
 	[AvaloniaTest]
 	public void SessionPencilRaisesEditSessionRequested()
 	{

@@ -735,6 +735,11 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		{
 			session.ApplyReviews(reviews);
 		}
+
+		foreach (var workspace in ViewModel.Workspaces.Concat(ViewModel.PausedWorkspaces))
+		{
+			workspace.RefreshReviewAttention();
+		}
 	}
 
 	/// <summary>

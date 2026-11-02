@@ -44,6 +44,14 @@ Tokens are session-specific and are revoked when the session stops, exits, or
 restarts. Pact does not write the connection into the agent's global
 configuration.
 
+If a review notification cannot be delivered or confirmed, both session rows
+show a red `!` and `Review needs attention`. The project row also shows the warning,
+even while collapsed. Hover over a warning for the
+reason and whose turn needs attention. Open that session and ask its agent to
+continue the review by calling `pact_get_review_turn`. The review keeps its current
+turn; Pact does not paste a possibly written notification again. The warning
+clears when the owning agent retrieves the turn or the review ends.
+
 ## Hermes orchestrator
 
 The orchestrator is a single pinned Hermes session above ROOT. It is disabled

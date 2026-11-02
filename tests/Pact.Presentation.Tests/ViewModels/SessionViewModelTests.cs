@@ -151,6 +151,36 @@ public sealed class SessionViewModelTests
 	}
 
 	[Test]
+	public void Delivery_attention_is_projected_and_cleared_for_either_participant()
+	{
+		SessionViewModel author = new(CreateSessionRecord());
+		SessionViewModel reviewer = new(CreateSessionRecord() with { Id = "reviewer-1" });
+		var review = Summary(author.Record.Id, reviewer.Record.Id, ReviewRole.Reviewer, 1);
+		author.ApplyReviews([review]);
+		reviewer.ApplyReviews([review]);
+		List<string?> authorChanges = [];
+		author.PropertyChanged += (_, args) => authorChanges.Add(args.PropertyName);
+		var failed = review with { DeliveryIssue = "Notification to reviewer: the pasted text never showed." };
+
+		author.ApplyReviews([failed]);
+		reviewer.ApplyReviews([failed]);
+
+		author.Review!.ToolTip.ShouldContain(failed.DeliveryIssue);
+		reviewer.Review!.ToolTip.ShouldContain(failed.DeliveryIssue);
+		author.Review.ToolTip.ShouldContain("reviewer's session");
+		reviewer.Review.ToolTip.ShouldContain("pact_get_review_turn");
+		authorChanges.ShouldContain(nameof(SessionViewModel.Review));
+		author.HasReview.ShouldBeTrue();
+		reviewer.HasReview.ShouldBeTrue();
+
+		author.ApplyReviews([review]);
+		reviewer.ApplyReviews([review]);
+
+		author.Review!.ToolTip.ShouldNotContain("never showed");
+		reviewer.Review!.ToolTip.ShouldNotContain("never showed");
+	}
+
+	[Test]
 	public void The_badge_goes_away_when_the_session_s_review_ends()
 	{
 		SessionViewModel session = new(CreateSessionRecord());

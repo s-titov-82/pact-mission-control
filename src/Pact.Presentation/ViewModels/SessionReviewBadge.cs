@@ -17,6 +17,18 @@ public sealed record SessionReviewBadge(
 	bool IsOwnTurn,
 	string ToolTip)
 {
+	/// <summary>Why this review needs manual continuation; null when no warning is pending.</summary>
+	public string? DeliveryIssue { get; init; }
+
+	/// <summary>How to continue the pending turn manually, without assuming which UI element shows the hint.</summary>
+	public string? RecoveryInstruction { get; init; }
+
+	/// <summary>Whether both participants should display a delivery warning.</summary>
+	public bool HasDeliveryIssue => DeliveryIssue is not null;
+
+	/// <summary>The normal review symbol, replaced by an exclamation mark when delivery needs attention.</summary>
+	public string Glyph => HasDeliveryIssue ? "!" : "⇄";
+
 	/// <summary>The badge for <paramref name="sessionId"/>, or <see langword="null"/> when it takes part in none.</summary>
 	public static SessionReviewBadge? For(IEnumerable<ReviewSummary> reviews, string sessionId)
 	{
@@ -43,12 +55,23 @@ public sealed record SessionReviewBadge(
 					CultureInfo.InvariantCulture,
 					$"iteration {review.Iteration} of {review.MaxIterations} · {(isOwnTurn ? "your turn" : turn == ReviewRole.Author ? "author's turn" : "reviewer's turn")}")
 				: "starting the reviewer";
+			var recovery = review.DeliveryIssue is not null
+				? $"Open the {(review.Turn == ReviewRole.Author ? "author" : "reviewer")}'s session "
+					+ "and ask the agent to continue the review (pact_get_review_turn)."
+				: null;
+			var attention = review.DeliveryIssue is { } issue
+				? $" {issue} {recovery} A possibly written notification is not pasted again automatically."
+				: string.Empty;
 			return new SessionReviewBadge(
 				review.ReviewId,
 				review.ProjectId,
 				review.LogPath,
 				isOwnTurn,
-				$"Review · {(side == ReviewRole.Author ? "author" : "reviewer")} · {progress}. Click to open the log.");
+				$"Review · {(side == ReviewRole.Author ? "author" : "reviewer")} · {progress}. Click to open the log.{attention}")
+			{
+				DeliveryIssue = review.DeliveryIssue,
+				RecoveryInstruction = recovery
+			};
 		}
 
 		return null;

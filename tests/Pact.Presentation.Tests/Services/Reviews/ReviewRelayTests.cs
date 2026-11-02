@@ -292,6 +292,7 @@ public sealed class ReviewRelayTests : IDisposable
 
 	[TestCase(PromptDeliveryOutcome.RefusedQuestion)]
 	[TestCase(PromptDeliveryOutcome.Unconfirmed)]
+	[TestCase(PromptDeliveryOutcome.PasteNotShown)]
 	public async Task Written_trigger_is_never_retyped(PromptDeliveryOutcome outcome)
 	{
 		var (relay, host) = Create();
@@ -303,6 +304,145 @@ public sealed class ReviewRelayTests : IDisposable
 
 		host.Deliveries.Count.ShouldBe(1);
 		host.Traces.ShouldContain(line => line.Contains(outcome.ToString(), StringComparison.Ordinal));
+	}
+
+	[TestCase(PromptDeliveryOutcome.PasteNotShown)]
+	[TestCase(PromptDeliveryOutcome.Unconfirmed)]
+	[TestCase(PromptDeliveryOutcome.RefusedQuestion)]
+	[TestCase(PromptDeliveryOutcome.NotRunning)]
+	public async Task A_failed_notification_preserves_the_turn_and_publishes_attention(PromptDeliveryOutcome outcome)
+	{
+		var (relay, host) = Create();
+		List<string?> seen = [];
+		relay.Changed += (_, _) => seen.Add(relay.ListActive().SingleOrDefault()?.DeliveryIssue);
+		host.NextResults.Enqueue(new(outcome, "reason", WriteAttempted: outcome != PromptDeliveryOutcome.NotRunning,
+			SubmitAttempted: outcome == PromptDeliveryOutcome.Unconfirmed));
+
+		await relay.RequestAsync(Author, Request(), CancellationToken.None);
+
+		var review = relay.ListActive().Single();
+		review.State.ShouldBe(ReviewState.Running);
+		review.Turn.ShouldBe(ReviewRole.Reviewer);
+		review.Iteration.ShouldBe(1);
+		var issue = review.DeliveryIssue.ShouldNotBeNull();
+		issue.ShouldContain("reviewer", Case.Insensitive);
+		seen.ShouldContain(issue);
+		host.Deliveries.Count.ShouldBe(1);
+	}
+
+	[Test]
+	public async Task Only_the_owning_agent_fetching_its_turn_clears_attention_and_can_continue()
+	{
+		var (relay, host) = Create();
+		host.NextResults.Enqueue(new(PromptDeliveryOutcome.PasteNotShown, WriteAttempted: true));
+		await relay.RequestAsync(Author, Request(), CancellationToken.None);
+		relay.ListActive().Single().DeliveryIssue.ShouldNotBeNull();
+
+		Turn(relay, Author)["yourTurn"]!.GetValue<bool>().ShouldBeFalse();
+		relay.ListActive().Single().DeliveryIssue.ShouldNotBeNull();
+		var changes = 0;
+		relay.Changed += (_, _) => changes++;
+
+		var turn = Turn(relay, Reviewer);
+
+		relay.ListActive().Single().DeliveryIssue.ShouldBeNull();
+		changes.ShouldBe(1);
+		(await relay.SubmitAsync(Reviewer, (string)turn["turnId"]!, "1. finding", false, CancellationToken.None))
+			.Succeeded.ShouldBeTrue();
+		relay.ListActive().Single().Turn.ShouldBe(ReviewRole.Author);
+		relay.ListActive().Single().DeliveryIssue.ShouldBeNull();
+		host.Deliveries.Select(delivery => delivery.SessionId).ShouldBe([Reviewer, Author]);
+	}
+
+	[Test]
+	public async Task A_late_failed_notification_does_not_recreate_attention_after_the_turn_was_fetched()
+	{
+		var (relay, host) = Create();
+		var delivery = host.HoldNextDelivery();
+		TaskCompletionSource settled = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		host.OnTrace = line =>
+		{
+			if (line.Contains("phase=trigger-settled", StringComparison.Ordinal))
+			{
+				settled.TrySetResult();
+			}
+		};
+		List<string?> seen = [];
+		relay.Changed += (_, _) => seen.Add(relay.ListActive().SingleOrDefault()?.DeliveryIssue);
+		await relay.RequestAsync(Author, Request(), CancellationToken.None);
+		Turn(relay, Reviewer)["yourTurn"]!.GetValue<bool>().ShouldBeTrue();
+
+		delivery.SetResult(new(PromptDeliveryOutcome.PasteNotShown, WriteAttempted: true));
+		await settled.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+		relay.ListActive().Single().DeliveryIssue.ShouldBeNull();
+		seen.ShouldAllBe(issue => issue == null);
+		host.ReadySessions.Add(Reviewer);
+		relay.NotifyStatusChanged(Reviewer);
+		host.Deliveries.Count.ShouldBe(1);
+	}
+
+	[TestCase(false)]
+	[TestCase(true)]
+	public async Task An_unexpected_delivery_exception_or_cancellation_is_visible(bool cancel)
+	{
+		var (relay, host) = Create();
+		var delivery = host.HoldNextDelivery();
+		TaskCompletionSource settled = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		host.OnTrace = line =>
+		{
+			if (line.Contains("phase=trigger-settled", StringComparison.Ordinal))
+			{
+				settled.TrySetResult();
+			}
+		};
+		await relay.RequestAsync(Author, Request(), CancellationToken.None);
+
+		if (cancel)
+		{
+			delivery.SetCanceled();
+		}
+		else
+		{
+			delivery.SetException(new IOException("private diagnostic detail"));
+		}
+		await settled.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+		var issue = relay.ListActive().Single().DeliveryIssue.ShouldNotBeNull();
+		issue.ShouldNotContain("private diagnostic detail");
+		host.ReadySessions.Add(Reviewer);
+		relay.NotifyStatusChanged(Reviewer);
+		host.Deliveries.Count.ShouldBe(1);
+	}
+
+	[Test]
+	public async Task Successful_no_write_retry_clears_attention()
+	{
+		var (relay, host) = Create();
+		host.NextResults.Enqueue(new(PromptDeliveryOutcome.RefusedQuestion, "Allow?"));
+		await relay.RequestAsync(Author, Request(), CancellationToken.None);
+		relay.ListActive().Single().DeliveryIssue.ShouldNotBeNull();
+
+		host.ReadySessions.Add(Reviewer);
+		relay.NotifyStatusChanged(Reviewer);
+
+		host.Deliveries.Count.ShouldBe(2);
+		relay.ListActive().Single().DeliveryIssue.ShouldBeNull();
+	}
+
+	[Test]
+	public async Task Fetching_the_turn_stops_a_pending_no_write_retry()
+	{
+		var (relay, host) = Create();
+		host.NextResults.Enqueue(new(PromptDeliveryOutcome.RefusedQuestion, "Allow?"));
+		await relay.RequestAsync(Author, Request(), CancellationToken.None);
+		Turn(relay, Reviewer);
+
+		host.ReadySessions.Add(Reviewer);
+		relay.NotifyStatusChanged(Reviewer);
+
+		host.Deliveries.Count.ShouldBe(1);
+		relay.ListActive().Single().DeliveryIssue.ShouldBeNull();
 	}
 
 	[Test]
