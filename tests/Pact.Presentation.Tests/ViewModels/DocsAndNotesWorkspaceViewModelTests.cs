@@ -11,6 +11,25 @@ public sealed class DocsAndNotesWorkspaceViewModelTests : IDisposable
 	private string _root => _temporaryDirectory.Path;
 
 	[Test]
+	public async Task A_late_markdown_load_cannot_replace_a_newer_notes_selection()
+	{
+		Write("slow.md", "slow document");
+		BlockingMarkdownFileStore store = new() { BlockNextLoad = new() };
+		var gate = store.BlockNextLoad;
+		ProjectNoteDocument notes = new(new EmptyNotesStore(), _root, TimeSpan.FromHours(1));
+		DocsAndNotesWorkspaceViewModel workspace = new(_root, notes, store, TimeSpan.FromHours(1));
+		await workspace.RefreshAsync(CancellationToken.None);
+		var opening = workspace.OpenDocumentAsync("slow.md", CancellationToken.None, "old-heading");
+		await store.LoadStarted.Task;
+		await workspace.SelectSectionAsync(DocsAndNotesSection.Notes, CancellationToken.None);
+		gate.SetResult();
+		await opening;
+		workspace.ActiveDocument.ShouldBeSameAs(notes);
+		workspace.SelectedSection.ShouldBe(DocsAndNotesSection.Notes);
+		workspace.RequestedHeading.ShouldBeNull();
+	}
+
+	[Test]
 	public async Task Refresh_builds_one_tree_of_every_project_markdown_file()
 	{
 		Write("AGENTS.md", "agents");
@@ -591,6 +610,8 @@ public sealed class DocsAndNotesWorkspaceViewModelTests : IDisposable
 
 	private sealed class BlockingMarkdownFileStore : IProjectMarkdownFileStore
 	{
+		public TaskCompletionSource? BlockNextLoad { get; set; }
+		public TaskCompletionSource LoadStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 		public bool FailNextSave { get; set; }
 
 		public TaskCompletionSource? BlockNextSave { get; set; }
@@ -599,6 +620,12 @@ public sealed class DocsAndNotesWorkspaceViewModelTests : IDisposable
 			string path,
 			CancellationToken cancellationToken)
 		{
+			if (BlockNextLoad is { } gate)
+			{
+				BlockNextLoad = null;
+				LoadStarted.TrySetResult();
+				await gate.Task;
+			}
 			var text = File.Exists(path)
 				? await File.ReadAllTextAsync(path, cancellationToken)
 				: string.Empty;

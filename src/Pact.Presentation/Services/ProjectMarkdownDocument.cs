@@ -51,7 +51,7 @@ public sealed class ProjectMarkdownDocument : IMarkdownEditorDocument
 	public string Text { get { lock (_gate) { return _text; } } }
 
 	/// <summary>Whether the first disk snapshot has been loaded.</summary>
-	public bool IsLoaded { get; private set; }
+	public bool IsLoaded { get { lock (_gate) { return field; } } private set; }
 
 	/// <summary>Current persistence state of the editor buffer.</summary>
 	public DocumentSaveStatus SaveStatus { get { lock (_gate) { return _saveStatus; } } }
@@ -67,11 +67,16 @@ public sealed class ProjectMarkdownDocument : IMarkdownEditorDocument
 		var loaded = await _store.LoadAsync(Path, cancellationToken);
 		lock (_gate)
 		{
+			// Another initial read may have completed and exposed this retained buffer to edits.
+			if (IsLoaded)
+			{
+				return;
+			}
 			_text = loaded.Text;
 			_diskRevision = loaded.Revision;
 			_savedVersion = _version;
+			IsLoaded = true;
 		}
-		IsLoaded = true;
 		TextReplaced?.Invoke(this, EventArgs.Empty);
 	}
 

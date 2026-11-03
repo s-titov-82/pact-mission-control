@@ -54,7 +54,9 @@ internal sealed partial class MainWindow : Window, IDisposable
 	/// <summary>Test-only observability for pane visibility (see MainWindowPaneVisibilityHeadlessTests).</summary>
 	internal bool IsBrowserPaneVisible => BrowserPane.IsVisible;
 	internal bool IsBrowserLoadingSurfaceVisible => BrowserPane.IsLoadingSurfaceVisible;
-	internal bool IsNotesPaneVisible => NotesPane.IsVisible;
+	private NotesPaneView NotesPane => ProjectScreen.DocumentPane;
+	internal bool IsNotesPaneVisible => ProjectScreen.IsVisible
+		&& EngineProbeController.CurrentProjectScreen?.SelectedTab is ProjectScreenTab.Overview or ProjectScreenTab.Docs;
 	internal Task? ShellInitializationTask { get; private set; }
 	internal bool IsTerminalPaneVisible => TerminalPane.IsVisible;
 	internal bool IsTerminalLoadingSurfaceVisible => TerminalLoadingSurface.IsVisible;
@@ -115,6 +117,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 		_settingsFileStore = windowServices.SettingsFileStore;
 		_projectSettingsEditor = windowServices.ProjectSettingsEditor;
 		_externalLauncher = windowServices.ExternalLauncher;
+		ProjectScreen.ConfigureOverview(EngineProbeController, _externalLauncher);
 		_windowLayoutStore = windowServices.WindowLayoutStore;
 		_showSelectedTabDetails = App.CurrentAppearance.ShowSelectedTabDetails;
 		_showExternalProcessMetrics = App.CurrentAppearance.ShowExternalProcessMetrics;
@@ -165,6 +168,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 		_settingsFileStore = settingsFileStore;
 		_projectSettingsEditor = projectSettingsEditor;
 		_externalLauncher = externalLauncher;
+		ProjectScreen.ConfigureOverview(EngineProbeController, _externalLauncher);
 		_windowLayoutStore = windowLayoutStore;
 		ApplyWindowLayout(_windowLayoutStore?.Load());
 		_userAttention = userAttention;
@@ -372,6 +376,14 @@ internal sealed partial class MainWindow : Window, IDisposable
 			handler => ProjectTree.EditProjectRequested += handler,
 			handler => ProjectTree.EditProjectRequested -= handler,
 			"edit-project",
+			workspace => OpenSettingsAsync(
+				SettingsSection.Projects,
+				workspace.Id,
+				null));
+		ObserveEvent<WorkspaceViewModel>(
+			handler => ProjectScreen.EditProjectRequested += handler,
+			handler => ProjectScreen.EditProjectRequested -= handler,
+			"overview-edit-project",
 			workspace => OpenSettingsAsync(
 				SettingsSection.Projects,
 				workspace.Id,
@@ -1476,7 +1488,6 @@ internal sealed partial class MainWindow : Window, IDisposable
 
 		TerminalPane.IsVisible = visibility.Terminal;
 		TerminalLoadingSurface.IsVisible = visibility.TerminalLoading;
-		NotesPane.IsVisible = visibility.Notes;
 		ProjectScreen.DataContext = EngineProbeController.CurrentProjectScreen;
 		RightActions.ProjectScreen = EngineProbeController.CurrentProjectScreen;
 		ProjectScreen.IsVisible = visibility.Project;
@@ -1607,6 +1618,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 		SelectionActions.DetachEventProducers();
 		AgentFile.Hide();
 		NotesPane.DetachEventProducers();
+		ProjectScreen.DetachEventProducers();
 		RightActions.Workspace = null;
 		RightActions.Changes = null;
 		RightActions.AgentFiles = null;

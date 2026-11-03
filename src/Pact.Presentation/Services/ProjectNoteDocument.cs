@@ -56,7 +56,7 @@ public sealed class ProjectNoteDocument : IMarkdownEditorDocument
 	public string Text { get { lock (_gate) { return _text; } } }
 
 	/// <inheritdoc />
-	public bool IsLoaded { get; private set; }
+	public bool IsLoaded { get { lock (_gate) { return field; } } private set; }
 
 	/// <inheritdoc />
 	public DocumentSaveStatus SaveStatus { get { lock (_gate) { return _saveStatus; } } }
@@ -71,7 +71,7 @@ public sealed class ProjectNoteDocument : IMarkdownEditorDocument
 	}
 
 	/// <inheritdoc />
-	/// <remarks>Subsequent calls are ignored, so the buffer is read from disk exactly once.</remarks>
+	/// <remarks>Only the first completed initial read publishes a buffer; overlapping reads cannot replace later edits.</remarks>
 	public async Task LoadAsync(CancellationToken cancellationToken)
 	{
 		if (IsLoaded)
@@ -81,8 +81,15 @@ public sealed class ProjectNoteDocument : IMarkdownEditorDocument
 
 		var loaded = await _store.LoadAsync(_projectRootPath, cancellationToken);
 		lock (_gate)
-		{ _text = loaded; _savedVersion = _version; }
-		IsLoaded = true;
+		{
+			if (IsLoaded)
+			{
+				return;
+			}
+			_text = loaded;
+			_savedVersion = _version;
+			IsLoaded = true;
+		}
 		TextReplaced?.Invoke(this, EventArgs.Empty);
 	}
 

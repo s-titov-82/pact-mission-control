@@ -343,7 +343,8 @@ staged Setup, and relaunches the exact Pact path.
 Update restoration consumes only the ticket derived from the supplied restart id
 and does so once. Ordinary startup uses `Settings/session-state.json`; a valid
 update ticket takes precedence. Both use `SessionRestorationState` and the same
-restorer. The checkpoint contains only runtime ids, global selection, terminal
+restorer. The checkpoint contains only runtime ids, global selection (including
+the project screen tab and selected Markdown path), terminal
 unread ids, and orchestrator running intent. Event-driven writes are serialized
 and skip equal projections. Startup holds writes until restoration completes;
 shutdown freezes and flushes the checkpoint before resume capture or stopping
@@ -392,10 +393,20 @@ operations. `ResumeCaptureService` captures resume commands
 before sessions stop.
 
 What the center pane shows is one `PresentedSurface` value on the shell
-controller: a terminal, a paused ROOT item, notes, the browser, or nothing. The controller assigns it whole, and the terminal case
+controller: a terminal, a paused ROOT item, a project screen, the browser, or nothing. The controller assigns it whole, and the terminal case
 also carries its loading state and a focus request that waits for loading to
 clear, so showing anything else drops both. `MainWindow` draws the panes from
 that value through `CenterPaneVisibility`. Selection stays in the view model.
+
+`ProjectScreenViewModel` presents Overview, Docs, Changes and Review logs. Its
+documents come from the existing project-root cache in `MainWindowViewModel`:
+Overview embeds the same Notes document that MCP edits; Docs uses its Markdown
+tree and revision-aware editor. Pending document navigation is invalidated on
+selection changes and owner departure. `WindowsInstalledIdeService` is one
+DI-owned service shared by projects; discovery and icon bytes are cached in
+memory, while each launch resolves the currently presented project root.
+Project links remain in `ProjectRecord.Links` and open through existing browser
+navigation. Active review rows project the relay, without separate polling.
 
 ## Non-goals
 

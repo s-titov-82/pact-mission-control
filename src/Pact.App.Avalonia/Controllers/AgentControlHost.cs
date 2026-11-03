@@ -1,6 +1,7 @@
 using Pact.App.Avalonia.Lifecycle;
 using Pact.Core.AgentControl;
 using Pact.Core.Sessions;
+using Pact.Core.Projects;
 using Pact.Presentation.Services.AgentControl;
 using Pact.Presentation.ViewModels;
 
@@ -11,6 +12,34 @@ namespace Pact.App.Avalonia.Controllers;
 /// </summary>
 internal sealed class AgentControlHost : IAgentControlHost
 {
+	public async Task<ProjectLink> AddProjectLinkAsync(string projectId, string title, string url, string? kind, CancellationToken cancellationToken)
+	{
+		ProjectLink? saved = null;
+		await _uiDispatcher.InvokeAsync(async () =>
+		{
+			_ = FindLinkOwner(projectId);
+			saved = await _viewModel.AddProjectLinkAsync(projectId, title, url, kind, cancellationToken);
+		});
+		return saved!;
+	}
+
+	public async Task<IReadOnlyList<ProjectLink>> ListProjectLinksAsync(string projectId, CancellationToken cancellationToken)
+	{
+		IReadOnlyList<ProjectLink> links = [];
+		await _uiDispatcher.InvokeAsync(() =>
+		{
+			cancellationToken.ThrowIfCancellationRequested();
+			links = FindLinkOwner(projectId).Links.ToArray();
+			return Task.CompletedTask;
+		});
+		return links;
+	}
+
+	private WorkspaceViewModel FindLinkOwner(string projectId) =>
+		_viewModel.Workspaces.Concat(_viewModel.PausedWorkspaces)
+			.FirstOrDefault(workspace => string.Equals(workspace.Id, projectId, StringComparison.Ordinal))
+			?? throw new KeyNotFoundException("The project no longer exists.");
+
 	private readonly MainWindowViewModel _viewModel;
 	private readonly IUiTaskDispatcher _uiDispatcher;
 	private readonly Func<string, string, CancellationToken, Task<bool>> _openProjectDocumentAsync;

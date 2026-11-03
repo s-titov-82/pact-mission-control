@@ -18,6 +18,16 @@ namespace Pact.App.Avalonia.Tests.Views;
 public sealed class ProjectScreenViewHeadlessTests
 {
 	[AvaloniaTest]
+	public async Task Project_navigation_includes_docs_and_an_embedded_notes_editor()
+	{
+		await WithScreenAsync(new FileDiff(null, []), (screen, view, window) =>
+		{
+			view.FindControl<Control>("DocsTab").ShouldNotBeNull();
+			view.FindControl<NotesPaneView>("DocumentsPane").ShouldNotBeNull().IsVisible.ShouldBeTrue();
+			return Task.CompletedTask;
+		});
+	}
+	[AvaloniaTest]
 	public async Task Selecting_a_changed_file_shows_its_numbered_lines()
 	{
 		await WithScreenAsync(

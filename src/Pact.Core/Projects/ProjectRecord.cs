@@ -23,6 +23,9 @@ public sealed record ProjectRecord(
 	DateTimeOffset LastActiveAt,
 	string? Notes)
 {
+	/// <summary>Durable project resources, independent of terminal and browser sessions.</summary>
+	public IReadOnlyList<ProjectLink> Links { get; init; } = [];
+
 	/// <summary>Whether the project is open or parked.</summary>
 	public WorkspaceStatus Status { get; init; } = WorkspaceStatus.Active;
 

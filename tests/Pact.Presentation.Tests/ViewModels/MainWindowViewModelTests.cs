@@ -2066,6 +2066,27 @@ public sealed class MainWindowViewModelTests
 	}
 
 	[Test]
+	public async Task Project_links_add_remove_reconcile_and_preserve_project_settings()
+	{
+		InMemoryProjectStore store = new(ProjectsDocument.CreateDefault());
+		var viewModel = MainWindowViewModelTestFactory.Create(store);
+		var workspace = await viewModel.EnsureWorkspaceForDirectoryAsync(@"D:\Work\Project", CancellationToken.None);
+		List<string?> changed = [];
+		workspace.PropertyChanged += (_, args) => changed.Add(args.PropertyName);
+		var link = await viewModel.AddProjectLinkAsync(workspace.Id, " Build ", "https://EXAMPLE.COM:443/job", "ci", CancellationToken.None);
+		await viewModel.SaveWorkspaceGitLabRepoIdAsync(workspace.Id, "group/repo", CancellationToken.None);
+		workspace.Links.ShouldHaveSingleItem().ShouldBe(link);
+		changed.ShouldContain(nameof(WorkspaceViewModel.Links));
+		store.Document.Projects.Single().Links.ShouldHaveSingleItem().ShouldBe(link);
+		var restored = MainWindowViewModelTestFactory.Create(store);
+		await restored.LoadAsync(CancellationToken.None);
+		restored.Workspaces.Single().Links.ShouldHaveSingleItem().ShouldBe(link);
+		await restored.RemoveProjectLinkAsync(workspace.Id, "https://EXAMPLE.COM:443/job", CancellationToken.None);
+		store.Document.Projects.Single().Links.ShouldBeEmpty();
+		store.Document.Projects.Single().GitLabRepoId.ShouldBe("group/repo");
+	}
+
+	[Test]
 	public async Task MoveTreeItemAsync_persists_project_session_order_and_preserves_selection()
 	{
 		var createdAt = DateTimeOffset.UtcNow.AddMinutes(-10);

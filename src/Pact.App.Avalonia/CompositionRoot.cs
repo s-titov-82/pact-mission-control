@@ -94,6 +94,7 @@ internal static class CompositionRoot
 		services.AddSingleton<IFolderPicker, AvaloniaFolderPicker>();
 		services.AddSingleton<IExternalLauncher, AvaloniaExternalLauncher>();
 		services.AddSingleton<IExecutableLocator, AvaloniaExecutableLocator>();
+		services.AddSingleton<IInstalledIdeService, Pact.Infrastructure.Platform.WindowsInstalledIdeService>();
 		services.AddSingleton<IProjectSettingsEditor, ProjectSettingsEditor>();
 		services.AddSingleton(provider =>
 			new TerminalCommandResolver(provider.GetRequiredService<IExecutableLocator>()));

@@ -503,21 +503,22 @@ reported from that isolated gate and never kills processes by image name.
 - Paused projects are restored from the left `Projects` header menu, not from
   the right panel.
 
-## Docs & Notes
+## Project Overview and Docs
 
-The project-tree pseudo-tab is labeled `Docs & Notes`. The center pane has three
-primary tabs: `Notes`, `Common MD's`, and `Docs`. `Common MD's` covers every
-project Markdown file outside `docs`; `Docs` covers the complete `docs` tree,
-including `docs/superpowers`. Files never appear in more than one group.
+Clicking the project opens `Overview · Docs · Changes · Review logs` (Changes
+is available for Git projects). Notes always occupy the lower two thirds of
+Overview, using the same retained document and store as MCP Notes operations.
+The upper third scrolls independently and contains repository information,
+installed IDEs, folder navigation, active reviews and durable project links.
+There is no separate Notes tree row or visibility toggle.
 
-Document selection happens in the `Documents` tree under Scenarios in the right
-panel. The tree is visible only while the documentation pane is open on
-`Common MD's` or `Docs`; it is hidden for `Notes` and for other center-pane
-surfaces. On its first activation, `Common MD's` opens the root `README.md` when
-one exists, and later activations restore the last selected common document.
-`Docs` opens no document until the user chooses one, then restores that choice.
-This per-group selection memory lasts only for the current application session
-and is not persisted.
+Docs lists every project Markdown file in the right panel's Documents tree.
+Its first activation opens the root README.md when available; later activations
+retain the selected file. Startup checkpoints retain the actual project tab and
+Markdown relative path. Legacy Notes selections restore Overview without
+starting stopped terminals. Leaving or pausing the owner invalidates pending
+document navigation; document buffers and revision-aware saves remain owned by
+the project's single DocsAndNotesWorkspaceViewModel.
 
 The explicit `Preview | Editor` segmented control shows the current mode.
 Notes defaults to Editor, project files default to Preview, and each document's
@@ -656,8 +657,8 @@ External raw edits to `projects.json` are applied on the next app start.
 The UI still uses some workspace language internally and in services, but persisted state is project-centered:
 
 - `ProjectRecord` includes project status, active item id, notes, `GitLabRepoId`, `TeamCityProjectId`, nested `SessionRecord[]`, and nested `WebPageRecord[]`.
-- `ProjectRecord.NotesTab` marks the visible Notes tab; its body text lives outside `projects.json` under `notes/`.
-- The visible pseudo-tab is labeled `Docs & Notes`; project Markdown tabs are discovered from `RootPath` and are not persisted in `projects.json`.
+- `ProjectRecord.NotesTab` is legacy selection metadata. Its visibility no longer controls Notes, whose body remains under `Settings/Notes`.
+- Project Markdown files are discovered from `RootPath`; the selected Docs file is restored through the startup checkpoint.
 - Pausing a project closes its sessions and marks the project paused.
 - Pausing or closing a project, pausing a ROOT terminal, closing a live terminal
   tab, or closing Pact prompts only when the affected session has a live runtime

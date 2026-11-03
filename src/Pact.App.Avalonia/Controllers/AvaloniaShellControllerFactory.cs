@@ -42,6 +42,7 @@ internal sealed class AvaloniaShellControllerFactory
 	private readonly WebMonitorCoordinator _webMonitorCoordinator;
 	private readonly IClipboardService _clipboard;
 	private readonly TimeProvider _timeProvider;
+	private readonly IInstalledIdeService _installedIdeService;
 
 	public AvaloniaShellControllerFactory(
 		MainWindowViewModel viewModel,
@@ -53,8 +54,10 @@ internal sealed class AvaloniaShellControllerFactory
 		RecentDirectoryStore recentDirectoryStore,
 		WebMonitorCoordinator webMonitorCoordinator,
 		IClipboardService clipboard,
-		TimeProvider timeProvider)
+		TimeProvider timeProvider,
+		IInstalledIdeService installedIdeService)
 	{
+		_installedIdeService = installedIdeService;
 		_viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
 		WindowServices =
 			windowServices ?? throw new ArgumentNullException(nameof(windowServices));
@@ -115,6 +118,9 @@ internal sealed class AvaloniaShellControllerFactory
 			_timeProvider,
 			updateController: updateController,
 			launchOptions: WindowServices.LaunchOptions,
-			softRestartTicketStore: WindowServices.SoftRestartTicketStore);
+			softRestartTicketStore: WindowServices.SoftRestartTicketStore)
+		{
+			InstalledIdeService = _installedIdeService
+		};
 	}
 }

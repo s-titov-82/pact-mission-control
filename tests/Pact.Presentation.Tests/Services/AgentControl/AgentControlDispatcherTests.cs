@@ -1,11 +1,39 @@
 using Pact.Core.Sessions;
 using Pact.Core.AgentControl;
+using Pact.Core.Projects;
 using Pact.Presentation.Services.AgentControl;
 
 namespace Pact.Presentation.Tests.Services.AgentControl;
 
 public sealed class AgentControlDispatcherTests
 {
+	[Test]
+	public async Task Project_links_stay_under_own_project_without_opening_browser()
+	{
+		FakeAgentControlHost host = new();
+		AgentControlDispatcher dispatcher = new(host);
+		var added = await dispatcher.AddProjectLinkAsync(ProjectSessionId, "Build", "https://EXAMPLE.COM:443/1", "ci", CancellationToken.None);
+		added.Succeeded.ShouldBeTrue();
+		host.LinkProjectIds.ShouldBe(["project-1"]);
+		var listed = await dispatcher.ListProjectLinksAsync(ProjectSessionId, CancellationToken.None);
+		listed.Succeeded.ShouldBeTrue();
+		listed.Payload.ShouldNotBeNull().ShouldContain("\"url\":\"https://example.com/1\"");
+		listed.Payload.ShouldContain("\"addedAt\":");
+		host.WebTabs.ShouldBeEmpty();
+	}
+
+	[TestCase(RootSessionId, "owner-not-a-project")]
+	[TestCase("ghost", "unknown-session")]
+	[TestCase("stale", "unknown-project")]
+	public async Task Project_links_refuse_root_unknown_and_stale_owners(string sessionId, string code)
+	{
+		FakeAgentControlHost host = new();
+		AgentControlDispatcher dispatcher = new(host);
+		(await dispatcher.AddProjectLinkAsync(sessionId, "Build", "https://example.com", null, CancellationToken.None)).Failure.ShouldNotBeNull().Code.ShouldBe(code);
+		(await dispatcher.ListProjectLinksAsync(sessionId, CancellationToken.None)).Failure.ShouldNotBeNull().Code.ShouldBe(code);
+		host.LinkProjectIds.ShouldBeEmpty();
+	}
+
 	private const string ProjectSessionId = "session-project";
 	private const string RootSessionId = "session-root";
 
@@ -341,6 +369,29 @@ public sealed class AgentControlDispatcherTests
 
 	internal sealed class FakeAgentControlHost : IAgentControlHost
 	{
+		public List<string> LinkProjectIds { get; } = [];
+		private readonly List<ProjectLink> _projectLinks = [];
+
+		public Task<ProjectLink> AddProjectLinkAsync(string projectId, string title, string url, string? kind, CancellationToken cancellationToken)
+		{
+			if (projectId != "project-1")
+			{
+				throw new KeyNotFoundException("Project no longer exists.");
+			}
+			LinkProjectIds.Add(projectId);
+			var link = ProjectLinkRules.Create(title, url, kind, DateTimeOffset.UnixEpoch);
+			_projectLinks.Add(link);
+			return Task.FromResult(link);
+		}
+
+		public Task<IReadOnlyList<ProjectLink>> ListProjectLinksAsync(string projectId, CancellationToken cancellationToken)
+		{
+			if (projectId != "project-1")
+			{
+				throw new KeyNotFoundException("Project no longer exists.");
+			}
+			return Task.FromResult<IReadOnlyList<ProjectLink>>(_projectLinks);
+		}
 		public string WorkingDirectory { get; set; } = Path.GetTempPath();
 
 		public List<(string SessionId, AgentFileLink Link)> AddedLinks { get; } = [];
@@ -372,6 +423,9 @@ public sealed class AgentControlDispatcherTests
 		{
 			switch (sessionId)
 			{
+				case "stale":
+					owner = new AgentControlOwner(IsRoot: false, ProjectId: "gone");
+					return true;
 				case ProjectSessionId:
 					owner = new AgentControlOwner(IsRoot: false, ProjectId: "project-1");
 					return true;

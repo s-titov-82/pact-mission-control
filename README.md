@@ -24,6 +24,9 @@ one place.
   agent, control active reviews, inspect running-project Notes and saved web
   tabs, and relay status while the workstation is locked.
 - Persists projects and nested sessions under one selectable data root.
+- Opens each project on **Overview · Docs · Changes · Review logs**. Overview
+  keeps Notes below repository information, installed IDEs, active reviews and
+  durable agent-added links; Docs browses and edits all project Markdown.
 - Keeps persistent project-independent ROOT terminal and browser tabs above the
   project tree, with explicit per-tab pause and resume.
 - Opens terminal HTTP(S) links as saved browser tabs under the same project or

@@ -296,7 +296,8 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 				ViewModel,
 				_runtimeCoordinator.GetActiveSessionIds,
 				ViewModel.TerminalTabStatuses.GetDiagnosticsSnapshot,
-				_webPageCoordinator.GetLoadedPageIds);
+				_webPageCoordinator.GetLoadedPageIds,
+				() => CurrentProjectScreen);
 			SoftRestartCoordinator = new SoftRestartCoordinator(
 				launchOptions,
 				softRestartTicketStore,
@@ -321,7 +322,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 			_runtimeCoordinator.GetActiveSessionIds, ViewModel.TerminalTabStatuses.GetDiagnosticsSnapshot,
 			() => ViewModel.Workspaces.SelectMany(workspace => workspace.WebPages)
 				.Concat(ViewModel.RootTabs.WebPages).Where(page => page.IsBrowserLoaded)
-				.Select(page => page.Record.Id).ToArray());
+				.Select(page => page.Record.Id).ToArray(), () => CurrentProjectScreen);
 		_startupCheckpoint = new SessionRestorationCheckpoint(startupSnapshot.Capture,
 			state => _sessionRestorationStore.SaveAsync(state, CancellationToken.None),
 			exception => RecordDiagnostic("startup-checkpoint-save-failed", $"category={exception.GetType().Name}"));
@@ -391,9 +392,9 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 	public IReadOnlyList<WebLinkTemplateRecord> WebLinkTemplates { get; private set; } = [];
 	/// <summary>What the center pane shows; assigned whole through <see cref="Present"/>.</summary>
 	internal PresentedSurface PresentedSurface { get; private set; } = new PresentedSurface.None();
-	public ProjectNoteDocument? CurrentNoteDocument => (PresentedSurface as PresentedSurface.Notes)?.Document;
+	public ProjectNoteDocument? CurrentNoteDocument => CurrentProjectScreen?.Documents?.NotesDocument;
 	/// <summary>Current project documentation workspace displayed in the center pane.</summary>
-	public DocsAndNotesWorkspaceViewModel? CurrentDocsAndNotes => (PresentedSurface as PresentedSurface.Notes)?.Workspace;
+	public DocsAndNotesWorkspaceViewModel? CurrentDocsAndNotes => CurrentProjectScreen?.Documents;
 	public GitPanelViewModel? CurrentGitPanel { get; private set { if (ReferenceEquals(field, value)) { return; } field = value; OnPropertyChanged(); } }
 	public bool IsTerminalVisible => PresentedSurface is PresentedSurface.Terminal;
 	/// <summary>
@@ -646,6 +647,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		ObjectDisposedException.ThrowIf(_disposed, this);
 		ThrowIfRejectingInput();
 		SessionSwitchTiming timing = new();
+		_projectNavigationVersion++;
 		ClearSelectionActions(restoreTerminalFocus: false);
 		await FlushCurrentNoteAsync(cancellationToken);
 		timing.Mark("note");
@@ -688,7 +690,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 				if (PresentedSurface is PresentedSurface.Terminal terminal
 					&& ReferenceEquals(terminal.Session, session))
 				{
-					Present(terminal with { FocusWhenLoaded = terminal.Loading });
+					Present(terminal with { FocusWhenLoaded = terminal.Loading }, preserveNavigation: true);
 				}
 
 				await _terminalHost.FocusAsync();
@@ -707,27 +709,48 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		}
 	}
 
-	public async Task SelectWebPageAsync(WebPageViewModel webPage, CancellationToken cancellationToken = default)
+	public Task SelectWebPageAsync(WebPageViewModel webPage, CancellationToken cancellationToken = default) =>
+		SelectWebPageCoreAsync(webPage, ++_projectNavigationVersion, cancellationToken);
+
+	private async Task SelectWebPageCoreAsync(WebPageViewModel webPage, int version, CancellationToken cancellationToken)
 	{
 		ArgumentNullException.ThrowIfNull(webPage);
+		bool IsCurrent()
+		{
+			// Also used inside atomic persistence, which can run off the UI thread.
+			return !_disposed && version == _projectNavigationVersion;
+		}
+		bool CanPresent()
+		{
+			return IsCurrent() && (ViewModel.RootTabs.WebPages.Contains(webPage)
+				|| ViewModel.Workspaces.Any(workspace => workspace.WebPages.Contains(webPage)));
+		}
 		ClearSelectionActions(restoreTerminalFocus: false);
 		await FlushCurrentNoteAsync(cancellationToken);
+		if (!CanPresent())
+		{
+			return;
+		}
 		ViewModel.SelectedWebPage = webPage;
-		await ViewModel.SetActiveItemAsync(webPage.Record.Id, cancellationToken);
+		await ViewModel.SetActiveItemAsync(webPage.Record.Id, cancellationToken, IsCurrent);
+		if (!CanPresent())
+		{
+			return;
+		}
 		if (webPage.IsManuallyPaused)
 		{
-			Present(new PresentedSurface.PausedWebPage(webPage));
+			Present(new PresentedSurface.PausedWebPage(webPage), preserveNavigation: true);
 			return;
 		}
 
 		// NativeWebView must enter the visual tree at a non-zero visible size.
 		// Showing the pane only after creating/navigating the native child can
 		// leave its first frame black until a later visibility cycle.
-		Present(new PresentedSurface.Web());
+		Present(new PresentedSurface.Web(), preserveNavigation: true);
 		if (WebPageHostFactory is not null)
 		{
 			var wasLoaded = webPage.IsBrowserLoaded;
-			await _webPageCoordinator.PresentAsync(webPage, cancellationToken);
+			await _webPageCoordinator.PresentAsync(webPage, cancellationToken, CanPresent);
 			if (!wasLoaded && webPage.IsBrowserLoaded)
 			{
 				RecordDiagnostic(
@@ -767,14 +790,10 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 	public async Task SelectNoteAsync(ProjectNoteViewModel note, CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(note);
-		ClearSelectionActions(restoreTerminalFocus: false);
-		await FlushCurrentNoteAsync(cancellationToken);
-		ViewModel.SelectedProjectNote = note;
-		await ViewModel.SetActiveItemAsync(note.Record.Id, cancellationToken);
-		var document = ViewModel.GetOrCreateNoteDocument(note);
-		var workspace = ViewModel.GetOrCreateDocsAndNotesWorkspace(note);
-		await workspace.RefreshAsync(cancellationToken);
-		Present(new PresentedSurface.Notes(note, workspace, document));
+		if (ViewModel.Workspaces.FirstOrDefault(workspace => workspace.Notes.Contains(note)) is { } workspace)
+		{
+			await OpenProjectScreenAsync(workspace, ProjectScreenTab.Overview, cancellationToken);
+		}
 	}
 
 	/// <summary>Opens the log of the review a session takes part in.</summary>
@@ -787,6 +806,10 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 	private void ShowReviewBadges()
 	{
 		var reviews = _reviewRelay.ListActive();
+		foreach (var screen in _projectScreens.Values)
+		{
+			screen.SetActiveReviews(reviews);
+		}
 		foreach (var session in ViewModel.Workspaces
 			.Concat(ViewModel.PausedWorkspaces)
 			.SelectMany(workspace => workspace.Sessions)
@@ -803,10 +826,10 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 	}
 
 	/// <summary>
-	/// Shows a project Markdown file in the project's Notes tab, opening the tab when it is
+	/// Shows a project Markdown file in the project's Docs tab, opening the tab when it is
 	/// closed, and switches the user to it.
 	/// </summary>
-	/// <returns><see langword="false"/> when the project is not open or its Docs pane does not list the file.</returns>
+	/// <returns><see langword="false"/> when the project is not open, its Docs pane does not list the file, or newer navigation supersedes the request.</returns>
 	public Task<bool> OpenProjectDocumentAsync(
 		string projectId,
 		string relativePath,
@@ -833,10 +856,10 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 			return await OpenReviewLogOnScreenAsync(workspace, relativePath, cancellationToken);
 		}
 
-		var note = await ViewModel.ShowNotesTabAsync(workspace.Id, cancellationToken);
-		await SelectNoteAsync(note, cancellationToken);
-		return await ViewModel.GetOrCreateDocsAndNotesWorkspace(note)
-			.OpenDocumentAsync(relativePath, cancellationToken, heading);
+		return await OpenProjectScreenCoreAsync(workspace, ProjectScreenTab.Docs, cancellationToken)
+			&& ReferenceEquals(CurrentProjectScreen?.Workspace, workspace)
+			&& CurrentProjectScreen.SelectedTab == ProjectScreenTab.Docs
+			&& await CurrentDocsAndNotes!.OpenDocumentAsync(relativePath, cancellationToken, heading);
 	}
 
 	public async Task RunQuickActionAsync(PromptTemplateRecord template, CancellationToken cancellationToken = default)
@@ -1049,15 +1072,14 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 
 	private SelectionActionSourceIdentity? CaptureNotesSelectionSource()
 	{
-		var note = ViewModel.SelectedProjectNote;
+		var screen = CurrentProjectScreen;
 		var document = CurrentDocsAndNotes?.ActiveDocument;
-		if (note is null || document is null)
+		if (screen is null || document is null || screen.SelectedTab is not (ProjectScreenTab.Overview or ProjectScreenTab.Docs))
 		{
 			return null;
 		}
 
-		var workspace = ViewModel.Workspaces.FirstOrDefault(candidate =>
-			candidate.Notes.Any(workspaceNote => ReferenceEquals(workspaceNote, note)));
+		var workspace = ViewModel.Workspaces.FirstOrDefault(candidate => ReferenceEquals(candidate, screen.Workspace));
 		return workspace is null
 			? null
 			: new SelectionActionSourceIdentity(
@@ -1066,8 +1088,8 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 					SelectionActionOwnerKind.Project,
 					workspace.Id,
 					workspace),
-				note.Record.Id,
-				note,
+				workspace.Id,
+				screen,
 				document);
 	}
 
@@ -1102,23 +1124,23 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 					_ => false
 				},
 			SelectionActionSourceKind.Notes =>
-				source.SourceInstance is ProjectNoteViewModel note
+				source.SourceInstance is ProjectScreenViewModel screen
 				&& source.ContentInstance is IMarkdownEditorDocument document
 				&& source.Owner is
 				{
 					Kind: SelectionActionOwnerKind.Project,
 					Project: { } owner
 				}
-				&& ReferenceEquals(ViewModel.SelectedProjectNote, note)
-				&& string.Equals(note.Record.Id, source.SourceId, StringComparison.Ordinal)
+				&& ReferenceEquals(CurrentProjectScreen, screen)
+				&& screen.SelectedTab is ProjectScreenTab.Overview or ProjectScreenTab.Docs
+				&& string.Equals(screen.Workspace.Id, source.SourceId, StringComparison.Ordinal)
 				&& ReferenceEquals(CurrentDocsAndNotes?.ActiveDocument, document)
 				&& ViewModel.Workspaces.Any(workspace =>
 					ReferenceEquals(workspace, owner)
 					&& string.Equals(
 						workspace.Id,
 						source.Owner.ProjectId,
-						StringComparison.Ordinal)
-					&& workspace.Notes.Any(candidate => ReferenceEquals(candidate, note))),
+						StringComparison.Ordinal)),
 			_ => false
 		};
 
@@ -1399,6 +1421,10 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 
 	public async Task PauseWorkspaceAsync(WorkspaceViewModel workspace, CancellationToken cancellationToken = default)
 	{
+		if (ReferenceEquals(CurrentProjectScreen?.Workspace, workspace))
+		{
+			await FlushCurrentNoteAsync(cancellationToken);
+		}
 		// Resume capture selects each session it shows, so read the user's choice first. A
 		// selection outside this project leaves the project's own remembered item in place.
 		var selectedItemId = ViewModel.SelectedSession?.Record.Id
@@ -1750,6 +1776,10 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 
 	public async Task CloseWorkspaceAsync(WorkspaceViewModel workspace, CancellationToken cancellationToken = default)
 	{
+		if (ReferenceEquals(CurrentProjectScreen?.Workspace, workspace))
+		{
+			await FlushCurrentNoteAsync(cancellationToken);
+		}
 		ReleaseProjectScreen(workspace);
 		InvalidateSelectionOwner(workspace);
 		await EndWorkspaceReviewsAsync(workspace);
@@ -2237,7 +2267,13 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		{
 			return false;
 		}
-		await SelectWorkspaceAsync(selectedWorkspace);
+		var tab = Enum.TryParse<ProjectScreenTab>(selection.ProjectScreenTab, out var savedTab)
+			&& Enum.IsDefined(savedTab) ? savedTab : ProjectScreenTab.Overview;
+		await OpenProjectScreenAsync(selectedWorkspace, tab, cancellationToken);
+		if (tab == ProjectScreenTab.Docs && selection.MarkdownRelativePath is { } path)
+		{
+			await CurrentDocsAndNotes!.OpenDocumentAsync(path, cancellationToken);
+		}
 		return true;
 	}
 
@@ -2613,7 +2649,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 			return;
 		}
 
-		Present(terminal with { FocusWhenLoaded = false });
+		Present(terminal with { FocusWhenLoaded = false }, preserveNavigation: true);
 		if (!string.Equals(
 				_runtimeCoordinator.ActiveSessionId,
 				terminal.Session.Record.Id,
@@ -2962,7 +2998,23 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		{
 			InvalidateSelectionIfSourceChanged();
 		}
+		_startupCheckpoint?.Publish();
 	}
+
+	private void OnPresentedProjectPropertyChanged(object? sender, PropertyChangedEventArgs e)
+	{
+		if (e.PropertyName == nameof(ProjectScreenViewModel.SelectedTab))
+		{
+			InvalidateSelectionIfSourceChanged();
+			_startupCheckpoint?.Publish();
+			if (CurrentProjectScreen is { SelectedTab: ProjectScreenTab.Overview } screen)
+			{
+				RefreshOverview(screen);
+			}
+		}
+	}
+
+	private void OnProjectTabNavigationRequested(object? sender, EventArgs e) => _projectNavigationVersion++;
 
 	private async Task ApplyWebMonitorRulesAsync(
 		IReadOnlyList<WebMonitorRule> rules,
@@ -3042,8 +3094,12 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 	/// Shows <paramref name="next"/> in place of whatever was shown, keeping the notes
 	/// subscription, the selection-action source and the loading event in step with it.
 	/// </summary>
-	private void Present(PresentedSurface next)
+	private void Present(PresentedSurface next, bool preserveNavigation = false)
 	{
+		if (!preserveNavigation && next is not PresentedSurface.Project)
+		{
+			_projectNavigationVersion++;
+		}
 		var previous = PresentedSurface;
 		if (previous == next)
 		{
@@ -3054,8 +3110,16 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		}
 
 		PresentedSurface = next;
-		var previousDocs = (previous as PresentedSurface.Notes)?.Workspace;
-		var nextDocs = (next as PresentedSurface.Notes)?.Workspace;
+		if (!ReferenceEquals((previous as PresentedSurface.Project)?.Screen, (next as PresentedSurface.Project)?.Screen))
+		{
+			(previous as PresentedSurface.Project)?.Screen.Deactivate();
+		}
+		(previous as PresentedSurface.Project)?.Screen.PropertyChanged -= OnPresentedProjectPropertyChanged;
+		(next as PresentedSurface.Project)?.Screen.PropertyChanged += OnPresentedProjectPropertyChanged;
+		(previous as PresentedSurface.Project)?.Screen.TabNavigationRequested -= OnProjectTabNavigationRequested;
+		(next as PresentedSurface.Project)?.Screen.TabNavigationRequested += OnProjectTabNavigationRequested;
+		var previousDocs = (previous as PresentedSurface.Project)?.Screen.Documents;
+		var nextDocs = (next as PresentedSurface.Project)?.Screen.Documents;
 		if (!ReferenceEquals(previousDocs, nextDocs))
 		{
 			previousDocs?.PropertyChanged -= OnDocsAndNotesPropertyChanged;
@@ -3077,11 +3141,12 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 			IsPausedItemVisible,
 			nameof(IsPausedItemVisible));
 		RaiseIfChanged(previousDocs, nextDocs, nameof(CurrentDocsAndNotes));
-		RaiseIfChanged((previous as PresentedSurface.Notes)?.Document, CurrentNoteDocument, nameof(CurrentNoteDocument));
+		RaiseIfChanged(previousDocs?.NotesDocument, CurrentNoteDocument, nameof(CurrentNoteDocument));
 		RaiseIfChanged((previous as PresentedSurface.Project)?.Screen, CurrentProjectScreen, nameof(CurrentProjectScreen));
 		ViewModel.RefreshCurrentProjectState(CurrentProjectScreen?.Workspace);
 		UpdateCurrentChanges();
 		UpdateCurrentAgentFiles(previous, next);
+		_startupCheckpoint?.Publish();
 	}
 
 	private void RaiseIfChanged(bool previous, bool current, string propertyName)
@@ -3103,7 +3168,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 	/// <summary>Drops the notes surface when it is the one shown; anything else stays.</summary>
 	private void StopPresentingNotes()
 	{
-		if (PresentedSurface is PresentedSurface.Notes)
+		if (PresentedSurface is PresentedSurface.Project)
 		{
 			Present(new PresentedSurface.None());
 		}
@@ -3114,7 +3179,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		if (PresentedSurface is PresentedSurface.Terminal { Loading: true } terminal
 			&& string.Equals(terminal.Session.Record.Id, sessionId, StringComparison.Ordinal))
 		{
-			Present(terminal with { Loading = false });
+			Present(terminal with { Loading = false }, preserveNavigation: true);
 		}
 	}
 	private void OnBusyOverlayActionRequested(object? sender, EventArgs e) =>

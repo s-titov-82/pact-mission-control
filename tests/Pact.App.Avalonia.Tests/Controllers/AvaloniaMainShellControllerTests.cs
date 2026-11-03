@@ -27,6 +27,396 @@ namespace Pact.App.Avalonia.Tests.Controllers;
 public sealed class AvaloniaMainShellControllerTests
 {
 	[Test]
+	public async Task Terminal_readiness_does_not_supersede_a_pending_web_selection()
+	{
+		await using ControllerFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		fixture.Backends[0].EmitOutput("ready");
+		await fixture.Controller.Runtimes["session-1"].InitialOutputTask!;
+		TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		fixture.Store.BeforeUpdateAsync = async () =>
+		{
+			fixture.Store.BeforeUpdateAsync = null;
+			entered.SetResult();
+			await release.Task;
+		};
+		var page = fixture.ViewModel.WebPages.Single();
+		var selecting = fixture.Controller.SelectWebPageAsync(page);
+		await entered.Task;
+		fixture.Host.RaiseScreenSnapshotReceived("session-1", "ready", stable: true);
+		await fixture.Controller.FocusTerminalAfterLoadingAsync();
+		var loading = fixture.Controller.PresentedSurface.ShouldBeOfType<PresentedSurface.Terminal>().Loading;
+		release.SetResult();
+		await selecting;
+		loading.ShouldBeFalse();
+		fixture.Controller.PresentedSurface.ShouldBeOfType<PresentedSurface.Web>();
+		fixture.ViewModel.SelectedWebPage.ShouldBeSameAs(page);
+	}
+
+	[TestCase("flush")]
+	[TestCase("host")]
+	public async Task Delayed_project_link_final_selection_does_not_show_or_focus_after_newer_intent(string boundary)
+	{
+		TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		BlockingNotesStore notes = new() { AppendBlocker = release };
+		await using ControllerFixture fixture = new(secondGitProject: true, notesStore: notes);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var owner = fixture.ViewModel.Workspaces[0];
+		await fixture.Controller.OpenProjectScreenAsync(owner, ProjectScreenTab.Overview);
+		FakeWebPageHostFactory factory = new();
+		fixture.Controller.WebPageHostFactory = factory;
+		if (boundary == "flush")
+		{
+			fixture.Controller.CurrentNoteDocument!.SetText("keep these notes");
+		}
+		else
+		{
+			factory.BeforeCreateAsync = async () => { entered.SetResult(); await release.Task; };
+		}
+		var link = ProjectLinkRules.Create("Docs", "https://example.test", "other", DateTimeOffset.UtcNow);
+		var older = fixture.Controller.OpenProjectLinkAsync(owner, link);
+		await (boundary == "flush" ? notes.AppendStarted.Task : entered.Task);
+		var second = fixture.ViewModel.Workspaces[1];
+		var latest = fixture.Controller.OpenProjectScreenAsync(second, ProjectScreenTab.Overview);
+		release.SetResult();
+		await Task.WhenAll(older, latest);
+		fixture.Controller.CurrentProjectScreen.ShouldNotBeNull().Workspace.ShouldBeSameAs(second);
+		fixture.ViewModel.SelectedWorkspace.ShouldBeSameAs(second);
+		foreach (var host in factory.Hosts.Values)
+		{
+			host.Calls.ShouldNotContain("show");
+			host.Calls.ShouldNotContain("focus");
+		}
+	}
+
+	[Test]
+	public async Task Superseded_document_open_does_not_reissue_after_default_read_completes()
+	{
+		GatedMarkdownStore store = new(firstReadOnly: true);
+		await using ControllerFixture fixture = new(markdownStore: store);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var owner = fixture.ViewModel.Workspaces[0];
+		foreach (var name in new[] { "README.md", "foo.md", "bar.md" })
+		{
+			await File.WriteAllTextAsync(Path.Combine(owner.RootPath, name), name);
+		}
+		await fixture.Controller.OpenProjectScreenAsync(owner, ProjectScreenTab.Overview);
+		var older = fixture.Controller.OpenProjectDocumentAsync(owner.Id, "foo.md");
+		await store.Entered.Task;
+		(await fixture.Controller.OpenProjectDocumentAsync(owner.Id, "bar.md")).ShouldBeTrue();
+		store.Release.SetResult();
+		(await older).ShouldBeFalse();
+		fixture.Controller.CurrentDocsAndNotes!.ActiveDocument!.Text.ShouldBe("bar.md");
+	}
+
+	[TestCase("project")]
+	[TestCase("terminal")]
+	[TestCase("tab")]
+	[TestCase("same-tab")]
+	[TestCase("web")]
+	[TestCase("pause")]
+	[TestCase("none")]
+	[TestCase("concurrent")]
+	public async Task Delayed_project_link_creation_preserves_latest_navigation(string newer)
+	{
+		await using ControllerFixture fixture = new(secondGitProject: true);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var owner = fixture.ViewModel.Workspaces[0];
+		await fixture.Controller.OpenProjectScreenAsync(owner, ProjectScreenTab.Overview);
+		TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		fixture.Store.BeforeUpdateAsync = async () =>
+		{
+			fixture.Store.BeforeUpdateAsync = null;
+			entered.SetResult();
+			await release.Task;
+		};
+		var link = ProjectLinkRules.Create("Build", "https://EXAMPLE.test:443/build/42", "ci", DateTimeOffset.UtcNow);
+		var older = fixture.Controller.OpenProjectLinkAsync(owner, link);
+		await entered.Task;
+		Task latest = Task.CompletedTask;
+		switch (newer)
+		{
+			case "project":
+				await fixture.Controller.OpenProjectScreenAsync(fixture.ViewModel.Workspaces[1], ProjectScreenTab.Overview);
+				break;
+			case "terminal":
+				await fixture.Controller.SelectSessionAsync(owner.Sessions[0], startIfNeeded: false);
+				break;
+			case "tab":
+				await fixture.Controller.CurrentProjectScreen!.SelectTabAsync(ProjectScreenTab.ReviewLogs, CancellationToken.None);
+				break;
+			case "same-tab":
+				await fixture.Controller.CurrentProjectScreen!.SelectTabAsync(ProjectScreenTab.Overview, CancellationToken.None);
+				break;
+			case "web":
+				await fixture.Controller.SelectWebPageAsync(owner.WebPages[0]);
+				break;
+			case "pause":
+				await fixture.Controller.PauseWorkspaceAsync(owner);
+				break;
+			case "concurrent":
+				latest = fixture.Controller.OpenProjectLinkAsync(owner, link);
+				break;
+		}
+		var surface = fixture.Controller.PresentedSurface;
+		var selectedWorkspace = fixture.ViewModel.SelectedWorkspace;
+		var selectedSession = fixture.ViewModel.SelectedSession;
+		release.SetResult();
+		await Task.WhenAll(older, latest);
+		owner.WebPages.Count(page => page.ResumeUrl == "https://example.test/build/42").ShouldBe(1);
+		(await fixture.Store.LoadAsync(CancellationToken.None)).Projects.Single(project => project.Id == owner.Id)
+			.WebPages.Count(page => page.ResumeUrl == "https://example.test/build/42").ShouldBe(1);
+		if (newer is "none" or "concurrent")
+		{
+			fixture.Controller.PresentedSurface.ShouldBeOfType<PresentedSurface.Web>();
+			fixture.ViewModel.SelectedWebPage!.ResumeUrl.ShouldBe("https://example.test/build/42");
+		}
+		else
+		{
+			fixture.Controller.PresentedSurface.ShouldBeSameAs(surface);
+			fixture.ViewModel.SelectedWorkspace.ShouldBeSameAs(selectedWorkspace);
+			fixture.ViewModel.SelectedSession.ShouldBeSameAs(selectedSession);
+		}
+	}
+
+	[Test]
+	public async Task Delayed_project_link_active_item_write_preserves_newer_project()
+	{
+		await using ControllerFixture fixture = new(secondGitProject: true);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var owner = fixture.ViewModel.Workspaces[0];
+		await fixture.Controller.OpenProjectScreenAsync(owner, ProjectScreenTab.Overview);
+		TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		fixture.Store.BeforeUpdateAsync = async () =>
+		{
+			fixture.Store.BeforeUpdateAsync = null;
+			entered.SetResult();
+			await release.Task;
+		};
+		var link = ProjectLinkRules.Create("Docs", "https://example.test", "other", DateTimeOffset.UtcNow);
+		var older = fixture.Controller.OpenProjectLinkAsync(owner, link);
+		await entered.Task;
+		var second = fixture.ViewModel.Workspaces[1];
+		await fixture.Controller.OpenProjectScreenAsync(second, ProjectScreenTab.Overview);
+		release.SetResult();
+		await older;
+		fixture.Controller.CurrentProjectScreen.ShouldNotBeNull().Workspace.ShouldBeSameAs(second);
+		fixture.ViewModel.SelectedWorkspace.ShouldBeSameAs(second);
+	}
+
+	[Test]
+	public async Task Returning_to_overview_invalidates_an_older_pending_docs_tab()
+	{
+		GatedMarkdownStore store = new(separateReads: true);
+		await using ControllerFixture fixture = new(withSessions: false, secondGitProject: true, markdownStore: store);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var owner = fixture.ViewModel.Workspaces[0];
+		await File.WriteAllTextAsync(Path.Combine(owner.RootPath, "README.md"), "document");
+		await fixture.Controller.OpenProjectScreenAsync(owner, ProjectScreenTab.Overview);
+		var oldDocs = fixture.Controller.OpenProjectScreenAsync(owner, ProjectScreenTab.Docs);
+		await store.Entered.Task;
+		await fixture.Controller.OpenProjectScreenAsync(fixture.ViewModel.Workspaces[1], ProjectScreenTab.Overview);
+		var returning = fixture.Controller.OpenProjectScreenAsync(owner, ProjectScreenTab.Overview);
+		await store.SecondEntered.Task;
+
+		store.Release.SetResult();
+		await oldDocs;
+		store.ReleaseSecond.SetResult();
+		await returning;
+
+		var screen = fixture.Controller.CurrentProjectScreen.ShouldNotBeNull();
+		screen.Workspace.ShouldBeSameAs(owner);
+		screen.SelectedTab.ShouldBe(ProjectScreenTab.Overview);
+		screen.Documents!.ActiveDocument.ShouldBeSameAs(screen.Documents.NotesDocument);
+	}
+
+	[TestCase("terminal")]
+	[TestCase("project")]
+	[TestCase("tab")]
+	[TestCase("none")]
+	public async Task Delayed_review_log_respects_newer_navigation_and_ordinary_overview_open(string newerNavigation)
+	{
+		GatedMarkdownStore store = new();
+		await using ControllerFixture fixture = new(secondGitProject: true);
+		fixture.Controller.ReviewLogFileStore = store;
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var owner = fixture.ViewModel.Workspaces[0];
+		var log = Path.Combine(owner.RootPath, ".pact", "reviews", "slow.md");
+		Directory.CreateDirectory(Path.GetDirectoryName(log)!);
+		await File.WriteAllTextAsync(log, "# delayed log");
+		await fixture.Controller.OpenProjectScreenAsync(owner, ProjectScreenTab.Overview);
+		var opening = fixture.Controller.OpenProjectDocumentAsync(owner.Id, ".pact/reviews/slow.md");
+		await store.Entered.Task;
+		switch (newerNavigation)
+		{
+			case "terminal":
+				await fixture.Controller.SelectSessionAsync(owner.Sessions[0], startIfNeeded: false);
+				break;
+			case "project":
+				await fixture.Controller.OpenProjectScreenAsync(fixture.ViewModel.Workspaces[1], ProjectScreenTab.Overview);
+				break;
+			case "tab":
+				await fixture.Controller.CurrentProjectScreen!.SelectTabAsync(ProjectScreenTab.Overview, CancellationToken.None);
+				break;
+		}
+		var surface = fixture.Controller.PresentedSurface;
+		store.Release.SetResult();
+		(await opening).ShouldBe(newerNavigation == "none");
+		if (newerNavigation != "none")
+		{
+			fixture.Controller.PresentedSurface.ShouldBeSameAs(surface);
+		}
+		if (newerNavigation == "none")
+		{
+			fixture.Controller.CurrentProjectScreen!.Workspace.ShouldBeSameAs(owner);
+			fixture.Controller.CurrentProjectScreen!.SelectedTab.ShouldBe(ProjectScreenTab.ReviewLogs);
+			fixture.Controller.CurrentProjectScreen.ReviewLogText.ShouldBe("# delayed log");
+		}
+		else if (newerNavigation is "tab" or "project")
+		{
+			fixture.Controller.CurrentProjectScreen!.SelectedTab.ShouldBe(ProjectScreenTab.Overview);
+		}
+	}
+
+	[Test]
+	public async Task An_invalid_review_log_does_not_navigate_to_its_project()
+	{
+		await using ControllerFixture fixture = new(secondGitProject: true);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		await fixture.Controller.OpenProjectScreenAsync(fixture.ViewModel.Workspaces[1], ProjectScreenTab.Overview);
+		var surface = fixture.Controller.PresentedSurface;
+		(await fixture.Controller.OpenProjectDocumentAsync(fixture.ViewModel.Workspaces[0].Id, ".pact/reviews/missing.md")).ShouldBeFalse();
+		fixture.Controller.PresentedSurface.ShouldBeSameAs(surface);
+	}
+
+	[Test]
+	public async Task Overview_loads_existing_notes_even_when_the_legacy_visibility_flag_is_absent()
+	{
+		using var data = TemporaryDirectory.Create();
+		ProjectNotesStore notes = new(new AppPaths(data.Path));
+		await using ControllerFixture fixture = new(notesStore: notes);
+		await notes.SaveAsync(fixture.Root, "Existing notebook", CancellationToken.None);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var workspace = fixture.ViewModel.Workspaces.Single();
+		workspace.Record.NotesTab.ShouldBeNull();
+		await fixture.Controller.OpenProjectScreenAsync(workspace, ProjectScreenTab.Overview);
+		fixture.Controller.CurrentNoteDocument.ShouldNotBeNull().Text.ShouldBe("Existing notebook");
+		workspace.TreeItems.OfType<ProjectNoteViewModel>().ShouldBeEmpty();
+	}
+	[TestCase(false)]
+	[TestCase(true)]
+	public async Task A_markdown_load_finishing_after_owner_switch_or_pause_cannot_replace_the_surface(bool pause)
+	{
+		GatedMarkdownStore store = new();
+		await using ControllerFixture fixture = new(withSessions: false, secondGitProject: true, markdownStore: store);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var owner = fixture.ViewModel.Workspaces[0];
+		await File.WriteAllTextAsync(Path.Combine(owner.RootPath, "slow.md"), "late document");
+		var opening = fixture.Controller.OpenProjectDocumentAsync(owner.Id, "slow.md");
+		await store.Entered.Task;
+		if (pause)
+		{
+			await fixture.Controller.PauseWorkspaceAsync(owner);
+		}
+		else
+		{
+			await fixture.Controller.OpenProjectScreenAsync(fixture.ViewModel.Workspaces[1], ProjectScreenTab.Overview);
+		}
+		var surface = fixture.Controller.PresentedSurface;
+		store.Release.SetResult();
+		(await opening).ShouldBeFalse();
+		fixture.Controller.PresentedSurface.ShouldBeSameAs(surface);
+		fixture.Controller.CurrentDocsAndNotes?.ActiveDocument?.Text.ShouldNotBe("late document");
+	}
+
+	private sealed class GatedMarkdownStore(bool separateReads = false, bool firstReadOnly = false) : IProjectMarkdownFileStore
+	{
+		private readonly ProjectMarkdownFileStore _inner = new();
+		private int _reads;
+		public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		public TaskCompletionSource SecondEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		public TaskCompletionSource ReleaseSecond { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		public async Task<ProjectMarkdownFileSnapshot> LoadAsync(string path, CancellationToken cancellationToken)
+		{
+			var read = Interlocked.Increment(ref _reads);
+			if (firstReadOnly && read > 1)
+			{
+				return await _inner.LoadAsync(path, cancellationToken);
+			}
+			if (read == 2 && separateReads)
+			{
+				SecondEntered.TrySetResult();
+				await ReleaseSecond.Task;
+			}
+			else
+			{
+				Entered.TrySetResult();
+				await Release.Task;
+			}
+			return await _inner.LoadAsync(path, cancellationToken);
+		}
+		public Task<ProjectMarkdownSaveResult> TrySaveAsync(string path, string text, string expectedRevision, CancellationToken cancellationToken) =>
+			_inner.TrySaveAsync(path, text, expectedRevision, cancellationToken);
+		public Task<ProjectMarkdownFileSnapshot> OverwriteAsync(string path, string text, CancellationToken cancellationToken) =>
+			_inner.OverwriteAsync(path, text, cancellationToken);
+	}
+	[Test]
+	public async Task Slow_ide_discovery_then_project_switch_launches_the_current_root()
+	{
+		await using ControllerFixture fixture = new(gitRepository: true, secondGitProject: true);
+		GatedInstalledIdeService service = new();
+		fixture.Controller.InstalledIdeService = service;
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		await fixture.Controller.OpenProjectScreenAsync(fixture.ViewModel.Workspaces[0], ProjectScreenTab.Overview);
+		var discovery = fixture.Controller.RefreshInstalledIdesAsync();
+		await service.Entered.Task;
+		var second = fixture.ViewModel.Workspaces[1];
+		await fixture.Controller.OpenProjectScreenAsync(second, ProjectScreenTab.Overview);
+		service.Release.SetResult();
+		await discovery;
+		await fixture.Controller.OpenInstalledIdeAsync(service.Ide);
+		service.OpenedRoot.ShouldBe(second.RootPath);
+	}
+
+	[Test]
+	public async Task Project_link_reuses_the_same_normalized_project_browser_tab()
+	{
+		await using ControllerFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var workspace = fixture.ViewModel.Workspaces.Single();
+		var link = ProjectLinkRules.Create("Build", "https://EXAMPLE.test:443/build/42", "ci", DateTimeOffset.UtcNow);
+		await fixture.Controller.OpenProjectLinkAsync(workspace, link);
+		var first = fixture.ViewModel.SelectedWebPage.ShouldNotBeNull();
+		await fixture.Controller.OpenProjectScreenAsync(workspace, ProjectScreenTab.Overview);
+		await fixture.Controller.OpenProjectLinkAsync(workspace, link);
+		fixture.ViewModel.SelectedWebPage.ShouldBeSameAs(first);
+		workspace.WebPages.Count(page => page.ResumeUrl == "https://example.test/build/42").ShouldBe(1);
+	}
+
+	private sealed class GatedInstalledIdeService : IInstalledIdeService
+	{
+		public InstalledIde Ide { get; } = new("code", "Code", @"C:\Code.exe", null);
+		public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		public string? OpenedRoot { get; private set; }
+		public async Task<IReadOnlyList<InstalledIde>> DiscoverAsync(bool refresh, CancellationToken cancellationToken)
+		{
+			Entered.TrySetResult();
+			await Release.Task;
+			return [Ide];
+		}
+		public Task OpenAsync(InstalledIde ide, string projectRoot, CancellationToken cancellationToken)
+		{
+			OpenedRoot = projectRoot;
+			return Task.CompletedTask;
+		}
+	}
+	[Test]
 	public async Task Terminal_link_creates_and_selects_web_page_in_session_project()
 	{
 		await using ControllerFixture fixture = new();
@@ -253,7 +643,7 @@ public sealed class AvaloniaMainShellControllerTests
 	}
 
 	[Test]
-	public async Task Opening_a_project_document_shows_it_in_notes()
+	public async Task Opening_a_project_document_shows_project_docs_without_a_notes_row()
 	{
 		await using ControllerFixture fixture = new();
 		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
@@ -268,10 +658,42 @@ public sealed class AvaloniaMainShellControllerTests
 				TestContext.CurrentContext.CancellationToken))
 			.ShouldBeTrue();
 
-		var notes = fixture.Controller.PresentedSurface.ShouldBeOfType<PresentedSurface.Notes>();
-		notes.Workspace.SelectedSection.ShouldBe(DocsAndNotesSection.Docs);
-		notes.Workspace.SelectedNode.ShouldNotBeNull().RelativePath.ShouldBe("docs/plans/p.md");
-		workspace.Notes.ShouldHaveSingleItem();
+		var screen = fixture.Controller.PresentedSurface.ShouldBeOfType<PresentedSurface.Project>().Screen;
+		screen.SelectedTab.ToString().ShouldBe("Docs");
+		fixture.Controller.CurrentDocsAndNotes.ShouldNotBeNull().SelectedNode.ShouldNotBeNull().RelativePath.ShouldBe("docs/plans/p.md");
+		workspace.TreeItems.OfType<ProjectNoteViewModel>().ShouldBeEmpty();
+	}
+
+	[Test]
+	public async Task Legacy_notes_selection_opens_overview_with_the_same_document()
+	{
+		await using ControllerFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var workspace = fixture.ViewModel.Workspaces.Single();
+		var note = await fixture.ViewModel.ShowNotesTabAsync(workspace.Id, CancellationToken.None);
+		var document = fixture.ViewModel.GetOrCreateNoteDocument(note);
+		await document.LoadAsync(CancellationToken.None);
+		document.SetText("retained notes");
+		await fixture.Controller.SelectNoteAsync(note);
+		fixture.Controller.CurrentProjectScreen.ShouldNotBeNull().SelectedTab.ShouldBe(ProjectScreenTab.Overview);
+		fixture.Controller.CurrentNoteDocument.ShouldBeSameAs(document);
+		document.Text.ShouldBe("retained notes");
+	}
+
+	[Test]
+	public async Task Startup_restores_project_docs_without_starting_stopped_terminals()
+	{
+		await using ControllerFixture fixture = new();
+		await File.WriteAllTextAsync(Path.Combine(fixture.Root, "guide.md"), "restored guide");
+		await File.WriteAllTextAsync(fixture.Paths.SessionRestorationPath,
+			"""{"schemaVersion":1,"liveTerminalIds":[],"loadedWebPageIds":[],"unreadTerminalIds":[],"selection":{"projectId":"project-1","itemId":null,"projectScreenTab":"Docs","markdownRelativePath":"guide.md"},"orchestratorWasRunning":false}""");
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		fixture.Controller.CurrentProjectScreen.ShouldNotBeNull().SelectedTab.ToString().ShouldBe("Docs");
+		fixture.Controller.CurrentDocsAndNotes.ShouldNotBeNull().ActiveDocument.ShouldNotBeNull().Text.ShouldBe("restored guide");
+		fixture.Backends.ShouldBeEmpty();
+		await fixture.Controller.ShutdownAsync();
+		var saved = await File.ReadAllTextAsync(fixture.Paths.SessionRestorationPath);
+		saved.ShouldContain("guide.md");
 	}
 
 	[Test]
@@ -3652,7 +4074,8 @@ public sealed class AvaloniaMainShellControllerTests
 			int? terminalProcessId = null,
 			IWebProcessMetricsSnapshotReader? webProcessMetricsSnapshotReader = null,
 			bool gitRepository = false,
-			bool secondGitProject = false)
+			bool secondGitProject = false,
+			IProjectMarkdownFileStore? markdownStore = null)
 		{
 			if (gitRepository)
 			{
@@ -3779,6 +4202,7 @@ public sealed class AvaloniaMainShellControllerTests
 			ViewModel = new MainWindowViewModel(
 				Store,
 				notesStore ?? new EmptyNotesStore(),
+				markdownStore ?? new ProjectMarkdownFileStore(),
 				Statuses,
 				RootStore);
 			Host = new FakeTerminalWebViewHost();
@@ -4129,6 +4553,7 @@ public sealed class AvaloniaMainShellControllerTests
 
 	private sealed class InMemoryProjectStore(ProjectsDocument document) : IProjectStore
 	{
+		public Func<Task>? BeforeUpdateAsync { get; set; }
 		private readonly Lock _resumeUrlSignalLock = new();
 		private readonly List<(int MinimumCount, TaskCompletionSource Completion)> _resumeUrlWaiters = [];
 		private ProjectsDocument _document = document;
@@ -4139,8 +4564,12 @@ public sealed class AvaloniaMainShellControllerTests
 			_document = document;
 			return Task.CompletedTask;
 		}
-		public Task<ProjectsDocument> UpdateAsync(Func<ProjectsDocument, ProjectsDocument> update, CancellationToken cancellationToken)
+		public async Task<ProjectsDocument> UpdateAsync(Func<ProjectsDocument, ProjectsDocument> update, CancellationToken cancellationToken)
 		{
+			if (BeforeUpdateAsync is { } beforeUpdate)
+			{
+				await beforeUpdate();
+			}
 			var before = _document;
 			_document = update(_document);
 			var beforePages = before.Projects
@@ -4156,7 +4585,7 @@ public sealed class AvaloniaMainShellControllerTests
 							previous.ResumeUrl,
 							StringComparison.Ordinal)));
 			CompleteResumeUrlWaiters();
-			return Task.FromResult(_document);
+			return _document;
 		}
 
 		public Task WaitForResumeUrlUpdateCountAsync(int minimumCount)

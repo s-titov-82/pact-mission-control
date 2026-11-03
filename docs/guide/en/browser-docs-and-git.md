@@ -31,11 +31,16 @@ the rule fields and scheduling behavior.
 
 ## Docs & Notes
 
-Open a project's `Docs & Notes` pseudo-tab to work with three groups:
+Click a project to open **Overview · Docs · Changes · Review logs**. Notes
+always occupy the lower two thirds of Overview. Above them are the project path,
+Git address and branch, detected IDE buttons, folder navigation, active reviews
+and project links. Refresh IDE discovery with `↻`; no per-project commands are
+needed. Agents add CI, MR and issue links through Pact; open, copy or remove
+them here. Opening reuses an existing project browser tab with the same URL.
 
-- `Notes` contains the app-owned project notebook;
-- `Common MD's` contains Markdown outside the repository's `docs` directory;
-- `Docs` contains the complete `docs` tree.
+Docs lists every Markdown file in the project, including nested folders. Select
+a file in the Documents tree on the right. The selected tab and file return
+after restarting Pact, while stopped terminals stay stopped.
 
 Notes opens in Editor mode; project files open in Preview. Use the explicit
 `Preview | Editor` control to switch modes. Project Markdown is edited in place

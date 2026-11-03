@@ -21,7 +21,7 @@ public sealed class WorkspaceViewModelTests
 	}
 
 	[Test]
-	public void TreeItems_PlaceNotesAfterWebPages()
+	public void TreeItems_omit_legacy_notes_while_preserving_real_tabs()
 	{
 		WorkspaceViewModel workspace = new(CreateProject());
 		ProjectNoteViewModel note = new(new NotesTabRecord("n1", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow), workspace.RootPath);
@@ -30,7 +30,9 @@ public sealed class WorkspaceViewModelTests
 		workspace.Notes.Add(note);
 		workspace.Sessions.Add(session);
 		workspace.WebPages.Add(webPage);
-		workspace.TreeItems.ShouldBe([session, webPage, note]);
+		workspace.TreeItems.ShouldBe([session, webPage]);
+		workspace.Sessions.Move(0, 0);
+		workspace.TreeItems.ShouldBe([session, webPage]);
 	}
 
 	[Test]

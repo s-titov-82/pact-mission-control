@@ -353,8 +353,6 @@
             <Button Classes="compact-icon" ToolTip.Tip="Git" IsVisible="{Binding IsGitRepository}" Click="OnProjectGitClicked"><PathIcon Width="12" Height="12" Data="{StaticResource AppGitIcon}" /></Button>
             <Button Classes="compact-icon" ToolTip.Tip="Add terminal" Click="OnAddSessionClicked"><PathIcon Width="12" Height="12" Data="{StaticResource AppAddIcon}" /></Button>
             <Button Classes="compact-icon" ToolTip.Tip="Add web page" Click="OnAddWebPageClicked"><PathIcon Width="12" Height="12" Data="{StaticResource AppAtSignIcon}" /></Button>
-            <Button Classes="compact-icon" ToolTip.Tip="Show/hide project docs and notes"
-                    Classes.notes-open="{Binding IsNotesTabOpen}" Click="OnNotesToggleClicked"><PathIcon Width="12" Height="12" Data="{StaticResource AppNotesIcon}" /></Button>
             <Button Classes="compact-icon" ToolTip.Tip="Pause project" Click="OnPauseProjectClicked"><PathIcon Width="12" Height="12" Data="{StaticResource AppPauseIcon}" /></Button>
             <Button Classes="compact-icon" ToolTip.Tip="Close project" Click="OnCloseProjectClicked"><PathIcon Width="12" Height="12" Data="{StaticResource AppCloseIcon}" /></Button>
           </StackPanel>

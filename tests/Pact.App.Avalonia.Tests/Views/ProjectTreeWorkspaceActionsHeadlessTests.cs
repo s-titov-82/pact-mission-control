@@ -60,13 +60,16 @@ public sealed class ProjectTreeWorkspaceActionsHeadlessTests
 	}
 
 	[AvaloniaTest]
-	public void ClickingNotesToggleButtonRaisesNotesToggleRequestedWithWorkspace()
+	public void Project_card_does_not_offer_a_notes_visibility_toggle()
 	{
-		WorkspaceViewModel? received = null;
-		RunWorkspaceCardTest(
-			view => view.NotesToggleRequested += (_, workspace) => received = workspace,
-			"Show/hide project docs and notes",
-			(workspace, _) => received.ShouldBeSameAs(workspace));
+		ProjectTreeView view = new();
+		var now = DateTimeOffset.UtcNow;
+		WorkspaceViewModel workspace = new(new ProjectRecord("p", "Project", @"C:\repo", now, now, null));
+		var tree = view.FindControl<TreeView>("ProjectTree")!;
+		var card = tree.DataTemplates.Single(template => template.Match(workspace)).Build(workspace)!;
+		card.DataContext = workspace;
+		card.GetSelfAndVisualDescendants().OfType<Button>()
+			.ShouldNotContain(button => Equals(ToolTip.GetTip(button), "Show/hide project docs and notes"));
 	}
 
 	[AvaloniaTest]

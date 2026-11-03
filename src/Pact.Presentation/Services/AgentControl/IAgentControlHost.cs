@@ -1,5 +1,6 @@
 using Pact.Core.AgentControl;
 using Pact.Core.Sessions;
+using Pact.Core.Projects;
 
 namespace Pact.Presentation.Services.AgentControl;
 
@@ -12,6 +13,12 @@ public sealed record ProjectSlotConflict(string? ActiveRunId);
 /// <summary>Narrow shell operations deliberately exposed to agent-requested actions.</summary>
 public interface IAgentControlHost
 {
+	/// <summary>Persists a resource under the resolved project owner.</summary>
+	Task<ProjectLink> AddProjectLinkAsync(string projectId, string title, string url, string? kind, CancellationToken cancellationToken);
+
+	/// <summary>Reads resources of the resolved project; refuses a stale owner.</summary>
+	Task<IReadOnlyList<ProjectLink>> ListProjectLinksAsync(string projectId, CancellationToken cancellationToken);
+
 	/// <summary>Resolves the owner of a live session.</summary>
 	bool TryGetOwner(string sessionId, out AgentControlOwner owner);
 

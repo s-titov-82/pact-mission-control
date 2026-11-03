@@ -13,7 +13,6 @@
     <GridSplitter Grid.Column="1" ResizeDirection="Columns" />
     <Grid x:Name="CenterPane" Grid.Column="2">
       <views:TerminalPaneView x:Name="TerminalPane" />
-      <views:NotesPaneView x:Name="NotesPane" IsVisible="False" />
       <views:ProjectScreenView x:Name="ProjectScreen" IsVisible="False" />
       <views:BrowserPaneView x:Name="BrowserPane" IsVisible="False" />
       <Border x:Name="TerminalLoadingSurface" ZIndex="20"

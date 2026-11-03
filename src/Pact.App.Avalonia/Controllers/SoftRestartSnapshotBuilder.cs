@@ -15,13 +15,16 @@ internal sealed class SoftRestartSnapshotBuilder
 	private readonly Func<IReadOnlyDictionary<string, TerminalClassifierDiagnostics>>
 		_getDiagnostics;
 	private readonly Func<IReadOnlyList<string>> _getLoadedPageIds;
+	private readonly Func<ProjectScreenViewModel?>? _getProjectScreen;
 
 	public SoftRestartSnapshotBuilder(
 		MainWindowViewModel viewModel,
 		Func<IReadOnlyList<string>> getActiveSessionIds,
 		Func<IReadOnlyDictionary<string, TerminalClassifierDiagnostics>> getDiagnostics,
-		Func<IReadOnlyList<string>> getLoadedPageIds)
+		Func<IReadOnlyList<string>> getLoadedPageIds,
+		Func<ProjectScreenViewModel?>? getProjectScreen = null)
 	{
+		_getProjectScreen = getProjectScreen;
 		_viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
 		_getActiveSessionIds = getActiveSessionIds
 			?? throw new ArgumentNullException(nameof(getActiveSessionIds));
@@ -97,6 +100,11 @@ internal sealed class SoftRestartSnapshotBuilder
 		HashSet<string> eligibleTerminalIds,
 		HashSet<string> eligiblePageIds)
 	{
+		if (_getProjectScreen?.Invoke() is { } screen && _viewModel.Workspaces.Contains(screen.Workspace))
+		{
+			return new SoftRestartSelection(screen.Workspace.Id, null, screen.SelectedTab.ToString(),
+				screen.SelectedTab == ProjectScreenTab.Docs ? screen.Documents?.SelectedDocumentPath : null);
+		}
 		// Paused ROOT rows retain selection without becoming eligible for a process launch.
 		eligibleTerminalIds.UnionWith(_viewModel.RootTabs.Sessions.Select(session => session.Record.Id));
 		eligiblePageIds.UnionWith(_viewModel.RootTabs.WebPages.Select(page => page.Record.Id));

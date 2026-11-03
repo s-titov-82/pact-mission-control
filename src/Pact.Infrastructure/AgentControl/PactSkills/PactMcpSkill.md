@@ -20,6 +20,17 @@ The orchestrator targets a running project explicitly: use `pact_get_project_not
 
 For a project session, use `pact_open_document` with a Markdown `path` (relative to the project root, or absolute inside it) to show a file you wrote, such as a plan or spec, in the project's Docs pane. It switches the user to that document, so call it when they should read it now.
 
+## Project links
+
+When you create or receive an MR, issue, or build URL, save it with
+`pact_add_project_link` using a concise `title`, the HTTP(S) `url`, and the
+appropriate `kind`: `merge_request`, `issue`, `ci`, or `other` (the default).
+Use `pact_list_project_links` to read the project's saved resources. Links
+survive session closure and restart. Adding a link does not open a browser or
+fetch remote metadata; do not claim a build or MR status from a saved link.
+These tools belong to ordinary project sessions; ROOT has no project links,
+and the orchestrator catalog does not expose them.
+
 ## Files
 
 Use `pact_add_file_link` with a file `path` (absolute, or relative to your working directory) and an optional short `title` to add the file to this session's list in Pact's right column; the user opens it read-only over the terminal when they choose. Use it for a file you wrote outside the project, such as a script in your scratchpad or Temp, or any file the user should read. The file must already exist, and the call does not open it. For project Markdown the user should read now, use `pact_open_document` instead.

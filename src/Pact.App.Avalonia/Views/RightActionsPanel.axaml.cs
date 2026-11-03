@@ -216,6 +216,7 @@ internal sealed partial class RightActionsPanel : UserControl
 
 	private void RefreshProjectList()
 	{
+		RefreshDocumentTree();
 		var tab = ProjectScreen?.SelectedTab;
 		var showsFiles = tab == ProjectScreenTab.Changes && _screenChanges is not null;
 		var showsLogs = tab == ProjectScreenTab.ReviewLogs;
@@ -348,7 +349,8 @@ internal sealed partial class RightActionsPanel : UserControl
 
 	private void RefreshDocumentTree()
 	{
-		DocumentsSection.IsVisible = Workspace?.ShowsDocumentTree == true;
+		DocumentsSection.IsVisible = Workspace?.ShowsDocumentTree == true
+			&& (ProjectScreen is null || ProjectScreen.SelectedTab == ProjectScreenTab.Docs);
 		RefreshListRows();
 		_syncingSelection = true;
 		try

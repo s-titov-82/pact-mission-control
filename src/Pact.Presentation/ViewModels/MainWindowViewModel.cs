@@ -348,6 +348,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 		{
 			workspace.SetCurrentProject(ReferenceEquals(workspace, current));
 		}
+		RefreshSelectionActionTargetProjects();
 	}
 
 	/// <summary>
@@ -1219,10 +1220,17 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 		return result.WebPage;
 	}
 
-	/// <summary>Persists which item its project reselects when reopened.</summary>
-	public async Task SetActiveItemAsync(string itemId, CancellationToken cancellationToken)
+	/// <summary>Persists which item its project reselects when reopened; an optional current-intent guard prevents stale selection publication.</summary>
+	/// <param name="itemId">The existing saved item to select.</param>
+	/// <param name="cancellationToken">Cancels persistence.</param>
+	/// <param name="isCurrent">A side-effect-free intent check that may run on the persistence thread; it must not read UI collections.</param>
+	public async Task SetActiveItemAsync(string itemId, CancellationToken cancellationToken, Func<bool>? isCurrent = null)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(itemId);
+		if (isCurrent?.Invoke() == false)
+		{
+			return;
+		}
 
 		if (RootTabs.Sessions.Any(item =>
 				string.Equals(item.Record.Id, itemId, StringComparison.Ordinal))
@@ -1230,6 +1238,10 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 				string.Equals(item.Record.Id, itemId, StringComparison.Ordinal)))
 		{
 			var rootRecord = await _rootPersistence.SetActiveItemAsync(itemId, cancellationToken);
+			if (isCurrent?.Invoke() == false)
+			{
+				return;
+			}
 			RootTabs.UpdateRecord(rootRecord);
 			SelectedWorkspace = null;
 			var rootSession = FindSessionViewModel(itemId);
@@ -1253,6 +1265,10 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 			owningWorkspace.Id,
 			project =>
 			{
+				if (isCurrent?.Invoke() == false)
+				{
+					return project;
+				}
 				return project with
 				{
 					ActiveItemId = itemId,
@@ -1261,7 +1277,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 			},
 			cancellationToken);
 
-		if (updatedProject is null)
+		if (updatedProject is null || isCurrent?.Invoke() == false)
 		{
 			return;
 		}
@@ -1439,7 +1455,8 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 		return GetOrCreateDocsAndNotesWorkspace(note.ProjectRootPath);
 	}
 
-	private DocsAndNotesWorkspaceViewModel GetOrCreateDocsAndNotesWorkspace(
+	/// <summary>Returns the single retained document owner for a project root, regardless of legacy tab visibility.</summary>
+	public DocsAndNotesWorkspaceViewModel GetOrCreateDocsAndNotesWorkspace(
 		string projectRootPath)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(projectRootPath);
@@ -2072,7 +2089,8 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 		SelectionActionTargetProjects.Clear();
 		SelectionActionCompactTargetProject = null;
 		HasAdditionalSelectionActionTargets = false;
-		var sourceIsNote = SelectedProjectNote is not null;
+		var projectScreenOwner = Workspaces.FirstOrDefault(workspace => workspace.IsCurrentProject);
+		var sourceIsNote = SelectedProjectNote is not null || projectScreenOwner is not null;
 		if (SelectedSession is null && !sourceIsNote)
 		{
 			OnPropertyChanged(nameof(HasSelectionActionTargets));
@@ -2085,7 +2103,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 
 		var sourceWorkspace = SelectedSession is { } selectedSession
 			? Workspaces.FirstOrDefault(workspace => workspace.Sessions.Any(session => ReferenceEquals(session, selectedSession)))
-			: Workspaces.FirstOrDefault(workspace => workspace.Notes.Any(note => ReferenceEquals(note, SelectedProjectNote)));
+			: projectScreenOwner ?? Workspaces.FirstOrDefault(workspace => workspace.Notes.Any(note => ReferenceEquals(note, SelectedProjectNote)));
 		var sourceIsRoot = SelectedSession is { IsRootItem: true };
 		var sourceOwnerId = sourceIsRoot ? "root" : sourceWorkspace?.Id;
 		var rootSessions = RootTabs.Sessions
@@ -2108,7 +2126,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 				.Where(session => !ReferenceEquals(session, SelectedSession))
 				.Where(session => SelectedSelectionAction is { IsRaw: true } || SelectedSelectionAction?.Template is { } template && PromptActionPolicy.CanTarget(template.EffectiveType, session.Record.Kind))
 				.ToArray();
-			var isSourceNoteProject = sourceIsNote && workspace.Notes.Any(note => ReferenceEquals(note, SelectedProjectNote));
+			var isSourceNoteProject = sourceIsNote && ReferenceEquals(workspace, sourceWorkspace);
 			var choiceRendersForNotes = SelectedSelectionAction is { IsRaw: true }
 				|| SelectedSelectionAction?.Template is { } notesTemplate && CanRenderTemplateForNotes(notesTemplate);
 			var notesTarget = isSourceNoteProject || !choiceRendersForNotes

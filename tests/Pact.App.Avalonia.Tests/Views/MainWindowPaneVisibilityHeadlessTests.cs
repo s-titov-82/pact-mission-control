@@ -2,6 +2,7 @@ using System.Reflection;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless.NUnit;
+using Avalonia.Headless;
 using Avalonia.Interactivity;
 using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
@@ -10,6 +11,7 @@ using Pact.App.Avalonia.Controllers;
 using Pact.App.Avalonia.Tests.Controllers;
 using Pact.App.Avalonia.Tests.Fakes;
 using Pact.App.Avalonia.Views;
+using Pact.App.Avalonia.Views.Editing;
 using Pact.App.Avalonia.Views.Dialogs;
 using Pact.App.Avalonia.Views.Settings;
 using Pact.Core.Agents;
@@ -27,6 +29,137 @@ namespace Pact.App.Avalonia.Tests.Views;
 
 public sealed class MainWindowPaneVisibilityHeadlessTests
 {
+	[AvaloniaTest]
+	public async Task Overview_notes_are_read_only_until_initial_load_and_keep_existing_text()
+	{
+		using ApplicationStyleScope styles = new(includeEditor: true);
+		GatedInitialNotesStore store = new();
+		await using WindowFixture fixture = new(notesStore: store);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		using MainWindow window = new(fixture.Controller);
+		var center = window.FindControl<Grid>("CenterPane")!;
+		center.Children.Remove(window.FindControl<TerminalPaneView>("TerminalPane")!);
+		center.Children.Remove(window.FindControl<BrowserPaneView>("BrowserPane")!);
+		window.Show();
+		Task opening = Task.CompletedTask;
+		try
+		{
+			opening = fixture.Controller.OpenProjectScreenAsync(fixture.ViewModel.Workspaces[0], ProjectScreenTab.Overview);
+			await store.Entered.Task;
+			Dispatcher.UIThread.RunJobs();
+			window.UpdateLayout();
+			var editor = window.FindControl<ProjectScreenView>("ProjectScreen")!.DocumentPane.FindControl<SourceEditor>("Editor")!;
+			editor.IsReadOnly.ShouldBeTrue();
+			editor.Template.ShouldNotBeNull();
+			editor.TextArea.Focus().ShouldBeTrue();
+			window.KeyTextInput("too early");
+			Dispatcher.UIThread.RunJobs();
+			editor.Text.ShouldBeEmpty();
+			await fixture.Controller.CurrentDocsAndNotes!.FlushAsync(CancellationToken.None);
+			store.Saved.ShouldBeNull();
+			store.Release.SetResult("existing notebook");
+			await opening;
+			Dispatcher.UIThread.RunJobs();
+			editor.IsReadOnly.ShouldBeFalse();
+			editor.Text.ShouldBe("existing notebook");
+			window.UpdateLayout();
+			editor.CaretIndex = editor.Text.Length;
+			editor.TextArea.Focus().ShouldBeTrue();
+			window.KeyTextInput(" edited");
+			Dispatcher.UIThread.RunJobs();
+			editor.Text.ShouldBe("existing notebook edited");
+			await fixture.Controller.CurrentDocsAndNotes.FlushAsync(CancellationToken.None);
+			store.Saved.ShouldBe("existing notebook edited");
+		}
+		finally
+		{
+			store.Release.TrySetResult("existing notebook");
+			await opening;
+			window.Close();
+		}
+	}
+
+	private sealed class GatedInitialNotesStore : IProjectNotesStore
+	{
+		public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		public TaskCompletionSource<string> Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		public string? Saved { get; private set; }
+		public Task<string> LoadAsync(string projectRootPath, CancellationToken cancellationToken)
+		{
+			Entered.TrySetResult();
+			return Release.Task;
+		}
+		public Task SaveAsync(string projectRootPath, string text, CancellationToken cancellationToken)
+		{
+			Saved = text;
+			return Task.CompletedTask;
+		}
+		public Task AppendAsync(string projectRootPath, string text, CancellationToken cancellationToken) => Task.CompletedTask;
+	}
+
+	[AvaloniaTest]
+	public async Task Overview_buttons_launch_current_project_and_open_or_remove_its_links()
+	{
+		using ApplicationStyleScope styles = new();
+		await using WindowFixture fixture = new();
+		var secondRoot = Path.Combine(fixture.Root, "second");
+		Directory.CreateDirectory(secondRoot);
+		await fixture.Store.UpdateAsync(document => document with
+		{
+			Projects = [.. document.Projects, document.Projects[0] with
+			{
+				Id = "second", Name = "Second", RootPath = secondRoot, Sessions = [], WebPages = [], ActiveItemId = null
+			}]
+		}, CancellationToken.None);
+		RecordingIdeService ideService = new();
+		fixture.Controller.InstalledIdeService = ideService;
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		using MainWindow window = new(fixture.Controller);
+		var center = window.FindControl<Grid>("CenterPane")!;
+		center.Children.Remove(window.FindControl<TerminalPaneView>("TerminalPane")!);
+		center.Children.Remove(window.FindControl<BrowserPaneView>("BrowserPane")!);
+		window.Show();
+		var first = fixture.ViewModel.Workspaces[0];
+		var second = fixture.ViewModel.Workspaces[1];
+		await fixture.ViewModel.AddProjectLinkAsync(first.Id, "First", "https://example.test/first", "issue", CancellationToken.None);
+		await fixture.Controller.OpenProjectScreenAsync(first, ProjectScreenTab.Overview);
+		await fixture.Controller.OpenProjectScreenAsync(second, ProjectScreenTab.Overview);
+		await fixture.ViewModel.AddProjectLinkAsync(second.Id, "Second build", "https://example.test/build", "ci", CancellationToken.None);
+		await fixture.Controller.GetEventTasks().WaitForIdleAsync();
+		Dispatcher.UIThread.RunJobs();
+		window.UpdateLayout();
+		var view = window.FindControl<ProjectScreenView>("ProjectScreen")!;
+		view.GetVisualDescendants().OfType<Button>().Single(button => Equals(ToolTip.GetTip(button), "Test IDE"))
+			.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+		await fixture.Controller.GetEventTasks().WaitForIdleAsync();
+		ideService.OpenedRoot.ShouldBe(secondRoot);
+		view.GetVisualDescendants().OfType<Button>().Single(button => Equals(button.Content, "Second build"))
+			.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+		await fixture.Controller.GetEventTasks().WaitForIdleAsync();
+		fixture.ViewModel.SelectedWebPage.ShouldNotBeNull().ResumeUrl.ShouldBe("https://example.test/build");
+		fixture.ViewModel.SelectedWorkspace.ShouldBeSameAs(second);
+		await fixture.Controller.OpenProjectScreenAsync(second, ProjectScreenTab.Overview);
+		Dispatcher.UIThread.RunJobs();
+		window.UpdateLayout();
+		view.GetVisualDescendants().OfType<Button>().Single(button => Equals(ToolTip.GetTip(button), "Remove project link"))
+			.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+		await fixture.Controller.GetEventTasks().WaitForIdleAsync();
+		var saved = await fixture.Store.LoadAsync(CancellationToken.None);
+		saved.Projects.Single(project => project.Id == second.Id).Links.ShouldBeEmpty();
+		saved.Projects.Single(project => project.Id == first.Id).Links.ShouldHaveSingleItem().Title.ShouldBe("First");
+	}
+
+	private sealed class RecordingIdeService : IInstalledIdeService
+	{
+		public string? OpenedRoot { get; private set; }
+		public Task<IReadOnlyList<InstalledIde>> DiscoverAsync(bool refresh, CancellationToken cancellationToken) =>
+			Task.FromResult<IReadOnlyList<InstalledIde>>([new("test", "Test IDE", @"C:\Test.exe", null)]);
+		public Task OpenAsync(InstalledIde ide, string projectRoot, CancellationToken cancellationToken)
+		{
+			OpenedRoot = projectRoot;
+			return Task.CompletedTask;
+		}
+	}
 	[AvaloniaTest]
 	public async Task Attention_card_opens_its_tab_once_and_reveals_a_collapsed_project()
 	{
@@ -567,8 +700,8 @@ public sealed class MainWindowPaneVisibilityHeadlessTests
 			TestContext.CurrentContext.CancellationToken);
 		await fixture.Controller.SelectItemAsync(note, TestContext.CurrentContext.CancellationToken);
 		var workspace = fixture.Controller.CurrentDocsAndNotes.ShouldNotBeNull();
-		await workspace.SelectSectionAsync(
-			DocsAndNotesSection.Docs,
+		await fixture.Controller.CurrentProjectScreen!.SelectTabAsync(
+			ProjectScreenTab.Docs,
 			TestContext.CurrentContext.CancellationToken);
 		window.UpdateLayout();
 		Dispatcher.UIThread.RunJobs();
@@ -621,7 +754,8 @@ public sealed class MainWindowPaneVisibilityHeadlessTests
 		public WindowFixture(
 			bool includeSession = false,
 			FakeTerminalBackend? backend = null,
-			RootTabsRecord? rootTabs = null)
+			RootTabsRecord? rootTabs = null,
+			IProjectNotesStore? notesStore = null)
 		{
 			var now = DateTimeOffset.UtcNow;
 			SessionRecord[] sessions = includeSession
@@ -648,10 +782,10 @@ public sealed class MainWindowPaneVisibilityHeadlessTests
 			};
 			Store = new InMemoryProjectStore(new ProjectsDocument(1, [project]));
 			ViewModel = rootTabs is null
-				? new MainWindowViewModel(Store, new EmptyNotesStore())
+				? new MainWindowViewModel(Store, notesStore ?? new EmptyNotesStore())
 				: new MainWindowViewModel(
 					Store,
-					new EmptyNotesStore(),
+					notesStore ?? new EmptyNotesStore(),
 					new TerminalTabStatusCoordinator(action => action()),
 					new InMemoryRootTabsStore(rootTabs));
 			Host = new FakeTerminalWebViewHost();
@@ -686,13 +820,29 @@ public sealed class MainWindowPaneVisibilityHeadlessTests
 	private sealed class ApplicationStyleScope : IDisposable
 	{
 		private readonly FluentTheme _theme = new();
+		private readonly global::Avalonia.Markup.Xaml.Styling.StyleInclude? _editorStyle;
 
-		public ApplicationStyleScope()
+		public ApplicationStyleScope(bool includeEditor = false)
 		{
 			Application.Current!.Styles.Add(_theme);
+			if (includeEditor)
+			{
+				_editorStyle = new(new Uri("avares://Pact.App.Avalonia.Tests/"))
+				{
+					Source = new Uri("avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml")
+				};
+				Application.Current.Styles.Add(_editorStyle);
+			}
 		}
 
-		public void Dispose() => Application.Current!.Styles.Remove(_theme);
+		public void Dispose()
+		{
+			if (_editorStyle is not null)
+			{
+				Application.Current!.Styles.Remove(_editorStyle);
+			}
+			Application.Current!.Styles.Remove(_theme);
+		}
 	}
 
 	private static TaskCompletionSource<SettingsWindow> NewDialogSource() =>

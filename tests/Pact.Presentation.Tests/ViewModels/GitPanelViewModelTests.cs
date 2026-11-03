@@ -145,6 +145,7 @@ public sealed class GitPanelViewModelTests
 		await viewModel.RefreshAsync();
 
 		viewModel.Snapshot.ShouldBeNull();
+		viewModel.RemoteText.ShouldBeEmpty();
 		viewModel.BranchText.ShouldBe(string.Empty);
 		viewModel.StashCount.ShouldBe(0);
 	}

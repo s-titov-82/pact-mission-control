@@ -5,6 +5,39 @@ namespace Pact.Presentation.Tests.Services;
 
 public sealed class ProjectMarkdownDocumentTests
 {
+	[TestCase(false)]
+	[TestCase(true)]
+	public async Task Older_initial_read_cannot_replace_a_newer_edited_or_saved_markdown_buffer(bool saveBeforeOldRead)
+	{
+		TaskCompletionSource<ProjectMarkdownFileSnapshot> first = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		TaskCompletionSource<ProjectMarkdownFileSnapshot> second = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		var reads = 0;
+		FakeMarkdownFileStore store = new("newer disk") { LoadHandler = () => ++reads == 1 ? first.Task : second.Task };
+		ProjectMarkdownDocument document = new(store, @"C:\repo\README.md", TimeSpan.FromHours(1));
+		var oldLoad = document.LoadAsync(CancellationToken.None);
+		var currentLoad = document.LoadAsync(CancellationToken.None);
+		reads.ShouldBe(2);
+		second.SetResult(new ProjectMarkdownFileSnapshot(true, "newer disk", "1"));
+		await currentLoad;
+		document.SetText("visible edit");
+		if (saveBeforeOldRead)
+		{
+			await document.FlushAsync(CancellationToken.None);
+		}
+
+		first.SetResult(new ProjectMarkdownFileSnapshot(true, "obsolete disk", "obsolete revision"));
+		await oldLoad;
+
+		document.Text.ShouldBe("visible edit");
+		document.SaveStatus.State.ShouldBe(saveBeforeOldRead ? DocumentSaveState.Clean : DocumentSaveState.Dirty);
+		await document.FlushAsync(CancellationToken.None);
+		store.Text.ShouldBe("visible edit");
+		document.SetText("next edit");
+		await document.FlushAsync(CancellationToken.None);
+		store.Text.ShouldBe("next edit");
+		document.SaveStatus.State.ShouldBe(DocumentSaveState.Clean);
+	}
+
 	[Test]
 	public async Task Debounce_uses_injected_time_provider()
 	{
@@ -117,11 +150,12 @@ public sealed class ProjectMarkdownDocumentTests
 		public string Text { get; private set; } = initialText;
 		public bool FailNextSave { get; set; }
 		public int SaveCount { get; private set; }
+		public Func<Task<ProjectMarkdownFileSnapshot>>? LoadHandler { get; init; }
 		public TaskCompletionSource SaveObserved { get; } =
 			new(TaskCreationOptions.RunContinuationsAsynchronously);
 
 		public Task<ProjectMarkdownFileSnapshot> LoadAsync(string path, CancellationToken cancellationToken) =>
-			Task.FromResult(Snapshot());
+			LoadHandler?.Invoke() ?? Task.FromResult(Snapshot());
 
 		public Task<ProjectMarkdownSaveResult> TrySaveAsync(
 			string path,

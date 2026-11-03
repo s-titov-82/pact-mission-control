@@ -70,7 +70,7 @@ internal sealed partial class NotesPaneView : UserControl
 		DetachedFromVisualTree += (_, _) => _externalChangeTimer.Stop();
 		Editor.TextChanged += (_, _) =>
 		{
-			if (!_updating)
+			if (!_updating && _document?.IsLoaded == true)
 			{
 				_document?.SetText(Editor.Text ?? string.Empty);
 			}
@@ -142,6 +142,13 @@ internal sealed partial class NotesPaneView : UserControl
 
 	public event EventHandler<NotesSelectionCompletion>? SelectionCompleted;
 	internal Control SelectionAnchorSource => Editor;
+
+	internal void HideSectionTabs()
+	{
+		NotesTab.IsVisible = false;
+		DocsTab.IsVisible = false;
+		SectionTitle.IsVisible = true;
+	}
 	internal Func<Task<bool>> ConfirmDiscardAsync { get; set; }
 
 	internal void BeginSelectionSourceGeneration() => _selectionSourceGeneration++;
@@ -249,6 +256,7 @@ internal sealed partial class NotesPaneView : UserControl
 	private void RefreshDocumentMode()
 	{
 		var hasDocument = _document is not null;
+		Editor.IsReadOnly = _document?.IsLoaded != true;
 		var mode = _document is null
 			? DocumentMode.Preview
 			: _documentModes.GetValueOrDefault(
@@ -477,6 +485,7 @@ internal sealed partial class NotesPaneView : UserControl
 
 	private void RefreshWorkspace()
 	{
+		SectionTitle.Text = Workspace?.SelectedSection == DocsAndNotesSection.Docs ? "Docs" : "Notes";
 		NotesTab.IsChecked = Workspace?.SelectedSection == DocsAndNotesSection.Notes;
 		DocsTab.IsChecked = Workspace?.SelectedSection == DocsAndNotesSection.Docs;
 		SetDocument(Workspace?.ActiveDocument);
@@ -539,6 +548,7 @@ internal sealed partial class NotesPaneView : UserControl
 
 	private void RefreshText(bool moveCaretToEnd)
 	{
+		Editor.IsReadOnly = _document?.IsLoaded != true;
 		var text = _document?.Text ?? string.Empty;
 		if (_document is not null)
 		{

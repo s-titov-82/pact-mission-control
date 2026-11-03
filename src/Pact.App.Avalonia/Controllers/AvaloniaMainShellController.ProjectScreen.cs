@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Pact.Infrastructure.Documents;
 using Pact.Core.Sessions;
+using Pact.Core.Projects;
 using Pact.Infrastructure.Storage;
 using Pact.Presentation.Services.Remarks;
 using Pact.Presentation.ViewModels;
@@ -16,9 +17,13 @@ internal sealed partial class AvaloniaMainShellController
 	private readonly HashSet<WorkspaceViewModel> _watchedWorkspaces = [];
 	private IDisposable? _changesObservation;
 	private ProjectFileChangeSignal? _changesSignal;
+	private int _projectNavigationVersion;
 
 	/// <summary>Reads working-tree changes; tests replace it before the first project is shown.</summary>
 	internal IGitWorkingTreeReader WorkingTreeReader { get; set; }
+
+	/// <summary>Reads review logs; replace before opening a project to control asynchronous log I/O.</summary>
+	internal IProjectMarkdownFileStore ReviewLogFileStore { get; set; } = new ProjectMarkdownFileStore();
 
 	/// <summary>The project screen shown in the center pane, if any.</summary>
 	public ProjectScreenViewModel? CurrentProjectScreen => (PresentedSurface as PresentedSurface.Project)?.Screen;
@@ -36,16 +41,42 @@ internal sealed partial class AvaloniaMainShellController
 	internal Func<string, string, CancellationToken, Task<PromptDeliveryResult>>? RemarkDelivery { get; set; }
 
 	/// <summary>Shows a project's screen on the given tab.</summary>
-	public async Task OpenProjectScreenAsync(
+	public Task OpenProjectScreenAsync(
 		WorkspaceViewModel workspace,
 		ProjectScreenTab tab,
-		CancellationToken cancellationToken = default)
+		CancellationToken cancellationToken = default) => OpenProjectScreenCoreAsync(workspace, tab, cancellationToken);
+
+	private async Task<bool> OpenProjectScreenCoreAsync(
+		WorkspaceViewModel workspace, ProjectScreenTab tab, CancellationToken cancellationToken)
 	{
 		ArgumentNullException.ThrowIfNull(workspace);
 		ObjectDisposedException.ThrowIf(_disposed, this);
+		var version = ++_projectNavigationVersion;
 		var screen = GetOrCreateProjectScreen(workspace);
-		await PresentProjectScreenAsync(screen, cancellationToken);
-		await screen.SelectTabAsync(tab, cancellationToken);
+		await PresentProjectScreenAsync(screen, cancellationToken, version);
+		if (version != _projectNavigationVersion || !ReferenceEquals(CurrentProjectScreen, screen))
+		{
+			return false;
+		}
+		await screen.Documents!.RefreshAsync(cancellationToken);
+		if (version != _projectNavigationVersion || !ReferenceEquals(CurrentProjectScreen, screen))
+		{
+			return false;
+		}
+		var alreadyOverview = screen.SelectedTab == ProjectScreenTab.Overview;
+		// SelectTabAsync announces its intent synchronously, before any document I/O.
+		// Adopt that notification, then retain exactly this version across its awaits.
+		var selection = screen.SelectTabAsync(tab, cancellationToken);
+		var tabVersion = _projectNavigationVersion;
+		if (!await selection || tabVersion != _projectNavigationVersion || !ReferenceEquals(CurrentProjectScreen, screen))
+		{
+			return false;
+		}
+		if (alreadyOverview && tab == ProjectScreenTab.Overview && ReferenceEquals(CurrentProjectScreen, screen))
+		{
+			RefreshOverview(screen);
+		}
+		return true;
 	}
 
 	/// <summary>Opens the Changes tab of the project whose change list is current.</summary>
@@ -54,11 +85,20 @@ internal sealed partial class AvaloniaMainShellController
 			? OpenProjectScreenAsync(workspace, ProjectScreenTab.Changes, cancellationToken)
 			: Task.CompletedTask;
 
-	private async Task PresentProjectScreenAsync(ProjectScreenViewModel screen, CancellationToken cancellationToken)
+	private async Task PresentProjectScreenAsync(ProjectScreenViewModel screen, CancellationToken cancellationToken, int? navigationVersion = null)
 	{
+		var version = navigationVersion ?? ++_projectNavigationVersion;
 		ClearSelectionActions(restoreTerminalFocus: false);
 		await FlushCurrentNoteAsync(cancellationToken);
+		if (version != _projectNavigationVersion)
+		{
+			return;
+		}
 		await HideActiveWebPageAsync(cancellationToken);
+		if (version != _projectNavigationVersion || !ViewModel.Workspaces.Contains(screen.Workspace))
+		{
+			return;
+		}
 		ViewModel.SelectProject(screen.Workspace);
 		Present(new PresentedSurface.Project(screen));
 	}
@@ -70,14 +110,21 @@ internal sealed partial class AvaloniaMainShellController
 		string relativePath,
 		CancellationToken cancellationToken)
 	{
+		var version = ++_projectNavigationVersion;
 		var screen = GetOrCreateProjectScreen(workspace);
-		if (!await screen.OpenReviewLogAsync(relativePath, cancellationToken))
+		if (!screen.ContainsReviewLog(relativePath))
 		{
 			return false;
 		}
 
-		await PresentProjectScreenAsync(screen, cancellationToken);
-		return true;
+		// Present the validated intent before reading: a late read must never re-present an old owner.
+		await PresentProjectScreenAsync(screen, cancellationToken, version);
+		if (version != _projectNavigationVersion || !ReferenceEquals(CurrentProjectScreen, screen))
+		{
+			return false;
+		}
+		return await screen.OpenReviewLogAsync(relativePath, cancellationToken)
+			&& ReferenceEquals(CurrentProjectScreen, screen);
 	}
 
 	// Deletion takes the screen the user confirmed it on: while the dialog waits, a review finishing
@@ -135,10 +182,12 @@ internal sealed partial class AvaloniaMainShellController
 		screen = new ProjectScreenViewModel(
 			workspace,
 			GetOrCreateProjectChanges(workspace),
-			new ProjectMarkdownFileStore(),
+			ReviewLogFileStore,
 			relativePath => IsReviewLogInUse(workspace, relativePath),
 			_projectRemarks.GetValueOrDefault(workspace.Id),
-			(relativePath, heading, cancellationToken) => OpenProjectDocumentAsync(workspace.Id, relativePath, heading, cancellationToken));
+			(relativePath, heading, cancellationToken) => OpenProjectDocumentAsync(workspace.Id, relativePath, heading, cancellationToken),
+			ViewModel.GetOrCreateDocsAndNotesWorkspace(workspace.RootPath),
+			workspace.IsGitRepository ? GetOrCreateGitPanel(workspace) : null);
 		_projectScreens[workspace.Id] = screen;
 		WatchWorkspace(workspace);
 		return screen;
@@ -214,7 +263,8 @@ internal sealed partial class AvaloniaMainShellController
 			? workspace.IsGitRepository
 				&& string.Equals(changes!.ProjectRoot, workspace.RootPath, StringComparison.OrdinalIgnoreCase)
 			: !workspace.IsGitRepository;
-		if (current)
+		if (current && (!_projectScreens.TryGetValue(workspace.Id, out var existingScreen)
+			|| string.Equals(existingScreen.Documents?.ProjectRootPath, workspace.RootPath, StringComparison.OrdinalIgnoreCase)))
 		{
 			return;
 		}
@@ -223,11 +273,12 @@ internal sealed partial class AvaloniaMainShellController
 			? shown.SelectedTab
 			: (ProjectScreenTab?)null;
 		DropProject(workspace);
+		_gitPanelViewModels.Remove(workspace.Id);
 		if (shownTab is { } tab)
 		{
 			var screen = GetOrCreateProjectScreen(workspace);
 			Present(new PresentedSurface.Project(screen));
-			_eventTasks.TryRun("project-screen-rebuild", () => screen.SelectTabAsync(tab, CancellationToken.None));
+			_eventTasks.TryRun("project-screen-rebuild", () => OpenProjectScreenAsync(workspace, tab));
 		}
 		else
 		{
@@ -272,7 +323,6 @@ internal sealed partial class AvaloniaMainShellController
 		PresentedSurface.Terminal terminal => FindWorkspace(workspace => workspace.Sessions.Contains(terminal.Session)),
 		PresentedSurface.PausedSession paused => FindWorkspace(workspace => workspace.Sessions.Contains(paused.Session)),
 		PresentedSurface.PausedWebPage paused => FindWorkspace(workspace => workspace.WebPages.Contains(paused.WebPage)),
-		PresentedSurface.Notes notes => FindWorkspace(workspace => workspace.Notes.Contains(notes.Note)),
 		PresentedSurface.Web when ViewModel.SelectedWebPage is { } page =>
 			FindWorkspace(workspace => workspace.WebPages.Contains(page)),
 		_ => null
@@ -287,6 +337,11 @@ internal sealed partial class AvaloniaMainShellController
 	/// </summary>
 	private void ReleaseProjectScreen(WorkspaceViewModel workspace)
 	{
+		_projectNavigationVersion++;
+		if (_projectScreens.TryGetValue(workspace.Id, out var retained))
+		{
+			retained.Deactivate();
+		}
 		if (PresentedSurface is PresentedSurface.Project project
 			&& string.Equals(project.Screen.Workspace.Id, workspace.Id, StringComparison.Ordinal))
 		{
@@ -328,7 +383,10 @@ internal sealed partial class AvaloniaMainShellController
 			remarks.Dispose();
 		}
 
-		_projectScreens.Remove(workspace.Id);
+		if (_projectScreens.Remove(workspace.Id, out var screen))
+		{
+			screen.Deactivate();
+		}
 	}
 
 	private void DisposeProjectScreens()
@@ -347,6 +405,10 @@ internal sealed partial class AvaloniaMainShellController
 
 		_projectRemarks.Clear();
 		_projectChanges.Clear();
+		foreach (var screen in _projectScreens.Values)
+		{
+			screen.Deactivate();
+		}
 		_projectScreens.Clear();
 		foreach (var workspace in _watchedWorkspaces.ToArray())
 		{

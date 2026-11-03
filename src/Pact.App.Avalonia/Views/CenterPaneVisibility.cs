@@ -7,7 +7,6 @@ internal readonly record struct CenterPaneVisibility(
 	bool Terminal,
 	bool TerminalLoading,
 	bool Paused,
-	bool Notes,
 	bool Browser,
 	bool Empty,
 	bool Project = false)
@@ -22,12 +21,11 @@ internal readonly record struct CenterPaneVisibility(
 		ArgumentNullException.ThrowIfNull(surface);
 		return surface switch
 		{
-			PresentedSurface.Terminal { Loading: false } => new(true, false, false, false, false, false),
-			PresentedSurface.Terminal => new(false, true, false, false, false, false),
-			PresentedSurface.PausedSession or PresentedSurface.PausedWebPage => new(false, false, true, false, false, false),
-			PresentedSurface.Notes => new(false, false, false, true, false, false),
-			PresentedSurface.Project => new(false, false, false, false, false, false, true),
-			_ => new(false, false, false, false, hasSelectedWebPage, !hasSelectedWebPage)
+			PresentedSurface.Terminal { Loading: false } => new(true, false, false, false, false),
+			PresentedSurface.Terminal => new(false, true, false, false, false),
+			PresentedSurface.PausedSession or PresentedSurface.PausedWebPage => new(false, false, true, false, false),
+			PresentedSurface.Project => new(false, false, false, false, false, true),
+			_ => new(false, false, false, hasSelectedWebPage, !hasSelectedWebPage)
 		};
 	}
 }

@@ -1,15 +1,36 @@
 using Pact.Core.Git;
 using Pact.Core.Projects;
+using Pact.Core.Reviews;
 using Pact.Infrastructure.Storage;
 using Pact.Presentation.ViewModels;
+using Pact.Presentation.Services.Reviews;
 
 namespace Pact.Presentation.Tests.ViewModels;
 
 public sealed class ProjectScreenViewModelTests : IDisposable
 {
+	[TestCase("https://example.test/group/repo.git", "https://example.test/group/repo")]
+	[TestCase("git@example.test:group/repo.git", "https://example.test/group/repo")]
+	[TestCase("ssh://git@example.test/group/repo.git", "https://example.test/group/repo")]
+	[TestCase("no remote", null)]
+	[TestCase("file:///C:/repo", null)]
+	public void Repository_navigation_accepts_web_and_ssh_remotes_only(string remote, string? expected) =>
+		ProjectScreenViewModel.GetRepositoryWebUrl(remote).ShouldBe(expected);
 	private readonly TemporaryDirectory _root = TemporaryDirectory.Create();
 	private readonly ManualTimeProvider _time = new();
 	private readonly List<ProjectChangesViewModel> _changes = [];
+
+	[Test]
+	public void Active_reviews_keep_multiple_current_project_turns_and_remove_finished_rows()
+	{
+		var screen = Create(git: false);
+		ReviewSummary first = new("one", screen.Workspace.Id, "a", "b", ReviewState.Running, 2, ReviewRole.Author, "one.md", 5);
+		var second = first with { ReviewId = "two", ReviewerSessionId = "c", Turn = ReviewRole.Reviewer };
+		screen.SetActiveReviews([first, second, first with { ReviewId = "other", ProjectId = "other-project" }]);
+		screen.ActiveReviews.ShouldBe([first, second]);
+		screen.SetActiveReviews([second]);
+		screen.ActiveReviews.ShouldHaveSingleItem().ReviewerSessionId.ShouldBe("c");
+	}
 
 	[Test]
 	public async Task Entering_changes_selects_the_first_file_but_returning_keeps_the_users_file()

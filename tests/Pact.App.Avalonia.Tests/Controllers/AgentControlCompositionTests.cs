@@ -22,6 +22,27 @@ namespace Pact.App.Avalonia.Tests.Controllers;
 
 public sealed class AgentControlCompositionTests
 {
+	[Test]
+	public async Task Project_link_tools_use_the_token_owner_and_do_not_open_or_select_web_tabs()
+	{
+		await using CompositionFixture fixture = new(twoProjects: true);
+		await fixture.InitializeAsync();
+		await fixture.StartSessionAsync(CompositionFixture.SessionB);
+		var selected = fixture.ViewModel.SelectedSession;
+		var added = await fixture.InvokeToolAsync(CompositionFixture.SessionA, "pact_add_project_link",
+			new JsonObject { ["title"] = "MR 42", ["url"] = "https://EXAMPLE.COM:443/42", ["kind"] = "merge_request" });
+		added.IsError.ShouldBeFalse(added.Text);
+		var own = await fixture.InvokeToolAsync(CompositionFixture.SessionA, "pact_list_project_links", new JsonObject());
+		var other = await fixture.InvokeToolAsync(CompositionFixture.SessionB, "pact_list_project_links", new JsonObject());
+		own.IsError.ShouldBeFalse(own.Text);
+		other.IsError.ShouldBeFalse(other.Text);
+		JsonNode.Parse(own.Text)!.AsArray().ShouldHaveSingleItem()!["url"]!.GetValue<string>().ShouldBe("https://example.com/42");
+		JsonNode.Parse(other.Text)!.AsArray().ShouldBeEmpty();
+		fixture.ViewModel.Workspaces.Single(project => project.Id == CompositionFixture.ProjectA).Links.ShouldHaveSingleItem().Title.ShouldBe("MR 42");
+		fixture.ViewModel.Workspaces.SelectMany(project => project.WebPages).ShouldBeEmpty();
+		fixture.ViewModel.SelectedSession.ShouldBeSameAs(selected);
+	}
+
 	private static readonly JsonObject PlanReviewArguments = new()
 	{
 		["scenarioId"] = "plan-review",

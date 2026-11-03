@@ -112,6 +112,7 @@ public sealed class MainWindowHeadlessTests
 			new Uri("file:///terminal.html"),
 			TestContext.CurrentContext.CancellationToken);
 		using MainWindow window = new(fixture.Controller);
+		using CenterPaneHost host = new(window);
 		var popover = window.FindControl<SelectionActionsPopover>("SelectionActions").ShouldNotBeNull();
 		fixture.Host.SelectedTextBlocker = CompletedSelection("terminal selected");
 
@@ -133,7 +134,8 @@ public sealed class MainWindowHeadlessTests
 		await fixture.Controller.SelectItemAsync(
 			note,
 			TestContext.CurrentContext.CancellationToken);
-		var notesPane = window.FindControl<NotesPaneView>("NotesPane").ShouldNotBeNull();
+		host.UpdateLayout();
+		var notesPane = window.FindControl<ProjectScreenView>("ProjectScreen").ShouldNotBeNull().DocumentPane;
 		var editor = notesPane.FindControl<SourceEditor>("Editor").ShouldNotBeNull();
 		editor.SelectionStart = 0;
 		editor.SelectionEnd = "note selected".Length;
@@ -207,7 +209,7 @@ public sealed class MainWindowHeadlessTests
 			note,
 			TestContext.CurrentContext.CancellationToken);
 		host.UpdateLayout();
-		var notesPane = mainWindow.FindControl<NotesPaneView>("NotesPane").ShouldNotBeNull();
+		var notesPane = mainWindow.FindControl<ProjectScreenView>("ProjectScreen").ShouldNotBeNull().DocumentPane;
 		var editor = notesPane.FindControl<SourceEditor>("Editor").ShouldNotBeNull();
 		Point editorPoint = new(40, 30);
 		editor.SelectionStart = 0;
@@ -266,7 +268,7 @@ public sealed class MainWindowHeadlessTests
 			note,
 			TestContext.CurrentContext.CancellationToken);
 		host.UpdateLayout();
-		var notesPane = mainWindow.FindControl<NotesPaneView>("NotesPane").ShouldNotBeNull();
+		var notesPane = mainWindow.FindControl<ProjectScreenView>("ProjectScreen").ShouldNotBeNull().DocumentPane;
 		var editor = notesPane.FindControl<SourceEditor>("Editor").ShouldNotBeNull();
 		var popover =
 			mainWindow.FindControl<SelectionActionsPopover>("SelectionActions").ShouldNotBeNull();

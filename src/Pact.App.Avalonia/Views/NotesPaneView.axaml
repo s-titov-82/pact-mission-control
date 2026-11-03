@@ -7,6 +7,7 @@
     <Border Padding="10,8" BorderBrush="{StaticResource AppPanelBorderBrush}" BorderThickness="0,0,0,1">
       <Grid ColumnDefinitions="*,Auto">
         <StackPanel Orientation="Horizontal" Spacing="6">
+          <TextBlock x:Name="SectionTitle" VerticalAlignment="Center" FontWeight="SemiBold" IsVisible="False" />
           <ToggleButton x:Name="NotesTab" Height="32" Content="Notes" Click="OnNotesTabClicked" />
           <ToggleButton x:Name="DocsTab" Height="32" Content="Docs" Click="OnDocsTabClicked" />        </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="0">

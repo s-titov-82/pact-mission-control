@@ -6,17 +6,47 @@ namespace Pact.Presentation.Tests.Services;
 
 public sealed class ProjectNoteDocumentTests
 {
+	[TestCase(false)]
+	[TestCase(true)]
+	public async Task Older_initial_read_cannot_replace_a_newer_edited_or_saved_notes_buffer(bool saveBeforeOldRead)
+	{
+		TaskCompletionSource<string> first = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		TaskCompletionSource<string> second = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		var reads = 0;
+		FakeNotesStore store = new() { LoadHandler = () => ++reads == 1 ? first.Task : second.Task };
+		ProjectNoteDocument document = new(store, @"D:\proj", TimeSpan.FromHours(1));
+		var oldLoad = document.LoadAsync(CancellationToken.None);
+		var currentLoad = document.LoadAsync(CancellationToken.None);
+		reads.ShouldBe(2);
+		second.SetResult("newer disk");
+		await currentLoad;
+		document.SetText("visible edit");
+		if (saveBeforeOldRead)
+		{
+			await document.FlushAsync(CancellationToken.None);
+		}
+
+		first.SetResult("obsolete disk");
+		await oldLoad;
+
+		document.Text.ShouldBe("visible edit");
+		document.SaveStatus.State.ShouldBe(saveBeforeOldRead ? DocumentSaveState.Clean : DocumentSaveState.Dirty);
+		await document.FlushAsync(CancellationToken.None);
+		store.Saved.ShouldBe("visible edit");
+	}
+
 	private sealed class FakeNotesStore : IProjectNotesStore
 	{
 		public string Saved = string.Empty;
 		public int SaveCount;
 		public string InitialContent = string.Empty;
 		public bool FailNextSave;
+		public Func<Task<string>>? LoadHandler { get; init; }
 		public (TaskCompletionSource Started, TaskCompletionSource Release)? BlockingSave;
 		public List<string> Appended = [];
 		public TaskCompletionSource SaveObserved { get; } =
 			new(TaskCreationOptions.RunContinuationsAsynchronously);
-		public Task<string> LoadAsync(string projectRootPath, CancellationToken ct) => Task.FromResult(InitialContent);
+		public Task<string> LoadAsync(string projectRootPath, CancellationToken ct) => LoadHandler?.Invoke() ?? Task.FromResult(InitialContent);
 		public async Task SaveAsync(string projectRootPath, string text, CancellationToken ct)
 		{
 			if (FailNextSave)

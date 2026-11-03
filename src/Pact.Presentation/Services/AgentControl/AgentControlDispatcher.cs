@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Pact.Core.AgentControl;
 using Pact.Core.Sessions;
+using Pact.Core.Projects;
 
 namespace Pact.Presentation.Services.AgentControl;
 
@@ -28,6 +29,65 @@ public sealed record AgentControlResult(
 /// <summary>Validates agent requests and delegates accepted actions to their shell owner.</summary>
 public sealed class AgentControlDispatcher
 {
+	/// <summary>Adds a durable resource under the calling session's project.</summary>
+	public async Task<AgentControlResult> AddProjectLinkAsync(string sessionId, string title, string url, string? kind, CancellationToken cancellationToken)
+	{
+		if (!_host.TryGetOwner(sessionId, out var owner))
+		{
+			return UnknownSession();
+		}
+
+		var failure = AgentControlRequestValidator.ValidateProjectNotesOwner(owner);
+		if (failure is not null)
+		{
+			return AgentControlResult.Refused(failure);
+		}
+
+		try
+		{
+			var link = ProjectLinkRules.Create(title, url, kind, DateTimeOffset.UtcNow);
+			var saved = await _host.AddProjectLinkAsync(owner.ProjectId!, link.Title, link.Url, link.Kind, cancellationToken).ConfigureAwait(false);
+			return AgentControlResult.Ok(Serialize(saved));
+		}
+		catch (ArgumentException exception)
+		{
+			return AgentControlResult.Refused("invalid-argument", exception.Message);
+		}
+		catch (KeyNotFoundException exception)
+		{
+			return AgentControlResult.Refused("unknown-project", exception.Message);
+		}
+		catch (InvalidOperationException exception)
+		{
+			return AgentControlResult.Refused("link-limit", exception.Message);
+		}
+	}
+
+	/// <summary>Lists durable resources of the calling session's project.</summary>
+	public async Task<AgentControlResult> ListProjectLinksAsync(string sessionId, CancellationToken cancellationToken)
+	{
+		if (!_host.TryGetOwner(sessionId, out var owner))
+		{
+			return UnknownSession();
+		}
+
+		var failure = AgentControlRequestValidator.ValidateProjectNotesOwner(owner);
+		if (failure is not null)
+		{
+			return AgentControlResult.Refused(failure);
+		}
+
+		try
+		{
+			var links = await _host.ListProjectLinksAsync(owner.ProjectId!, cancellationToken).ConfigureAwait(false);
+			return AgentControlResult.Ok(Serialize(links));
+		}
+		catch (KeyNotFoundException exception)
+		{
+			return AgentControlResult.Refused("unknown-project", exception.Message);
+		}
+	}
+
 	private static readonly JsonSerializerOptions JsonOptions = new()
 	{
 		PropertyNamingPolicy = JsonNamingPolicy.CamelCase

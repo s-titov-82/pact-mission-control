@@ -13,6 +13,30 @@ namespace Pact.Presentation.Tests.Services.AgentControl;
 public sealed class SessionToolsTests
 {
 	[Test]
+	public async Task Project_link_tools_save_and_list_the_callers_resources()
+	{
+		var tools = CreateTools();
+		var added = await tools.InvokeAsync(new AgentControlToolCall("session-project", false, "pact_add_project_link",
+			new JsonObject { ["title"] = "Build", ["url"] = "https://example.com/job" }), CancellationToken.None);
+		added.IsError.ShouldBeFalse(added.Text);
+		var listed = await tools.InvokeAsync(new AgentControlToolCall("session-project", false, "pact_list_project_links", new JsonObject()), CancellationToken.None);
+		listed.IsError.ShouldBeFalse(listed.Text);
+		var link = JsonNode.Parse(listed.Text)!.AsArray().ShouldHaveSingleItem();
+		((string?)link!["title"]).ShouldBe("Build");
+		((string?)link["url"]).ShouldBe("https://example.com/job");
+		((string?)link["kind"]).ShouldBe("other");
+	}
+
+	[Test]
+	public void Project_link_schema_requires_title_and_url_and_limits_kind()
+	{
+		var tool = FindTool(CreateTools(), "pact_add_project_link");
+		tool["inputSchema"]!["required"]!.AsArray().Select(node => (string?)node).ShouldBe(["title", "url"]);
+		tool["inputSchema"]!["properties"]!["kind"]!["enum"]!.AsArray().Select(node => (string?)node)
+			.ShouldBe(["ci", "merge_request", "issue", "other"]);
+	}
+
+	[Test]
 	public void BuildToolsList_lists_every_session_tool()
 	{
 		var result = CreateTools().BuildToolsList();
@@ -29,6 +53,8 @@ public sealed class SessionToolsTests
 					"pact_replace_notes",
 					"pact_open_document",
 					"pact_add_file_link",
+					"pact_add_project_link",
+					"pact_list_project_links",
 					"pact_get_subscription_usage",
 					"pact_reply_remark",
 					"pact_list_remarks"

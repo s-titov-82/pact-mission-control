@@ -35,7 +35,6 @@ public sealed class CenterPaneVisibilityTests
 		yield return Row(new PresentedSurface.Terminal(Session, Loading: true, FocusWhenLoaded: true), false, Expect(terminalLoading: true)).SetName("Terminal loading");
 		yield return Row(new PresentedSurface.PausedSession(Session), false, Expect(paused: true)).SetName("Paused session");
 		yield return Row(new PresentedSurface.PausedWebPage(WebPage), true, Expect(paused: true)).SetName("Paused web page");
-		yield return Row(new PresentedSurface.Notes(null!, null!, null!), false, Expect(notes: true)).SetName("Notes");
 		yield return Row(new PresentedSurface.Project(null!), true, Expect(project: true)).SetName("Project screen");
 		yield return Row(new PresentedSurface.Web(), true, Expect(browser: true)).SetName("Web with a page");
 		yield return Row(new PresentedSurface.Web(), false, Expect(empty: true)).SetName("Web without a page");
@@ -61,9 +60,8 @@ public sealed class CenterPaneVisibilityTests
 		bool terminal = false,
 		bool terminalLoading = false,
 		bool paused = false,
-		bool notes = false,
 		bool browser = false,
 		bool empty = false,
 		bool project = false) =>
-		new(terminal, terminalLoading, paused, notes, browser, empty, project);
+		new(terminal, terminalLoading, paused, browser, empty, project);
 }

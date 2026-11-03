@@ -1,5 +1,7 @@
 using System.ComponentModel;
 using Pact.Core.Projects;
+using Pact.Core.Platform;
+using Pact.Presentation.Services.Reviews;
 
 namespace Pact.Presentation.ViewModels;
 
@@ -8,6 +10,9 @@ public enum ProjectScreenTab
 {
 	/// <summary>Project name, root and branch; the future dashboard.</summary>
 	Overview,
+
+	/// <summary>Project Markdown documents with their retained editor and preview.</summary>
+	Docs,
 
 	/// <summary>Uncommitted changes, for git repositories only.</summary>
 	Changes,
@@ -41,6 +46,7 @@ public sealed class ProjectScreenViewModel : INotifyPropertyChanged
 	private readonly Func<string, string?, CancellationToken, Task<bool>> _openDocument;
 	private readonly Func<string, bool> _isLogInUse;
 	private int _logVersion;
+	private int _tabVersion;
 
 	/// <summary>Creates the screen of one project; <paramref name="changes"/> is null outside git.</summary>
 	/// <param name="workspace">The project.</param>
@@ -49,14 +55,20 @@ public sealed class ProjectScreenViewModel : INotifyPropertyChanged
 	/// <param name="isLogInUse">Whether a running review writes the log at a project-relative path.</param>
 	/// <param name="remarks">The remark threads of the Changes tab; null outside git.</param>
 	/// <param name="openDocument">Shows a project Markdown file in the Docs pane, for links in logs and rendered files.</param>
+	/// <param name="documents">The project's retained document owner, shared with Notes operations.</param>
+	/// <param name="repository">The existing Git panel also supplies the repository address.</param>
 	public ProjectScreenViewModel(
 		WorkspaceViewModel workspace,
 		ProjectChangesViewModel? changes,
 		IProjectMarkdownFileStore fileStore,
 		Func<string, bool>? isLogInUse = null,
 		ChangesRemarksViewModel? remarks = null,
-		Func<string, string?, CancellationToken, Task<bool>>? openDocument = null)
+		Func<string, string?, CancellationToken, Task<bool>>? openDocument = null,
+		DocsAndNotesWorkspaceViewModel? documents = null,
+		GitPanelViewModel? repository = null)
 	{
+		Repository = repository;
+		Documents = documents;
 		Remarks = remarks;
 		_openDocument = openDocument ?? (static (_, _, _) => Task.FromResult(false));
 		Workspace = workspace ?? throw new ArgumentNullException(nameof(workspace));
@@ -71,6 +83,71 @@ public sealed class ProjectScreenViewModel : INotifyPropertyChanged
 
 	/// <summary>The project this screen shows.</summary>
 	public WorkspaceViewModel Workspace { get; }
+
+	/// <summary>The retained Notes and Markdown documents shared with project MCP operations.</summary>
+	public DocsAndNotesWorkspaceViewModel? Documents { get; }
+
+	/// <summary>Invalidates pending tab and log publication when this retained screen leaves its owner surface.</summary>
+	public void Deactivate()
+	{
+		_tabVersion++;
+		_logVersion++;
+		Documents?.Deactivate();
+	}
+
+	/// <summary>The existing project Git information, or null outside Git.</summary>
+	public GitPanelViewModel? Repository { get; }
+
+	/// <summary>Returns a browser address for HTTP(S), SSH or SCP Git remotes; local/unknown remotes have no web target.</summary>
+	public static string? GetRepositoryWebUrl(string remote)
+	{
+		ArgumentNullException.ThrowIfNull(remote);
+		if (!Uri.TryCreate(remote, UriKind.Absolute, out var uri))
+		{
+			var at = remote.IndexOf('@', StringComparison.Ordinal);
+			var colon = remote.IndexOf(':', at + 1);
+			if (at < 0 || colon <= at + 1
+				|| !Uri.TryCreate("https://" + remote[(at + 1)..colon] + "/" + remote[(colon + 1)..], UriKind.Absolute, out uri))
+			{
+				return null;
+			}
+		}
+		if (uri.Scheme is not ("http" or "https" or "ssh"))
+		{
+			return null;
+		}
+		UriBuilder web = new(uri) { UserName = string.Empty, Password = string.Empty };
+		if (uri.Scheme == "ssh")
+		{
+			web.Scheme = "https";
+			web.Port = -1;
+		}
+		if (web.Path.EndsWith(".git", StringComparison.OrdinalIgnoreCase))
+		{
+			web.Path = web.Path[..^4];
+		}
+		return web.Uri.AbsoluteUri;
+	}
+
+	/// <summary>The shared discovery result, never project-specific launch state.</summary>
+	public IReadOnlyList<InstalledIde> InstalledIdes { get; private set; } = [];
+
+	/// <summary>The live relay reviews of this project.</summary>
+	public IReadOnlyList<ReviewSummary> ActiveReviews { get; private set; } = [];
+
+	/// <summary>Publishes a shared completed discovery without changing project selection.</summary>
+	public void SetInstalledIdes(IReadOnlyList<InstalledIde> installations)
+	{
+		InstalledIdes = installations;
+		Raise(nameof(InstalledIdes));
+	}
+
+	/// <summary>Projects the existing relay state, excluding completed and other-project reviews.</summary>
+	public void SetActiveReviews(IReadOnlyList<ReviewSummary> reviews)
+	{
+		ActiveReviews = reviews.Where(review => review.ProjectId == Workspace.Id).ToArray();
+		Raise(nameof(ActiveReviews));
+	}
 
 	/// <summary>The project's change list, or <see langword="null"/> outside git.</summary>
 	public ProjectChangesViewModel? Changes { get; }
@@ -121,13 +198,37 @@ public sealed class ProjectScreenViewModel : INotifyPropertyChanged
 	/// Review logs re-lists the logs and re-reads the
 	/// open one, or opens the newest when none is selected.
 	/// </summary>
-	public async Task SelectTabAsync(ProjectScreenTab tab, CancellationToken cancellationToken)
+	/// <returns>Whether the tab and its document selection remained current through loading.</returns>
+	public async Task<bool> SelectTabAsync(ProjectScreenTab tab, CancellationToken cancellationToken)
 	{
 		if (tab == ProjectScreenTab.Changes && Changes is null)
 		{
-			return;
+			return false;
 		}
 
+		var version = ++_tabVersion;
+		_logVersion++;
+		TabNavigationRequested?.Invoke(this, EventArgs.Empty);
+		if (Documents is { } documents)
+		{
+			if (tab is ProjectScreenTab.Overview or ProjectScreenTab.Docs)
+			{
+				if (!await documents.SelectSectionAsync(tab == ProjectScreenTab.Overview
+					? DocsAndNotesSection.Notes : DocsAndNotesSection.Docs, cancellationToken))
+				{
+					return false;
+				}
+			}
+			else
+			{
+				documents.Deactivate();
+				await documents.FlushAsync(cancellationToken);
+			}
+		}
+		if (version != _tabVersion)
+		{
+			return false;
+		}
 		SetTab(tab);
 		if (Changes is { } changes)
 		{
@@ -141,7 +242,11 @@ public sealed class ProjectScreenViewModel : INotifyPropertyChanged
 				: ReviewLogs.Count > 0 ? ReviewLogs[0] : null;
 			await SelectReviewLogAsync(log, cancellationToken).ConfigureAwait(true);
 		}
+		return version == _tabVersion;
 	}
+
+	/// <summary>Announces an accepted tab request synchronously, before its document or log I/O.</summary>
+	public event EventHandler? TabNavigationRequested;
 
 	/// <summary>
 	/// Shows one log's text, or clears it for <see langword="null"/>. Of several picks in flight,
@@ -193,6 +298,13 @@ public sealed class ProjectScreenViewModel : INotifyPropertyChanged
 		}
 	}
 
+	/// <summary>Refreshes the log catalog and checks a target without changing the selected tab.</summary>
+	public bool ContainsReviewLog(string relativePath)
+	{
+		RefreshReviewLogs();
+		return ReviewLogs.Contains(relativePath, StringComparer.OrdinalIgnoreCase);
+	}
+
 	/// <summary>Switches to Review logs and shows the given log.</summary>
 	/// <returns><see langword="false"/> when the log is not in the folder; nothing changes then.</returns>
 	public async Task<bool> OpenReviewLogAsync(string relativePath, CancellationToken cancellationToken)
@@ -205,13 +317,23 @@ public sealed class ProjectScreenViewModel : INotifyPropertyChanged
 			return false;
 		}
 
+		var version = ++_tabVersion;
+		if (Documents is { } documents)
+		{
+			documents.Deactivate();
+			await documents.FlushAsync(cancellationToken);
+		}
+		if (version != _tabVersion)
+		{
+			return false;
+		}
 		SetTab(ProjectScreenTab.ReviewLogs);
 		if (Changes is { } changes)
 		{
 			await changes.SetAutoSelectFirstFileAsync(false, cancellationToken).ConfigureAwait(true);
 		}
 		await SelectReviewLogAsync(match, cancellationToken).ConfigureAwait(true);
-		return true;
+		return version == _tabVersion;
 	}
 
 	/// <summary>

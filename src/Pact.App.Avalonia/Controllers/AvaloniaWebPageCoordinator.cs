@@ -98,17 +98,26 @@ internal sealed class AvaloniaWebPageCoordinator : IDisposable
 	/// </summary>
 	public async Task PresentAsync(
 		WebPageViewModel page,
-		CancellationToken cancellationToken)
+		CancellationToken cancellationToken,
+		Func<bool>? isCurrent = null)
 	{
 		ArgumentNullException.ThrowIfNull(page);
 
 		await _lifecycleGate.WaitAsync(cancellationToken);
 		try
 		{
+			if (isCurrent?.Invoke() == false)
+			{
+				return;
+			}
 			if (_activeHost is not null)
 			{
 				await _activeHost.HideAsync(cancellationToken);
 				_activeHost = null;
+			}
+			if (isCurrent?.Invoke() == false)
+			{
+				return;
 			}
 
 			var isNew = !_hosts.ContainsKey(page.Record.Id);
@@ -118,13 +127,28 @@ internal sealed class AvaloniaWebPageCoordinator : IDisposable
 				return;
 			}
 
-			_activeHost = host;
-			await host.ShowAsync(cancellationToken);
+			var shouldShow = isCurrent?.Invoke() != false;
+			if (shouldShow)
+			{
+				_activeHost = host;
+				await host.ShowAsync(cancellationToken);
+			}
+			// Initialize even a superseded new host in the background, so later reuse has
+			// its saved address. Current pages retain show-before-navigate for native layout.
 			if (isNew)
 			{
 				await host.NavigateAsync(
 					new Uri(page.Record.ResumeUrl),
 					cancellationToken);
+			}
+			if (isCurrent?.Invoke() == false)
+			{
+				if (shouldShow)
+				{
+					await host.HideAsync(cancellationToken);
+					_activeHost = null;
+				}
+				return;
 			}
 			await host.FocusAsync(cancellationToken);
 		}

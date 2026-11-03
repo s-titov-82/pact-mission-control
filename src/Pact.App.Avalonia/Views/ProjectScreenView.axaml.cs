@@ -49,6 +49,7 @@ internal sealed partial class ProjectScreenView : UserControl
 	public ProjectScreenView()
 	{
 		InitializeComponent();
+		DocumentsPane.HideSectionTabs();
 		DiffEditor.Options.LineHeightFactor = DiffLineHeightFactor;
 		DiffEditor.TextArea.LeftMargins.Insert(0, _diffNumbers);
 		DiffEditor.TextArea.LeftMargins.Insert(1, _remarkMargin);
@@ -115,6 +116,8 @@ internal sealed partial class ProjectScreenView : UserControl
 		RenderedView.ConfigureLifecycle(eventTasks);
 	}
 
+	internal NotesPaneView DocumentPane => DocumentsPane;
+
 	private void Attach(ProjectScreenViewModel? screen)
 	{
 		if (ReferenceEquals(screen, _screen))
@@ -126,6 +129,8 @@ internal sealed partial class ProjectScreenView : UserControl
 		_changes?.PropertyChanged -= OnChangesPropertyChanged;
 		_remarks?.PropertyChanged -= OnRemarksPropertyChanged;
 		_screen = screen;
+		DocumentsPane.Workspace = screen?.Documents;
+		RefreshOverviewActions();
 		_changes = screen?.Changes;
 		_remarks = screen?.Remarks;
 		_screen?.PropertyChanged += OnScreenPropertyChanged;
@@ -150,6 +155,10 @@ internal sealed partial class ProjectScreenView : UserControl
 
 	private void OnScreenPropertyChanged(object? sender, PropertyChangedEventArgs e)
 	{
+		if (e.PropertyName is nameof(ProjectScreenViewModel.InstalledIdes) or nameof(ProjectScreenViewModel.ActiveReviews))
+		{
+			RefreshOverviewActions();
+		}
 		if (e.PropertyName == nameof(ProjectScreenViewModel.SelectedTab))
 		{
 			RefreshTab();
@@ -195,9 +204,13 @@ internal sealed partial class ProjectScreenView : UserControl
 	{
 		var tab = _screen?.SelectedTab ?? ProjectScreenTab.Overview;
 		OverviewTab.IsChecked = tab == ProjectScreenTab.Overview;
+		DocsTab.IsChecked = tab == ProjectScreenTab.Docs;
 		ChangesTab.IsChecked = tab == ProjectScreenTab.Changes;
 		ReviewLogsTab.IsChecked = tab == ProjectScreenTab.ReviewLogs;
 		OverviewPanel.IsVisible = tab == ProjectScreenTab.Overview;
+		DocumentsPanel.IsVisible = tab is ProjectScreenTab.Overview or ProjectScreenTab.Docs;
+		DocumentsPanel.RowDefinitions[0].Height = tab == ProjectScreenTab.Overview
+			? new GridLength(1, GridUnitType.Star) : new GridLength(0);
 		ChangesPanel.IsVisible = tab == ProjectScreenTab.Changes;
 		ReviewLogsPanel.IsVisible = tab == ProjectScreenTab.ReviewLogs;
 	}
@@ -563,6 +576,8 @@ internal sealed partial class ProjectScreenView : UserControl
 	}
 
 	private void OnOverviewTabClicked(object? sender, RoutedEventArgs e) => SelectTab(ProjectScreenTab.Overview);
+
+	private void OnDocsTabClicked(object? sender, RoutedEventArgs e) => SelectTab(ProjectScreenTab.Docs);
 
 	private void OnChangesTabClicked(object? sender, RoutedEventArgs e) => SelectTab(ProjectScreenTab.Changes);
 

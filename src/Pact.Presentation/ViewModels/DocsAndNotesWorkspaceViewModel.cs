@@ -97,6 +97,14 @@ public sealed class DocsAndNotesWorkspaceViewModel : INotifyPropertyChanged
 	private readonly Dictionary<DocsAndNotesSection, string> _lastSelectedPaths = [];
 	private readonly HashSet<string> _expandedFolders = new(StringComparer.OrdinalIgnoreCase);
 	private readonly HashSet<DocsAndNotesSection> _visitedSections = [];
+	private int _selectionVersion;
+
+	/// <summary>Invalidates pending navigation when its owning surface is left or paused; buffers remain retained.</summary>
+	public void Deactivate()
+	{
+		_selectionVersion++;
+		DropRequestedHeading();
+	}
 
 	/// <summary>Creates a Docs &amp; Notes workspace for one project root.</summary>
 	public DocsAndNotesWorkspaceViewModel(
@@ -175,6 +183,10 @@ public sealed class DocsAndNotesWorkspaceViewModel : INotifyPropertyChanged
 	/// </summary>
 	public ProjectNoteDocument NotesDocument { get; }
 
+	/// <summary>The active Markdown file, even while a folder is selected in the tree.</summary>
+	public string? SelectedDocumentPath => SelectedSection == DocsAndNotesSection.Docs
+		? _lastSelectedPaths.GetValueOrDefault(DocsAndNotesSection.Docs) : null;
+
 	/// <summary>Persistence state of the active editor document.</summary>
 	public DocumentSaveStatus SaveStatus => ActiveDocument?.SaveStatus ?? CleanSaveStatus;
 
@@ -199,26 +211,40 @@ public sealed class DocsAndNotesWorkspaceViewModel : INotifyPropertyChanged
 	public bool ShowsDocumentTree => SelectedSection is not DocsAndNotesSection.Notes;
 
 	/// <summary>Refreshes discovery while retaining document buffers, expansion, and selection.</summary>
-	public async Task RefreshAsync(CancellationToken cancellationToken)
+	public Task RefreshAsync(CancellationToken cancellationToken) =>
+		RefreshCoreAsync(++_selectionVersion, cancellationToken);
+
+	private async Task RefreshCoreAsync(int version, CancellationToken cancellationToken)
 	{
 		var catalog = ProjectMarkdownCatalog.Scan(ProjectRootPath);
 		DocsTree = BuildNodes(MarkdownTreeNode.Build(catalog.All));
 		await NotesDocument.LoadAsync(cancellationToken);
-		await ActivateSelectedSectionAsync(cancellationToken);
+		if (version != _selectionVersion)
+		{
+			return;
+		}
+		await ActivateSelectedSectionAsync(version, cancellationToken);
 		OnPropertyChanged(nameof(DocsTree));
 		OnPropertyChanged(nameof(VisibleTree));
 		OnPropertyChanged(nameof(ShowsDocumentTree));
 	}
 
 	/// <summary>Selects a primary tab and activates its remembered or default document.</summary>
-	public async Task SelectSectionAsync(
+	/// <returns>Whether this selection remained current through loading.</returns>
+	public async Task<bool> SelectSectionAsync(
 		DocsAndNotesSection section,
 		CancellationToken cancellationToken)
 	{
+		var version = ++_selectionVersion;
 		await FlushActiveAsync(cancellationToken);
+		if (version != _selectionVersion)
+		{
+			return false;
+		}
 		DropRequestedHeading();
 		SelectedSection = section;
-		await ActivateSelectedSectionAsync(cancellationToken);
+		await ActivateSelectedSectionAsync(version, cancellationToken);
+		return version == _selectionVersion;
 	}
 
 	/// <summary>
@@ -242,6 +268,7 @@ public sealed class DocsAndNotesWorkspaceViewModel : INotifyPropertyChanged
 		// The tree has already moved its selection, so record it before any awaited
 		// work: a slow flush must not leave the two divergent, and a failing flush
 		// must not leave them divergent permanently.
+		var version = ++_selectionVersion;
 		SelectedNode = node;
 		if (node.IsFolder)
 		{
@@ -250,7 +277,11 @@ public sealed class DocsAndNotesWorkspaceViewModel : INotifyPropertyChanged
 
 		DropRequestedHeading();
 		await FlushActiveAsync(cancellationToken);
-		await ActivateAsync(node, cancellationToken);
+		if (version != _selectionVersion)
+		{
+			return;
+		}
+		await ActivateAsync(node, version, cancellationToken);
 	}
 
 	/// <summary>
@@ -261,11 +292,16 @@ public sealed class DocsAndNotesWorkspaceViewModel : INotifyPropertyChanged
 	public async Task<bool> OpenDocumentAsync(string relativePath, CancellationToken cancellationToken, string? heading = null)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(relativePath);
+		var version = ++_selectionVersion;
 		const DocsAndNotesSection section = DocsAndNotesSection.Docs;
 		var node = FindDocument(DocsTree, relativePath);
 		if (node is null)
 		{
-			await RefreshAsync(cancellationToken);
+			await RefreshCoreAsync(version, cancellationToken);
+			if (version != _selectionVersion)
+			{
+				return false;
+			}
 			node = FindDocument(DocsTree, relativePath);
 			if (node is null)
 			{
@@ -274,9 +310,18 @@ public sealed class DocsAndNotesWorkspaceViewModel : INotifyPropertyChanged
 		}
 
 		await FlushActiveAsync(cancellationToken);
+		if (version != _selectionVersion)
+		{
+			return false;
+		}
+		DropRequestedHeading();
 		SelectedSection = section;
 		_visitedSections.Add(section);
-		await ActivateAsync(node, cancellationToken);
+		await ActivateAsync(node, version, cancellationToken);
+		if (version != _selectionVersion)
+		{
+			return false;
+		}
 		if (!string.IsNullOrEmpty(heading))
 		{
 			RequestedHeading = heading;
@@ -419,7 +464,7 @@ public sealed class DocsAndNotesWorkspaceViewModel : INotifyPropertyChanged
 		return created;
 	}
 
-	private async Task ActivateSelectedSectionAsync(CancellationToken cancellationToken)
+	private async Task ActivateSelectedSectionAsync(int version, CancellationToken cancellationToken)
 	{
 		switch (SelectedSection)
 		{
@@ -428,7 +473,7 @@ public sealed class DocsAndNotesWorkspaceViewModel : INotifyPropertyChanged
 				ActiveDocument = NotesDocument;
 				break;
 			case DocsAndNotesSection.Docs:
-				await ActivateSectionAsync(DocsTree, "README.md", cancellationToken);
+				await ActivateSectionAsync(DocsTree, "README.md", version, cancellationToken);
 				break;
 		}
 	}
@@ -436,6 +481,7 @@ public sealed class DocsAndNotesWorkspaceViewModel : INotifyPropertyChanged
 	private async Task ActivateSectionAsync(
 		IReadOnlyList<MarkdownTreeNodeViewModel> tree,
 		string? defaultRelativePath,
+		int version,
 		CancellationToken cancellationToken)
 	{
 		var firstVisit = _visitedSections.Add(SelectedSection);
@@ -449,7 +495,7 @@ public sealed class DocsAndNotesWorkspaceViewModel : INotifyPropertyChanged
 			return;
 		}
 
-		await ActivateAsync(target, cancellationToken);
+		await ActivateAsync(target, version, cancellationToken);
 	}
 
 	private static bool ContainsNode(
@@ -481,13 +527,18 @@ public sealed class DocsAndNotesWorkspaceViewModel : INotifyPropertyChanged
 
 	private async Task ActivateAsync(
 		MarkdownTreeNodeViewModel node,
+		int version,
 		CancellationToken cancellationToken)
 	{
 		SelectedNode = node;
 		_lastSelectedPaths[SelectedSection] = node.RelativePath;
 		ExpandAncestors(VisibleTree, node.RelativePath);
 		await node.Document!.LoadAsync(cancellationToken);
-		ActiveDocument = node.Document;
+		if (version == _selectionVersion)
+		{
+			ActiveDocument = node.Document;
+			OnPropertyChanged(nameof(SelectedDocumentPath));
+		}
 	}
 
 	private static void ExpandAncestors(

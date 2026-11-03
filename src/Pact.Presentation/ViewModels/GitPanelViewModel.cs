@@ -517,6 +517,7 @@ public sealed class GitPanelViewModel : INotifyPropertyChanged
 		OnPropertyChanged(nameof(ShowStashButton));
 		NotifyPopupButtonStates();
 		SetBranchText(string.Empty);
+		SetRemoteText(string.Empty);
 		SetAheadBehindText(string.Empty);
 		SetSummaryText(string.Empty);
 		SetHasConflicts(false);

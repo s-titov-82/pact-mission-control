@@ -6,6 +6,24 @@ namespace Pact.App.Avalonia.Tests.Controllers;
 public sealed class SessionRestorationCheckpointTests
 {
 	[Test]
+	public async Task Project_tab_and_document_changes_publish_distinct_checkpoints()
+	{
+		var options = new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web);
+		var first = System.Text.Json.JsonSerializer.Deserialize<SoftRestartSelection>(
+			"""{"projectId":"p","itemId":null,"projectScreenTab":"Docs","markdownRelativePath":"a.md"}""", options);
+		var second = System.Text.Json.JsonSerializer.Deserialize<SoftRestartSelection>(
+			"""{"projectId":"p","itemId":null,"projectScreenTab":"Docs","markdownRelativePath":"b.md"}""", options);
+		SessionRestorationState current = new([], [], [], first, false);
+		List<SessionRestorationState> saved = [];
+		SessionRestorationCheckpoint checkpoint = new(() => current,
+			state => { saved.Add(state); return Task.CompletedTask; }, exception => throw exception);
+		checkpoint.Start();
+		current = current with { Selection = second };
+		checkpoint.Publish();
+		await checkpoint.FreezeAsync();
+		saved.Count.ShouldBe(2);
+	}
+	[Test]
 	public async Task Shutdown_freezes_the_final_projection_and_waits_for_earlier_writes()
 	{
 		SessionRestorationState current = new(["first"], [], [], new(null, "first"), false);

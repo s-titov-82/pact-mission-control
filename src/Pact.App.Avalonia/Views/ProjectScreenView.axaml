@@ -4,23 +4,97 @@
              xmlns:editing="clr-namespace:Pact.App.Avalonia.Views.Editing"
              xmlns:remarks="clr-namespace:Pact.App.Avalonia.Views.Remarks"
              xmlns:diff="clr-namespace:Pact.App.Avalonia.Views.Diff"
+			 xmlns:views="clr-namespace:Pact.App.Avalonia.Views"
              x:Class="Pact.App.Avalonia.Views.ProjectScreenView"
              x:CompileBindings="False">
+  <UserControl.Styles>
+    <Style Selector="Button.overview-inline">
+      <Setter Property="Width" Value="18" />
+      <Setter Property="Height" Value="18" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="VerticalAlignment" Value="Bottom" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="SelectableTextBlock.overview-detail, TextBlock.overview-detail">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="LineHeight" Value="20" />
+      <Setter Property="Foreground" Value="{DynamicResource AppTextMutedBrush}" />
+      <Setter Property="VerticalAlignment" Value="Bottom" />
+    </Style>
+    <Style Selector="Button.overview-ide">
+      <Setter Property="Width" Value="36" />
+      <Setter Property="Height" Value="36" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Padding" Value="4" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+  </UserControl.Styles>
   <Grid RowDefinitions="Auto,*" Background="{DynamicResource AppPaneBackgroundBrush}">
     <Border Padding="10,8" BorderBrush="{StaticResource AppPanelBorderBrush}" BorderThickness="0,0,0,1">
       <StackPanel Orientation="Horizontal" Spacing="6">
         <ToggleButton x:Name="OverviewTab" Height="32" Content="Overview" Click="OnOverviewTabClicked" />
+        <ToggleButton x:Name="DocsTab" Height="32" Content="Docs" Click="OnDocsTabClicked" />
         <ToggleButton x:Name="ChangesTab" Height="32" Click="OnChangesTabClicked"
                       Content="{Binding Changes.TabHeader}" IsVisible="{Binding HasChanges}" />
         <ToggleButton x:Name="ReviewLogsTab" Height="32" Content="Review logs" Click="OnReviewLogsTabClicked" />
       </StackPanel>
     </Border>
 
-    <StackPanel x:Name="OverviewPanel" Grid.Row="1" Margin="20,18" Spacing="6">
-      <TextBlock FontSize="20" FontWeight="SemiBold" Text="{Binding Name}" />
-      <SelectableTextBlock Foreground="{DynamicResource AppTextMutedBrush}" Text="{Binding RootPath}" />
-      <TextBlock Text="{Binding Branch}" IsVisible="{Binding HasChanges}" />
-    </StackPanel>
+    <Grid x:Name="DocumentsPanel" Grid.Row="1" RowDefinitions="*,2*">
+      <ScrollViewer x:Name="OverviewPanel" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="14,10" Spacing="6">
+          <Grid ColumnDefinitions="Auto,Auto" ColumnSpacing="6" HorizontalAlignment="Left">
+            <TextBlock FontSize="18" LineHeight="24" FontWeight="SemiBold" Text="{Binding Workspace.Name}" />
+            <Button x:Name="EditProjectButton" Grid.Column="1" Classes="overview-inline" Width="20" Height="20"
+                    ToolTip.Tip="Edit project settings" Click="OnEditProjectClicked">
+              <PathIcon Width="14" Height="14" Data="{StaticResource AppEditIcon}" />
+            </Button>
+          </Grid>
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
+            <Button Classes="overview-inline" ToolTip.Tip="Open project folder" Click="OnOpenFolderClicked">
+              <PathIcon Width="14" Height="14" Data="{StaticResource AppFolderIcon}" />
+            </Button>
+            <SelectableTextBlock Grid.Column="1" Classes="overview-detail" TextTrimming="CharacterEllipsis"
+                                 Text="{Binding RootPath}" ToolTip.Tip="{Binding RootPath}" />
+          </Grid>
+          <Grid ColumnDefinitions="Auto,Auto,Auto,*" ColumnSpacing="6" IsVisible="{Binding HasChanges}">
+            <Button x:Name="RepositoryLink" Classes="overview-inline" ToolTip.Tip="Open repository in browser" Click="OnRepositoryClicked">
+              <PathIcon Width="14" Height="14" Data="{StaticResource AppWebIcon}" />
+            </Button>
+            <SelectableTextBlock Grid.Column="1" Classes="overview-detail" Text="{Binding Repository.RemoteText}"
+                                 ToolTip.Tip="{Binding Repository.RemoteText}" />
+            <TextBlock Grid.Column="2" Classes="overview-detail" Text="·" />
+            <SelectableTextBlock Grid.Column="3" Classes="overview-detail" Text="{Binding Branch}"
+                                 TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Branch}" />
+          </Grid>
+          <WrapPanel Orientation="Horizontal">
+            <WrapPanel x:Name="IdeButtons" Orientation="Horizontal" />
+            <Button Classes="overview-ide" ToolTip.Tip="Refresh installed IDEs" Click="OnRefreshIdesClicked">
+              <PathIcon Width="24" Height="24" Data="{StaticResource AppRefreshIcon}" />
+            </Button>
+          </WrapPanel>
+          <ItemsControl ItemsSource="{Binding Workspace.Links}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,2">
+                  <TextBlock VerticalAlignment="Center" Text="{Binding Kind}" />
+                  <Button Content="{Binding Title}" ToolTip.Tip="{Binding Url}" Click="OnProjectLinkClicked" />
+                  <Button Content="Copy" ToolTip.Tip="Copy address" Click="OnCopyProjectLinkClicked" />
+                  <Button Content="×" ToolTip.Tip="Remove project link" Click="OnRemoveProjectLinkClicked" />
+                </StackPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <StackPanel x:Name="ActiveReviewRows" Spacing="4" />
+        </StackPanel>
+      </ScrollViewer>
+      <views:NotesPaneView x:Name="DocumentsPane" Grid.Row="1" />
+    </Grid>
 
     <Grid x:Name="ChangesPanel" Grid.Row="1" IsVisible="False">
       <Grid RowDefinitions="Auto,*,Auto">

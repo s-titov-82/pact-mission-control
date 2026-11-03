@@ -61,6 +61,35 @@ public static class SessionTools
 		return new AgentControlToolSet(
 		[
 			new AgentControlTool(
+				"pact_add_project_link",
+				"Save an HTTP(S) resource in this session's project Overview. Does not open a browser or fetch status.",
+				() => AgentControlSchema.Object(new()
+				{
+					["title"] = AgentControlSchema.String("Short label, 1 to 200 characters."),
+					["url"] = AgentControlSchema.String("Absolute HTTP(S) URL without user information."),
+					["kind"] = AgentControlSchema.Enumerated("Resource kind; omitted means other.", ["ci", "merge_request", "issue", "other"])
+				}, "title", "url"),
+				async (call, cancellationToken) =>
+				{
+					if (!TryGetRequiredString(call.Arguments, "title", out var title, out var error)
+						|| !TryGetRequiredString(call.Arguments, "url", out var url, out error)
+						|| !TryGetOptionalString(call.Arguments, "kind", out var kind, out error))
+					{
+						return error;
+					}
+
+					return await CompleteAsync(
+						await dispatcher.AddProjectLinkAsync(call.SessionId ?? string.Empty, title, url, kind, cancellationToken),
+						"Project link saved.", "Agent action: project link saved");
+				}),
+			new AgentControlTool(
+				"pact_list_project_links",
+				"List saved resources in this session's project, newest first. ROOT has no project links.",
+				() => AgentControlSchema.Object(new()),
+				async (call, cancellationToken) => await CompleteAsync(
+					await dispatcher.ListProjectLinksAsync(call.SessionId ?? string.Empty, cancellationToken),
+					"[]", statusText: null)),
+			new AgentControlTool(
 				"pact_request_review",
 				"Ask another agent to review your work. A reviewer tab opens in your project and turns "
 					+ "pass through Pact: when Pact types that your turn is ready, call pact_get_review_turn. "

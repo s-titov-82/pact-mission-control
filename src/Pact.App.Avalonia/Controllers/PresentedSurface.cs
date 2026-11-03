@@ -1,4 +1,3 @@
-using Pact.Presentation.Services;
 using Pact.Presentation.ViewModels;
 
 namespace Pact.App.Avalonia.Controllers;
@@ -20,12 +19,6 @@ internal abstract record PresentedSurface
 
 	/// <summary>The paused placeholder for a ROOT web page.</summary>
 	public sealed record PausedWebPage(WebPageViewModel WebPage) : PresentedSurface;
-
-	/// <summary>A project's documentation and notes.</summary>
-	public sealed record Notes(
-		ProjectNoteViewModel Note,
-		DocsAndNotesWorkspaceViewModel Workspace,
-		ProjectNoteDocument Document) : PresentedSurface;
 
 	/// <summary>A project's screen: overview, changes and review logs.</summary>
 	public sealed record Project(ProjectScreenViewModel Screen) : PresentedSurface;

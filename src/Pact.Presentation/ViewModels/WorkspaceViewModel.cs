@@ -39,7 +39,6 @@ public sealed class WorkspaceViewModel : INotifyPropertyChanged
 		IsGitRepository = _isGitRepository(Record.RootPath);
 		Sessions.CollectionChanged += OnTreeItemCollectionChanged;
 		WebPages.CollectionChanged += OnTreeItemCollectionChanged;
-		Notes.CollectionChanged += OnTreeItemCollectionChanged;
 		Notes.CollectionChanged += (_, _) => OnPropertyChanged(nameof(IsNotesTabOpen));
 	}
 
@@ -48,6 +47,9 @@ public sealed class WorkspaceViewModel : INotifyPropertyChanged
 
 	/// <summary>Persisted project state.</summary>
 	public ProjectRecord Record { get; private set; }
+
+	/// <summary>Current persisted project resources, reconciled with the project record.</summary>
+	public IReadOnlyList<ProjectLink> Links => Record.Links;
 
 	/// <summary>Project id.</summary>
 	public string Id => Record.Id;
@@ -158,6 +160,7 @@ public sealed class WorkspaceViewModel : INotifyPropertyChanged
 		}
 
 		OnPropertyChanged(nameof(Record));
+		OnPropertyChanged(nameof(Links));
 		OnPropertyChanged(nameof(Name));
 		OnPropertyChanged(nameof(RootPath));
 		OnPropertyChanged(nameof(Status));
@@ -221,12 +224,6 @@ public sealed class WorkspaceViewModel : INotifyPropertyChanged
 			return Sessions.Count + (groupIndex >= 0 ? groupIndex : CountTreeItems<WebPageViewModel>());
 		}
 
-		if (ReferenceEquals(sender, Notes))
-		{
-			return Sessions.Count + WebPages.Count
-				+ (groupIndex >= 0 ? groupIndex : CountTreeItems<ProjectNoteViewModel>());
-		}
-
 		return TreeItems.Count;
 	}
 
@@ -257,10 +254,6 @@ public sealed class WorkspaceViewModel : INotifyPropertyChanged
 			TreeItems.Add(webPage);
 		}
 
-		foreach (var note in Notes)
-		{
-			TreeItems.Add(note);
-		}
 	}
 
 	private void OnPropertyChanged([CallerMemberName] string? propertyName = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));

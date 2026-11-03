@@ -7,14 +7,19 @@ internal sealed class FakeWebPageHostFactory : IWebPageHostFactory
 {
 	public Dictionary<string, FakeWebPageHost> Hosts { get; } = new(StringComparer.Ordinal);
 	public Action<FakeWebPageHost>? ConfigureHost { get; set; }
+	public Func<Task>? BeforeCreateAsync { get; set; }
 
-	public Task<IWebPageHost> CreateAsync(string id, CancellationToken cancellationToken)
+	public async Task<IWebPageHost> CreateAsync(string id, CancellationToken cancellationToken)
 	{
 		cancellationToken.ThrowIfCancellationRequested();
+		if (BeforeCreateAsync is { } beforeCreate)
+		{
+			await beforeCreate();
+		}
 		FakeWebPageHost host = new(id);
 		ConfigureHost?.Invoke(host);
 		Hosts.Add(id, host);
-		return Task.FromResult<IWebPageHost>(host);
+		return host;
 	}
 }
 
