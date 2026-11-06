@@ -189,6 +189,37 @@ public sealed class GitWorkingTreeReaderTests
 
 	private GitWorkingTreeReader Reader => new(_runner);
 
+	[Test]
+	public async Task Summary_counts_unique_paths_including_staged_unstaged_and_nested_untracked()
+	{
+		await InitAsync();
+		await WriteAsync("a.txt", "one\n");
+		await CommitAllAsync("initial");
+		(await Reader.ReadChangedFileCountAsync(Root, Token)).ShouldBe(0);
+		await WriteAsync("a.txt", "two\n");
+		await GitAsync("add", "a.txt");
+		await WriteAsync("a.txt", "three\n");
+		await WriteAsync("nested/b.txt", "b\n");
+		await WriteAsync("nested/c.txt", "c\n");
+		(await Reader.ReadChangedFileCountAsync(Root, Token)).ShouldBe(3);
+	}
+
+	[Test]
+	public async Task Summary_supports_unborn_head_and_counts_rename_once()
+	{
+		await InitAsync();
+		await WriteAsync("a.txt", "one\n");
+		await GitAsync("add", "a.txt");
+		(await Reader.ReadChangedFileCountAsync(Root, Token)).ShouldBe(1);
+		await CommitAllAsync("initial");
+		await GitAsync("mv", "a.txt", "renamed.txt");
+		(await Reader.ReadChangedFileCountAsync(Root, Token)).ShouldBe(1);
+	}
+
+	[Test]
+	public async Task Summary_is_unknown_outside_a_repository() =>
+		(await Reader.ReadChangedFileCountAsync(Root, Token)).ShouldBeNull();
+
 	private Task InitAsync() => GitAsync("init", "--initial-branch=pact-test");
 
 	private Task CommitAllAsync(string message) => CommitAllCoreAsync(message);

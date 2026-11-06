@@ -120,6 +120,14 @@ public sealed class GitCliRunner : IGitCliRunner
 
 			process = Process.Start(startInfo)
 				?? throw new InvalidOperationException("Unable to start git.exe.");
+			if (outputLine is null)
+			{
+				// Blob text and NUL-separated paths must not be normalized through line events.
+				var stdout = process.StandardOutput.ReadToEndAsync(timeout.Token);
+				var stderr = process.StandardError.ReadToEndAsync(timeout.Token);
+				await Task.WhenAll(stdout, stderr, process.WaitForExitAsync(timeout.Token)).ConfigureAwait(false);
+				return new GitCommandResult(process.ExitCode, await stdout.ConfigureAwait(false), await stderr.ConfigureAwait(false));
+			}
 			process.OutputDataReceived += (_, e) =>
 			{
 				if (e.Data is null)

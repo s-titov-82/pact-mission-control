@@ -20,6 +20,14 @@ public sealed record WorkingTreeChanges(
 /// <summary>Reads a repository's uncommitted changes and per-file diffs without taking git locks.</summary>
 public interface IGitWorkingTreeReader
 {
+	/// <summary>Reads the unique changed-path count. Implementations may override the full-read fallback with status-only I/O.</summary>
+	/// <returns>Null when status is unavailable.</returns>
+	async Task<int?> ReadChangedFileCountAsync(string root, CancellationToken cancellationToken)
+	{
+		var changes = await ReadChangesAsync(root, cancellationToken).ConfigureAwait(false);
+		return changes?.Files.Select(file => file.Path).Distinct(StringComparer.Ordinal).Count();
+	}
+
 	/// <summary>Reads the changed paths and line totals.</summary>
 	/// <returns><see langword="null"/> when git status fails, for instance outside a repository.</returns>
 	Task<WorkingTreeChanges?> ReadChangesAsync(string root, CancellationToken cancellationToken);
@@ -43,8 +51,18 @@ public interface IGitWorkingTreeReader
 /// agent's own git commands never meet a lock Pact holds, and <c>core.quotePath=false</c> so
 /// non-ASCII paths come back verbatim.
 /// </summary>
-public sealed class GitWorkingTreeReader(IGitCliRunner runner) : IGitWorkingTreeReader
+public sealed partial class GitWorkingTreeReader(IGitCliRunner runner) : IGitWorkingTreeReader, IGitCommitReader, IGitComparisonReader
 {
+	/// <inheritdoc />
+	public async Task<int?> ReadChangedFileCountAsync(string root, CancellationToken cancellationToken)
+	{
+		var status = await RunAsync(root,
+			["status", "--porcelain=v2", "--branch", "--untracked-files=all"], cancellationToken).ConfigureAwait(false);
+		return status.Succeeded
+			? GitStatusParser.Parse(status.StandardOutput).Files.Select(file => file.Path).Distinct(StringComparer.Ordinal).Count()
+			: null;
+	}
+
 	/// <summary>The id of git's empty tree, the comparison base while HEAD is unborn.</summary>
 	public const string EmptyTreeId = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
