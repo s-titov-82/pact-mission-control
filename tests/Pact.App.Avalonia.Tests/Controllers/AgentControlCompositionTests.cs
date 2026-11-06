@@ -201,6 +201,29 @@ public sealed class AgentControlCompositionTests
 		((string?)JsonNode.Parse(turn.Text)!["endReason"]).ShouldBe("reviewer tab closed");
 	}
 
+	[TestCase(false)]
+	[TestCase(true)]
+	public async Task Closing_review_participant_preserves_the_relays_newer_review_log_navigation(bool current)
+	{
+		await using CompositionFixture fixture = new(twoProjects: true);
+		await fixture.InitializeAsync();
+		var count = fixture.Backends.Count;
+		var requesting = fixture.InvokeToolAsync(CompositionFixture.SessionA, "pact_request_review", PlanReviewArguments);
+		await fixture.MakeLatestReviewerReadyAsync(count);
+		(await requesting).IsError.ShouldBeFalse();
+		var reviewer = fixture.Reviewer();
+		var owner = fixture.ViewModel.Workspaces.Single(p => p.Id == CompositionFixture.ProjectA);
+		var other = fixture.ViewModel.Workspaces.Single(p => p.Id == CompositionFixture.ProjectB);
+		if (current)
+		{ await fixture.Controller.SelectSessionAsync(reviewer, startIfNeeded: false); }
+		else
+		{ await fixture.Controller.OpenProjectScreenAsync(other, ProjectScreenTab.Overview); }
+		await fixture.Controller.CloseSessionAsync(reviewer);
+		var screen = fixture.Controller.CurrentProjectScreen.ShouldNotBeNull();
+		screen.Workspace.ShouldBeSameAs(owner);
+		screen.SelectedTab.ShouldBe(ProjectScreenTab.ReviewLogs);
+	}
+
 	[Test]
 	public async Task A_session_in_a_review_cannot_request_another()
 	{
@@ -843,6 +866,7 @@ public sealed class AgentControlCompositionTests
 			await Controller.InitializeAsync(
 				new Uri("file:///terminal.html"),
 				TestContext.CurrentContext.CancellationToken);
+			await StartSessionAsync(SessionA);
 			_backendBySession[ViewModel.SelectedSession!.Record.Id] = Backends[^1];
 		}
 

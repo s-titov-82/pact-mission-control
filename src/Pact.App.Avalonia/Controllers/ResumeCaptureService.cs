@@ -25,7 +25,8 @@ internal sealed class ResumeCaptureService(
 	/// <summary>Captures resume commands for the eligible sessions under one shared deadline.</summary>
 	public async Task CaptureBeforeStopAsync(
 		IEnumerable<SessionViewModel> sessions,
-		CancellationToken cancellationToken)
+		CancellationToken cancellationToken,
+		Func<SessionViewModel, Task>? showSessionTerminalAsync = null)
 	{
 		var eligible = sessions
 			.Where(IsResumeCaptureEligible)
@@ -42,6 +43,7 @@ internal sealed class ResumeCaptureService(
 				new ResumeCaptureCancellation(
 					deadline.Token,
 					cancellationToken),
+				showSessionTerminalAsync ?? _showSessionTerminalAsync,
 				linkedCancellation.Token))
 			.ToArray();
 		var timedOutSessionIds = await Task.WhenAll(attempts);
@@ -62,6 +64,7 @@ internal sealed class ResumeCaptureService(
 	private async Task<string?> CaptureResumeCommandUnderDeadlineAsync(
 		SessionViewModel session,
 		ResumeCaptureCancellation cancellation,
+		Func<SessionViewModel, Task> showSessionTerminalAsync,
 		CancellationToken cancellationToken)
 	{
 		try
@@ -74,7 +77,7 @@ internal sealed class ResumeCaptureService(
 				return null;
 			}
 
-			await _showSessionTerminalAsync(session);
+			await showSessionTerminalAsync(session);
 			if (await TrySaveResumeCommandFromRecentOutputAsync(session, runtime, cancellationToken))
 			{
 				return null;

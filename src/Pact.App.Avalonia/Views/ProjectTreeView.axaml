@@ -239,9 +239,13 @@
                       DataContext="{Binding RootTabs}"
                       ItemsSource="{Binding TreeItems}" IsExpanded="True">
           <TreeViewItem.Header>
+            <Border x:Name="RootDashboardHeader" Padding="2" CornerRadius="4">
             <Grid Margin="2" ColumnDefinitions="*,Auto" HorizontalAlignment="Stretch">
+              <Button x:Name="RootDashboardButton" Background="Transparent" BorderThickness="0" Padding="0" HorizontalContentAlignment="Left"
+                      HorizontalAlignment="Stretch" Click="OnRootDashboardClicked" ToolTip.Tip="Projects overview">
               <TextBlock x:Name="RootHeaderText" FontWeight="SemiBold"
                          VerticalAlignment="Center" Text="ROOT" />
+              </Button>
               <StackPanel x:Name="RootSectionActions" Grid.Column="1"
                           Margin="8,0,0,0" HorizontalAlignment="Right"
                           VerticalAlignment="Center"
@@ -258,6 +262,7 @@
                 </Button>
               </StackPanel>
             </Grid>
+            </Border>
           </TreeViewItem.Header>
         </TreeViewItem>
       </TreeView.Items>

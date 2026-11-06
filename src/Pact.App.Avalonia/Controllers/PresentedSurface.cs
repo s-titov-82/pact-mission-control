@@ -8,6 +8,8 @@ namespace Pact.App.Avalonia.Controllers;
 /// </summary>
 internal abstract record PresentedSurface
 {
+	/// <summary>The global overview of open projects, selected through ROOT.</summary>
+	public sealed record Dashboard : PresentedSurface;
 	/// <summary>A session's terminal, possibly still behind its loading surface.</summary>
 	/// <param name="Session">The session whose terminal is shown.</param>
 	/// <param name="Loading">The terminal is starting and hidden behind the loading surface.</param>

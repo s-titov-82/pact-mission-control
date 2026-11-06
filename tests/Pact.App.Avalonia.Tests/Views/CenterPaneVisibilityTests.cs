@@ -31,6 +31,7 @@ public sealed class CenterPaneVisibilityTests
 	// The mapping reads only the case, so the heavier view models are left null.
 	private static IEnumerable<TestCaseData> Rows()
 	{
+		yield return Row(new PresentedSurface.Dashboard(), true, new(false, false, false, false, false, false, true)).SetName("Dashboard hides even selected native browser");
 		yield return Row(new PresentedSurface.Terminal(Session, Loading: false, FocusWhenLoaded: false), false, Expect(terminal: true)).SetName("Terminal");
 		yield return Row(new PresentedSurface.Terminal(Session, Loading: true, FocusWhenLoaded: true), false, Expect(terminalLoading: true)).SetName("Terminal loading");
 		yield return Row(new PresentedSurface.PausedSession(Session), false, Expect(paused: true)).SetName("Paused session");

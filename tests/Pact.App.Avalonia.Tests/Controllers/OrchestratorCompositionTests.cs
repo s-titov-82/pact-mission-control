@@ -591,6 +591,10 @@ public sealed class OrchestratorCompositionTests
 			await Controller.InitializeAsync(
 				new Uri("file:///terminal.html"),
 				TestContext.CurrentContext.CancellationToken);
+			// First-run Dashboard deliberately does not start a saved project session.
+			await Controller.SelectSessionAsync(
+				Controller.ViewModel.Workspaces.SelectMany(workspace => workspace.Sessions)
+					.Single(session => session.Record.Id == "session-a"), startIfNeeded: true);
 			Backends.Count.ShouldBe(2);
 		}
 

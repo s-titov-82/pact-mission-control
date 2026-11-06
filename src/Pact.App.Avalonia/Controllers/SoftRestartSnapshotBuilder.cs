@@ -16,14 +16,17 @@ internal sealed class SoftRestartSnapshotBuilder
 		_getDiagnostics;
 	private readonly Func<IReadOnlyList<string>> _getLoadedPageIds;
 	private readonly Func<ProjectScreenViewModel?>? _getProjectScreen;
+	private readonly Func<bool>? _isDashboardVisible;
 
 	public SoftRestartSnapshotBuilder(
 		MainWindowViewModel viewModel,
 		Func<IReadOnlyList<string>> getActiveSessionIds,
 		Func<IReadOnlyDictionary<string, TerminalClassifierDiagnostics>> getDiagnostics,
 		Func<IReadOnlyList<string>> getLoadedPageIds,
-		Func<ProjectScreenViewModel?>? getProjectScreen = null)
+		Func<ProjectScreenViewModel?>? getProjectScreen = null,
+		Func<bool>? isDashboardVisible = null)
 	{
+		_isDashboardVisible = isDashboardVisible;
 		_getProjectScreen = getProjectScreen;
 		_viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
 		_getActiveSessionIds = getActiveSessionIds
@@ -100,6 +103,8 @@ internal sealed class SoftRestartSnapshotBuilder
 		HashSet<string> eligibleTerminalIds,
 		HashSet<string> eligiblePageIds)
 	{
+		if (_isDashboardVisible?.Invoke() == true)
+		{ return new(null, null, IsDashboard: true); }
 		if (_getProjectScreen?.Invoke() is { } screen && _viewModel.Workspaces.Contains(screen.Workspace))
 		{
 			return new SoftRestartSelection(screen.Workspace.Id, null, screen.SelectedTab.ToString(),

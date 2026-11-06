@@ -6,6 +6,19 @@ namespace Pact.Infrastructure.Tests.Storage;
 public sealed class SessionRestorationStoreTests
 {
 	[Test]
+	public async Task Dashboard_checkpoint_retains_live_ids_and_rejects_mixed_ownership()
+	{
+		using var directory = TemporaryDirectory.Create();
+		SessionRestorationStore store = new(Path.Combine(directory.Path, "state.json"));
+		SessionRestorationState state = new(["live"], [], ["live"], new(null, null, IsDashboard: true), false);
+		await store.SaveAsync(state, CancellationToken.None);
+		var loaded = (await store.LoadAsync(CancellationToken.None)).ShouldNotBeNull();
+		loaded.Selection!.IsDashboard.ShouldBeTrue();
+		loaded.LiveTerminalIds.ShouldBe(["live"]);
+		await store.SaveAsync(state with { Selection = new("project", null, IsDashboard: true) }, CancellationToken.None);
+		(await store.LoadAsync(CancellationToken.None)).ShouldBeNull();
+	}
+	[Test]
 	public async Task Checkpoint_round_trips_and_replaces_the_previous_live_set()
 	{
 		using var temporaryDirectory = TemporaryDirectory.Create();

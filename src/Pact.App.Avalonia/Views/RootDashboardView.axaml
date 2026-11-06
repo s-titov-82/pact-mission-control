@@ -1,0 +1,135 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Pact.Presentation.ViewModels;assembly=Pact.Presentation"
+             xmlns:local="clr-namespace:Pact.App.Avalonia.Views"
+             x:Class="Pact.App.Avalonia.Views.RootDashboardView" x:CompileBindings="False"
+             SizeChanged="OnDashboardSizeChanged">
+  <UserControl.Resources>
+    <local:TerminalTabIndicatorGlyphConverter x:Key="DashboardIndicatorGlyph" />
+    <local:TerminalTabIndicatorEqualsConverter x:Key="DashboardIndicatorEquals" />
+  </UserControl.Resources>
+  <UserControl.Styles>
+    <Style Selector="TextBlock.dashboard-indicator"><Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" /></Style>
+    <Style Selector="TextBlock.dashboard-indicator.failed"><Setter Property="Foreground" Value="{DynamicResource AppDangerBrush}" /></Style>
+  </UserControl.Styles>
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="16" Spacing="12">
+      <TextBlock Text="Projects" FontSize="22" FontWeight="SemiBold" />
+      <StackPanel IsVisible="{Binding IsEmpty}" Spacing="12">
+        <TextBlock Text="No open projects" Foreground="{DynamicResource AppTextMutedBrush}" />
+        <Button Content="Open project…" HorizontalAlignment="Left" Click="OnAddProjectClicked" />
+      </StackPanel>
+      <ItemsControl x:Name="ProjectCards" ItemsSource="{Binding Cards}">
+        <ItemsControl.Template>
+          <ControlTemplate><ItemsPresenter Name="PART_ItemsPresenter" ItemsPanel="{TemplateBinding ItemsPanel}" /></ControlTemplate>
+        </ItemsControl.Template>
+        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel ItemWidth="342" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate DataType="vm:ProjectDashboardCardViewModel">
+            <Border HorizontalAlignment="Stretch" Margin="0,0,12,12" Padding="12" CornerRadius="6"
+                    Background="{DynamicResource AppSurfaceBrush}"
+                    BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1">
+              <StackPanel Spacing="10">
+                <Button Classes="dashboard-title" Background="Transparent" BorderThickness="0" Padding="0"
+                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Click="OnProjectClicked">
+                  <TextBlock Text="{Binding Workspace.Name}" FontSize="16" FontWeight="SemiBold"
+                             TextWrapping="Wrap" />
+                </Button>
+                <TextBlock Text="{Binding RootPath}" FontSize="12" TextTrimming="CharacterEllipsis"
+                           ToolTip.Tip="{Binding RootPath}" Foreground="{DynamicResource AppTextMutedBrush}" />
+                <TextBlock Text="No agents running" IsVisible="{Binding HasNoAgents}"
+                           Foreground="{DynamicResource AppTextMutedBrush}" />
+                <ItemsControl ItemsSource="{Binding Agents}">
+                  <ItemsControl.Template>
+                    <ControlTemplate><ItemsPresenter Name="PART_ItemsPresenter" /></ControlTemplate>
+                  </ItemsControl.Template>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="vm:SessionViewModel">
+                      <Button Classes="dashboard-agent" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                              Margin="0,0,0,6" Padding="8,6" Click="OnAgentClicked">
+                        <StackPanel Spacing="2">
+                          <Grid ColumnDefinitions="Auto,*,Auto">
+                            <TextBlock Classes="dashboard-indicator" Margin="0,0,6,0"
+                                       Classes.failed="{Binding Indicator, Converter={StaticResource DashboardIndicatorEquals}, ConverterParameter=Failed}"
+                                       Text="{Binding Indicator, Converter={StaticResource DashboardIndicatorGlyph}}" />
+                            <TextBlock Grid.Column="1" Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" Margin="8,0,0,0">
+                              <TextBlock Text="{Binding TerminalKind}" FontSize="11" Foreground="{DynamicResource AppTextMutedBrush}" />
+                              <TextBlock Text="{Binding Status}" FontSize="11" Foreground="{DynamicResource AppTextMutedBrush}" />
+                            </StackPanel>
+                          </Grid>
+                          <TextBlock Text="{Binding StatusDescription}" TextWrapping="Wrap" />
+                          <TextBlock Text="Read later" IsVisible="{Binding IsMarkedForLater}"
+                                     Foreground="{DynamicResource AppAccentBrush}" FontSize="11" />
+                          <TextBlock Text="Review needs attention" FontSize="11"
+                                     Foreground="{DynamicResource AppDangerBrush}"
+                                     IsVisible="{Binding Review.HasDeliveryIssue, FallbackValue=False, TargetNullValue=False}" />
+                        </StackPanel>
+                      </Button>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Button Classes="dashboard-changes" Content="{Binding ChangesText}" IsVisible="{Binding HasGitRepository}"
+                        HorizontalAlignment="Left" Click="OnChangesClicked" />
+              </StackPanel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+      <Grid x:Name="ProjectLists" ColumnDefinitions="*,12,*">
+        <Border x:Name="PausedProjectsPanel" Padding="12" CornerRadius="6" VerticalAlignment="Top"
+                Background="{DynamicResource AppSurfaceBrush}"
+                BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1">
+          <StackPanel Spacing="8">
+            <TextBlock Text="Paused" FontSize="16" FontWeight="SemiBold" />
+            <TextBlock Text="No paused projects" IsVisible="{Binding IsPausedEmpty}" TextWrapping="Wrap"
+                       Foreground="{DynamicResource AppTextMutedBrush}" />
+            <ItemsControl ItemsSource="{Binding PausedProjects}">
+              <ItemsControl.Template>
+                <ControlTemplate><ItemsPresenter Name="PART_ItemsPresenter" /></ControlTemplate>
+              </ItemsControl.Template>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="vm:WorkspaceViewModel">
+                  <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,6">
+                    <TextBlock Text="{Binding Name}" ToolTip.Tip="{Binding RootPath}" Margin="0,0,8,0"
+                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                    <Button Grid.Column="1" Classes="dashboard-resume-project" Content="▶" Width="28" Height="28"
+                            HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                            Padding="0" ToolTip.Tip="Restore project" AutomationProperties.Name="Restore project"
+                            Click="OnResumeProjectClicked" />
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+        <Border x:Name="RecentDirectoriesPanel" Grid.Column="2" Padding="12" CornerRadius="6" VerticalAlignment="Top"
+                Background="{DynamicResource AppSurfaceBrush}"
+                BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1">
+          <StackPanel Spacing="8">
+            <TextBlock Text="Recent" FontSize="16" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding RecentEmptyText}" IsVisible="{Binding IsRecentEmpty}" TextWrapping="Wrap"
+                       Foreground="{DynamicResource AppTextMutedBrush}" />
+            <ItemsControl ItemsSource="{Binding RecentDirectories}">
+              <ItemsControl.Template>
+                <ControlTemplate><ItemsPresenter Name="PART_ItemsPresenter" /></ControlTemplate>
+              </ItemsControl.Template>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,6">
+                    <TextBlock Text="{Binding}" ToolTip.Tip="{Binding}" Margin="0,0,8,0"
+                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                    <Button Grid.Column="1" Classes="dashboard-open-recent" Content="▶" Width="28" Height="28"
+                            HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                            Padding="0" ToolTip.Tip="Open project" AutomationProperties.Name="Open project"
+                            Click="OnRecentDirectoryClicked" />
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+      </Grid>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

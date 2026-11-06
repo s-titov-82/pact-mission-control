@@ -308,9 +308,7 @@ public sealed class SoftRestartTicketStore : ISoftRestartTicketStore
 		ValidateIds(ticket.LiveTerminalIds, nameof(ticket.LiveTerminalIds));
 		ValidateIds(ticket.LoadedWebPageIds, nameof(ticket.LoadedWebPageIds));
 		ValidateIds(ticket.UnreadTerminalIds, nameof(ticket.UnreadTerminalIds));
-		if (ticket.Selection is { } selection
-			&& string.IsNullOrWhiteSpace(selection.ProjectId)
-			&& string.IsNullOrWhiteSpace(selection.ItemId))
+		if (ticket.Selection is { } selection && !selection.HasValidShape())
 		{
 			throw new InvalidDataException("A selected owner or item id is required.");
 		}

@@ -36,16 +36,19 @@ internal sealed partial class AvaloniaMainShellController
 	{
 		ArgumentNullException.ThrowIfNull(workspace);
 		ArgumentNullException.ThrowIfNull(link);
-		if (!ViewModel.Workspaces.Contains(workspace))
+		var ownerEpoch = OwnerNavigationEpoch(workspace.Id);
+		if (!ViewModel.Workspaces.Contains(workspace) || !OwnerNavigationCurrent(workspace.Id, ownerEpoch))
 		{
 			return;
 		}
+		_navigationIntent++;
 		var version = ++_projectNavigationVersion;
 		var url = ProjectLinkRules.NormalizeUrl(link.Url);
 		var creation = CreateOrReuseProjectLinkAsync(_projectLinkCreationTail, workspace, link.Title, url, cancellationToken);
 		_projectLinkCreationTail = creation;
 		var page = await creation;
-		if (page is not null && version == _projectNavigationVersion && ViewModel.Workspaces.Contains(workspace))
+		if (page is not null && version == _projectNavigationVersion && ViewModel.Workspaces.Contains(workspace)
+			&& OwnerNavigationCurrent(workspace.Id, ownerEpoch))
 		{
 			await SelectWebPageCoreAsync(page, version, cancellationToken);
 		}

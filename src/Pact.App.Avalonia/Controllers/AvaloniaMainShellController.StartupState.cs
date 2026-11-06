@@ -1,5 +1,6 @@
 using System.Collections.Specialized;
 using System.ComponentModel;
+using Pact.Presentation.ViewModels;
 
 namespace Pact.App.Avalonia.Controllers;
 
@@ -18,6 +19,8 @@ internal sealed partial class AvaloniaMainShellController
 				return false;
 			}
 			LastRestorationSummary = await _softRestartRestorer.RestoreAsync(state, cancellationToken);
+			if (!LastRestorationSummary.SelectionRestored)
+			{ await OpenDashboardAsync(cancellationToken); }
 			if (!state.OrchestratorWasRunning)
 			{
 				await _orchestrator.StopAsync();
@@ -86,6 +89,8 @@ internal sealed partial class AvaloniaMainShellController
 
 	private void OnStartupPropertyChanged(object? sender, PropertyChangedEventArgs args)
 	{
+		if (IsDashboardVisible && sender is SessionViewModel && args.PropertyName is "Record" or "Status")
+		{ _dashboard?.RefreshAgents(); }
 		if (args.PropertyName is "Session")
 		{
 			ObserveStartupState();

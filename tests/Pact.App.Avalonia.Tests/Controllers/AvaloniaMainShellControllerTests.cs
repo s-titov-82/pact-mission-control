@@ -26,6 +26,53 @@ namespace Pact.App.Avalonia.Tests.Controllers;
 
 public sealed class AvaloniaMainShellControllerTests
 {
+	[Test]
+	public async Task Opening_a_recent_folder_creates_one_project_overview_without_starting_an_agent()
+	{
+		using var folder = TemporaryDirectory.Create();
+		await using ControllerFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		await fixture.Controller.OpenDashboardAsync();
+		var starts = fixture.Backends.Count;
+		await fixture.Controller.OpenRecentProjectAsync(folder.Path);
+		await fixture.Controller.OpenRecentProjectAsync(folder.Path + Path.DirectorySeparatorChar);
+		var screen = fixture.Controller.CurrentProjectScreen.ShouldNotBeNull();
+		screen.Workspace.RootPath.ShouldBe(WorkspaceRootDetector.NormalizeRoot(folder.Path));
+		screen.SelectedTab.ShouldBe(ProjectScreenTab.Overview);
+		fixture.ViewModel.Workspaces.Count(owner => owner.RootPath == screen.Workspace.RootPath).ShouldBe(1);
+		fixture.Backends.Count.ShouldBe(starts);
+		(await fixture.Controller.LoadRecentDirectoriesAsync()).ShouldContain(folder.Path);
+	}
+
+	[Test]
+	public async Task Delayed_recent_project_creation_does_not_override_newer_navigation_or_create_twice()
+	{
+		using var folder = TemporaryDirectory.Create();
+		await using ControllerFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		await fixture.Controller.OpenDashboardAsync();
+		var original = fixture.ViewModel.Workspaces[0];
+		TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		fixture.Store.BeforeUpdateAsync = async () =>
+		{
+			fixture.Store.BeforeUpdateAsync = null;
+			entered.SetResult();
+			await release.Task;
+		};
+		var opening = fixture.Controller.OpenRecentProjectAsync(folder.Path);
+		await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+		try
+		{
+			fixture.Controller.OpenRecentProjectAsync(folder.Path).IsCompletedSuccessfully.ShouldBeTrue();
+			await fixture.Controller.OpenProjectScreenAsync(original, ProjectScreenTab.Overview);
+		}
+		finally { release.TrySetResult(); }
+		await opening;
+		fixture.Controller.CurrentProjectScreen.ShouldNotBeNull().Workspace.ShouldBeSameAs(original);
+		fixture.ViewModel.SelectedWorkspace.ShouldBeSameAs(original);
+		fixture.ViewModel.Workspaces.Count(owner => owner.RootPath == folder.Path).ShouldBe(1);
+	}
 	[TestCase(false)]
 	[TestCase(true)]
 	public async Task Ctrl_v_keeps_native_console_clipboard_except_for_copied_files(bool file)
@@ -44,6 +91,19 @@ public sealed class AvaloniaMainShellControllerTests
 		fixture.Backends[0].Inputs.ShouldBe([file ? "\u001b[200~C:\\one.txt\u001b[201~" : Pact.Core.Terminal.Win32InputEncoder.CtrlLetter('\u0016')]);
 	}
 
+	[Test]
+	public async Task Ctrl_v_abandons_clipboard_read_after_selection_changes()
+	{
+		await using ControllerFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		TaskCompletionSource<string> text = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		fixture.Clipboard.NextRead = text.Task;
+		fixture.Host.RaiseInputReceived("session-1", "\u0016");
+		await fixture.Controller.OpenDashboardAsync();
+		text.SetResult("must not paste");
+		await WaitForEventTasksAsync(fixture);
+		fixture.Backends[0].Inputs.ShouldBeEmpty();
+	}
 	[TestCase(AgentKind.Claude)]
 	[TestCase(AgentKind.Codex)]
 	public async Task Ctrl_v_pastes_clipboard_text_for_a_vt_client_without_submitting(AgentKind kind)
@@ -76,6 +136,247 @@ public sealed class AvaloniaMainShellControllerTests
 		await WaitForEventTasksAsync(fixture);
 		fixture.Backends[0].Inputs.ShouldBe(["\u0016"]);
 	}
+	[Test]
+	public async Task Cancelled_dashboard_navigation_leaves_the_original_surface_selected()
+	{
+		await using ControllerFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var surface = fixture.Controller.PresentedSurface;
+		var selected = fixture.ViewModel.SelectedSession;
+		using CancellationTokenSource cancelled = new();
+		cancelled.Cancel();
+		await Should.ThrowAsync<OperationCanceledException>(() => fixture.Controller.OpenDashboardAsync(cancelled.Token));
+		fixture.Controller.PresentedSurface.ShouldBeSameAs(surface);
+		fixture.ViewModel.SelectedSession.ShouldBeSameAs(selected);
+	}
+
+	[Test]
+	public async Task Review_log_navigation_wins_over_a_delayed_current_session_close()
+	{
+		await using ControllerFixture fixture = new(secondGitProject: true);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var session = fixture.ViewModel.Workspaces[0].Sessions[0];
+		var other = fixture.ViewModel.Workspaces[1];
+		Directory.CreateDirectory(Path.Combine(other.RootPath, ".pact", "reviews"));
+		await File.WriteAllTextAsync(Path.Combine(other.RootPath, ".pact", "reviews", "race.md"), "# Review\n");
+		TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		fixture.Store.BeforeUpdateAsync = async () =>
+		{
+			fixture.Store.BeforeUpdateAsync = null;
+			entered.SetResult();
+			await release.Task;
+		};
+		var closing = fixture.Controller.CloseSessionAsync(session);
+		await entered.Task;
+		try
+		{ (await fixture.Controller.OpenProjectDocumentAsync(other.Id, ".pact/reviews/race.md")).ShouldBeTrue(); }
+		finally { release.TrySetResult(); }
+		await closing;
+		fixture.Controller.CurrentProjectScreen.ShouldNotBeNull().Workspace.ShouldBeSameAs(other);
+		fixture.Controller.CurrentProjectScreen!.SelectedTab.ShouldBe(ProjectScreenTab.ReviewLogs);
+	}
+
+	[TestCase(false, false)]
+	[TestCase(true, false)]
+	[TestCase(false, true)]
+	[TestCase(true, true)]
+	public async Task Pending_owner_selection_cannot_load_a_browser_or_start_a_session_during_release(bool browser, bool close)
+	{
+		await using ControllerFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		FakeWebPageHostFactory factory = new();
+		fixture.Controller.WebPageHostFactory = factory;
+		var owner = fixture.ViewModel.Workspaces[0];
+		TaskCompletionSource selectionEntered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		TaskCompletionSource pauseEntered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		TaskCompletionSource releaseSelection = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		TaskCompletionSource releasePause = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		var updates = 0;
+		fixture.Store.BeforeUpdateAsync = async () =>
+		{
+			if (++updates == 1)
+			{ selectionEntered.SetResult(); await releaseSelection.Task; }
+			else if (updates == 2)
+			{ pauseEntered.SetResult(); await releasePause.Task; }
+		};
+		var selecting = browser ? fixture.Controller.SelectWebPageAsync(owner.WebPages[0])
+			: fixture.Controller.SelectSessionAsync(owner.Sessions[1], startIfNeeded: true);
+		await selectionEntered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+		var pausing = close ? fixture.Controller.CloseWorkspaceAsync(owner) : fixture.Controller.PauseWorkspaceAsync(owner);
+		try
+		{
+			await pauseEntered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+			releaseSelection.SetResult();
+			await selecting;
+			factory.Hosts.ShouldBeEmpty();
+			fixture.Backends.Count.ShouldBe(1);
+		}
+		finally { releaseSelection.TrySetResult(); releasePause.TrySetResult(); await pausing; }
+	}
+	[TestCase(false)]
+	[TestCase(true)]
+	public async Task Closing_selected_root_terminal_or_browser_returns_to_dashboard(bool browser)
+	{
+		var now = DateTimeOffset.UtcNow;
+		SessionRecord terminal = new("root-terminal", AgentKind.Pwsh, "Shell", Path.GetTempPath(),
+			"pwsh", null, SessionStatus.Stopped, now, now);
+		WebPageRecord page = new("root-web", "Browser", "https://example.test", "https://example.test", now, now);
+		RootTabsRecord root = new(1, browser ? page.Id : terminal.Id, browser ? [] : [terminal], browser ? [page] : [], []);
+		await using ControllerFixture fixture = new(rootTabs: root);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var starts = fixture.Backends.Count;
+		if (browser)
+		{ await fixture.Controller.CloseWebPageAsync(fixture.ViewModel.RootTabs.WebPages[0]); }
+		else
+		{ await fixture.Controller.CloseSessionAsync(fixture.ViewModel.RootTabs.Sessions[0]); }
+		fixture.Controller.IsDashboardVisible.ShouldBeTrue();
+		fixture.ViewModel.SelectedSession.ShouldBeNull();
+		fixture.ViewModel.SelectedWebPage.ShouldBeNull();
+		fixture.Backends.Count.ShouldBe(starts);
+	}
+	[Test]
+	public async Task Failed_project_close_restores_a_still_open_overview_without_restarting_terminals()
+	{
+		await using ControllerFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var owner = fixture.ViewModel.Workspaces[0];
+		await fixture.Controller.OpenProjectScreenAsync(owner, ProjectScreenTab.Overview);
+		fixture.Store.BeforeUpdateAsync = () =>
+		{
+			fixture.Store.BeforeUpdateAsync = null;
+			throw new IOException("write failed");
+		};
+		await Should.ThrowAsync<IOException>(() => fixture.Controller.CloseWorkspaceAsync(owner));
+		fixture.Controller.CurrentProjectScreen.ShouldNotBeNull().Workspace.ShouldBeSameAs(owner);
+		fixture.Backends.Count.ShouldBe(1);
+	}
+	[Test]
+	public async Task Dashboard_navigation_wins_over_a_pending_terminal_selection()
+	{
+		await using ControllerFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		fixture.Store.BeforeUpdateAsync = async () =>
+		{
+			fixture.Store.BeforeUpdateAsync = null;
+			entered.SetResult();
+			await release.Task;
+		};
+		var selection = fixture.Controller.SelectSessionAsync(fixture.ViewModel.Sessions[1], startIfNeeded: true);
+		await entered.Task;
+		await fixture.Controller.OpenDashboardAsync();
+		release.SetResult();
+		await selection;
+		fixture.Controller.IsDashboardVisible.ShouldBeTrue();
+		fixture.ViewModel.SelectedSession.ShouldBeNull();
+		fixture.Backends.Count.ShouldBe(1);
+	}
+	[TestCase("current")]
+	[TestCase("dashboard")]
+	[TestCase("other-project")]
+	public async Task Pausing_live_agent_captures_resume_without_stealing_the_new_context(string context)
+	{
+		await using ControllerFixture fixture = new(firstResumeCommand: "codex resume", secondGitProject: true);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var owner = fixture.ViewModel.Workspaces[0];
+		var other = fixture.ViewModel.Workspaces[1];
+		fixture.Backends[0].InputWritten = input =>
+		{
+			if (input == "/exit")
+			{ fixture.Backends[0].EmitOutput("To continue, run codex resume 019f6050-35a4-7951-9748-47239487c08d\r\n"); }
+		};
+		if (context == "dashboard")
+		{ await fixture.Controller.OpenDashboardAsync(); }
+		if (context == "other-project")
+		{ await fixture.Controller.OpenProjectScreenAsync(other, ProjectScreenTab.Overview); }
+		await fixture.Controller.PauseWorkspaceAsync(owner, TestContext.CurrentContext.CancellationToken);
+		owner.Sessions[0].Record.ResumeCommand.ShouldBe("codex resume 019f6050-35a4-7951-9748-47239487c08d");
+		fixture.Backends[0].Inputs.ShouldContain("/exit");
+		if (context == "other-project")
+		{ fixture.Controller.CurrentProjectScreen.ShouldNotBeNull().Workspace.ShouldBeSameAs(other); }
+		else
+		{ fixture.Controller.IsDashboardVisible.ShouldBeTrue(); }
+	}
+
+	[Test]
+	public async Task Startup_dashboard_restores_live_processes_and_unread_without_selecting_them()
+	{
+		await using ControllerFixture fixture = new(seedCheckpoint: false);
+		SessionRestorationStore store = new(fixture.Paths.SessionRestorationPath);
+		await store.SaveAsync(new(["session-1"], [], ["session-1"], new(null, null, IsDashboard: true), false), CancellationToken.None);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		fixture.Controller.IsDashboardVisible.ShouldBeTrue();
+		fixture.Backends.Count.ShouldBe(1);
+		fixture.ViewModel.SelectedSession.ShouldBeNull();
+		fixture.Statuses.GetDiagnosticsSnapshot()["session-1"].HasUnreadCompletion.ShouldBeTrue();
+		await fixture.Controller.OpenDashboardAsync();
+		fixture.Statuses.GetDiagnosticsSnapshot()["session-1"].HasUnreadCompletion.ShouldBeTrue();
+	}
+	[Test]
+	public async Task Newer_project_selection_wins_over_delayed_current_session_close()
+	{
+		await using ControllerFixture fixture = new(secondGitProject: true);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var session = fixture.ViewModel.Workspaces[0].Sessions[0];
+		await fixture.Controller.SelectSessionAsync(session, startIfNeeded: true);
+		TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		fixture.Store.BeforeUpdateAsync = async () =>
+		{
+			fixture.Store.BeforeUpdateAsync = null;
+			entered.SetResult();
+			await release.Task;
+		};
+		var closing = fixture.Controller.CloseSessionAsync(session);
+		await entered.Task;
+		var next = fixture.ViewModel.Workspaces[1];
+		await fixture.Controller.OpenProjectScreenAsync(next, ProjectScreenTab.Overview);
+		release.SetResult();
+		await closing;
+		fixture.Controller.CurrentProjectScreen.ShouldNotBeNull().Workspace.ShouldBeSameAs(next);
+		fixture.ViewModel.SelectedWorkspace.ShouldBeSameAs(next);
+	}
+	[TestCase(true)]
+	[TestCase(false)]
+	public async Task Missing_checkpoint_does_not_start_the_saved_active_session(bool withSessions)
+	{
+		await using ControllerFixture fixture = new(seedCheckpoint: false, withSessions: withSessions);
+		FakeWebPageHostFactory factory = new();
+		fixture.Controller.WebPageHostFactory = factory;
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		fixture.Backends.ShouldBeEmpty();
+		fixture.ViewModel.SelectedSession.ShouldBeNull();
+		fixture.ViewModel.SelectedWebPage.ShouldBeNull();
+		factory.Hosts.ShouldBeEmpty();
+	}
+
+	[Test]
+	public async Task Closing_selected_project_session_returns_to_overview_without_starting_neighbor()
+	{
+		await using ControllerFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var owner = fixture.ViewModel.Workspaces[0];
+		await fixture.Controller.SelectSessionAsync(owner.Sessions[0], startIfNeeded: true);
+		var starts = fixture.Backends.Count;
+		await fixture.Controller.CloseSessionAsync(owner.Sessions[0]);
+		fixture.Controller.CurrentProjectScreen.ShouldNotBeNull().Workspace.ShouldBeSameAs(owner);
+		fixture.Controller.CurrentProjectScreen!.SelectedTab.ShouldBe(ProjectScreenTab.Overview);
+		fixture.Backends.Count.ShouldBe(starts);
+	}
+
+	[Test]
+	public async Task Closing_background_project_preserves_current_overview()
+	{
+		await using ControllerFixture fixture = new(secondGitProject: true);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var current = fixture.ViewModel.Workspaces[1];
+		await fixture.Controller.OpenProjectScreenAsync(current, ProjectScreenTab.Overview);
+		await fixture.Controller.CloseWorkspaceAsync(fixture.ViewModel.Workspaces[0]);
+		fixture.Controller.CurrentProjectScreen.ShouldNotBeNull().Workspace.ShouldBeSameAs(current);
+	}
+
 	[Test]
 	public async Task Terminal_readiness_does_not_supersede_a_pending_web_selection()
 	{
@@ -3612,13 +3913,13 @@ public sealed class AvaloniaMainShellControllerTests
 	}
 
 	[Test]
-	public async Task Malformed_startup_checkpoint_uses_the_existing_first_run_selection()
+	public async Task Malformed_startup_checkpoint_opens_dashboard_without_cold_start()
 	{
 		await using ControllerFixture fixture = new(firstResumeCommand: string.Empty);
 		await File.WriteAllTextAsync(fixture.Paths.SessionRestorationPath, "{");
 		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
-		fixture.Backends.Count.ShouldBe(1);
-		fixture.ViewModel.SelectedSession?.Record.Id.ShouldBe("session-1");
+		fixture.Backends.ShouldBeEmpty();
+		fixture.Controller.IsDashboardVisible.ShouldBeTrue();
 	}
 
 	[Test]
@@ -4031,7 +4332,7 @@ public sealed class AvaloniaMainShellControllerTests
 	}
 
 	[Test]
-	public async Task ClosingSelectedSessionActivatesTheReplacementSessionHost()
+	public async Task ClosingSelectedSessionOpensOverviewWithoutShowingReplacementHost()
 	{
 		await using ControllerFixture fixture = new();
 		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
@@ -4041,8 +4342,9 @@ public sealed class AvaloniaMainShellControllerTests
 
 		await fixture.Controller.CloseSessionAsync(first, TestContext.CurrentContext.CancellationToken);
 
-		fixture.ViewModel.SelectedSession.ShouldBeSameAs(second);
-		fixture.Host.ShownSessions.Last().ShouldBe(second.Record.Id);
+		fixture.ViewModel.SelectedSession.ShouldBeNull();
+		fixture.Controller.CurrentProjectScreen.ShouldNotBeNull().SelectedTab.ShouldBe(ProjectScreenTab.Overview);
+		fixture.Host.ShownSessions.ShouldNotContain(second.Record.Id);
 	}
 
 	private static async Task SaveMonitorRulesAsync(
@@ -4126,6 +4428,7 @@ public sealed class AvaloniaMainShellControllerTests
 			bool gitRepository = false,
 			bool secondGitProject = false,
 			IProjectMarkdownFileStore? markdownStore = null,
+			bool seedCheckpoint = true,
 			AgentKind firstKind = AgentKind.Codex)
 		{
 			if (gitRepository)
@@ -4261,6 +4564,19 @@ public sealed class AvaloniaMainShellControllerTests
 			AppPaths paths = new(Root);
 			DataRootHousekeeping.Prepare(paths);
 			Paths = paths;
+			// Runtime/controller tests begin with a genuinely restorable active tab.
+			// First-run behavior has its own seedCheckpoint:false test.
+			if (seedCheckpoint)
+			{
+				var selectedId = rootTabs?.ActiveItemId ?? project.ActiveItemId;
+				var isRoot = rootTabs?.ActiveItemId is not null;
+				var terminal = (isRoot ? rootTabs!.Sessions : project.Sessions).FirstOrDefault(s => s.Id == selectedId);
+				var paused = isRoot && rootTabs!.PausedItemIds.Contains(selectedId!);
+				Pact.Core.Updates.SessionRestorationState initial = new(
+					terminal is not null && !paused ? [terminal.Id] : [], [], [],
+					selectedId is null ? null : new(isRoot ? null : project.Id, selectedId), false);
+				new SessionRestorationStore(paths.SessionRestorationPath).SaveAsync(initial, CancellationToken.None).GetAwaiter().GetResult();
+			}
 			SettingsFileStore = new SettingsFileStore(paths);
 			RecentDirectoryStore = new RecentDirectoryStore(paths.RecentDirectoriesPath);
 			SnapshotStore = new WebMonitorSnapshotStore(paths);
@@ -4336,6 +4652,7 @@ public sealed class AvaloniaMainShellControllerTests
 
 	private sealed class CountingWorkingTreeReader : IGitWorkingTreeReader
 	{
+		public Task<int?> ReadChangedFileCountAsync(string root, CancellationToken cancellationToken) => Task.FromResult<int?>(0);
 		public Task<string?> ReadWorkingTextAsync(string root, string path, CancellationToken cancellationToken) =>
 			Task.FromResult<string?>(null);
 

@@ -204,6 +204,27 @@ internal sealed partial class MainWindow : Window, IDisposable
 
 	private void WireProjectTreeEvents()
 	{
+		ObserveEvent(h => ProjectTree.RootDashboardRequested += h, h => ProjectTree.RootDashboardRequested -= h,
+			"root-dashboard", () => EngineProbeController.OpenDashboardAsync());
+		ObserveEvent<WorkspaceViewModel>(h => RootDashboard.ProjectRequested += h, h => RootDashboard.ProjectRequested -= h,
+			"dashboard-project", owner => EngineProbeController.ViewModel.Workspaces.Contains(owner)
+				? EngineProbeController.OpenProjectScreenAsync(owner, ProjectScreenTab.Overview) : Task.CompletedTask);
+		ObserveEvent<WorkspaceViewModel>(h => RootDashboard.ChangesRequested += h, h => RootDashboard.ChangesRequested -= h,
+			"dashboard-changes", owner => EngineProbeController.ViewModel.Workspaces.Contains(owner)
+				? EngineProbeController.OpenWorkingTreeChangesAsync(owner) : Task.CompletedTask);
+		ObserveEvent<SessionViewModel>(h => RootDashboard.AgentRequested += h, h => RootDashboard.AgentRequested -= h,
+			"dashboard-agent", session => EngineProbeController.ViewModel.Workspaces.Any(w => w.Sessions.Contains(session))
+				&& EngineProbeController.HasActiveTerminalProcess(session)
+				? EngineProbeController.SelectItemAsync(session) : Task.CompletedTask);
+		ObserveEvent(h => RootDashboard.AddProjectRequested += h, h => RootDashboard.AddProjectRequested -= h,
+			"dashboard-add-project", OpenDirectorySelectionAsync);
+		ObserveEvent<WorkspaceViewModel>(h => RootDashboard.ResumeProjectRequested += h, h => RootDashboard.ResumeProjectRequested -= h,
+			"dashboard-resume-project", owner => EngineProbeController.ViewModel.PausedWorkspaces.Contains(owner)
+				? RunWorkspaceOperationWithBusyOverlayAsync("Restoring project...", () => EngineProbeController.ResumeWorkspaceAsync(owner))
+				: Task.CompletedTask);
+		ObserveEvent<string>(h => RootDashboard.RecentDirectoryRequested += h, h => RootDashboard.RecentDirectoryRequested -= h,
+			"dashboard-recent-project", directory => RunWorkspaceOperationWithBusyOverlayAsync("Opening project...",
+				() => EngineProbeController.OpenRecentProjectAsync(directory)));
 		ObserveEvent<SessionViewModel>(
 			handler => ProjectTree.ReadLaterToggleRequested += handler,
 			handler => ProjectTree.ReadLaterToggleRequested -= handler,
@@ -1491,6 +1512,9 @@ internal sealed partial class MainWindow : Window, IDisposable
 		ProjectScreen.DataContext = EngineProbeController.CurrentProjectScreen;
 		RightActions.ProjectScreen = EngineProbeController.CurrentProjectScreen;
 		ProjectScreen.IsVisible = visibility.Project;
+		RootDashboard.DataContext = EngineProbeController.Dashboard;
+		RootDashboard.IsVisible = visibility.Dashboard;
+		ProjectTree.SetDashboardCurrent(visibility.Dashboard);
 		PausedPane.IsVisible = visibility.Paused;
 		PausedCaption.Text = PausedPlaceholderText.For(EngineProbeController.PresentedSurface);
 		BrowserPane.IsVisible = visibility.Browser;

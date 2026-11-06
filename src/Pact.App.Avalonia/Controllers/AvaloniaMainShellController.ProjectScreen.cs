@@ -51,8 +51,11 @@ internal sealed partial class AvaloniaMainShellController
 	{
 		ArgumentNullException.ThrowIfNull(workspace);
 		ObjectDisposedException.ThrowIf(_disposed, this);
+		if (!OwnerNavigationCurrent(workspace.Id, OwnerNavigationEpoch(workspace.Id)))
+		{ return false; }
 		var version = ++_projectNavigationVersion;
 		var screen = GetOrCreateProjectScreen(workspace);
+		_navigationIntent++;
 		await PresentProjectScreenAsync(screen, cancellationToken, version);
 		if (version != _projectNavigationVersion || !ReferenceEquals(CurrentProjectScreen, screen))
 		{
@@ -82,11 +85,19 @@ internal sealed partial class AvaloniaMainShellController
 	/// <summary>Opens the Changes tab of the project whose change list is current.</summary>
 	public Task OpenCurrentChangesAsync(CancellationToken cancellationToken = default) =>
 		CurrentChanges is not null && FindShownWorkspace() is { } workspace
-			? OpenProjectScreenAsync(workspace, ProjectScreenTab.Changes, cancellationToken)
+			? OpenWorkingTreeChangesAsync(workspace, cancellationToken)
 			: Task.CompletedTask;
+
+	/// <summary>Opens live changes from the dashboard.</summary>
+	public Task OpenWorkingTreeChangesAsync(WorkspaceViewModel workspace, CancellationToken cancellationToken = default) =>
+		OpenProjectScreenAsync(workspace, ProjectScreenTab.Changes, cancellationToken);
 
 	private async Task PresentProjectScreenAsync(ProjectScreenViewModel screen, CancellationToken cancellationToken, int? navigationVersion = null)
 	{
+		var ownerId = screen.Workspace.Id;
+		var ownerEpoch = OwnerNavigationEpoch(ownerId);
+		if (!OwnerNavigationCurrent(ownerId, ownerEpoch))
+		{ return; }
 		var version = navigationVersion ?? ++_projectNavigationVersion;
 		ClearSelectionActions(restoreTerminalFocus: false);
 		await FlushCurrentNoteAsync(cancellationToken);
@@ -95,7 +106,8 @@ internal sealed partial class AvaloniaMainShellController
 			return;
 		}
 		await HideActiveWebPageAsync(cancellationToken);
-		if (version != _projectNavigationVersion || !ViewModel.Workspaces.Contains(screen.Workspace))
+		if (version != _projectNavigationVersion || !OwnerNavigationCurrent(ownerId, ownerEpoch)
+			|| !ViewModel.Workspaces.Contains(screen.Workspace))
 		{
 			return;
 		}
@@ -110,6 +122,8 @@ internal sealed partial class AvaloniaMainShellController
 		string relativePath,
 		CancellationToken cancellationToken)
 	{
+		if (!OwnerNavigationCurrent(workspace.Id, OwnerNavigationEpoch(workspace.Id)))
+		{ return false; }
 		var version = ++_projectNavigationVersion;
 		var screen = GetOrCreateProjectScreen(workspace);
 		if (!screen.ContainsReviewLog(relativePath))
@@ -117,6 +131,7 @@ internal sealed partial class AvaloniaMainShellController
 			return false;
 		}
 
+		_navigationIntent++;
 		// Present the validated intent before reading: a late read must never re-present an old owner.
 		await PresentProjectScreenAsync(screen, cancellationToken, version);
 		if (version != _projectNavigationVersion || !ReferenceEquals(CurrentProjectScreen, screen))
@@ -337,7 +352,8 @@ internal sealed partial class AvaloniaMainShellController
 	/// </summary>
 	private void ReleaseProjectScreen(WorkspaceViewModel workspace)
 	{
-		_projectNavigationVersion++;
+		// Lifecycle cleanup is not a new navigation request. In particular it must not
+		// invalidate a newer navigation still awaiting the old owner's document flush.
 		if (_projectScreens.TryGetValue(workspace.Id, out var retained))
 		{
 			retained.Deactivate();
@@ -345,7 +361,7 @@ internal sealed partial class AvaloniaMainShellController
 		if (PresentedSurface is PresentedSurface.Project project
 			&& string.Equals(project.Screen.Workspace.Id, workspace.Id, StringComparison.Ordinal))
 		{
-			Present(new PresentedSurface.None());
+			Present(new PresentedSurface.None(), preserveNavigation: true);
 		}
 
 		DropProject(workspace);

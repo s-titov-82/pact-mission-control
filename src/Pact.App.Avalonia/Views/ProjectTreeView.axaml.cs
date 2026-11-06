@@ -84,6 +84,24 @@ internal sealed partial class ProjectTreeView : UserControl
 	}
 
 	public event EventHandler<object?>? SelectedItemChanged;
+
+	/// <summary>Opens the global overview from the ROOT header.</summary>
+	public event EventHandler? RootDashboardRequested;
+
+	/// <summary>Marks ROOT as the selected global overview without selecting a child.</summary>
+	public void SetDashboardCurrent(bool current)
+	{
+		if (current)
+		{ RootDashboardHeader.Classes.Add("current"); }
+		else
+		{ RootDashboardHeader.Classes.Remove("current"); }
+	}
+
+	private void OnRootDashboardClicked(object? sender, RoutedEventArgs args)
+	{
+		args.Handled = true;
+		RootDashboardRequested?.Invoke(this, EventArgs.Empty);
+	}
 	public event EventHandler<SessionViewModel>? ReadLaterToggleRequested;
 
 	private void OnSessionDoubleTapped(object? sender, TappedEventArgs args)
@@ -204,7 +222,9 @@ internal sealed partial class ProjectTreeView : UserControl
 		var activate = _selectionActivationEnabled && _userSelectionInputPending;
 		_userSelectionInputPending = false;
 		tree.SelectedItem = null;
-		if (activate)
+		if (activate && ReferenceEquals(selectedItem, RootSectionItem))
+		{ RootDashboardRequested?.Invoke(this, EventArgs.Empty); }
+		else if (activate)
 		{
 			SelectedItemChanged?.Invoke(this, selectedItem);
 		}

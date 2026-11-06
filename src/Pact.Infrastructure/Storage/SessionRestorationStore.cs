@@ -31,6 +31,7 @@ public sealed class SessionRestorationStore
 			}
 			var state = await JsonSerializer.DeserializeAsync<SessionRestorationState>(stream, JsonOptions, cancellationToken);
 			return state is { SchemaVersion: 1 }
+				&& (state.Selection is null || state.Selection.HasValidShape())
 				&& ValidIds(state.LiveTerminalIds) && ValidIds(state.LoadedWebPageIds) && ValidIds(state.UnreadTerminalIds)
 				? state : null;
 		}

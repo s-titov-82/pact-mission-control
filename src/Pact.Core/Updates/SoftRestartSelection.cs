@@ -5,8 +5,16 @@ namespace Pact.Core.Updates;
 /// <param name="ItemId">The selected terminal, browser, or project-surface id.</param>
 /// <param name="ProjectScreenTab">Optional project tab name; absent in legacy checkpoints.</param>
 /// <param name="MarkdownRelativePath">Selected project Markdown path for the Docs tab.</param>
+/// <param name="IsDashboard">The ROOT overview, independent of any project or item.</param>
 public sealed record SoftRestartSelection(
 	string? ProjectId,
 	string? ItemId,
 	string? ProjectScreenTab = null,
-	string? MarkdownRelativePath = null);
+	string? MarkdownRelativePath = null,
+	bool IsDashboard = false)
+{
+	/// <summary>Rejects ambiguous dashboard ownership while preserving legacy item selections.</summary>
+	public bool HasValidShape() => IsDashboard
+		? ProjectId is null && ItemId is null && ProjectScreenTab is null && MarkdownRelativePath is null
+		: !string.IsNullOrWhiteSpace(ProjectId) || !string.IsNullOrWhiteSpace(ItemId);
+}

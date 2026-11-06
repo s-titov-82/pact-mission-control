@@ -297,7 +297,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 				_runtimeCoordinator.GetActiveSessionIds,
 				ViewModel.TerminalTabStatuses.GetDiagnosticsSnapshot,
 				_webPageCoordinator.GetLoadedPageIds,
-				() => CurrentProjectScreen);
+				() => CurrentProjectScreen, () => IsDashboardVisible);
 			SoftRestartCoordinator = new SoftRestartCoordinator(
 				launchOptions,
 				softRestartTicketStore,
@@ -322,7 +322,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 			_runtimeCoordinator.GetActiveSessionIds, ViewModel.TerminalTabStatuses.GetDiagnosticsSnapshot,
 			() => ViewModel.Workspaces.SelectMany(workspace => workspace.WebPages)
 				.Concat(ViewModel.RootTabs.WebPages).Where(page => page.IsBrowserLoaded)
-				.Select(page => page.Record.Id).ToArray(), () => CurrentProjectScreen);
+				.Select(page => page.Record.Id).ToArray(), () => CurrentProjectScreen, () => IsDashboardVisible);
 		_startupCheckpoint = new SessionRestorationCheckpoint(startupSnapshot.Capture,
 			state => _sessionRestorationStore.SaveAsync(state, CancellationToken.None),
 			exception => RecordDiagnostic("startup-checkpoint-save-failed", $"category={exception.GetType().Name}"));
@@ -469,18 +469,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 			{
 				await StartOrchestratorAsync(cancellationToken);
 			}
-			if (ViewModel.SelectedSession is { } selected)
-			{
-				await SelectSessionAsync(selected, startIfNeeded: true, cancellationToken: cancellationToken);
-			}
-			else if (ViewModel.SelectedWebPage is { } webPage)
-			{
-				await SelectWebPageAsync(webPage, cancellationToken);
-			}
-			if (ViewModel.SelectedWorkspace is { } workspace)
-			{
-				await SelectWorkspaceAsync(workspace);
-			}
+			await OpenDashboardAsync(cancellationToken);
 		}
 		_restoringStartup = false;
 		PublishWebMonitorPresentationFacts();
@@ -555,6 +544,8 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		LastRestorationSummary = await _softRestartRestorer.RestoreAsync(
 			ticket,
 			cancellationToken);
+		if (!LastRestorationSummary.SelectionRestored)
+		{ await OpenDashboardAsync(cancellationToken); }
 		if (!ticket.OrchestratorWasRunning)
 		{
 			await _orchestrator.StopAsync();
@@ -646,17 +637,30 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 	{
 		ObjectDisposedException.ThrowIf(_disposed, this);
 		ThrowIfRejectingInput();
+		var ownerId = FindWorkspace(workspace => workspace.Sessions.Contains(session))?.Id;
+		var ownerEpoch = OwnerNavigationEpoch(ownerId);
+		if (!OwnerNavigationCurrent(ownerId, ownerEpoch))
+		{ return; }
 		SessionSwitchTiming timing = new();
+		var intent = ++_navigationIntent;
+		bool IsCurrent()
+		{ return !_disposed && intent == _navigationIntent && OwnerNavigationCurrent(ownerId, ownerEpoch); }
 		_projectNavigationVersion++;
 		ClearSelectionActions(restoreTerminalFocus: false);
 		await FlushCurrentNoteAsync(cancellationToken);
+		if (!IsCurrent())
+		{ return; }
 		timing.Mark("note");
 		await HideActiveWebPageAsync(cancellationToken);
+		if (!IsCurrent())
+		{ return; }
 		timing.Mark("web");
 		if (session.IsManuallyPaused || (ReferenceEquals(_orchestrator.Session, session) && !_orchestrator.IsRunning))
 		{
 			ViewModel.SelectedSession = session;
-			await ViewModel.SetActiveItemAsync(session.Record.Id, cancellationToken);
+			await ViewModel.SetActiveItemAsync(session.Record.Id, cancellationToken, IsCurrent);
+			if (!IsCurrent())
+			{ return; }
 			Present(new PresentedSurface.PausedSession(session));
 			return;
 		}
@@ -673,18 +677,22 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 			async (target, ct) =>
 			{
 				timing.Mark("gate");
-				await PrepareSessionAsync(target, ct);
+				await PrepareSessionAsync(target, IsCurrent, ct);
 				timing.Mark("prepare");
 			},
 			static (_, _) => Task.FromResult<IDisposable?>(null),
 			async (target, ct) =>
 			{
+				if (!IsCurrent())
+				{ return; }
 				timing.Mark("show");
 				await _launcher.ActivateAsync(target, startIfNeeded, preferResumeCommand, ct);
 				timing.Mark("runtime");
 			},
 			async _ =>
 			{
+				if (!IsCurrent())
+				{ return; }
 				// A starting terminal is hidden behind the loading surface and cannot take
 				// focus yet; it is focused when that surface clears.
 				if (PresentedSurface is PresentedSurface.Terminal terminal
@@ -709,16 +717,24 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		}
 	}
 
-	public Task SelectWebPageAsync(WebPageViewModel webPage, CancellationToken cancellationToken = default) =>
-		SelectWebPageCoreAsync(webPage, ++_projectNavigationVersion, cancellationToken);
+	public Task SelectWebPageAsync(WebPageViewModel webPage, CancellationToken cancellationToken = default)
+	{
+		var ownerId = FindWorkspace(workspace => workspace.WebPages.Contains(webPage))?.Id;
+		if (!OwnerNavigationCurrent(ownerId, OwnerNavigationEpoch(ownerId)))
+		{ return Task.CompletedTask; }
+		_navigationIntent++;
+		return SelectWebPageCoreAsync(webPage, ++_projectNavigationVersion, cancellationToken);
+	}
 
 	private async Task SelectWebPageCoreAsync(WebPageViewModel webPage, int version, CancellationToken cancellationToken)
 	{
 		ArgumentNullException.ThrowIfNull(webPage);
+		var ownerId = FindWorkspace(workspace => workspace.WebPages.Contains(webPage))?.Id;
+		var ownerEpoch = OwnerNavigationEpoch(ownerId);
 		bool IsCurrent()
 		{
 			// Also used inside atomic persistence, which can run off the UI thread.
-			return !_disposed && version == _projectNavigationVersion;
+			return !_disposed && version == _projectNavigationVersion && OwnerNavigationCurrent(ownerId, ownerEpoch);
 		}
 		bool CanPresent()
 		{
@@ -1421,34 +1437,39 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 
 	public async Task PauseWorkspaceAsync(WorkspaceViewModel workspace, CancellationToken cancellationToken = default)
 	{
-		if (ReferenceEquals(CurrentProjectScreen?.Workspace, workspace))
+		var navigation = CaptureNavigationReturn(workspace);
+		await RunNavigationMutationAsync(navigation, async () =>
 		{
-			await FlushCurrentNoteAsync(cancellationToken);
-		}
-		// Resume capture selects each session it shows, so read the user's choice first. A
-		// selection outside this project leaves the project's own remembered item in place.
-		var selectedItemId = ViewModel.SelectedSession?.Record.Id
-			?? ViewModel.SelectedWebPage?.Record.Id
-			?? ViewModel.SelectedProjectNote?.Record.Id;
-		var activeItemId = selectedItemId is not null && OwnsItem(workspace, selectedItemId)
-			? selectedItemId
-			: workspace.Record.ActiveItemId;
-		ReleaseProjectScreen(workspace);
-		InvalidateSelectionOwner(workspace);
-		await EndWorkspaceReviewsAsync(workspace);
-		await UnloadWorkspaceWebPagesAsync(
-			workspace,
-			deleteSnapshots: false,
-			cancellationToken);
-		await _resumeCapture.CaptureBeforeStopAsync(workspace.Sessions.ToArray(), cancellationToken);
-		foreach (var session in workspace.Sessions.ToArray())
-		{
-			await StopSessionAsync(session, SessionStatus.Stopped);
-		}
-		_gitPanelViewModels.Remove(workspace.Id);
-		await ViewModel.PauseWorkspaceAsync(workspace.Id, activeItemId, cancellationToken);
-		// Resume capture shows each session's terminal, which takes up the project's change list again.
-		ReleaseProjectScreen(workspace);
+			if (ReferenceEquals(CurrentProjectScreen?.Workspace, workspace))
+			{
+				await FlushCurrentNoteAsync(cancellationToken);
+			}
+			// Resume capture selects each session it shows, so read the user's choice first. A
+			// selection outside this project leaves the project's own remembered item in place.
+			var selectedItemId = ViewModel.SelectedSession?.Record.Id
+				?? ViewModel.SelectedWebPage?.Record.Id
+				?? ViewModel.SelectedProjectNote?.Record.Id;
+			var activeItemId = selectedItemId is not null && OwnsItem(workspace, selectedItemId)
+				? selectedItemId
+				: workspace.Record.ActiveItemId;
+			ReleaseProjectScreen(workspace);
+			InvalidateSelectionOwner(workspace);
+			await EndWorkspaceReviewsAsync(workspace);
+			await UnloadWorkspaceWebPagesAsync(
+				workspace,
+				deleteSnapshots: false,
+				cancellationToken);
+			await _resumeCapture.CaptureBeforeStopAsync(workspace.Sessions.ToArray(), cancellationToken, static _ => Task.CompletedTask);
+			foreach (var session in workspace.Sessions.ToArray())
+			{
+				await StopSessionAsync(session, SessionStatus.Stopped);
+			}
+			_gitPanelViewModels.Remove(workspace.Id);
+			await ViewModel.PauseWorkspaceAsync(workspace.Id, activeItemId, cancellationToken, selectReplacement: false);
+			// Capture does not change the presented context during project pause.
+			ReleaseProjectScreen(workspace);
+			await ReturnAfterRemovalAsync(navigation, ownerRemoved: true, cancellationToken);
+		}, releasingOwner: true);
 	}
 
 	private static bool OwnsItem(WorkspaceViewModel workspace, string itemId) =>
@@ -1460,9 +1481,13 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		CancellationToken cancellationToken = default) =>
 		_recentDirectoryStore.LoadAsync(cancellationToken);
 
-	public async Task AddProjectFromDirectoryAsync(
+	public Task AddProjectFromDirectoryAsync(
 		string workingDirectory,
-		CancellationToken cancellationToken = default)
+		CancellationToken cancellationToken = default) =>
+		AddProjectFromDirectoryCoreAsync(workingDirectory, selectWorkspace: true, cancellationToken);
+
+	private async Task AddProjectFromDirectoryCoreAsync(
+		string workingDirectory, bool selectWorkspace, CancellationToken cancellationToken)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(workingDirectory);
 		var directory = Path.GetFullPath(workingDirectory.Trim());
@@ -1471,8 +1496,9 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 			throw new DirectoryNotFoundException($"Directory does not exist: {directory}");
 		}
 
-		var workspace = await ViewModel.EnsureWorkspaceForDirectoryAsync(directory, cancellationToken);
-		await SelectWorkspaceAsync(workspace);
+		var workspace = await ViewModel.EnsureWorkspaceForDirectoryAsync(directory, cancellationToken, selectWorkspace);
+		if (selectWorkspace)
+		{ await SelectWorkspaceAsync(workspace); }
 		await AddRecentWorkingDirectoryAsync(directory, cancellationToken);
 	}
 
@@ -1749,24 +1775,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 
 		if (workspace.IsNotesTabOpen)
 		{
-			InvalidateNotesSelection(workspace);
-			await FlushCurrentNoteAsync(cancellationToken);
-			await ViewModel.HideNotesTabAsync(workspace.Id, cancellationToken);
-			StopPresentingNotes();
-
-			if (ViewModel.SelectedSession is { } session)
-			{
-				await SelectSessionAsync(session, startIfNeeded: true, cancellationToken: cancellationToken);
-			}
-			else if (ViewModel.SelectedWebPage is { } webPage)
-			{
-				await SelectWebPageAsync(webPage, cancellationToken);
-			}
-			else if (PresentedSurface is PresentedSurface.Terminal)
-			{
-				Present(new PresentedSurface.None());
-			}
-
+			await CloseNoteAsync(workspace.Notes[0], cancellationToken);
 			return;
 		}
 
@@ -1776,35 +1785,43 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 
 	public async Task CloseWorkspaceAsync(WorkspaceViewModel workspace, CancellationToken cancellationToken = default)
 	{
-		if (ReferenceEquals(CurrentProjectScreen?.Workspace, workspace))
+		var navigation = CaptureNavigationReturn(workspace);
+		await RunNavigationMutationAsync(navigation, async () =>
 		{
-			await FlushCurrentNoteAsync(cancellationToken);
-		}
-		ReleaseProjectScreen(workspace);
-		InvalidateSelectionOwner(workspace);
-		await EndWorkspaceReviewsAsync(workspace);
-		await UnloadWorkspaceWebPagesAsync(
-			workspace,
-			deleteSnapshots: true,
-			cancellationToken);
-		foreach (var session in workspace.Sessions.ToArray())
-		{
-			await StopSessionAsync(session, SessionStatus.Exited);
-		}
-		_gitPanelViewModels.Remove(workspace.Id);
-		await ViewModel.RemoveWorkspaceAsync(workspace.Id, cancellationToken);
-		ReleaseProjectScreen(workspace);
-		await RestoreSelectedHostAsync(cancellationToken);
+			if (ReferenceEquals(CurrentProjectScreen?.Workspace, workspace))
+			{
+				await FlushCurrentNoteAsync(cancellationToken);
+			}
+			ReleaseProjectScreen(workspace);
+			InvalidateSelectionOwner(workspace);
+			await EndWorkspaceReviewsAsync(workspace);
+			await UnloadWorkspaceWebPagesAsync(
+				workspace,
+				deleteSnapshots: true,
+				cancellationToken);
+			foreach (var session in workspace.Sessions.ToArray())
+			{
+				await StopSessionAsync(session, SessionStatus.Exited);
+			}
+			_gitPanelViewModels.Remove(workspace.Id);
+			await ViewModel.RemoveWorkspaceAsync(workspace.Id, cancellationToken, selectReplacement: false);
+			ReleaseProjectScreen(workspace);
+			await ReturnAfterRemovalAsync(navigation, ownerRemoved: true, cancellationToken);
+		}, releasingOwner: true);
 	}
 
 	public async Task CloseSessionAsync(SessionViewModel session, CancellationToken cancellationToken = default)
 	{
-		// The review learns first, so it ends as Aborted rather than as a dead process.
-		await _reviewRelay.NotifySessionClosedAsync(session.Record.Id);
-		await StopSessionAsync(session, SessionStatus.Exited);
-		await _terminalHost.DisposeTerminalAsync(session.Record.Id);
-		await ViewModel.RemoveSessionAsync(session.Record.Id, cancellationToken);
-		await RestoreSelectedHostAsync(cancellationToken);
+		var navigation = CaptureNavigationReturn(FindWorkspace(w => w.Sessions.Contains(session)), session);
+		await RunNavigationMutationAsync(navigation, async () =>
+		{
+			// The review learns first, so it ends as Aborted rather than as a dead process.
+			await _reviewRelay.NotifySessionClosedAsync(session.Record.Id);
+			await StopSessionAsync(session, SessionStatus.Exited);
+			await _terminalHost.DisposeTerminalAsync(session.Record.Id);
+			await ViewModel.RemoveSessionAsync(session.Record.Id, cancellationToken, selectReplacement: false);
+			await ReturnAfterRemovalAsync(navigation, ownerRemoved: false, cancellationToken);
+		});
 	}
 
 	/// <summary>Returns whether the session currently owns a live terminal controller.</summary>
@@ -1905,13 +1922,17 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 	public async Task CloseWebPageAsync(WebPageViewModel webPage, CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(webPage);
-		await _webPageCoordinator.CloseAsync(
-			webPage.Record.Id,
-			deleteSnapshot: true,
-			cancellationToken);
+		var navigation = CaptureNavigationReturn(FindWorkspace(w => w.WebPages.Contains(webPage)), webPage);
+		await RunNavigationMutationAsync(navigation, async () =>
+		{
+			await _webPageCoordinator.CloseAsync(
+				webPage.Record.Id,
+				deleteSnapshot: true,
+				cancellationToken);
 
-		await ViewModel.RemoveWebPageAsync(webPage.Record.Id, cancellationToken);
-		await RestoreSelectedHostAsync(cancellationToken);
+			await ViewModel.RemoveWebPageAsync(webPage.Record.Id, cancellationToken, selectReplacement: false);
+			await ReturnAfterRemovalAsync(navigation, ownerRemoved: false, cancellationToken);
+		});
 	}
 
 	/// <summary>Unloads and parks one ROOT browser page without changing the selected row.</summary>
@@ -1960,11 +1981,13 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 			return;
 		}
 
+		var navigation = CaptureNavigationReturn(workspace, note);
 		InvalidateNotesSelection(workspace);
 		await FlushCurrentNoteAsync(cancellationToken);
-		await ViewModel.HideNotesTabAsync(workspace.Id, cancellationToken);
-		StopPresentingNotes();
-		await RestoreSelectedHostAsync(cancellationToken);
+		await ViewModel.HideNotesTabAsync(workspace.Id, cancellationToken, selectReplacement: false);
+		if (navigation.Intent == _navigationIntent)
+		{ StopPresentingNotes(); }
+		await ReturnAfterRemovalAsync(navigation, ownerRemoved: false, cancellationToken);
 	}
 
 	private SessionScreenState? ReadScreenState(string sessionId) =>
@@ -2153,6 +2176,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		}
 
 		_disposed = true;
+		_dashboard?.Dispose();
 		try
 		{
 			await ShutdownAsync();
@@ -2175,10 +2199,12 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		}
 	}
 
-	private async Task PrepareSessionAsync(SessionViewModel session, CancellationToken cancellationToken)
+	private async Task PrepareSessionAsync(SessionViewModel session, Func<bool> isCurrent, CancellationToken cancellationToken)
 	{
+		if (!isCurrent())
+		{ return; }
 		ViewModel.SelectedSession = session;
-		await ViewModel.SetActiveItemAsync(session.Record.Id, cancellationToken);
+		await ViewModel.SetActiveItemAsync(session.Record.Id, cancellationToken, isCurrent);
 	}
 
 	private SessionViewModel? FindRestorableSession(string sessionId) =>
@@ -2218,6 +2244,11 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		SoftRestartSelection selection,
 		CancellationToken cancellationToken)
 	{
+		if (selection.IsDashboard && selection.HasValidShape())
+		{
+			await OpenDashboardAsync(cancellationToken);
+			return true;
+		}
 		if (selection.ItemId is { } itemId)
 		{
 			if (_orchestrator.Session is not null
@@ -2358,37 +2389,6 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 				page.Record.Id,
 				deleteSnapshots,
 				cancellationToken);
-		}
-	}
-
-	private async Task RestoreSelectedHostAsync(CancellationToken cancellationToken)
-	{
-		if (ViewModel.SelectedSession is { } session)
-		{
-			if (IsTerminalVisible &&
-				string.Equals(
-					_runtimeCoordinator.ActiveSessionId,
-					session.Record.Id,
-					StringComparison.Ordinal))
-			{
-				return;
-			}
-
-			await SelectSessionAsync(session, startIfNeeded: true, cancellationToken: cancellationToken);
-		}
-		else if (ViewModel.SelectedWebPage is { } webPage)
-		{
-			await SelectWebPageAsync(webPage, cancellationToken);
-		}
-		else if (ViewModel.SelectedProjectNote is { } note)
-		{
-			await SelectNoteAsync(note, cancellationToken);
-		}
-		// A selected project row has no tab selected; its screen stays while the project is open.
-		else if (PresentedSurface is not PresentedSurface.Project project
-			|| !ViewModel.Workspaces.Contains(project.Screen.Workspace))
-		{
-			Present(new PresentedSurface.None());
 		}
 	}
 
@@ -3036,7 +3036,11 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		}
 	}
 
-	private void OnProjectTabNavigationRequested(object? sender, EventArgs e) => _projectNavigationVersion++;
+	private void OnProjectTabNavigationRequested(object? sender, EventArgs e)
+	{
+		_projectNavigationVersion++;
+		_navigationIntent++;
+	}
 
 	private async Task ApplyWebMonitorRulesAsync(
 		IReadOnlyList<WebMonitorRule> rules,
@@ -3118,6 +3122,8 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 	/// </summary>
 	private void Present(PresentedSurface next, bool preserveNavigation = false)
 	{
+		if (next is not PresentedSurface.Dashboard)
+		{ _dashboard?.Deactivate(); }
 		if (!preserveNavigation && next is not PresentedSurface.Project)
 		{
 			_projectNavigationVersion++;
@@ -3157,6 +3163,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		}
 
 		OnPropertyChanged(nameof(PresentedSurface));
+		OnPropertyChanged(nameof(IsDashboardVisible));
 		RaiseIfChanged(previous is PresentedSurface.Terminal, IsTerminalVisible, nameof(IsTerminalVisible));
 		RaiseIfChanged(
 			previous is PresentedSurface.PausedSession or PresentedSurface.PausedWebPage,

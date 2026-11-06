@@ -14,6 +14,43 @@ public sealed class SoftRestartTicketStoreTests : IDisposable
 	public void Dispose() => _temporaryDirectory.Dispose();
 
 	[Test]
+	public async Task Dashboard_ticket_preserves_live_ids_through_consumption()
+	{
+		(var store, _) = CreateStore();
+		var ticket = CreateTicket(RestartId, SoftRestartMode.RestartOnly) with
+		{
+			Selection = new(null, null, IsDashboard: true),
+			LiveTerminalIds = ["live"]
+		};
+		await store.WriteNewAsync(ticket, CancellationToken.None);
+		await store.UpdateOutcomeAsync(RestartId, new(SoftRestartOutcomeKind.Restarted, null), CancellationToken.None);
+		var restored = (await store.ConsumeExactAsync(RestartId, new StableReleaseVersion(1, 2, 3), CancellationToken.None)).ShouldNotBeNull();
+		restored.Selection!.IsDashboard.ShouldBeTrue();
+		restored.LiveTerminalIds.ShouldBe(["live"]);
+	}
+
+	[TestCase("owner")]
+	[TestCase("item")]
+	[TestCase("tab")]
+	[TestCase("path")]
+	public async Task Dashboard_ticket_rejects_mixed_selection_metadata(string field)
+	{
+		(var store, _) = CreateStore();
+		SoftRestartSelection selection = new(null, null, IsDashboard: true);
+		selection = field switch
+		{
+			"owner" => selection with { ProjectId = "project" },
+			"item" => selection with { ItemId = "session" },
+			"tab" => selection with { ProjectScreenTab = "Docs" },
+			_ => selection with { MarkdownRelativePath = "README.md" }
+		};
+		var error = await Should.ThrowAsync<ArgumentException>(() => store.WriteNewAsync(
+			CreateTicket(RestartId, SoftRestartMode.RestartOnly) with { Selection = selection }, CancellationToken.None));
+		error.ParamName.ShouldBe("ticket");
+		error.InnerException.ShouldBeOfType<InvalidDataException>();
+	}
+
+	[Test]
 	public async Task Pending_ticket_is_written_atomically_to_the_exact_deterministic_path()
 	{
 		(var store, var paths) = CreateStore();

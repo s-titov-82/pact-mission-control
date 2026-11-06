@@ -341,6 +341,17 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 		RefreshCurrentProjectState(workspace);
 	}
 
+	/// <summary>Selects the global overview without selecting or starting an owner item.</summary>
+	public void SelectDashboard()
+	{
+		SelectedSession = null;
+		SelectedWebPage = null;
+		SelectedProjectNote = null;
+		SelectedWorkspace = null;
+		RefreshCurrentProjectState(null);
+		RefreshTerminalActionTargets();
+	}
+
 	/// <summary>Marks which project row is shown; <see langword="null"/> when a tab is.</summary>
 	public void RefreshCurrentProjectState(WorkspaceViewModel? current)
 	{
@@ -728,10 +739,12 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 	/// <summary>
 	/// Returns the project for a directory, creating it when that root is not open yet. The root
 	/// is normalized first, so the same directory never yields two projects.
+	/// Pass false for selection when navigation must wait for asynchronous creation to finish.
 	/// </summary>
 	public async Task<WorkspaceViewModel> EnsureWorkspaceForDirectoryAsync(
 		string workingDirectory,
-		CancellationToken cancellationToken)
+		CancellationToken cancellationToken,
+		bool selectWorkspace = true)
 	{
 		var rootPath = WorkspaceRootDetector.NormalizeRoot(workingDirectory);
 		var existing = Workspaces
@@ -742,7 +755,8 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 				StringComparison.OrdinalIgnoreCase));
 		if (existing is not null)
 		{
-			SelectedWorkspace = existing;
+			if (selectWorkspace)
+			{ SelectedWorkspace = existing; }
 			return existing;
 		}
 
@@ -759,7 +773,8 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 
 		WorkspaceViewModel viewModel = new(record);
 		Workspaces.Add(viewModel);
-		SelectedWorkspace = viewModel;
+		if (selectWorkspace)
+		{ SelectedWorkspace = viewModel; }
 		return viewModel;
 	}
 
@@ -1348,7 +1363,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 	}
 
 	/// <summary>Hides the notes tab. The notes file itself is left untouched.</summary>
-	public async Task HideNotesTabAsync(string workspaceId, CancellationToken cancellationToken)
+	public async Task HideNotesTabAsync(string workspaceId, CancellationToken cancellationToken, bool selectReplacement = true)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(workspaceId);
 		var workspace = FindWorkspaceViewModel(workspaceId);
@@ -1366,7 +1381,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 		}
 
 		var removedSelected = ReferenceEquals(SelectedProjectNote, note);
-		var replacement = removedSelected ? workspace.Sessions.FirstOrDefault()?.Record.Id ?? workspace.WebPages.FirstOrDefault()?.Record.Id : null;
+		var replacement = removedSelected && selectReplacement ? workspace.Sessions.FirstOrDefault()?.Record.Id ?? workspace.WebPages.FirstOrDefault()?.Record.Id : null;
 		var updated = await _structurePersistence.HideNotesTabAsync(
 			workspaceId,
 			note.Record.Id,
@@ -1378,7 +1393,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 		}
 
 		workspace.Notes.Remove(note);
-		if (removedSelected)
+		if (removedSelected && ReferenceEquals(SelectedProjectNote, note))
 		{
 			SelectedProjectNote = null;
 			if (replacement is not null)
@@ -1525,7 +1540,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 	/// Removes a web page and persists the replacement selection, so closing a tab lands on a
 	/// sensible neighbor rather than nothing.
 	/// </summary>
-	public async Task RemoveWebPageAsync(string webPageId, CancellationToken cancellationToken)
+	public async Task RemoveWebPageAsync(string webPageId, CancellationToken cancellationToken, bool selectReplacement = true)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(webPageId);
 
@@ -1533,7 +1548,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 			webPage => string.Equals(webPage.Record.Id, webPageId, StringComparison.Ordinal));
 		if (rootWebPage is not null)
 		{
-			await RemoveRootItemAsync(rootWebPage, webPageId, cancellationToken);
+			await RemoveRootItemAsync(rootWebPage, webPageId, selectReplacement, cancellationToken);
 			return;
 		}
 
@@ -1546,7 +1561,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 		}
 
 		var removedSelectedWebPage = ReferenceEquals(SelectedWebPage, webPageToRemove);
-		var replacementActiveItemId = removedSelectedWebPage
+		var replacementActiveItemId = removedSelectedWebPage && selectReplacement
 			? GetReplacementActiveItemIdAfterWebPageRemoval(webPageId, removedIndex)
 			: null;
 
@@ -1573,6 +1588,12 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 			FindWorkspaceViewModel(updatedProject.Id)?.UpdateRecord(updatedProject);
 		}
 
+		if (!selectReplacement)
+		{
+			if (ReferenceEquals(SelectedWebPage, webPageToRemove))
+			{ SelectedWebPage = null; }
+			return;
+		}
 		if (!removedSelectedWebPage)
 		{
 			return;
@@ -1606,7 +1627,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 	/// Removes a session, unregisters it from the status engine, and persists the replacement
 	/// selection.
 	/// </summary>
-	public async Task RemoveSessionAsync(string sessionId, CancellationToken cancellationToken)
+	public async Task RemoveSessionAsync(string sessionId, CancellationToken cancellationToken, bool selectReplacement = true)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
 
@@ -1614,7 +1635,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 			session => string.Equals(session.Record.Id, sessionId, StringComparison.Ordinal));
 		if (rootSession is not null)
 		{
-			await RemoveRootItemAsync(rootSession, sessionId, cancellationToken);
+			await RemoveRootItemAsync(rootSession, sessionId, selectReplacement, cancellationToken);
 			return;
 		}
 
@@ -1627,7 +1648,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 		}
 
 		var removedSelectedSession = ReferenceEquals(SelectedSession, sessionToRemove);
-		var replacementActiveItemId = removedSelectedSession
+		var replacementActiveItemId = removedSelectedSession && selectReplacement
 			? GetReplacementActiveItemIdAfterSessionRemoval(sessionId, removedIndex)
 			: null;
 
@@ -1654,6 +1675,13 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 			FindWorkspaceViewModel(project.Id)?.UpdateRecord(project);
 		}
 
+		if (!selectReplacement)
+		{
+			if (ReferenceEquals(SelectedSession, sessionToRemove))
+			{ SelectedSession = null; }
+			RefreshTerminalActionTargets();
+			return;
+		}
 		if (!removedSelectedSession)
 		{
 			RefreshTerminalActionTargets();
@@ -1741,11 +1769,12 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 	private async Task RemoveRootItemAsync(
 		object item,
 		string itemId,
+		bool selectReplacement,
 		CancellationToken cancellationToken)
 	{
 		var removedSelected = ReferenceEquals(item, SelectedSession)
 			|| ReferenceEquals(item, SelectedWebPage);
-		var replacementId = removedSelected ? GetRootReplacementItemId(itemId) : null;
+		var replacementId = removedSelected && selectReplacement ? GetRootReplacementItemId(itemId) : null;
 		var record = await _rootPersistence.RemoveItemAsync(
 			itemId,
 			replacementId,
@@ -1760,6 +1789,15 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 		}
 
 		RootTabs.UpdateRecord(record);
+		if (!selectReplacement)
+		{
+			if (ReferenceEquals(item, SelectedSession))
+			{ SelectedSession = null; }
+			if (ReferenceEquals(item, SelectedWebPage))
+			{ SelectedWebPage = null; }
+			RefreshTerminalActionTargets();
+			return;
+		}
 		if (!removedSelected)
 		{
 			RefreshTerminalActionTargets();
@@ -1813,7 +1851,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 	/// Closes a project and everything nested under it, then selects a replacement item from the
 	/// remaining projects.
 	/// </summary>
-	public async Task RemoveWorkspaceAsync(string workspaceId, CancellationToken cancellationToken)
+	public async Task RemoveWorkspaceAsync(string workspaceId, CancellationToken cancellationToken, bool selectReplacement = true)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(workspaceId);
 
@@ -1839,6 +1877,17 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 			PausedWorkspaces.Remove(workspaceToRemove);
 		}
 
+		if (!selectReplacement)
+		{
+			if (SelectedSession is not null && sessionsToRemove.Contains(SelectedSession))
+			{ SelectedSession = null; }
+			if (SelectedWebPage is not null && webPagesToRemove.Contains(SelectedWebPage))
+			{ SelectedWebPage = null; }
+			if (ReferenceEquals(SelectedWorkspace, workspaceToRemove))
+			{ SelectedWorkspace = null; }
+			RefreshTerminalActionTargets();
+			return;
+		}
 		var removedSelectedSession = SelectedSession is not null
 			&& sessionsToRemove.Any(session => ReferenceEquals(session, SelectedSession));
 		if (removedSelectedSession)
@@ -1870,7 +1919,8 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 	public async Task PauseWorkspaceAsync(
 		string workspaceId,
 		string? activeItemId,
-		CancellationToken cancellationToken)
+		CancellationToken cancellationToken,
+		bool selectReplacement = true)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(workspaceId);
 
@@ -1913,6 +1963,17 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 			WebPages.Remove(webPage);
 		}
 
+		if (!selectReplacement)
+		{
+			if (SelectedSession is not null && sessionsToPause.Contains(SelectedSession))
+			{ SelectedSession = null; }
+			if (SelectedWebPage is not null && webPagesToPause.Contains(SelectedWebPage))
+			{ SelectedWebPage = null; }
+			if (ReferenceEquals(SelectedWorkspace, viewModel))
+			{ SelectedWorkspace = null; }
+			RefreshTerminalActionTargets();
+			return;
+		}
 		if (SelectedSession is not null
 			&& sessionsToPause.Any(session => ReferenceEquals(session, SelectedSession)))
 		{
