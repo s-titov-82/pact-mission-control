@@ -197,6 +197,17 @@ sentinel project: it has no project close/pause lifecycle, Git panel, documents,
 notes, or reviews. Its unpaused terminals may still participate in
 manual prompt and selection actions.
 
+The ROOT header also selects the global dashboard, an explicit
+`PresentedSurface.Dashboard` without project ownership. `RootDashboardViewModel`
+projects open projects and their actually live agent sessions; statuses remain
+owned by the existing session models. While visible it reconciles lightweight
+Git status every five seconds with at most two concurrent reads, without diffs
+or line totals. Leaving invalidates pending publications and stops scheduling.
+Closing the selected project tab returns to Overview; removing the current
+project or ROOT tab returns to the dashboard. Background removals preserve the
+shown context. Shell navigation intent is independent of transient presentation
+changes and guards completion of destructive operations.
+
 `Settings/agent-control.json` owns the fixed loopback endpoint port.
 `Settings/orchestrator.json` owns the singular slot, its durable credential,
 launch command, lock/unlock prompts, and the two opt-in switches. Provisioning
@@ -414,6 +425,22 @@ DI-owned service shared by projects; discovery and icon bytes are cached in
 memory, while each launch resolves the currently presented project root.
 Project links remain in `ProjectRecord.Links` and open through existing browser
 navigation. Active review rows project the relay, without separate polling.
+
+`GitWorkingTreeReader` also implements `IGitCommitReader`, using the same runner
+and diff parser to read immutable commit objects. `ProjectChangesViewModel`
+keeps live working-tree facts separately from the selected display source;
+source/file generations reject stale reads. The picker owns only bounded
+history pages and ref resolution. Historical `ShownDiff` and remark anchors
+carry target SHA, first-parent base and original rename path. The existing
+remark book/file keeps project-wide ids, discovery, sending and cleanup. Only
+row markers and per-file counts follow the displayed source. Historical placement uses the captured revision line,
+never disk or current HEAD. No additional history store or poller is involved.
+`IGitComparisonReader` reuses the same immutable comparison implementation for
+arbitrary base/target pairs and tracking-upstream branch snapshots. Changes keeps
+branch summary facts separately, applies live branch display updates with source
+and file generations, and reserves source intent across controller navigation
+awaits. A short editor lease retains its captured pair; it does not stop summary
+polling. Individual commits keep their real first-parent metadata.
 
 ## Non-goals
 

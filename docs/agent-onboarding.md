@@ -512,6 +512,55 @@ The upper third scrolls independently and contains repository information,
 installed IDEs, folder navigation, active reviews and durable project links.
 There is no separate Notes tree row or visibility toggle.
 
+Changes defaults to Working tree. Choose commit lists history in pages of fifty
+and accepts a SHA/ref, resolved to a full immutable object id before loading.
+Merges compare with their first parent; initial commits with the empty tree.
+All historical text comes from Git objects, with the existing binary/size
+placeholders. Local Markdown images show an unavailable-resource caption and
+local file links are refused; headings and HTTP(S) links remain usable.
+Working-tree summary actions explicitly select Working tree, while a normal
+Changes tab selection retains the in-memory source. No new restart selection
+state is persisted.
+
+Current branch compares the configured tracking upstream directly with HEAD,
+using both resolved full ids; it excludes working/index/untracked changes and
+does not fetch or substitute a main branch/merge base. Missing/gone upstream,
+unborn and detached HEAD have explicit unavailable text. Working tree and Current
+branch have independent right-panel counts and explicit mode navigation, also
+at zero. Both summaries refresh through the existing observer while an individual
+commit stays frozen. Branch pair changes invalidate older file reads. An open
+remark editor temporarily retains its displayed pair while summaries update;
+closing that editor resumes branch presentation. Hidden same-project editors
+retain their drafts/pair; mode/owner departure releases their hold.
+
+Branch remarks retain target HEAD and the exact upstream comparison base, not
+just the target's first parent. Their source link reopens that fixed comparison
+even after refs move. Historical markers/editors require matching target AND
+base. These changes do not partition project-wide Send, drafts or cleanup.
+
+All remark threads remain in `.pact/remarks.json`. Optional `TargetCommit` and
+`OriginalPath` anchor fields identify historical threads; absent target means
+Working tree. Open/Resolved, draft counts and Send are project-wide: one delivery
+includes pending messages and typed replies of all open project threads across
+Working tree and commits. Only per-file/row marks follow the displayed source.
+Historical placement is the captured line with `outdated: false` in UI, prompts
+and MCP. Source buttons reopen a thread's commit/file, and source switching
+retains typed replies. New builds read older records; saving historical threads
+with a pre-feature build is unsupported. There is no sidecar or separate id
+counter.
+
+When the project's entire observed remark list becomes resolved with no pending
+deliveries or saved/typed replies, Changes offers an inline cleanup question.
+No retains all threads and does not re-prompt on ordinary refresh/navigation.
+The explicit cleanup button remains available for an eligible saved list,
+including after restart; loading resolved records alone never prompts. The
+cleanup scope is the complete project-wide Open/Resolved collection, regardless
+of displayed Working tree or target SHA, not a ReviewRelay run. Confirmation compares the entire
+captured project list under RemarkBook's mutation gate; added/reopened/changed threads
+invalidate it without partial deletion. A failed save retains retryable state,
+relevant editors are disabled during persistence, and ids are never reused.
+This does not introduce automatic retention or prune shared text snapshots.
+
 Docs lists every project Markdown file in the right panel's Documents tree.
 Its first activation opens the root README.md when available; later activations
 retain the selected file. Startup checkpoints retain the actual project tab and
@@ -542,6 +591,12 @@ an empty completion closes it.
 - Clipboard paste is written by the C# session runtime without Enter: a right
   click for a client that captures the mouse, otherwise a bracketed paste. CRLF and standalone CR are normalized to LF before the backend write;
   do not route clipboard text through browser-side `term.paste()`.
+- Keyboard Ctrl+V arrives from xterm as VT `0x16`. The C# keyboard-input
+  boundary pastes copied local file paths, and clipboard text for VT clients,
+  without Enter. Console-key mode keeps its native Ctrl+V text/image behavior;
+  with no text or files the key is forwarded so the client can read an image.
+  Pending clipboard reads are discarded after selection or controller replacement.
+
 - xterm HTTP(S) links publish the source session id to the application host.
   The shell opens a saved native browser tab under the same project or ROOT;
   non-HTTP(S) and stale-session requests are rejected.
@@ -669,6 +724,27 @@ The UI still uses some workspace language internally and in services, but persis
 - Switching selected sessions does not stop the previous session.
 
 ## ROOT tabs
+
+Clicking the ROOT header opens the global project dashboard. Its cards show
+open projects, live agent sessions with existing status indicators, and unique
+uncommitted Git paths (staged, unstaged and untracked). Project, agent and
+Changes actions use the normal selection paths. The ROOT expander and add
+buttons are independent. The dashboard has no project, Notes or Git ownership.
+
+The existing paused-project collection and recent directory history appear as
+two linear lists beneath active cards. History excludes active/paused roots
+with normalized case-insensitive identity. Restore uses the existing project
+resume operation; opening a recent folder creates/reuses a project and opens
+Overview without starting an agent. History reads are scoped to visible Dashboard
+entries and membership changes; stale reads cannot publish after hiding or
+replace a newer read.
+
+Closing the current project terminal/browser returns to Overview; closing the
+current ROOT tab or closing/pausing the shown project returns to the dashboard.
+Background close/pause leaves the current screen. Project-pause resume capture
+does not take over presentation; shutdown keeps its existing capture display.
+The dashboard is checkpointed explicitly. With no valid saved selection startup
+shows it without starting a terminal solely from a saved ActiveItemId.
 
 The expanded `ROOT` section is a separate, collapsible tree above uppercase
 `PROJECTS`. Its `+` and `@` actions use the same launch-profile and web-link

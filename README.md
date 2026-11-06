@@ -27,8 +27,20 @@ one place.
 - Opens each project on **Overview · Docs · Changes · Review logs**. Overview
   keeps Notes below repository information, installed IDEs, active reviews and
   durable agent-added links; Docs browses and edits all project Markdown.
+- Changes can show Working tree, Current branch against its tracking upstream,
+  or an individual commit chosen from history or by SHA/ref. Right-panel Working
+  tree and Current branch entries have independent file/line counts and open the
+  matching view. Branch mode excludes uncommitted changes and does not fetch.
+  Individual commits use the first parent (empty tree for an initial
+  commit), retain Diff / Whole file / Rendered modes and keep remarks tied to
+  the exact target and comparison-base SHAs.
+- Resolving the last project remark offers to clear the whole review list. Declining
+  keeps it; a separate cleanup action remains available when the list is closed.
 - Keeps persistent project-independent ROOT terminal and browser tabs above the
   project tree, with explicit per-tab pause and resume.
+- Clicking ROOT opens a dashboard of open projects, live agents and uncommitted
+  changes. Closing a selected project tab returns to its Overview; closing a
+  ROOT tab or closing/pausing the current project returns to the dashboard.
 - Opens terminal HTTP(S) links as saved browser tabs under the same project or
   ROOT, supports exact custom URLs, and persists drag-and-drop tab ordering.
 - Monitors configured loaded web pages while they are hidden.
