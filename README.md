@@ -27,10 +27,14 @@ one place.
 - Opens each project on **Overview · Docs · Changes · Review logs**. Overview
   keeps Notes below repository information, installed IDEs, active reviews and
   durable agent-added links; Docs browses and edits all project Markdown.
-- Changes can show Working tree, Current branch against its tracking upstream,
-  or an individual commit chosen from history or by SHA/ref. Right-panel Working
-  tree and Current branch entries have independent file/line counts and open the
-  matching view. Branch mode excludes uncommitted changes and does not fetch.
+- Changes offers **Uncommitted** (HEAD → local), **Unmerged** (merge base with a
+  chosen target → local), and **Unpushed** (tracking ref → local, falling back to
+  the Unmerged base when tracking is not configured). All include current files
+  and nonignored untracked changes. Three independent right-panel summaries open
+  the matching scope. Remote refs reflect the last fetch/pull; nothing fetches
+  automatically. Explicit **Pull (rebase)** requires a clean tree and never autostashes.
+  Unmerged/Unpushed can filter to local edits or one local-side commit; standalone
+  history and SHA/ref selection remain available.
   Individual commits use the first parent (empty tree for an initial
   commit), retain Diff / Whole file / Rendered modes and keep remarks tied to
   the exact target and comparison-base SHAs.

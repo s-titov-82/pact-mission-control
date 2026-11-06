@@ -34,10 +34,8 @@ internal sealed partial class RightActionsPanel : UserControl
 	public event EventHandler<AttentionItem>? AttentionItemRequested;
 	public event EventHandler? RestartAndUpdateRequested;
 
-	/// <summary>Raised when the user clicks Working tree.</summary>
-	public event EventHandler? ChangesEntryRequested;
-	/// <summary>Raised when the user clicks the committed tracking-upstream comparison.</summary>
-	public event EventHandler? CurrentBranchEntryRequested;
+	/// <summary>Requests a live review scope for the shown project.</summary>
+	public event EventHandler<GitReviewScope>? ReviewScopeRequested;
 
 	/// <summary>Change list shown by the Changes entry; <see langword="null"/> hides the entry.</summary>
 	public ProjectChangesViewModel? Changes
@@ -63,8 +61,10 @@ internal sealed partial class RightActionsPanel : UserControl
 			or nameof(ProjectChangesViewModel.EntrySubtitle)
 			or nameof(ProjectChangesViewModel.IsAvailable)
 			or nameof(ProjectChangesViewModel.WorkingTreeFileCount)
-			or nameof(ProjectChangesViewModel.CurrentBranchEntryTitle)
-			or nameof(ProjectChangesViewModel.CurrentBranchEntrySubtitle))
+			or nameof(ProjectChangesViewModel.UnmergedEntryTitle)
+			or nameof(ProjectChangesViewModel.UnmergedEntrySubtitle)
+			or nameof(ProjectChangesViewModel.UnpushedEntryTitle)
+			or nameof(ProjectChangesViewModel.UnpushedEntrySubtitle))
 		{
 			RefreshChangesEntry();
 		}
@@ -77,10 +77,14 @@ internal sealed partial class RightActionsPanel : UserControl
 		ChangesEntry.IsVisible = changes is not null;
 		ChangesEntryTitle.Text = changes?.EntryTitle;
 		ChangesEntrySubtitle.Text = changes?.EntrySubtitle;
-		CurrentBranchEntryTitle.Text = changes?.CurrentBranchEntryTitle;
-		CurrentBranchEntrySubtitle.Text = changes?.CurrentBranchEntrySubtitle;
-		CurrentBranchEntry.IsEnabled = changes?.CanChooseCurrentBranch == true;
-		ToolTip.SetTip(CurrentBranchEntry, changes?.TrackingUpstream is { } upstream ? $"HEAD compared with {upstream}" : changes?.CurrentBranchEntrySubtitle);
+		UnmergedEntryTitle.Text = changes?.UnmergedEntryTitle;
+		UnmergedEntrySubtitle.Text = changes?.UnmergedEntrySubtitle;
+		UnmergedEntry.IsEnabled = changes?.CanChooseReviewScopes == true;
+		UnpushedEntry.IsEnabled = changes?.CanChooseReviewScopes == true;
+		UnpushedEntryTitle.Text = changes?.UnpushedEntryTitle;
+		UnpushedEntrySubtitle.Text = changes?.UnpushedEntrySubtitle;
+		ToolTip.SetTip(UnmergedEntry, changes?.TargetDescription);
+		ToolTip.SetTip(UnpushedEntry, changes?.UnpushedDescription);
 	}
 
 	/// <summary>Remark threads of the same project as <see cref="Changes"/>; their open count goes under the entry.</summary>
@@ -117,9 +121,11 @@ internal sealed partial class RightActionsPanel : UserControl
 	}
 
 	private void OnChangesEntryClicked(object? sender, RoutedEventArgs e) =>
-		ChangesEntryRequested?.Invoke(this, EventArgs.Empty);
-	private void OnCurrentBranchEntryClicked(object? sender, RoutedEventArgs e) =>
-		CurrentBranchEntryRequested?.Invoke(this, EventArgs.Empty);
+		ReviewScopeRequested?.Invoke(this, GitReviewScope.Uncommitted);
+	private void OnUnmergedEntryClicked(object? sender, RoutedEventArgs e) =>
+		ReviewScopeRequested?.Invoke(this, GitReviewScope.Unmerged);
+	private void OnUnpushedEntryClicked(object? sender, RoutedEventArgs e) =>
+		ReviewScopeRequested?.Invoke(this, GitReviewScope.Unpushed);
 
 	/// <summary>Raised when a linked file is clicked.</summary>
 	public event EventHandler<AgentFileItem>? AgentFileRequested;

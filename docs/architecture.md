@@ -435,12 +435,20 @@ carry target SHA, first-parent base and original rename path. The existing
 remark book/file keeps project-wide ids, discovery, sending and cleanup. Only
 row markers and per-file counts follow the displayed source. Historical placement uses the captured revision line,
 never disk or current HEAD. No additional history store or poller is involved.
-`IGitComparisonReader` reuses the same immutable comparison implementation for
-arbitrary base/target pairs and tracking-upstream branch snapshots. Changes keeps
-branch summary facts separately, applies live branch display updates with source
-and file generations, and reserves source intent across controller navigation
-awaits. A short editor lease retains its captured pair; it does not stop summary
-polling. Individual commits keep their real first-parent metadata.
+`IGitComparisonReader` reads arbitrary immutable base/target pairs.
+`IGitReviewReader` resolves Uncommitted, Unmerged and Unpushed checkpoints and
+reads net base-versus-local changes, including nonignored untracked paths without
+altering the index. Actual HEAD and comparison base remain separate. Changes
+keeps three live summaries independently of its Scope / FixedLocalBase /
+HistoricalCommit display source. Source/file/ref generations reserve navigation
+intent across awaits. One existing observer updates summaries; a generalized
+editor lease holds local display content without stopping those summaries.
+Historical commits retain first-parent metadata; reopening a local remark fixes
+its captured base while reading live disk. All local row marks require base
+identity. Off-diff Old placement validates the captured Git blob instead of HEAD.
+The explicit review Pull uses the Git panel's existing operation gate, runner,
+bounded log and refresh path, with a fresh clean-tree/operation check and fixed
+`pull --rebase --no-autostash` arguments. Ordinary configurable Pull is unchanged.
 
 ## Non-goals
 

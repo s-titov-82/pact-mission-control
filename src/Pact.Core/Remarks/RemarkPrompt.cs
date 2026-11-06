@@ -23,8 +23,7 @@ public static class RemarkPrompt
 	public static string Compose(IReadOnlyList<RemarkPromptEntry> entries)
 	{
 		ArgumentNullException.ThrowIfNull(entries);
-		var header = entries.Any(entry => entry.Thread.Anchor.TargetCommit is not null)
-			? "Remarks from the user on repository changes." : "Remarks from the user on the uncommitted changes.";
+		const string header = "Remarks from the user on repository changes.";
 		StringBuilder text = new(header + ReplyInstructions);
 		foreach (var entry in entries)
 		{
@@ -81,7 +80,7 @@ public static class RemarkPrompt
 		}
 
 		var commit = anchor.BaseCommit is { } id
-			? $"HEAD {(id.Length > 7 ? id[..7] : id)}"
+			? $"base {(id.Length > 7 ? id[..7] : id)}"
 			: "the empty tree";
 		return string.Create(CultureInfo.InvariantCulture, $"{anchor.OriginalPath ?? anchor.Path}, removed line {line} of {commit}");
 	}

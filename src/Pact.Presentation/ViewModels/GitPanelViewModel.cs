@@ -194,6 +194,67 @@ public sealed class GitPanelViewModel : INotifyPropertyChanged
 	}
 
 	/// <summary>
+	/// Pulls the configured tracking branch with rebase and no autostash, after a fresh clean-tree
+	/// check inside the panel's operation gate. Configured generic Pull arguments are not used.
+	/// </summary>
+	/// <returns>Whether the pull succeeded; refusals and failures remain in the shared Git log.</returns>
+	public async Task<bool> RunPullRebaseAsync(CancellationToken cancellationToken = default)
+	{
+		if (IsBusy || !IsPullVisible)
+		{
+			return false;
+		}
+		SetIsBusy(true);
+		try
+		{
+			ClearLog();
+			await RefreshAsync(cancellationToken);
+			var refusal = Snapshot switch
+			{
+				null => "Cannot pull: repository status is unavailable.",
+				{ IsDetached: true } => "Cannot pull from a detached HEAD.",
+				{ Upstream: null or "" } => "Cannot pull: configure a tracking upstream first.",
+				{ HasConflicts: true } => "Cannot pull while the repository has conflicts.",
+				{ IsDirty: true } => "Cannot pull: commit or stash local changes explicitly first.",
+				_ when IsRebaseInProgress => "Cannot pull during a rebase; resolve or abort it first.",
+				_ => null,
+			};
+			if (refusal is not null)
+			{
+				AppendLogLine(refusal);
+				return false;
+			}
+			var merge = await _runner.RunAsync(RootPath, ["rev-parse", "--verify", "-q", "MERGE_HEAD"], null, cancellationToken);
+			if (merge.Succeeded)
+			{
+				AppendLogLine("Cannot pull during a merge; finish or abort it first.");
+				return false;
+			}
+			if (merge.ExitCode != 1)
+			{
+				AppendLogLine("Cannot pull: merge state could not be verified. " + merge.StandardError.Trim());
+				return false;
+			}
+			try
+			{
+				return (await ExecuteGitCommandAsync("Pull (rebase)", ["pull", "--rebase", "--no-autostash"],
+					refreshAfter: true, clearLogBeforeRun: false, cancellationToken)).Succeeded;
+			}
+			catch (Exception exception) when (exception is IOException or OperationCanceledException)
+			{
+				AppendLogLine($"Pull (rebase) interrupted: {exception.Message}");
+				// Fetch may already have moved tracking refs even when rebase failed or was cancelled.
+				await RefreshAsync(CancellationToken.None);
+				throw;
+			}
+		}
+		finally
+		{
+			SetIsBusy(false);
+		}
+	}
+
+	/// <summary>
 	/// Runs the planned rebase-onto-base sequence, stopping at the first failing step so the
 	/// repository is not left further mid-operation.
 	/// </summary>

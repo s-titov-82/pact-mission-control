@@ -20,7 +20,7 @@ public sealed class RemarkPromptTests
 		text.ShouldNotContain("of HEAD");
 	}
 	private const string Header =
-		"Remarks from the user on the uncommitted changes. Answer every id with pact_reply_remark (id, text; resolve: true when it is done); pact_list_remarks shows them again.";
+		"Remarks from the user on repository changes. Answer every id with pact_reply_remark (id, text; resolve: true when it is done); pact_list_remarks shows them again.";
 
 	[Test]
 	public void A_first_remark_has_its_head_line_and_the_quoted_line()
@@ -39,7 +39,7 @@ public sealed class RemarkPromptTests
 		var thread = Thread("C4", Old(7, "gone();", "abc1234def"), message);
 
 		RemarkPrompt.Compose([new RemarkPromptEntry(thread, [message], 7, IsOutdated: false)])
-			.ShouldBe($"{Header}\n\nC4 · src/X.cs, removed line 7 of HEAD abc1234 · keep it\n> gone();");
+			.ShouldBe($"{Header}\n\nC4 · src/X.cs, removed line 7 of base abc1234 · keep it\n> gone();");
 	}
 
 	[Test]

@@ -14,13 +14,13 @@ public static class RemarkPlacer
 
 	/// <summary>
 	/// Places a thread in <paramref name="newLines"/>, the text a shown diff was built from (New side),
-	/// or against <paramref name="headCommit"/> (Old side). Null lines leave a New-side thread outdated.
+	/// or against <paramref name="displayedBase"/> (Old side). Null lines leave a New-side thread outdated.
 	/// </summary>
 	public static async Task<RemarkPlacement> PlaceInTextAsync(
 		RemarkBook book,
 		RemarkThread thread,
 		IReadOnlyList<string>? newLines,
-		string? headCommit,
+		string? displayedBase,
 		CancellationToken cancellationToken)
 	{
 		ArgumentNullException.ThrowIfNull(book);
@@ -30,7 +30,7 @@ public static class RemarkPlacer
 		{ return new RemarkPlacement(anchor.Line, IsOutdated: false); }
 		if (anchor.Side == RemarkSide.Old)
 		{
-			return RemarkLocator.IsOldValid(anchor, headCommit) ? new RemarkPlacement(anchor.Line, IsOutdated: false) : Outdated;
+			return RemarkLocator.IsOldValid(anchor, displayedBase) ? new RemarkPlacement(anchor.Line, IsOutdated: false) : Outdated;
 		}
 
 		if (newLines is null || anchor.SnapshotId is not { } snapshotId
@@ -48,17 +48,32 @@ public static class RemarkPlacer
 	public static async Task<RemarkPlacement> PlaceOnDiskAsync(
 		RemarkBook book,
 		RemarkThread thread,
-		string? headCommit,
+		IGitCommitReader? commitReader,
 		CancellationToken cancellationToken)
 	{
 		ArgumentNullException.ThrowIfNull(book);
 		ArgumentNullException.ThrowIfNull(thread);
 		if (thread.Anchor.TargetCommit is not null)
 		{ return new RemarkPlacement(thread.Anchor.Line, IsOutdated: false); }
+		if (thread.Anchor.Side == RemarkSide.Old)
+		{
+			var anchor = thread.Anchor;
+			if (commitReader is null || anchor.BaseCommit is not { } baseline)
+			{ return Outdated; }
+			var commit = await commitReader.ResolveCommitAsync(book.ProjectRoot, baseline, cancellationToken).ConfigureAwait(false);
+			if (commit?.Id != baseline)
+			{ return Outdated; }
+			var text = await commitReader.ReadCommitTextAsync(book.ProjectRoot, anchor.OriginalPath ?? anchor.Path, baseline, cancellationToken).ConfigureAwait(false);
+			if (text is null)
+			{ return Outdated; }
+			var oldLines = RemarkLocator.SplitLines(text);
+			return anchor.Line > 0 && anchor.Line <= oldLines.Count && oldLines[anchor.Line - 1] == anchor.LineText
+				? new(anchor.Line, IsOutdated: false) : Outdated;
+		}
 		var lines = thread.Anchor.Side == RemarkSide.New
 			? await ReadLinesAsync(Path.Combine(book.ProjectRoot, thread.Anchor.Path.Replace('/', Path.DirectorySeparatorChar)), cancellationToken).ConfigureAwait(false)
 			: null;
-		return await PlaceInTextAsync(book, thread, lines, headCommit, cancellationToken).ConfigureAwait(false);
+		return await PlaceInTextAsync(book, thread, lines, thread.Anchor.BaseCommit, cancellationToken).ConfigureAwait(false);
 	}
 
 	private static async Task<IReadOnlyList<string>?> ReadLinesAsync(string path, CancellationToken cancellationToken)

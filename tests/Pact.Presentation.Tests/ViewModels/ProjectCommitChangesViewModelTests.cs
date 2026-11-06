@@ -23,106 +23,6 @@ public sealed class ProjectCommitChangesViewModelTests
 	}
 
 	[Test]
-	public async Task A_branch_editor_retains_its_comparison_until_closed_while_summary_tracks_new_head()
-	{
-		var first = _repository.AddCommit('a', "same", "first\n");
-		var second = _repository.AddCommit('b', "new-file", "second\n");
-		_repository.BranchState = Branch(first, new string('c', 40));
-		using var changes = Create();
-		using var observer = changes.Observe();
-		await changes.SetAutoSelectFirstFileAsync(true, CancellationToken.None);
-		await changes.SelectCurrentBranchAsync(CancellationToken.None);
-		using var editor = changes.RetainCurrentComparison();
-		_repository.BranchState = new("feature", "origin/feature", new(new string('d', 40), second.Id,
-			[new("new-file", null, GitChangeKind.Added), new("other-file", null, GitChangeKind.Added)], 9, 0), null);
-		_time.Advance(ProjectChangesViewModel.ReconcileInterval);
-		changes.CurrentBranchFileCount.ShouldBe(2);
-		changes.ShownDiff.ShouldNotBeNull().TargetCommit.ShouldBe(first.Id);
-		editor.Dispose();
-		_time.Advance(ProjectChangesViewModel.ReconcileInterval);
-		changes.ShownDiff.ShouldNotBeNull().TargetCommit.ShouldBe(second.Id);
-	}
-
-	[Test]
-	public async Task A_pending_branch_diff_cannot_overwrite_a_newer_head_or_source()
-	{
-		var first = _repository.AddCommit('a', "same", "first\n");
-		var second = _repository.AddCommit('b', "same", "second\n");
-		_repository.BranchState = Branch(first, new string('c', 40));
-		using var changes = Create();
-		using var observer = changes.Observe();
-		await changes.SetAutoSelectFirstFileAsync(true, CancellationToken.None);
-		TaskCompletionSource<FileDiff> gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
-		_repository.NextDiffRead = gate;
-		var selecting = changes.SelectCurrentBranchAsync(CancellationToken.None);
-		_repository.BranchState = Branch(second, new string('d', 40));
-		_time.Advance(ProjectChangesViewModel.ReconcileInterval);
-		changes.ShownDiff.ShouldNotBeNull().TargetCommit.ShouldBe(second.Id);
-		gate.SetResult(FileDiff.AllAdded("late first\n"));
-		await selecting;
-		changes.ShownDiff.ShouldNotBeNull().TargetCommit.ShouldBe(second.Id);
-		changes.DiffRows.ShouldNotContain(row => row.Text == "late first");
-		await changes.SelectCommitAsync(first, CancellationToken.None);
-		changes.IsCurrentBranch.ShouldBeFalse();
-		changes.ShownDiff.ShouldNotBeNull().TargetCommit.ShouldBe(first.Id);
-	}
-
-	[Test]
-	public async Task Late_branch_metadata_cannot_replace_an_explicit_commit_selection()
-	{
-		var head = _repository.AddCommit('a', "same", "first\n");
-		using var changes = Create();
-		TaskCompletionSource<GitBranchChanges> gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
-		_repository.NextBranchRead = gate;
-		var selecting = changes.SelectCurrentBranchAsync(CancellationToken.None);
-		await changes.SelectCommitAsync(head, CancellationToken.None);
-		gate.SetResult(Branch(head, new string('c', 40)));
-		await selecting;
-		changes.SelectedCommit.ShouldBeSameAs(head);
-		changes.IsCurrentBranch.ShouldBeFalse();
-	}
-
-	[Test]
-	public async Task Current_branch_uses_tracking_base_and_committed_text_while_working_summary_stays_independent()
-	{
-		var head = _repository.AddCommit('a', "same.md", "committed branch\n");
-		_repository.BranchState = Branch(head, new string('c', 40));
-		using var changes = Create();
-		using var observer = changes.Observe();
-		await changes.SetAutoSelectFirstFileAsync(true, CancellationToken.None);
-		await changes.SelectCurrentBranchAsync(CancellationToken.None);
-		changes.IsCurrentBranch.ShouldBeTrue();
-		changes.IsWorkingTree.ShouldBeFalse();
-		changes.HeadCommit.ShouldBe(new string('c', 40));
-		changes.ShownDiff.ShouldNotBeNull().TargetCommit.ShouldBe(head.Id);
-		changes.DiffRows.ShouldContain(row => row.Text == "committed branch");
-		changes.CurrentBranchFileCount.ShouldBe(1);
-		changes.WorkingTreeFileCount.ShouldBe(1);
-		changes.TrackingUpstream.ShouldBe("origin/feature");
-	}
-
-	[Test]
-	public async Task Branch_refresh_updates_its_rows_and_both_summaries_without_replacing_a_selected_commit()
-	{
-		var first = _repository.AddCommit('a', "same", "first\n");
-		var second = _repository.AddCommit('b', "same", "second\n");
-		_repository.BranchState = Branch(first, new string('c', 40));
-		using var changes = Create();
-		using var observer = changes.Observe();
-		await changes.SetAutoSelectFirstFileAsync(true, CancellationToken.None);
-		await changes.SelectCurrentBranchAsync(CancellationToken.None);
-		_repository.BranchState = Branch(second, new string('d', 40));
-		_time.Advance(ProjectChangesViewModel.ReconcileInterval);
-		changes.ShownDiff.ShouldNotBeNull().TargetCommit.ShouldBe(second.Id);
-		changes.HeadCommit.ShouldBe(new string('d', 40));
-		await changes.SelectCommitAsync(first, CancellationToken.None);
-		_repository.BranchState = new("feature", "origin/feature", new(second.Id, second.Id, [], 0, 0), null);
-		_time.Advance(ProjectChangesViewModel.ReconcileInterval);
-		changes.CurrentBranchFileCount.ShouldBe(0);
-		changes.ShownDiff.ShouldNotBeNull().TargetCommit.ShouldBe(first.Id);
-	}
-
-	[Test]
 	public async Task Captured_branch_remark_reopens_its_exact_upstream_base_even_after_refs_move()
 	{
 		var head = _repository.AddCommit('a', "same", "captured\n");
@@ -132,21 +32,6 @@ public sealed class ProjectCommitChangesViewModelTests
 		changes.HeadCommit.ShouldBe(new string('c', 40));
 		changes.ShownDiff.ShouldNotBeNull().HeadCommit.ShouldBe(new string('c', 40));
 	}
-
-	[Test]
-	public async Task Missing_upstream_is_not_reported_as_a_clean_branch_or_working_tree()
-	{
-		_repository.BranchState = new("feature", null, null, "No tracking upstream is configured.");
-		using var changes = Create();
-		await changes.SelectCurrentBranchAsync(CancellationToken.None);
-		changes.IsCurrentBranch.ShouldBeTrue();
-		changes.IsWorkingTree.ShouldBeFalse();
-		changes.SourceDescription.ShouldContain("upstream");
-		changes.CurrentBranchEntrySubtitle.ShouldContain("upstream");
-	}
-
-	private GitBranchChanges Branch(GitCommitInfo head, string baseline) =>
-		new("feature", "origin/feature", new(baseline, head.Id, _repository.Commits[head.Id].Files, 2, 1), null);
 
 	[Test]
 	public async Task Picker_pages_history_and_resolves_a_ref_to_immutable_identity()
@@ -207,7 +92,7 @@ public sealed class ProjectCommitChangesViewModelTests
 		var commit = _repository.AddCommit('a', "file", "text");
 		using var changes = Create();
 		await changes.SelectCommitAsync(commit, CancellationToken.None);
-		await Should.ThrowAsync<IOException>(() => changes.OpenRemarkSourceAsync(new string('b', 40), "file", CancellationToken.None));
+		await Should.ThrowAsync<IOException>(() => changes.OpenRemarkSourceAsync(new string('b', 40), "file", null, CancellationToken.None));
 		changes.SelectedCommit.ShouldBeSameAs(commit);
 		changes.SourceError.ShouldNotBeNull().ShouldContain("no longer available");
 	}
@@ -220,7 +105,7 @@ public sealed class ProjectCommitChangesViewModelTests
 		using var changes = Create();
 		TaskCompletionSource<GitCommitInfo?> gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
 		_repository.NextResolutionRead = gate;
-		var opening = changes.OpenRemarkSourceAsync(first.Id, "file", CancellationToken.None);
+		var opening = changes.OpenRemarkSourceAsync(first.Id, "file", first.BaseCommit, CancellationToken.None);
 		await changes.SelectCommitAsync(second, CancellationToken.None);
 		gate.SetResult(first);
 		await Should.ThrowAsync<OperationCanceledException>(() => opening);
@@ -236,9 +121,9 @@ public sealed class ProjectCommitChangesViewModelTests
 		TaskCompletionSource<GitCommitInfo?> firstGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
 		TaskCompletionSource<GitCommitInfo?> secondGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
 		_repository.NextResolutionRead = firstGate;
-		var earlier = changes.OpenRemarkSourceAsync(first.Id, "file", CancellationToken.None);
+		var earlier = changes.OpenRemarkSourceAsync(first.Id, "file", first.BaseCommit, CancellationToken.None);
 		_repository.NextResolutionRead = secondGate;
-		var later = changes.OpenRemarkSourceAsync(second.Id, "file", CancellationToken.None);
+		var later = changes.OpenRemarkSourceAsync(second.Id, "file", second.BaseCommit, CancellationToken.None);
 		firstGate.SetResult(first);
 		await Should.ThrowAsync<OperationCanceledException>(() => earlier);
 		secondGate.SetResult(second);
@@ -254,7 +139,7 @@ public sealed class ProjectCommitChangesViewModelTests
 		await changes.SelectCommitAsync(null, CancellationToken.None);
 		TaskCompletionSource<GitCommitInfo?> gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
 		_repository.NextResolutionRead = gate;
-		var opening = changes.OpenRemarkSourceAsync(commit.Id, "file", CancellationToken.None);
+		var opening = changes.OpenRemarkSourceAsync(commit.Id, "file", commit.BaseCommit, CancellationToken.None);
 		await changes.SelectCommitAsync(null, CancellationToken.None);
 		gate.SetResult(commit);
 		await Should.ThrowAsync<OperationCanceledException>(() => opening);
@@ -365,7 +250,7 @@ public sealed class ProjectCommitChangesViewModelTests
 		await changes.SelectCommitAsync(commit, CancellationToken.None);
 		_repository.Working = Working("next-head", "live-one", "live-two");
 		_time.Advance(ProjectChangesViewModel.ReconcileInterval);
-		changes.EntryTitle.ShouldBe("Working tree · 2");
+		changes.EntryTitle.ShouldBe("Uncommitted · 2");
 		changes.WorkingTreeHeadCommit.ShouldBe("next-head");
 		changes.Files.ShouldHaveSingleItem().Path.ShouldBe("historic");
 		changes.HeadCommit.ShouldBe(commit.BaseCommit);
@@ -413,14 +298,6 @@ public sealed class ProjectCommitChangesViewModelTests
 
 	private sealed class Repository : IGitWorkingTreeReader, IGitCommitReader, IGitComparisonReader
 	{
-		public GitBranchChanges BranchState { get; set; } = new("main", null, null, "No tracking upstream is configured.");
-		public TaskCompletionSource<GitBranchChanges>? NextBranchRead { get; set; }
-		public Task<GitBranchChanges> ReadBranchChangesAsync(string root, CancellationToken cancellationToken)
-		{
-			var gate = NextBranchRead;
-			NextBranchRead = null;
-			return gate?.Task ?? Task.FromResult(BranchState);
-		}
 		public Task<GitRevisionChanges> ReadComparisonChangesAsync(string root, string? baseCommit, string targetCommit, CancellationToken cancellationToken) =>
 			Task.FromResult(new GitRevisionChanges(baseCommit, targetCommit, Commits[targetCommit].Files, 2, 1));
 		public Task<FileDiff> ReadComparisonDiffAsync(string root, GitFileEntry entry, string? baseCommit, string targetCommit, CancellationToken cancellationToken) =>

@@ -664,16 +664,16 @@ internal sealed partial class MainWindow : Window, IDisposable
 			handler => RightActions.RestartAndUpdateRequested -= handler,
 			"restart-and-update",
 			() => RequestRestartAndUpdateAsync(CancellationToken.None));
-		ObserveEvent(
-			handler => RightActions.ChangesEntryRequested += handler,
-			handler => RightActions.ChangesEntryRequested -= handler,
-			"open-changes",
-			() => EngineProbeController.OpenCurrentChangesAsync());
-		ObserveEvent(
-			handler => RightActions.CurrentBranchEntryRequested += handler,
-			handler => RightActions.CurrentBranchEntryRequested -= handler,
-			"open-current-branch",
-			() => EngineProbeController.OpenCurrentBranchChangesAsync());
+		ObserveEvent<Pact.Infrastructure.Git.GitReviewScope>(
+			handler => RightActions.ReviewScopeRequested += handler,
+			handler => RightActions.ReviewScopeRequested -= handler,
+			"open-review-scope",
+			scope => EngineProbeController.OpenReviewScopeAsync(scope));
+		ObserveEvent<WorkspaceViewModel>(
+			handler => ProjectScreen.PullRebaseRequested += handler,
+			handler => ProjectScreen.PullRebaseRequested -= handler,
+			"pull-review-branch",
+			workspace => EngineProbeController.PullReviewBranchAsync(workspace));
 		ObserveEvent<string>(
 			handler => RightActions.DeleteReviewLogRequested += handler,
 			handler => RightActions.DeleteReviewLogRequested -= handler,

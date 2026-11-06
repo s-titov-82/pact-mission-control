@@ -1,5 +1,8 @@
 # Current branch implementation
 
+Superseded by [review scopes](2026-11-06-review-scopes.md). This records the
+preceding implementation; its committed-only branch source has been replaced.
+
 Spec: ../specs/2026-11-06-current-branch-design.md.
 
 1. Add comparison/branch reader DTOs beside the existing commit reader. Extract

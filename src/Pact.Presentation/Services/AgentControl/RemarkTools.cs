@@ -17,23 +17,23 @@ public sealed class RemarkTools
 
 	private readonly AgentControlDispatcher _dispatcher;
 	private readonly RemarkBooks _books;
-	private readonly Func<string, CancellationToken, Task<string?>> _readHead;
+	private readonly IGitCommitReader _commitReader;
 	private readonly Func<string, Task> _reportStatusAsync;
 
 	/// <summary>Creates the remark tools.</summary>
 	/// <param name="dispatcher">Resolves the caller's project.</param>
 	/// <param name="books">The projects' remarks.</param>
-	/// <param name="readHead">Reads a project root's HEAD commit, or null while it is unborn.</param>
+	/// <param name="commitReader">Validates each Old-side anchor against its captured base and path.</param>
 	/// <param name="reportStatusAsync">Reports an answered remark in the status bar.</param>
 	public RemarkTools(
 		AgentControlDispatcher dispatcher,
 		RemarkBooks books,
-		Func<string, CancellationToken, Task<string?>> readHead,
+		IGitCommitReader commitReader,
 		Func<string, Task> reportStatusAsync)
 	{
 		_dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
 		_books = books ?? throw new ArgumentNullException(nameof(books));
-		_readHead = readHead ?? throw new ArgumentNullException(nameof(readHead));
+		_commitReader = commitReader ?? throw new ArgumentNullException(nameof(commitReader));
 		_reportStatusAsync = reportStatusAsync ?? throw new ArgumentNullException(nameof(reportStatusAsync));
 	}
 
@@ -118,7 +118,6 @@ public sealed class RemarkTools
 			return refusal!;
 		}
 
-		var head = await _readHead(book.ProjectRoot, cancellationToken).ConfigureAwait(false);
 		JsonArray items = [];
 		foreach (var thread in book.Threads)
 		{
@@ -129,7 +128,7 @@ public sealed class RemarkTools
 				continue;
 			}
 
-			var placement = await RemarkPlacer.PlaceOnDiskAsync(book, thread, head, cancellationToken).ConfigureAwait(false);
+			var placement = await RemarkPlacer.PlaceOnDiskAsync(book, thread, _commitReader, cancellationToken).ConfigureAwait(false);
 			JsonArray messageItems = [];
 			foreach (var message in messages)
 			{

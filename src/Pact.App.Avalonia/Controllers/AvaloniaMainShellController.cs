@@ -257,7 +257,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 				new RemarkTools(
 					agentControlDispatcher,
 					RemarkBooks,
-					ReadHeadCommitAsync,
+					new GitWorkingTreeReader(_gitCliRunner),
 					status => _uiTaskDispatcher.InvokeAsync(() => ReportStatusAsync(status)))),
 			OrchestratorTools.Create(_orchestratorDispatcher));
 		AgentControlJsonRpc agentControlRpc = new(

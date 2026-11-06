@@ -88,17 +88,35 @@ internal sealed partial class AvaloniaMainShellController
 			? OpenWorkingTreeChangesAsync(workspace, cancellationToken)
 			: Task.CompletedTask;
 
-	/// <summary>Opens the current project's committed tracking-upstream comparison.</summary>
-	public async Task OpenCurrentBranchChangesAsync(CancellationToken cancellationToken = default)
+	/// <summary>Opens the shown project's live review scope, preserving newer navigation intents.</summary>
+	public async Task OpenReviewScopeAsync(GitReviewScope scope, CancellationToken cancellationToken = default)
 	{
-		if (CurrentChanges is not { CanChooseCurrentBranch: true } changes || FindShownWorkspace() is not { } workspace)
+		if (CurrentChanges is not { } changes || FindShownWorkspace() is not { } workspace)
 		{ return; }
 		var intent = changes.ReserveSourceSelection();
 		if (!await OpenProjectScreenCoreAsync(workspace, ProjectScreenTab.Changes, cancellationToken))
 		{ return; }
 		if (changes.IsSourceSelectionCurrent(intent) && CurrentProjectScreen is { } screen && ReferenceEquals(screen.Workspace, workspace)
 			&& ReferenceEquals(screen.Changes, changes))
-		{ await changes.SelectCurrentBranchAsync(cancellationToken); }
+		{ await changes.SelectReviewScopeAsync(scope, cancellationToken); }
+	}
+
+	/// <summary>Runs the explicit review Pull on its captured owner and refreshes that owner's scopes.</summary>
+	public async Task PullReviewBranchAsync(WorkspaceViewModel workspace, CancellationToken cancellationToken = default)
+	{
+		if (!ViewModel.Workspaces.Contains(workspace) || !workspace.IsGitRepository)
+		{ return; }
+		var panel = GetOrCreateGitPanel(workspace);
+		var changes = GetOrCreateProjectChanges(workspace);
+		try
+		{ await panel.RunPullRebaseAsync(cancellationToken); }
+		finally
+		{
+			if (ViewModel.Workspaces.Contains(workspace) && changes is not null)
+			{ changes.RequestRefresh(); }
+		}
+		var outcome = panel.LogText.Split('\n', StringSplitOptions.RemoveEmptyEntries).LastOrDefault()?.Trim();
+		await ReportStatusAsync($"{workspace.Name}: {outcome ?? "Pull (rebase) finished; see Git log."}");
 	}
 
 	/// <summary>Opens the live changes named by a working-tree summary.</summary>
@@ -110,7 +128,7 @@ internal sealed partial class AvaloniaMainShellController
 		{ return; }
 		if (changes is not null && intent is { } reserved && changes.IsSourceSelectionCurrent(reserved)
 			&& CurrentProjectScreen is { } screen && ReferenceEquals(screen.Workspace, workspace) && ReferenceEquals(screen.Changes, changes))
-		{ await changes.SelectCommitAsync(null, cancellationToken); }
+		{ await changes.SelectReviewScopeAsync(GitReviewScope.Uncommitted, cancellationToken); }
 	}
 
 	private async Task PresentProjectScreenAsync(ProjectScreenViewModel screen, CancellationToken cancellationToken, int? navigationVersion = null)
@@ -199,10 +217,6 @@ internal sealed partial class AvaloniaMainShellController
 	// back half-written.
 	private bool IsReviewLogInUse(WorkspaceViewModel workspace, string relativePath) =>
 		_reviewRelay.IsLogInUse(Path.Combine(workspace.RootPath, relativePath.Replace('/', Path.DirectorySeparatorChar)));
-
-	// The commit the remark tools compare old-side remarks with; null while HEAD is unborn or git fails.
-	private async Task<string?> ReadHeadCommitAsync(string projectRoot, CancellationToken cancellationToken) =>
-		(await WorkingTreeReader.ReadChangesAsync(projectRoot, cancellationToken).ConfigureAwait(false))?.HeadCommit;
 
 	private static bool IsReviewLogPath(string relativePath) =>
 		relativePath.StartsWith(ReviewLogFiles.Folder + "/", StringComparison.OrdinalIgnoreCase);

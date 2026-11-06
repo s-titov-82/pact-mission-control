@@ -4,11 +4,27 @@ using Pact.Core.Sessions;
 using Pact.Infrastructure.AgentControl;
 using Pact.Presentation.Services.AgentControl;
 using Pact.Presentation.Services.Remarks;
+using Pact.Presentation.Tests.Fakes;
 
 namespace Pact.Presentation.Tests.Services.AgentControl;
 
 public sealed class RemarkToolsTests : IDisposable
 {
+	[Test]
+	public async Task Local_old_mcp_uses_captured_base_and_original_path_after_head_changes()
+	{
+		await Book.AddAsync(new("src/X.cs", RemarkSide.Old, 2, "gone", [], [], "captured", null, OriginalPath: "src/Old.cs"), null, "review", CancellationToken.None);
+		await Book.CompleteSendAsync((await Book.BeginSendAsync("s1", CancellationToken.None))!, Confirmed, CancellationToken.None);
+		CapturedCommitReader reader = new("captured", "src/Old.cs", "one\ngone\n");
+		var result = await InvokeAsync("session-project", "pact_list_remarks", new JsonObject(), reader);
+		var item = JsonNode.Parse(result.Text)!.AsArray().ShouldHaveSingleItem()!;
+		((bool?)item["outdated"]).ShouldBe(false);
+		((int?)item["line"]).ShouldBe(2);
+		((string?)item["baseCommit"]).ShouldBe("captured");
+		reader.Available = false;
+		var missing = await InvokeAsync("session-project", "pact_list_remarks", new JsonObject(), reader);
+		((bool?)JsonNode.Parse(missing.Text)!.AsArray()[0]!["outdated"]).ShouldBe(true);
+	}
 	[TestCase(RemarkSide.New)]
 	[TestCase(RemarkSide.Old)]
 	public async Task Historical_mcp_preserves_sha_line_and_not_outdated_when_head_and_disk_differ(RemarkSide side)
@@ -157,13 +173,13 @@ public sealed class RemarkToolsTests : IDisposable
 		await File.WriteAllTextAsync(Path.Combine(_root.Path, "src", "X.cs"), "a\nb\n");
 	}
 
-	private Task<AgentControlResultData> InvokeAsync(string sessionId, string tool, JsonObject arguments)
+	private Task<AgentControlResultData> InvokeAsync(string sessionId, string tool, JsonObject arguments, IGitCommitReader? commitReader = null)
 	{
 		AgentControlDispatcherTests.FakeAgentControlHost host = new() { ProjectRoot = _root.Path };
 		RemarkTools remarks = new(
 			new AgentControlDispatcher(host),
 			_books,
-			(_, _) => Task.FromResult<string?>("abc"),
+			commitReader ?? new GitWorkingTreeReader(new GitCliRunner()),
 			status =>
 			{
 				_statuses.Add(status);

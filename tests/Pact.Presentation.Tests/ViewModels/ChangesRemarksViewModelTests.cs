@@ -665,7 +665,7 @@ public sealed class ChangesRemarksViewModelTests : IDisposable
 		var (session, text) = _delivered.ShouldHaveSingleItem();
 		session.ShouldBe("s1");
 		text.ShouldContain("C1 · src/X.cs:2 · why b?\n> b");
-		text.ShouldContain("C2 · src/X.cs, removed line 2 of HEAD head1 · why gone?\n> old");
+		text.ShouldContain("C2 · src/X.cs, removed line 2 of base head1 · why gone?\n> old");
 		_book!.Threads.Select(thread => thread.State).ShouldBe([RemarkThreadState.Sent, RemarkThreadState.Sent]);
 		await EventuallyAsync(() => remarks.DraftCount == 0);
 		remarks.BarText.ShouldBeEmpty();
@@ -1131,15 +1131,14 @@ public sealed class ChangesRemarksViewModelTests : IDisposable
 
 	private sealed class Reader : IGitWorkingTreeReader, IGitCommitReader, IGitComparisonReader
 	{
-		public Task<GitBranchChanges> ReadBranchChangesAsync(string root, CancellationToken cancellationToken) => Task.FromResult(new GitBranchChanges("feature", null, null, "No tracking upstream is configured."));
 		public Task<GitRevisionChanges> ReadComparisonChangesAsync(string root, string? baseCommit, string targetCommit, CancellationToken cancellationToken) =>
 			Task.FromResult(new GitRevisionChanges(baseCommit, targetCommit, [new(Path1, "old/X.cs", GitChangeKind.Modified)], 1, 1));
 		public Task<FileDiff> ReadComparisonDiffAsync(string root, GitFileEntry entry, string? baseCommit, string targetCommit, CancellationToken cancellationToken) => Task.FromResult(DefaultDiff());
 		public Task<IReadOnlyList<GitCommitInfo>> ReadCommitsAsync(string root, int skip, int count, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<GitCommitInfo>>([]);
-		public Task<GitCommitInfo?> ResolveCommitAsync(string root, string revision, CancellationToken cancellationToken) => Task.FromResult<GitCommitInfo?>(Historical(revision[0]));
+		public Task<GitCommitInfo?> ResolveCommitAsync(string root, string revision, CancellationToken cancellationToken) => Task.FromResult<GitCommitInfo?>(revision == "head1" ? new("head1", [], "author", DateTimeOffset.MinValue, "base") : Historical(revision[0]));
 		public Task<CommitChanges> ReadCommitChangesAsync(string root, GitCommitInfo commit, CancellationToken cancellationToken) => Task.FromResult(new CommitChanges(commit, [new(Path1, "old/X.cs", GitChangeKind.Modified)], 1, 1));
 		public Task<FileDiff> ReadCommitDiffAsync(string root, GitFileEntry entry, GitCommitInfo commit, CancellationToken cancellationToken) => Task.FromResult(DefaultDiff());
-		public Task<string?> ReadCommitTextAsync(string root, string path, string commitId, CancellationToken cancellationToken) => Task.FromResult<string?>("a\nb\nc\n");
+		public Task<string?> ReadCommitTextAsync(string root, string path, string commitId, CancellationToken cancellationToken) => Task.FromResult<string?>(commitId == "head1" ? "a\nold\nc\n" : "a\nb\nc\n");
 		public string[] Files { get; set; } = [Path1];
 
 		public Dictionary<string, FileDiff> Diffs { get; } = [];

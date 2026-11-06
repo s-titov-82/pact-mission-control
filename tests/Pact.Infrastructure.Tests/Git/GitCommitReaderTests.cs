@@ -3,7 +3,7 @@ using Pact.Core.Git;
 namespace Pact.Infrastructure.Tests.Git;
 
 [NonParallelizable]
-public sealed class GitCommitReaderTests
+public sealed partial class GitCommitReaderTests
 {
 	private readonly GitCliRunner _runner = new();
 	private TemporaryDirectory _folder = null!;
@@ -23,62 +23,6 @@ public sealed class GitCommitReaderTests
 	}
 	[TearDown]
 	public void TearDown() => _folder.Dispose();
-
-	[Test]
-	public async Task Branch_comparison_excludes_dirty_files_and_keeps_resolved_endpoints_after_upstream_moves()
-	{
-		await Write("a.txt", "base\n");
-		await Commit("base");
-		await Git("branch", "tracking");
-		await Git("branch", "--set-upstream-to=tracking", "main");
-		(await Reader.ReadBranchChangesAsync(Root, Token)).Comparison.ShouldNotBeNull().Files.ShouldBeEmpty();
-		await Write("a.txt", "committed\n");
-		await Commit("local");
-		await Write("a.txt", "dirty\n");
-		await Write("untracked", "not committed");
-		var branch = await Reader.ReadBranchChangesAsync(Root, Token);
-		branch.Upstream.ShouldBe("tracking");
-		var comparison = branch.Comparison.ShouldNotBeNull();
-		comparison.Files.ShouldHaveSingleItem().Path.ShouldBe("a.txt");
-		comparison.AddedLines.ShouldBe(1);
-		(await Reader.ReadCommitTextAsync(Root, "a.txt", comparison.TargetCommit, Token)).ShouldBe("committed\n");
-		await Git("branch", "-f", "tracking", "HEAD");
-		(await Reader.ReadBranchChangesAsync(Root, Token)).Comparison.ShouldNotBeNull().Files.ShouldBeEmpty();
-		var frozen = await Reader.ReadComparisonDiffAsync(Root, comparison.Files[0], comparison.BaseCommit, comparison.TargetCommit, Token);
-		frozen.Hunks.SelectMany(hunk => hunk.Lines).ShouldContain(line => line.Kind == DiffLineKind.Added && line.Text == "committed");
-	}
-
-	[Test]
-	public async Task Branch_comparison_reports_unborn_missing_gone_upstream_and_detached_states()
-	{
-		(await Reader.ReadBranchChangesAsync(Root, Token)).UnavailableReason.ShouldNotBeNull().ShouldContain("unborn");
-		await Write("a", "base");
-		await Commit("base");
-		(await Reader.ReadBranchChangesAsync(Root, Token)).UnavailableReason.ShouldNotBeNull().ShouldContain("upstream");
-		await Git("branch", "tracking");
-		await Git("branch", "--set-upstream-to=tracking", "main");
-		await Git("branch", "-D", "tracking");
-		(await Reader.ReadBranchChangesAsync(Root, Token)).Comparison.ShouldBeNull();
-		await Git("checkout", "--detach");
-		(await Reader.ReadBranchChangesAsync(Root, Token)).UnavailableReason.ShouldNotBeNull().ShouldContain("Detached");
-	}
-
-	[Test]
-	public async Task Diverged_branch_compares_upstream_endpoint_not_merge_base()
-	{
-		await Write("base", "base");
-		await Commit("base");
-		await Git("checkout", "-b", "tracking");
-		await Write("upstream-only", "upstream");
-		await Commit("upstream");
-		await Git("checkout", "main");
-		await Git("branch", "--set-upstream-to=tracking", "main");
-		await Write("local-only", "local");
-		await Commit("local");
-		var comparison = (await Reader.ReadBranchChangesAsync(Root, Token)).Comparison.ShouldNotBeNull();
-		comparison.Files.ShouldContain(file => file.Path == "upstream-only" && file.Kind == GitChangeKind.Deleted);
-		comparison.Files.ShouldContain(file => file.Path == "local-only" && file.Kind == GitChangeKind.Added);
-	}
 
 	[Test]
 	public async Task Historical_file_selection_treats_git_metacharacters_literally()

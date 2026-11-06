@@ -1,5 +1,9 @@
 # Current branch against tracking upstream
 
+Superseded by [review scopes](2026-11-06-review-scopes-design.md): all aggregates
+include local contents, and tracking comparison is now Unpushed. Retained below
+as the historical design for the preceding implementation.
+
 User requested Current branch next to Working tree and Choose commit, plus two
 right-panel entries with file/+/- totals and navigation to the matching mode.
 Tracking upstream is explicitly selected by the user as comparison base.

@@ -1202,9 +1202,9 @@ public sealed class AvaloniaMainShellControllerTests
 		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
 		var workspace = fixture.ViewModel.Workspaces.Single();
 		await fixture.Controller.OpenProjectScreenAsync(workspace, ProjectScreenTab.Overview, CancellationToken.None);
-		await fixture.Controller.OpenCurrentBranchChangesAsync(CancellationToken.None);
+		await fixture.Controller.OpenReviewScopeAsync(GitReviewScope.Unmerged, CancellationToken.None);
 		fixture.Controller.CurrentProjectScreen.ShouldNotBeNull().SelectedTab.ShouldBe(ProjectScreenTab.Changes);
-		fixture.Controller.CurrentChanges.ShouldNotBeNull().IsCurrentBranch.ShouldBeTrue();
+		fixture.Controller.CurrentChanges.ShouldNotBeNull().SelectedReviewScope.ShouldBe(GitReviewScope.Unmerged);
 		await fixture.Controller.OpenCurrentChangesAsync(CancellationToken.None);
 		fixture.Controller.CurrentChanges.ShouldNotBeNull().IsWorkingTree.ShouldBeTrue();
 		fixture.Controller.CurrentProjectScreen!.Workspace.ShouldBeSameAs(workspace);
@@ -1226,18 +1226,18 @@ public sealed class AvaloniaMainShellControllerTests
 		await screen.SelectTabAsync(ProjectScreenTab.Changes, CancellationToken.None);
 		var changes = fixture.Controller.CurrentChanges!;
 		if (!olderBranch)
-		{ await changes.SelectCurrentBranchAsync(CancellationToken.None); }
-		var older = olderBranch ? fixture.Controller.OpenCurrentBranchChangesAsync(CancellationToken.None)
+		{ await changes.SelectReviewScopeAsync(GitReviewScope.Unmerged, CancellationToken.None); }
+		var older = olderBranch ? fixture.Controller.OpenReviewScopeAsync(GitReviewScope.Unmerged, CancellationToken.None)
 			: fixture.Controller.OpenCurrentChangesAsync(CancellationToken.None);
 		older.IsCompleted.ShouldBeFalse();
 		if (olderBranch)
 		{ await changes.SelectCommitAsync(null, CancellationToken.None); }
 		else
-		{ await changes.SelectCurrentBranchAsync(CancellationToken.None); }
+		{ await changes.SelectReviewScopeAsync(GitReviewScope.Unmerged, CancellationToken.None); }
 		store.Release.SetResult();
 		await older;
 		await docs;
-		changes.IsCurrentBranch.ShouldBe(!olderBranch);
+		changes.SelectedReviewScope.ShouldBe(olderBranch ? GitReviewScope.Uncommitted : GitReviewScope.Unmerged);
 	}
 
 	[Test]
@@ -1303,7 +1303,7 @@ public sealed class AvaloniaMainShellControllerTests
 
 		var (session, text) = delivered.ShouldHaveSingleItem();
 		session.ShouldBe(workspace.Sessions[^1].Record.Id);
-		text.ShouldContain("C1 · a.cs, removed line 1 of HEAD head · why?");
+		text.ShouldContain("C1 · a.cs, removed line 1 of base head · why?");
 	}
 
 	[Test]
@@ -4695,17 +4695,25 @@ public sealed class AvaloniaMainShellControllerTests
 			new(id, AgentKind.Pwsh, title, Path.GetTempPath(), "pwsh", null, SessionStatus.Stopped, now, now);
 	}
 
-	private sealed class CountingWorkingTreeReader : IGitWorkingTreeReader, IGitCommitReader, IGitComparisonReader
+	private sealed class CountingWorkingTreeReader : IGitWorkingTreeReader, IGitCommitReader, IGitComparisonReader, IGitReviewReader
 	{
+		public async Task<GitReviewChanges> ReadReviewChangesAsync(string root, GitReviewScope scope, string? targetBranch, CancellationToken cancellationToken)
+		{
+			var working = await ReadChangesAsync(root, cancellationToken);
+			return new GitReviewChanges(scope, "main", "origin/main", new GitLocalChanges("base", working!.HeadCommit, working.Files, 0, 0), 0, 0, false, null);
+		}
+		public Task<GitLocalChanges> ReadLocalChangesAsync(string root, string? baseCommit, CancellationToken cancellationToken) => Task.FromResult(new GitLocalChanges(baseCommit, "head", [], 0, 0));
+		public Task<FileDiff> ReadLocalDiffAsync(string root, GitFileEntry entry, string? baseCommit, CancellationToken cancellationToken) => ReadDiffAsync(root, entry, baseCommit, cancellationToken);
+		public Task<IReadOnlyList<string>> ReadBranchesAsync(string root, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<string>>(["main"]);
+		public Task<IReadOnlyList<GitCommitInfo>> ReadScopeCommitsAsync(string root, string? baseCommit, string headCommit, int skip, int count, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<GitCommitInfo>>([_head]);
 		private readonly GitCommitInfo _head = new(new string('b', 40), [new string('a', 40)], "author", DateTimeOffset.MinValue, "head");
-		public Task<GitBranchChanges> ReadBranchChangesAsync(string root, CancellationToken cancellationToken) => Task.FromResult(new GitBranchChanges("feature", "origin/feature", new(_head.BaseCommit, _head.Id, [], 0, 0), null));
 		public Task<GitRevisionChanges> ReadComparisonChangesAsync(string root, string? baseCommit, string targetCommit, CancellationToken cancellationToken) => Task.FromResult(new GitRevisionChanges(baseCommit, targetCommit, [], 0, 0));
 		public Task<FileDiff> ReadComparisonDiffAsync(string root, GitFileEntry entry, string? baseCommit, string targetCommit, CancellationToken cancellationToken) => Task.FromResult(new FileDiff(null, []));
 		public Task<IReadOnlyList<GitCommitInfo>> ReadCommitsAsync(string root, int skip, int count, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<GitCommitInfo>>([_head]);
-		public Task<GitCommitInfo?> ResolveCommitAsync(string root, string revision, CancellationToken cancellationToken) => Task.FromResult<GitCommitInfo?>(_head);
+		public Task<GitCommitInfo?> ResolveCommitAsync(string root, string revision, CancellationToken cancellationToken) => Task.FromResult<GitCommitInfo?>(revision == "head" ? _head with { Id = "head" } : _head);
 		public Task<CommitChanges> ReadCommitChangesAsync(string root, GitCommitInfo commit, CancellationToken cancellationToken) => Task.FromResult(new CommitChanges(commit, [], 0, 0));
 		public Task<FileDiff> ReadCommitDiffAsync(string root, GitFileEntry entry, GitCommitInfo commit, CancellationToken cancellationToken) => Task.FromResult(new FileDiff(null, []));
-		public Task<string?> ReadCommitTextAsync(string root, string path, string commitId, CancellationToken cancellationToken) => Task.FromResult<string?>(null);
+		public Task<string?> ReadCommitTextAsync(string root, string path, string commitId, CancellationToken cancellationToken) => Task.FromResult<string?>("x\n");
 		public Task<int?> ReadChangedFileCountAsync(string root, CancellationToken cancellationToken) => Task.FromResult<int?>(0);
 		public Task<string?> ReadWorkingTextAsync(string root, string path, CancellationToken cancellationToken) =>
 			Task.FromResult<string?>(null);

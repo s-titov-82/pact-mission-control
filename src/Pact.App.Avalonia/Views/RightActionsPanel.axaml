@@ -28,11 +28,19 @@
                        Foreground="{DynamicResource AppTextMutedBrush}" />
           </StackPanel>
         </Button>
-        <Button x:Name="CurrentBranchEntry" Margin="0,6,0,0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
-                Padding="10,6" Click="OnCurrentBranchEntryClicked">
+        <Button x:Name="UnmergedEntry" Margin="0,6,0,0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                Padding="10,6" Click="OnUnmergedEntryClicked">
           <StackPanel Spacing="2">
-            <TextBlock x:Name="CurrentBranchEntryTitle" FontWeight="SemiBold" />
-            <TextBlock x:Name="CurrentBranchEntrySubtitle" FontSize="11" TextWrapping="Wrap"
+            <TextBlock x:Name="UnmergedEntryTitle" FontWeight="SemiBold" />
+            <TextBlock x:Name="UnmergedEntrySubtitle" FontSize="11" TextWrapping="Wrap"
+                       Foreground="{DynamicResource AppTextMutedBrush}" />
+          </StackPanel>
+        </Button>
+        <Button x:Name="UnpushedEntry" Margin="0,6,0,0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                Padding="10,6" Click="OnUnpushedEntryClicked">
+          <StackPanel Spacing="2">
+            <TextBlock x:Name="UnpushedEntryTitle" FontWeight="SemiBold" />
+            <TextBlock x:Name="UnpushedEntrySubtitle" FontSize="11" TextWrapping="Wrap"
                        Foreground="{DynamicResource AppTextMutedBrush}" />
           </StackPanel>
         </Button>

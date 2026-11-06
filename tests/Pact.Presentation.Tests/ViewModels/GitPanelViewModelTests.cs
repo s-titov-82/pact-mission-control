@@ -563,6 +563,103 @@ public sealed class GitPanelViewModelTests
 		viewModel.HelperActions.ShouldBe([history, custom]);
 	}
 
+	[Test]
+	public async Task Pull_rebase_uses_fixed_arguments_and_refreshes_after_failure()
+	{
+		var runner = new FakeGitRunner();
+		EnqueueCleanRefresh(runner);
+		runner.Enqueue(args => args.Contains("MERGE_HEAD"), new GitCommandResult(1, "", ""));
+		runner.Enqueue(args => args.SequenceEqual(["pull", "--rebase", "--no-autostash"]), new GitCommandResult(1, "Fetched new refs", "rebase conflict"));
+		EnqueueStatusRefresh(runner, DirtyStatus);
+		var commands = GitButtonCommandSet.Create([new GitButtonCommandRecord(GitButtonCommandSet.PullId, "Pull", Command: "pull --ff-only")]);
+		var model = CreateViewModel(runner, commands);
+
+		(await model.RunPullRebaseAsync()).ShouldBeFalse();
+
+		model.HasConflicts.ShouldBeTrue();
+		model.LogText.ShouldContain("Pull (rebase)");
+		model.LogText.ShouldContain("rebase conflict");
+		runner.Calls.Count(args => args.Contains("pull")).ShouldBe(1);
+		model.Commands.Arguments(GitButtonCommandSet.PullId).ShouldBe(["pull", "--ff-only"]);
+		model.IsBusy.ShouldBeFalse();
+	}
+
+	[TestCase("dirty")]
+	[TestCase("detached")]
+	[TestCase("tracking")]
+	[TestCase("merge")]
+	public async Task Pull_rebase_refuses_unsafe_repository_without_network_write(string state)
+	{
+		var runner = new FakeGitRunner();
+		var status = state switch
+		{
+			"dirty" => DirtyWithoutConflictsStatus,
+			"detached" => CleanStatus.Replace("feat/x", "(detached)", StringComparison.Ordinal),
+			"tracking" => CleanStatus.Replace("# branch.upstream origin/feat/x", "", StringComparison.Ordinal),
+			_ => CleanStatus,
+		};
+		EnqueueStatusRefresh(runner, status);
+		if (state == "merge")
+		{
+			runner.Enqueue(args => args.Contains("MERGE_HEAD"), new GitCommandResult(0, "merge", ""));
+		}
+		var model = CreateViewModel(runner);
+
+		(await model.RunPullRebaseAsync()).ShouldBeFalse();
+
+		runner.Calls.ShouldNotContain(args => args.Contains("pull"));
+		model.LogText.ShouldContain("Cannot pull");
+		model.IsBusy.ShouldBeFalse();
+	}
+
+	[Test]
+	public async Task Pull_rebase_respects_hidden_pull_setting()
+	{
+		var runner = new FakeGitRunner();
+		var commands = GitButtonCommandSet.Create([new GitButtonCommandRecord(GitButtonCommandSet.PullId, "Pull", Enabled: false)]);
+		var model = CreateViewModel(runner, commands);
+
+		(await model.RunPullRebaseAsync()).ShouldBeFalse();
+
+		runner.Calls.ShouldBeEmpty();
+	}
+
+	[Test]
+	public async Task Pull_rebase_serializes_preflight_with_other_commands_and_refreshes_success()
+	{
+		var runner = new FakeGitRunner();
+		TaskCompletionSource<GitCommandResult> gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		runner.Enqueue(args => args.Contains("status"), _ => gate.Task);
+		EnqueueCleanRefreshWithoutStatus(runner);
+		runner.Enqueue(args => args.Contains("MERGE_HEAD"), new GitCommandResult(1, "", ""));
+		runner.Enqueue(args => args.SequenceEqual(["pull", "--rebase", "--no-autostash"]), new GitCommandResult(0, "ok", ""));
+		EnqueueCleanRefresh(runner);
+		var model = CreateViewModel(runner);
+		var pending = model.RunPullRebaseAsync();
+		model.IsBusy.ShouldBeTrue();
+		(await model.RunPullRebaseAsync()).ShouldBeFalse();
+		await model.RunCommandAsync("Push", ["push"]);
+		gate.SetResult(new GitCommandResult(0, CleanStatus, ""));
+		(await pending).ShouldBeTrue();
+		runner.Calls.ShouldNotContain(args => args.Contains("push"));
+		runner.Calls.Count(args => args.Contains("status")).ShouldBe(2);
+		model.LogText.ShouldContain("Pull (rebase) ok");
+	}
+
+	[Test]
+	public async Task Pull_rebase_refuses_an_active_rebase_even_with_clean_files()
+	{
+		var runner = new FakeGitRunner();
+		runner.Enqueue(args => args.Contains("status"), new GitCommandResult(0, CleanStatus, ""));
+		runner.Enqueue(args => args.Contains("remote"), new GitCommandResult(0, "origin-url", ""));
+		runner.Enqueue(args => args.Contains("refs/stash"), new GitCommandResult(1, "", ""));
+		runner.Enqueue(args => args.Contains("rebase-merge"), new GitCommandResult(0, @"D:\repo\.git\rebase-merge", ""));
+		GitPanelViewModel model = new(@"D:\repo", runner, [], (_, _, _) => { }, _ => true);
+		(await model.RunPullRebaseAsync()).ShouldBeFalse();
+		model.LogText.ShouldContain("during a rebase");
+		runner.Calls.ShouldNotContain(args => args.Contains("pull"));
+	}
+
 	private const string CleanStatus = """
         # branch.oid 1111111111111111111111111111111111111111
         # branch.head feat/x

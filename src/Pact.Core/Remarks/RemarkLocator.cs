@@ -78,11 +78,11 @@ public static class RemarkLocator
 		return map[index] + 1;
 	}
 
-	/// <summary>Whether an Old-side anchor still holds: only while HEAD is the commit it was written against.</summary>
-	public static bool IsOldValid(RemarkAnchor anchor, string? headCommit)
+	/// <summary>Whether an Old-side anchor belongs to the displayed immutable comparison base.</summary>
+	public static bool IsOldValid(RemarkAnchor anchor, string? displayedBase)
 	{
 		ArgumentNullException.ThrowIfNull(anchor);
-		return string.Equals(anchor.BaseCommit, headCommit, StringComparison.Ordinal);
+		return string.Equals(anchor.BaseCommit, displayedBase, StringComparison.Ordinal);
 	}
 
 	// Every start index where lines[start..start+length) occurs in lines.

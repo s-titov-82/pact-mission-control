@@ -1,5 +1,6 @@
 using Pact.Core.Remarks;
 using Pact.Infrastructure.Remarks;
+using Pact.Presentation.Tests.Fakes;
 using Pact.Presentation.Services.Remarks;
 
 namespace Pact.Presentation.Tests.Services.Remarks;
@@ -21,7 +22,7 @@ public sealed class RemarkPlacerTests : IDisposable
 		var thread = await book.AddAsync(anchor, side == RemarkSide.New ? "a\nb\n" : null, "review", CancellationToken.None);
 		if (exists)
 		{ await WriteFileAsync("x\na\nb\n"); }
-		(await RemarkPlacer.PlaceOnDiskAsync(book, thread, "different-head", CancellationToken.None))
+		(await RemarkPlacer.PlaceOnDiskAsync(book, thread, null, CancellationToken.None))
 			.ShouldBe(new RemarkPlacement(2, IsOutdated: false));
 		(await RemarkPlacer.PlaceInTextAsync(book, thread, ["different"], "different-head", CancellationToken.None))
 			.ShouldBe(new RemarkPlacement(2, IsOutdated: false));
@@ -34,7 +35,7 @@ public sealed class RemarkPlacerTests : IDisposable
 		var thread = await AddNewAsync(book);
 		await WriteFileAsync("x\na\nb\nc\n");
 
-		(await RemarkPlacer.PlaceOnDiskAsync(book, thread, "abc", CancellationToken.None))
+		(await RemarkPlacer.PlaceOnDiskAsync(book, thread, null, CancellationToken.None))
 			.ShouldBe(new RemarkPlacement(3, IsOutdated: false));
 	}
 
@@ -57,23 +58,21 @@ public sealed class RemarkPlacerTests : IDisposable
 		var thread = await AddNewAsync(book);
 		File.Delete(Path.Combine(_root.Path, "src", "X.cs"));
 
-		(await RemarkPlacer.PlaceOnDiskAsync(book, thread, "abc", CancellationToken.None))
+		(await RemarkPlacer.PlaceOnDiskAsync(book, thread, null, CancellationToken.None))
 			.ShouldBe(new RemarkPlacement(null, IsOutdated: true));
 	}
 
-	[Test]
-	public async Task An_old_side_remark_outdates_when_head_moves()
+	[TestCase(false)]
+	[TestCase(true)]
+	public async Task Old_local_placement_validates_the_captured_base_and_original_path(bool missing)
 	{
 		using var book = Book();
-		var thread = await book.AddAsync(
-			new RemarkAnchor("src/X.cs", RemarkSide.Old, 7, "gone();", [], [], "abc", null),
-			null,
-			"keep it",
-			CancellationToken.None);
-
-		(await RemarkPlacer.PlaceOnDiskAsync(book, thread, "abc", CancellationToken.None))
-			.ShouldBe(new RemarkPlacement(7, IsOutdated: false));
-		(await RemarkPlacer.PlaceOnDiskAsync(book, thread, "def", CancellationToken.None))
+		var thread = await book.AddAsync(new("src/X.cs", RemarkSide.Old, 2, "gone();", [], [], "captured", null, OriginalPath: "old/X.cs"), null, "keep it", CancellationToken.None);
+		CapturedCommitReader reader = new("captured", missing ? "wrong.cs" : "old/X.cs", "one\ngone();\n");
+		(await RemarkPlacer.PlaceOnDiskAsync(book, thread, reader, CancellationToken.None))
+			.ShouldBe(new RemarkPlacement(missing ? null : 2, IsOutdated: missing));
+		reader.Available = false;
+		(await RemarkPlacer.PlaceOnDiskAsync(book, thread, reader, CancellationToken.None))
 			.ShouldBe(new RemarkPlacement(null, IsOutdated: true));
 	}
 

@@ -51,7 +51,7 @@ public interface IGitWorkingTreeReader
 /// agent's own git commands never meet a lock Pact holds, and <c>core.quotePath=false</c> so
 /// non-ASCII paths come back verbatim.
 /// </summary>
-public sealed partial class GitWorkingTreeReader(IGitCliRunner runner) : IGitWorkingTreeReader, IGitCommitReader, IGitComparisonReader
+public sealed partial class GitWorkingTreeReader(IGitCliRunner runner) : IGitWorkingTreeReader, IGitCommitReader, IGitComparisonReader, IGitReviewReader
 {
 	/// <inheritdoc />
 	public async Task<int?> ReadChangedFileCountAsync(string root, CancellationToken cancellationToken)

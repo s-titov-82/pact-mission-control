@@ -717,7 +717,7 @@ public sealed class ProjectScreenRemarksHeadlessTests
 	}
 
 	[AvaloniaTest]
-	public async Task A_first_remark_being_typed_survives_an_edit_of_its_file_and_follows_its_line()
+	public async Task A_first_remark_holds_its_shown_text_while_typing_and_follows_its_line_after_closing()
 	{
 		await WithScreenAsync(async fixture =>
 		{
@@ -726,14 +726,17 @@ public sealed class ProjectScreenRemarksHeadlessTests
 			var box = fixture.Overlay.FindControl<TextBox>("NewRemarkBox")!;
 			box.Text = "draft";
 
-			await fixture.EditAsync("x\ny\n" + Text);
+			await fixture.RewriteWhileEditingAsync("x\ny\n" + Text);
 
 			fixture.Overlay.IsVisible.ShouldBeTrue();
 			box.Text.ShouldBe("draft");
-			Canvas.GetTop(fixture.Overlay).ShouldBe(fixture.LineBottomInLayer(13), tolerance: 1);
+			Canvas.GetTop(fixture.Overlay).ShouldBe(fixture.LineBottomInLayer(11), tolerance: 1);
 			CtrlEnter(box);
 			await EventuallyAsync(fixture.Window, () => fixture.Book.Threads.Count == 1);
 			fixture.Book.Threads.Single().Anchor.Line.ShouldBe(10);
+			await fixture.CloseEditorAndRefreshAsync();
+			await EventuallyAsync(fixture.Window, () => fixture.Remarks.ThreadsByRow?.ByRow.ContainsKey(12) == true);
+			fixture.Remarks.ThreadsByRow!.ByRow[12].Single().Messages.Single().Text.ShouldBe("draft");
 		}, height: 650);
 	}
 
@@ -746,20 +749,23 @@ public sealed class ProjectScreenRemarksHeadlessTests
 			var box = fixture.Overlay.FindControl<TextBox>("NewRemarkBox")!;
 			box.Text = "draft";
 
-			await fixture.EditAsync("x\ny\n" + Text);
-			await fixture.EditAsync("z\nx\ny\n" + Text);
+			await fixture.RewriteWhileEditingAsync("x\ny\n" + Text);
+			await fixture.RewriteWhileEditingAsync("z\nx\ny\n" + Text);
 			// Another thread's placement is published while the box is open.
 			await fixture.Remarks.AddRemarkAsync(fixture.Changes.ShownDiff!, 2, "other", CancellationToken.None);
 			await EventuallyAsync(fixture.Window, () => fixture.Remarks.ThreadsByRow?.ByRow.Count == 1);
 
 			fixture.Overlay.IsVisible.ShouldBeTrue();
 			box.Text.ShouldBe("draft");
-			Canvas.GetTop(fixture.Overlay).ShouldBe(fixture.LineBottomInLayer(14), tolerance: 1);
+			Canvas.GetTop(fixture.Overlay).ShouldBe(fixture.LineBottomInLayer(11), tolerance: 1);
 			CtrlEnter(box);
 			await EventuallyAsync(fixture.Window, () => fixture.Book.Threads.Count == 2);
 			var anchor = fixture.Book.Threads.Single(thread => thread.Messages[0].Text == "draft").Anchor;
 			anchor.Line.ShouldBe(10);
 			(await fixture.Book.LoadSnapshotLinesAsync(anchor.SnapshotId!, CancellationToken.None))!.Count.ShouldBe(60);
+			await fixture.CloseEditorAndRefreshAsync();
+			await EventuallyAsync(fixture.Window, () => fixture.Remarks.ThreadsByRow?.ByRow.TryGetValue(13, out var threads) == true
+				&& threads.Any(thread => thread.Messages.Any(message => message.Text == "draft")));
 		}, height: 650);
 	}
 
@@ -954,6 +960,24 @@ public sealed class ProjectScreenRemarksHeadlessTests
 		GatedRemarkStore Store,
 		Pact.App.Avalonia.Lifecycle.ObservedTaskGroup EventTasks)
 	{
+		public async Task RewriteWhileEditingAsync(string text)
+		{
+			var shown = Changes.ShownDiff;
+			var reads = Reader.ChangeReads;
+			Reader.Text = text;
+			Time.Advance(ProjectChangesViewModel.ReconcileInterval);
+			await EventuallyAsync(Window, () => Reader.ChangeReads > reads);
+			Changes.ShownDiff.ShouldBeSameAs(shown);
+		}
+
+		public async Task CloseEditorAndRefreshAsync()
+		{
+			var shown = Changes.ShownDiff;
+			PressText(2);
+			Time.Advance(ProjectChangesViewModel.ReconcileInterval);
+			await EventuallyAsync(Window, () => !ReferenceEquals(Changes.ShownDiff, shown));
+		}
+
 		// The agent rewrites the file; the next reconciliation reads it.
 		public async Task EditAsync(string text, FileDiff? diff = null)
 		{
@@ -1017,6 +1041,7 @@ public sealed class ProjectScreenRemarksHeadlessTests
 
 	private sealed class TextReader : IGitWorkingTreeReader
 	{
+		public int ChangeReads { get; private set; }
 		public string Text { get; set; } = ProjectScreenRemarksHeadlessTests.Text;
 
 		// The diff read; the whole text as added when not set.
@@ -1024,13 +1049,16 @@ public sealed class ProjectScreenRemarksHeadlessTests
 
 		public string[] Paths { get; set; } = [FilePath];
 
-		public Task<WorkingTreeChanges?> ReadChangesAsync(string root, CancellationToken cancellationToken) =>
-			Task.FromResult<WorkingTreeChanges?>(new WorkingTreeChanges(
+		public Task<WorkingTreeChanges?> ReadChangesAsync(string root, CancellationToken cancellationToken)
+		{
+			ChangeReads++;
+			return Task.FromResult<WorkingTreeChanges?>(new WorkingTreeChanges(
 				"head1",
 				"main",
 				Paths.Select(path => new GitFileEntry(path, null, GitChangeKind.Untracked)).ToArray(),
 				60,
 				0));
+		}
 
 		public Task<FileDiff> ReadDiffAsync(string root, GitFileEntry entry, string? headCommit, CancellationToken cancellationToken) =>
 			Task.FromResult(Diff ?? FileDiff.AllAdded(Text));

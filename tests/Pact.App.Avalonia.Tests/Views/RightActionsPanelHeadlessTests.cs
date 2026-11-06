@@ -21,6 +21,74 @@ namespace Pact.App.Avalonia.Tests.Views;
 public sealed class RightActionsPanelHeadlessTests
 {
 	[AvaloniaTest]
+	public async Task Three_scope_controls_filter_commits_and_return_to_live_aggregate_in_a_narrow_window()
+	{
+		using var root = TemporaryDirectory.Create();
+		using var changes = Changes(Files("a.cs"), 1, 0, root.Path);
+		var screen = Screen(root.Path, changes);
+		await screen.SelectTabAsync(ProjectScreenTab.Changes, CancellationToken.None);
+		ProjectScreenView view = new() { DataContext = screen };
+		Window window = new() { Content = view, Width = 460, Height = 720 };
+		window.Show();
+		try
+		{
+			view.FindControl<Button>("UnmergedScopeButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+			await EventuallyAsync(() => changes.SelectedReviewScope == GitReviewScope.Unmerged && changes.ScopeCommits.Count == 1);
+			var filter = view.FindControl<ComboBox>("ReviewFilter")!;
+			filter.Items.Count.ShouldBe(3);
+			filter.SelectedIndex = 2;
+			await EventuallyAsync(() => changes.SelectedCommit is not null);
+			changes.SelectedReviewScope.ShouldBe(GitReviewScope.Unmerged);
+			filter.SelectedIndex = 1;
+			await EventuallyAsync(() => changes.IsUncommittedFilter);
+			changes.WorkingTreeFileCount.ShouldBe(1);
+			filter.SelectedIndex = 0;
+			await EventuallyAsync(() => changes.SelectedCommit is null && !changes.IsUncommittedFilter && changes.Files.Count == 3);
+			window.UpdateLayout();
+			view.FindControl<Control>("ReviewTargetButton")!.IsEffectivelyVisible.ShouldBeTrue();
+			view.GetLogicalDescendants().OfType<TextBlock>().Single(text => text.Text == "Loading…").IsVisible.ShouldBeFalse();
+			foreach (var name in new[] { "UncommittedScopeButton", "UnmergedScopeButton", "UnpushedScopeButton" })
+			{
+				var button = view.FindControl<Button>(name)!;
+				var position = button.TranslatePoint(default, window)!.Value;
+				position.X.ShouldBeGreaterThanOrEqualTo(0);
+				(position.X + button.Bounds.Width).ShouldBeLessThanOrEqualTo(window.Bounds.Width);
+			}
+		}
+		finally { window.Close(); }
+	}
+
+	[AvaloniaTest]
+	public async Task Review_pull_has_an_explicit_strategy_and_respects_hidden_pull_setting()
+	{
+		using var root = TemporaryDirectory.Create();
+		using var changes = Changes(Files("a.cs"), 1, 0, root.Path);
+		var now = DateTimeOffset.UtcNow;
+		WorkspaceViewModel workspace = new(new ProjectRecord("p", "Pact", root.Path, now, now, null), _ => true);
+		var commands = GitButtonCommandSet.Create([new GitButtonCommandRecord(GitButtonCommandSet.PullId, "Pull", Enabled: false)]);
+		GitPanelViewModel git = new(root.Path, new NoGitWrites(), [], (_, _, _) => { }, _ => false, commands);
+		ProjectScreenViewModel screen = new(workspace, changes, new ProjectMarkdownFileStore(), repository: git);
+		ProjectScreenView view = new() { DataContext = screen };
+		Window window = new() { Content = view };
+		window.Show();
+		try
+		{
+			await screen.SelectTabAsync(ProjectScreenTab.Changes, CancellationToken.None);
+			var button = view.FindControl<Button>("PullRebaseButton")!;
+			button.IsVisible.ShouldBeFalse();
+			button.Content.ShouldBe("Pull (rebase)");
+			ToolTip.GetTip(button).ShouldNotBeNull().ToString()!.ShouldContain("never stashes");
+		}
+		finally { window.Close(); }
+	}
+
+	private sealed class NoGitWrites : IGitCliRunner
+	{
+		public Task<GitCommandResult> RunAsync(string workingDirectory, IReadOnlyList<string> arguments, IProgress<string>? outputLine, CancellationToken cancellationToken) =>
+			Task.FromResult(new GitCommandResult(1, "", "not used"));
+	}
+
+	[AvaloniaTest]
 	public async Task Working_tree_and_current_branch_have_independent_counts_and_navigation_requests()
 	{
 		using var changes = Changes(Files("a.cs", "b.cs"), 84, 12);
@@ -31,19 +99,24 @@ public sealed class RightActionsPanelHeadlessTests
 		{
 			var working = 0;
 			var branch = 0;
-			panel.ChangesEntryRequested += (_, _) => working++;
-			panel.CurrentBranchEntryRequested += (_, _) => branch++;
+			panel.ReviewScopeRequested += (_, scope) => { if (scope == GitReviewScope.Uncommitted) { working++; } };
+			panel.ReviewScopeRequested += (_, scope) => { if (scope == GitReviewScope.Unmerged) { branch++; } };
 			var workingEntry = panel.FindControl<Button>("ChangesEntry").ShouldNotBeNull();
-			var branchEntry = panel.FindControl<Button>("CurrentBranchEntry").ShouldNotBeNull();
+			var branchEntry = panel.FindControl<Button>("UnmergedEntry").ShouldNotBeNull();
 			branchEntry.IsEnabled.ShouldBeTrue();
-			panel.FindControl<TextBlock>("CurrentBranchEntryTitle")!.Text.ShouldBe("Current branch · 3");
-			panel.FindControl<TextBlock>("CurrentBranchEntrySubtitle")!.Text.ShouldBe("+5 −2");
+			panel.FindControl<TextBlock>("UnmergedEntryTitle")!.Text.ShouldBe("Unmerged · 3");
+			panel.FindControl<TextBlock>("UnmergedEntrySubtitle")!.Text.ShouldBe("+5 −2");
 			branchEntry.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
 			workingEntry.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
 			branch.ShouldBe(1);
 			working.ShouldBe(1);
-			await changes.SelectCurrentBranchAsync(CancellationToken.None);
-			panel.FindControl<TextBlock>("ChangesEntryTitle")!.Text.ShouldBe("Working tree · 2");
+			var unpushed = 0;
+			panel.ReviewScopeRequested += (_, scope) => { if (scope == GitReviewScope.Unpushed) { unpushed++; } };
+			panel.FindControl<Button>("UnpushedEntry")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+			unpushed.ShouldBe(1);
+			panel.FindControl<TextBlock>("UnpushedEntryTitle")!.Text.ShouldBe("Unpushed · 3");
+			await changes.SelectReviewScopeAsync(GitReviewScope.Unmerged, CancellationToken.None);
+			panel.FindControl<TextBlock>("ChangesEntryTitle")!.Text.ShouldBe("Uncommitted · 2");
 			panel.FindControl<TextBlock>("ChangesEntrySubtitle")!.Text.ShouldBe("+84 −12");
 			changes.Files.Count.ShouldBe(3);
 		}
@@ -93,12 +166,12 @@ public sealed class RightActionsPanelHeadlessTests
 		{
 			window.UpdateLayout();
 			var requested = 0;
-			panel.ChangesEntryRequested += (_, _) => requested++;
+			panel.ReviewScopeRequested += (_, _) => requested++;
 			var entry = panel.FindControl<Button>("ChangesEntry")!;
 
 			entry.IsVisible.ShouldBeTrue();
 			var texts = entry.GetLogicalDescendants().OfType<TextBlock>().Select(text => text.Text).ToList();
-			texts.ShouldContain("Working tree · 2");
+			texts.ShouldContain("Uncommitted · 2");
 			texts.ShouldContain("+84 \u221212");
 			entry.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
 			requested.ShouldBe(1);
@@ -218,7 +291,7 @@ public sealed class RightActionsPanelHeadlessTests
 			window.UpdateLayout();
 
 			panel.FindControl<Button>("ChangesEntry")!.IsVisible.ShouldBeTrue();
-			panel.FindControl<TextBlock>("ChangesEntryTitle")!.Text.ShouldBe("Working tree · 0");
+			panel.FindControl<TextBlock>("ChangesEntryTitle")!.Text.ShouldBe("Uncommitted · 0");
 			panel.FindControl<TextBlock>("ChangesEntrySubtitle")!.Text.ShouldBe("+0 −0");
 		}
 		finally
@@ -571,11 +644,15 @@ public sealed class RightActionsPanelHeadlessTests
 		return changes;
 	}
 
-	private sealed class FixedReader(GitFileEntry[] files, int added, int removed) : IGitWorkingTreeReader, IGitCommitReader, IGitComparisonReader
+	private sealed class FixedReader(GitFileEntry[] files, int added, int removed) : IGitWorkingTreeReader, IGitCommitReader, IGitComparisonReader, IGitReviewReader
 	{
+		public Task<GitReviewChanges> ReadReviewChangesAsync(string root, GitReviewScope scope, string? targetBranch, CancellationToken cancellationToken) => Task.FromResult(new GitReviewChanges(scope, "main", "origin/main", new GitLocalChanges(scope == GitReviewScope.Uncommitted ? "head" : "base", "head", scope == GitReviewScope.Uncommitted ? files : _branchFiles, scope == GitReviewScope.Uncommitted ? added : 5, scope == GitReviewScope.Uncommitted ? removed : 2), 1, 0, false, null));
+		public Task<GitLocalChanges> ReadLocalChangesAsync(string root, string? baseCommit, CancellationToken cancellationToken) => Task.FromResult(new GitLocalChanges(baseCommit, "head", files, added, removed));
+		public Task<FileDiff> ReadLocalDiffAsync(string root, GitFileEntry entry, string? baseCommit, CancellationToken cancellationToken) => ReadDiffAsync(root, entry, baseCommit, cancellationToken);
+		public Task<IReadOnlyList<string>> ReadBranchesAsync(string root, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<string>>(["main"]);
+		public Task<IReadOnlyList<GitCommitInfo>> ReadScopeCommitsAsync(string root, string? baseCommit, string headCommit, int skip, int count, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<GitCommitInfo>>([_head]);
 		private readonly GitFileEntry[] _branchFiles = Files("one", "two", "three");
 		private readonly GitCommitInfo _head = new(new string('b', 40), [new string('a', 40)], "author", DateTimeOffset.MinValue, "head");
-		public Task<GitBranchChanges> ReadBranchChangesAsync(string root, CancellationToken cancellationToken) => Task.FromResult(new GitBranchChanges("feature", "origin/feature", new(_head.BaseCommit, _head.Id, _branchFiles, 5, 2), null));
 		public Task<GitRevisionChanges> ReadComparisonChangesAsync(string root, string? baseCommit, string targetCommit, CancellationToken cancellationToken) => Task.FromResult(new GitRevisionChanges(baseCommit, targetCommit, _branchFiles, 5, 2));
 		public Task<FileDiff> ReadComparisonDiffAsync(string root, GitFileEntry entry, string? baseCommit, string targetCommit, CancellationToken cancellationToken) => Task.FromResult(FileDiff.AllAdded("branch\n"));
 		public Task<IReadOnlyList<GitCommitInfo>> ReadCommitsAsync(string root, int skip, int count, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<GitCommitInfo>>([_head]);

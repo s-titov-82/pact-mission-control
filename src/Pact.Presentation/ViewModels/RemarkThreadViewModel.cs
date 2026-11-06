@@ -50,7 +50,8 @@ public sealed class RemarkThreadViewModel : INotifyPropertyChanged
 	public string? TargetCommit => Thread.Anchor.TargetCommit;
 
 	/// <summary>The source shown beside project-wide threads.</summary>
-	public string SourceLabel => TargetCommit is { } id ? $"Commit {id[..Math.Min(8, id.Length)]}" : "Working tree";
+	public string SourceLabel => TargetCommit is { } id ? $"Commit {id[..Math.Min(8, id.Length)]}"
+		: Thread.Anchor.BaseCommit is { } baseline ? $"Local · base {baseline[..Math.Min(8, baseline.Length)]}" : "Local · empty tree";
 
 	/// <summary>Opens this thread's source and file before editing a stored message.</summary>
 	public Task OpenSourceAsync(CancellationToken cancellationToken) => _openSource?.Invoke(cancellationToken) ?? Task.CompletedTask;

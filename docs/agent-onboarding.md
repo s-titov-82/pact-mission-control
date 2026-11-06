@@ -512,37 +512,52 @@ The upper third scrolls independently and contains repository information,
 installed IDEs, folder navigation, active reviews and durable project links.
 There is no separate Notes tree row or visibility toggle.
 
-Changes defaults to Working tree. Choose commit lists history in pages of fifty
-and accepts a SHA/ref, resolved to a full immutable object id before loading.
-Merges compare with their first parent; initial commits with the empty tree.
-All historical text comes from Git objects, with the existing binary/size
-placeholders. Local Markdown images show an unavailable-resource caption and
-local file links are refused; headings and HTTP(S) links remain usable.
-Working-tree summary actions explicitly select Working tree, while a normal
-Changes tab selection retains the in-memory source. No new restart selection
-state is persisted.
+Changes defaults to Uncommitted (HEAD or empty tree → local disk). Unmerged uses
+merge-base(HEAD, merge target) → local; Unpushed uses the exact configured tracking
+ref → local. Both include commits and net disk edits plus nonignored untracked
+files. Unpushed falls back to Unmerged only if no tracking is configured; a gone
+configured ref is unavailable. Behind/diverged tracking explicitly warns that
+remote-only work appears as local reversions. Remote refs are local observations
+from the last fetch/pull; nothing automatically fetches.
 
-Current branch compares the configured tracking upstream directly with HEAD,
-using both resolved full ids; it excludes working/index/untracked changes and
-does not fetch or substitute a main branch/merge base. Missing/gone upstream,
-unborn and detached HEAD have explicit unavailable text. Working tree and Current
-branch have independent right-panel counts and explicit mode navigation, also
-at zero. Both summaries refresh through the existing observer while an individual
-commit stays frozen. Branch pair changes invalidate older file reads. An open
-remark editor temporarily retains its displayed pair while summaries update;
-closing that editor resumes branch presentation. Hidden same-project editors
-retain their drafts/pair; mode/owner departure releases their hold.
+The merge target is automatic remote default (origin preferred, otherwise a
+unique remote default), then local main/master excluding the current branch, or
+manual. It is never inferred from tracking. Manual choice lives in memory per
+project/branch. Each scope has an independent right-panel summary. Unmerged and
+Unpushed keep All changes / Uncommitted / individual local-side commit filters;
+commit history is bounded and paged at fifty, and each commit shows its own
+first-parent patch rather than decomposing the net aggregate. Choose commit
+also accepts standalone history or SHA/ref. Initial commits use the empty tree.
+Historical text comes from Git objects with binary/size placeholders; local
+Markdown assets/links remain unavailable in historical views.
 
-Branch remarks retain target HEAD and the exact upstream comparison base, not
-just the target's first parent. Their source link reopens that fixed comparison
-even after refs move. Historical markers/editors require matching target AND
-base. These changes do not partition project-wide Send, drafts or cleanup.
+Explicit Pull (rebase) invokes fixed `pull --rebase --no-autostash` through the
+existing Git panel operation gate and log, with a fresh attached-branch,
+tracking, clean-index/tree, no-conflict and no-merge/rebase check. It is distinct
+from the configurable Git panel Pull (default `--no-rebase`); hiding Pull hides
+both. No automatic stash/discard/retry or conflict resolution occurs. Inspect
+status/logs and resolve or abort through existing actions; continuing a stopped
+rebase is an explicit terminal action. Refresh occurs after failures too, since
+fetch may have updated refs before rebase fails.
+
+One existing observer refreshes summaries while immutable commits stay frozen.
+Source/file/ref generations reject obsolete results; navigation and dialogs
+reserve source intent before awaits. A generalized editor lease retains local
+base/text while summaries update; source/owner departure releases it. No new
+restart selection state, poller or history storage is added.
+
+Local remarks retain their comparison-base SHA with no target SHA. Old-side
+placement validates that captured base blob/original rename path/line, independent
+of actual HEAD; New placement keeps captured text snapshots. Row marks and editors
+require base identity in every mode. Reopening a local remark shows an explicit
+Fixed base versus live local view; scope/filter actions leave that view.
+Historical remarks retain both target and base SHAs, even after refs move.
 
 All remark threads remain in `.pact/remarks.json`. Optional `TargetCommit` and
 `OriginalPath` anchor fields identify historical threads; absent target means
-Working tree. Open/Resolved, draft counts and Send are project-wide: one delivery
+local content against the captured base. Open/Resolved, draft counts and Send are project-wide: one delivery
 includes pending messages and typed replies of all open project threads across
-Working tree and commits. Only per-file/row marks follow the displayed source.
+local scopes and commits. Only per-file/row marks follow the displayed source.
 Historical placement is the captured line with `outdated: false` in UI, prompts
 and MCP. Source buttons reopen a thread's commit/file, and source switching
 retains typed replies. New builds read older records; saving historical threads
@@ -555,7 +570,7 @@ No retains all threads and does not re-prompt on ordinary refresh/navigation.
 The explicit cleanup button remains available for an eligible saved list,
 including after restart; loading resolved records alone never prompts. The
 cleanup scope is the complete project-wide Open/Resolved collection, regardless
-of displayed Working tree or target SHA, not a ReviewRelay run. Confirmation compares the entire
+of displayed scope or target SHA, not a ReviewRelay run. Confirmation compares the entire
 captured project list under RemarkBook's mutation gate; added/reopened/changed threads
 invalidate it without partial deletion. A failed save retains retryable state,
 relevant editors are disabled during persistence, and ids are never reused.

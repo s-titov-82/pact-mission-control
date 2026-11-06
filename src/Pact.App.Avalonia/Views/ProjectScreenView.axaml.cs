@@ -140,6 +140,7 @@ internal sealed partial class ProjectScreenView : UserControl
 		CloseOverlay();
 		RefreshTab();
 		RefreshChanges();
+		RefreshReviewControls();
 		RefreshReviewLog();
 	}
 
@@ -172,6 +173,9 @@ internal sealed partial class ProjectScreenView : UserControl
 
 	private void OnChangesPropertyChanged(object? sender, PropertyChangedEventArgs e)
 	{
+		if (e.PropertyName is nameof(ProjectChangesViewModel.SourceKind) or nameof(ProjectChangesViewModel.SelectedReviewScope)
+			or nameof(ProjectChangesViewModel.ScopeCommits) or nameof(ProjectChangesViewModel.ReviewFilterLabel))
+		{ RefreshReviewControls(); }
 		if (e.PropertyName is nameof(ProjectChangesViewModel.DiffRows)
 			or nameof(ProjectChangesViewModel.SelectedFile)
 			or nameof(ProjectChangesViewModel.DiffPlaceholder)

@@ -186,7 +186,7 @@ public sealed class OrchestratorToolsTests
 			() => [],
 			_ => Task.CompletedTask,
 			() => AgentControlResult.Ok("[]"),
-			new RemarkTools(dispatcher, SharedBooks, (_, _) => Task.FromResult<string?>(null), _ => Task.CompletedTask));
+			new RemarkTools(dispatcher, SharedBooks, new GitWorkingTreeReader(new GitCliRunner()), _ => Task.CompletedTask));
 
 	private static readonly Pact.Presentation.Services.Remarks.RemarkBooks SharedBooks = new(TimeProvider.System);
 

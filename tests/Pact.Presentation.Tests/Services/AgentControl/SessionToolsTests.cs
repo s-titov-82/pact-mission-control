@@ -243,7 +243,7 @@ public sealed class SessionToolsTests
 			() => profiles ?? [],
 			reportStatusAsync ?? (_ => Task.CompletedTask),
 			usage ?? (() => AgentControlResult.Ok("[]")),
-			new RemarkTools(dispatcher, SharedBooks, (_, _) => Task.FromResult<string?>(null), _ => Task.CompletedTask));
+			new RemarkTools(dispatcher, SharedBooks, new GitWorkingTreeReader(new GitCliRunner()), _ => Task.CompletedTask));
 	}
 
 	private static readonly RemarkBooks SharedBooks = new(TimeProvider.System);

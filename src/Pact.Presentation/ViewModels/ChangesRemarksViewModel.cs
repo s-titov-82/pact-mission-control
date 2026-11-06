@@ -220,11 +220,10 @@ public sealed partial class ChangesRemarksViewModel : INotifyPropertyChanged, ID
 				return;
 			}
 
-			var head = _changes.WorkingTreeHeadCommit;
 			List<RemarkPromptEntry> entries = [];
 			foreach (var item in batch.Items)
 			{
-				var placement = await RemarkPlacer.PlaceOnDiskAsync(_book, item.Thread, head, cancellationToken).ConfigureAwait(false);
+				var placement = await RemarkPlacer.PlaceOnDiskAsync(_book, item.Thread, _changes.CommitReader, cancellationToken).ConfigureAwait(false);
 				entries.Add(new RemarkPromptEntry(item.Thread, item.Messages, placement.Line ?? item.Thread.Anchor.Line, placement.IsOutdated));
 			}
 
@@ -379,11 +378,11 @@ public sealed partial class ChangesRemarksViewModel : INotifyPropertyChanged, ID
 
 		Raise(nameof(OpenCount), nameof(OpenThreads), nameof(ResolvedThreads), nameof(DraftCount), nameof(BarText), nameof(CanSend), nameof(SendTargets),
 			nameof(SendBlockedReason), nameof(StatusText));
-		_ = PlaceAsync(version, threads, _changes.ShownDiff, _changes.WorkingTreeHeadCommit);
+		_ = PlaceAsync(version, threads, _changes.ShownDiff);
 		RaiseCleanup();
 	}
 
-	private async Task PlaceAsync(int version, IReadOnlyList<RemarkThread> threads, ShownDiff? shown, string? head)
+	private async Task PlaceAsync(int version, IReadOnlyList<RemarkThread> threads, ShownDiff? shown)
 	{
 		List<(RemarkThread Thread, RemarkPlacement Placement, int? Row)> placed = [];
 		try
@@ -392,10 +391,11 @@ public sealed partial class ChangesRemarksViewModel : INotifyPropertyChanged, ID
 			{
 				var onShown = shown is not null && string.Equals(thread.Anchor.Path, shown.Path, StringComparison.Ordinal)
 					&& string.Equals(thread.Anchor.TargetCommit, shown.TargetCommit, StringComparison.Ordinal)
-					&& (shown.TargetCommit is null || string.Equals(thread.Anchor.BaseCommit, shown.HeadCommit, StringComparison.Ordinal));
+					&& string.Equals(thread.Anchor.BaseCommit, shown.HeadCommit, StringComparison.Ordinal)
+					&& (thread.Anchor.Side != RemarkSide.Old || string.Equals(thread.Anchor.OriginalPath, shown.OriginalPath, StringComparison.Ordinal));
 				var placement = onShown
 					? await RemarkPlacer.PlaceInTextAsync(_book, thread, shown!.NewLines, shown.HeadCommit, CancellationToken.None).ConfigureAwait(false)
-					: await RemarkPlacer.PlaceOnDiskAsync(_book, thread, head, CancellationToken.None).ConfigureAwait(false);
+					: await RemarkPlacer.PlaceOnDiskAsync(_book, thread, _changes.CommitReader, CancellationToken.None).ConfigureAwait(false);
 				placed.Add((thread, placement, onShown && placement.Line is { } line ? RowOf(shown!, thread.Anchor.Side, line) : null));
 			}
 		}
@@ -500,12 +500,13 @@ public sealed partial class ChangesRemarksViewModel : INotifyPropertyChanged, ID
 	private bool IsOfShownFile(ShownDiff shown) =>
 		!_changes.IsSourceLoading && _changes.ShownDiff is { } current && string.Equals(shown.Path, current.Path, StringComparison.Ordinal)
 		&& string.Equals(shown.TargetCommit, current.TargetCommit, StringComparison.Ordinal)
-		&& (shown.TargetCommit is null || string.Equals(shown.HeadCommit, current.HeadCommit, StringComparison.Ordinal))
+		&& string.Equals(shown.HeadCommit, current.HeadCommit, StringComparison.Ordinal)
+		&& string.Equals(shown.OriginalPath, current.OriginalPath, StringComparison.Ordinal)
 		&& (ReferenceEquals(shown, current) || _ownDiffs.TryGetValue(shown, out _));
 
 	private bool IsSelectedSource(RemarkThread thread) =>
 		string.Equals(thread.Anchor.TargetCommit, _changes.DisplayedTargetCommit, StringComparison.Ordinal)
-		&& (thread.Anchor.TargetCommit is null || string.Equals(thread.Anchor.BaseCommit, _changes.HeadCommit, StringComparison.Ordinal));
+		&& string.Equals(thread.Anchor.BaseCommit, _changes.HeadCommit, StringComparison.Ordinal);
 
 	private static int? RowOf(ShownDiff shown, RemarkSide side, int line)
 	{
