@@ -572,9 +572,10 @@ public sealed class MainWindowPaneVisibilityHeadlessTests
 	[AvaloniaTest]
 	public async Task First_stable_screen_swaps_the_loading_surface_for_the_terminal()
 	{
-		await using WindowFixture fixture = new(includeSession: true);
+		await using WindowFixture fixture = new(includeSession: true, restoreSelection: false);
 		using MainWindow window = new(fixture.Controller);
 		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		await fixture.Controller.SelectSessionAsync(fixture.ViewModel.Sessions.Single(), startIfNeeded: true);
 		Dispatcher.UIThread.RunJobs();
 		window.IsTerminalLoadingSurfaceVisible.ShouldBeTrue();
 		window.IsTerminalPaneVisible.ShouldBeFalse();
@@ -755,7 +756,8 @@ public sealed class MainWindowPaneVisibilityHeadlessTests
 			bool includeSession = false,
 			FakeTerminalBackend? backend = null,
 			RootTabsRecord? rootTabs = null,
-			IProjectNotesStore? notesStore = null)
+			IProjectNotesStore? notesStore = null,
+			bool restoreSelection = true)
 		{
 			var now = DateTimeOffset.UtcNow;
 			SessionRecord[] sessions = includeSession
@@ -791,6 +793,16 @@ public sealed class MainWindowPaneVisibilityHeadlessTests
 			Host = new FakeTerminalWebViewHost();
 			AppPaths paths = new(_root);
 			Paths = paths;
+			// Pane/runtime tests restore an explicit prior selection; first-run defaults to Dashboard.
+			var selectedId = rootTabs?.ActiveItemId ?? project.ActiveItemId;
+			if (restoreSelection && selectedId is not null)
+			{
+				var isRoot = rootTabs?.ActiveItemId is not null;
+				var paused = isRoot && rootTabs!.PausedItemIds.Contains(selectedId);
+				Task.Run(() => new SessionRestorationStore(paths.SessionRestorationPath).SaveAsync(new(
+					paused ? [] : [selectedId], [], [], new(isRoot ? null : project.Id, selectedId), false),
+					CancellationToken.None)).GetAwaiter().GetResult();
+			}
 			SettingsFileStore = new SettingsFileStore(paths);
 			_builder = new ShellControllerTestBuilder(
 				ViewModel,

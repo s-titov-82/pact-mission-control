@@ -438,6 +438,10 @@ public sealed class MainWindowHeadlessTests
 				new SelectionNotesStore());
 			Host = new FakeTerminalWebViewHost();
 			AppPaths paths = new(_temporaryDirectory.Path);
+			// This fixture exercises a live selection source, not first-run Dashboard behavior.
+			Task.Run(() => new SessionRestorationStore(paths.SessionRestorationPath)
+				.SaveAsync(new([sessions[0].Id], [], [], new(project.Id, sessions[0].Id), false),
+					CancellationToken.None)).GetAwaiter().GetResult();
 			_builder = new ShellControllerTestBuilder(
 				ViewModel,
 				new SettingsFileStore(paths),
