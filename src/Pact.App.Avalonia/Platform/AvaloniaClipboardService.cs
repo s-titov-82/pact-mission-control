@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input.Platform;
+using Avalonia.Platform.Storage;
 using Pact.App.Avalonia.Lifecycle;
 using Pact.Core.Platform;
 
@@ -30,6 +31,23 @@ internal sealed partial class AvaloniaClipboardService : IClipboardService
 	}
 
 	public uint ChangeSequence => GetClipboardSequenceNumber();
+
+	public async Task<IReadOnlyList<string>> GetFilePathsAsync()
+	{
+		try
+		{
+			IReadOnlyList<string> paths = [];
+			await _uiTaskDispatcher.InvokeAsync(async () =>
+			{
+				if (GetTopLevel()?.Clipboard is not { } clipboard)
+				{ return; }
+				var files = await clipboard.TryGetFilesAsync();
+				paths = files?.Select(file => file.TryGetLocalPath()).OfType<string>().ToArray() ?? [];
+			});
+			return paths;
+		}
+		catch { return []; }
+	}
 
 	public async Task<string> GetTextAsync()
 	{

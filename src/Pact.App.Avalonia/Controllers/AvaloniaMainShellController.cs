@@ -2699,6 +2699,28 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 
 	private async Task HandleInputReceivedAsync((string SessionId, string Data) e)
 	{
+		if (e.Data == "\u0016" && _runtimeCoordinator.TryGetActiveController(e.SessionId, out var pasteRuntime, out var pasteController))
+		{
+			// xterm emits Ctrl+V as a control byte. Like other terminal hosts, resolve
+			// clipboard paste here; console-key clients keep their native text/image handler.
+			var selection = ViewModel.SelectedSession;
+			if (selection?.Record.Id != e.SessionId)
+			{ return; }
+			var paths = await Clipboard.GetFilePathsAsync();
+			var text = paths.Count > 0
+				? string.Join(" ", paths.Select(path => path.Any(char.IsWhiteSpace) ? $"\"{path}\"" : path))
+				: Pact.Core.Terminal.AgentKeyEncoder.UsesWin32Keys(pasteRuntime.Kind, pasteRuntime.InputModes.IsWin32InputActive)
+					? string.Empty : await Clipboard.GetTextAsync();
+			if (!ReferenceEquals(ViewModel.SelectedSession, selection)
+				|| !_runtimeCoordinator.TryGetActiveController(e.SessionId, out _, out var currentController)
+				|| !ReferenceEquals(currentController, pasteController))
+			{ return; }
+			if (text.Length > 0)
+			{
+				await _runtimeCoordinator.PasteAsKeyboardAsync(e.SessionId, text);
+				return;
+			}
+		}
 		var runtimeActive = _runtimeCoordinator.TryGetActiveController(
 			e.SessionId,
 			out _,

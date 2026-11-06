@@ -18,6 +18,9 @@ public interface IClipboardService
 	/// </summary>
 	Task<string> GetTextAsync();
 
+	/// <summary>Reads copied local file paths; returns an empty list when no files are available.</summary>
+	Task<IReadOnlyList<string>> GetFilePathsAsync() => Task.FromResult<IReadOnlyList<string>>([]);
+
 	/// <summary>
 	/// Attempts to place <paramref name="text"/> on the clipboard.
 	/// </summary>

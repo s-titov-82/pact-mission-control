@@ -26,6 +26,56 @@ namespace Pact.App.Avalonia.Tests.Controllers;
 
 public sealed class AvaloniaMainShellControllerTests
 {
+	[TestCase(false)]
+	[TestCase(true)]
+	public async Task Ctrl_v_keeps_native_console_clipboard_except_for_copied_files(bool file)
+	{
+		await using ControllerFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		TaskCompletionSource modeSeen = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		fixture.Host.OutputWritten = text => { if (text.Contains("mode-ready", StringComparison.Ordinal)) { modeSeen.TrySetResult(); } };
+		fixture.Backends[0].EmitOutput("\u001b[?9001hmode-ready");
+		await modeSeen.Task.WaitAsync(TimeSpan.FromSeconds(10));
+		fixture.Clipboard.NextRead = Task.FromResult("native text");
+		if (file)
+		{ fixture.Clipboard.FilePaths = [@"C:\one.txt"]; }
+		fixture.Host.RaiseInputReceived("session-1", "\u0016");
+		await WaitForEventTasksAsync(fixture);
+		fixture.Backends[0].Inputs.ShouldBe([file ? "\u001b[200~C:\\one.txt\u001b[201~" : Pact.Core.Terminal.Win32InputEncoder.CtrlLetter('\u0016')]);
+	}
+
+	[TestCase(AgentKind.Claude)]
+	[TestCase(AgentKind.Codex)]
+	public async Task Ctrl_v_pastes_clipboard_text_for_a_vt_client_without_submitting(AgentKind kind)
+	{
+		await using ControllerFixture fixture = new(firstKind: kind);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		fixture.Clipboard.NextRead = Task.FromResult("first\r\nsecond");
+		fixture.Host.RaiseInputReceived("session-1", "\u0016");
+		await WaitForEventTasksAsync(fixture);
+		fixture.Backends[0].Inputs.ShouldBe(["\u001b[200~first\nsecond\u001b[201~"]);
+	}
+
+	[Test]
+	public async Task Ctrl_v_pastes_copied_file_paths_without_submitting()
+	{
+		await using ControllerFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		fixture.Clipboard.FilePaths = [@"C:\my files\one.txt", @"C:\two.txt"];
+		fixture.Host.RaiseInputReceived("session-1", "\u0016");
+		await WaitForEventTasksAsync(fixture);
+		fixture.Backends[0].Inputs.ShouldBe(["\u001b[200~\"C:\\my files\\one.txt\" C:\\two.txt\u001b[201~"]);
+	}
+
+	[Test]
+	public async Task Ctrl_v_preserves_the_client_key_when_the_clipboard_has_no_text_or_files()
+	{
+		await using ControllerFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		fixture.Host.RaiseInputReceived("session-1", "\u0016");
+		await WaitForEventTasksAsync(fixture);
+		fixture.Backends[0].Inputs.ShouldBe(["\u0016"]);
+	}
 	[Test]
 	public async Task Terminal_readiness_does_not_supersede_a_pending_web_selection()
 	{
@@ -4075,7 +4125,8 @@ public sealed class AvaloniaMainShellControllerTests
 			IWebProcessMetricsSnapshotReader? webProcessMetricsSnapshotReader = null,
 			bool gitRepository = false,
 			bool secondGitProject = false,
-			IProjectMarkdownFileStore? markdownStore = null)
+			IProjectMarkdownFileStore? markdownStore = null,
+			AgentKind firstKind = AgentKind.Codex)
 		{
 			if (gitRepository)
 			{
@@ -4085,7 +4136,7 @@ public sealed class AvaloniaMainShellControllerTests
 			var now = DateTimeOffset.UtcNow;
 			SessionRecord first = new(
 				"session-1",
-				AgentKind.Codex,
+				firstKind,
 				"First",
 				Path.GetTempPath(),
 				"codex",
@@ -4532,6 +4583,8 @@ public sealed class AvaloniaMainShellControllerTests
 
 	private sealed class FakeClipboardService : IClipboardService
 	{
+		public IReadOnlyList<string> FilePaths { get; set; } = [];
+		public Task<IReadOnlyList<string>> GetFilePathsAsync() => Task.FromResult(FilePaths);
 		public Task<string> NextRead { get; set; } = Task.FromResult(string.Empty);
 		public bool NextWriteResult { get; set; } = true;
 		public string? WrittenText { get; private set; }

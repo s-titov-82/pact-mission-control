@@ -57,9 +57,11 @@ internal sealed class FakeTerminalWebViewHost : ITerminalWebViewHost
 			await blocker.Task;
 		}
 	}
+	public Action<string>? OutputWritten { get; set; }
 	public Task WriteOutputAsync(string sessionId, string text)
 	{
 		WrittenOutput.Add((sessionId, text));
+		OutputWritten?.Invoke(text);
 		return Task.CompletedTask;
 	}
 	// By default the capture shows the agent's empty composer, as after a submitted prompt.
