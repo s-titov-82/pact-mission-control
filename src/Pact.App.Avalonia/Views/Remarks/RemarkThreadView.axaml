@@ -2,7 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="Pact.App.Avalonia.Views.Remarks.RemarkThreadView"
              x:CompileBindings="False">
-  <StackPanel Spacing="6">
+  <StackPanel Spacing="6" IsEnabled="{Binding IsEditingEnabled}">
     <StackPanel Orientation="Horizontal" Spacing="8">
       <TextBlock FontWeight="SemiBold" Text="{Binding Id}" />
       <TextBlock Foreground="{DynamicResource AppTextMutedBrush}" Text="{Binding LocationText}" />
@@ -12,6 +12,7 @@
         <TextBlock FontSize="11" Text="Outdated" />
       </Border>
     </StackPanel>
+    <Button Content="{Binding SourceLabel}" ToolTip.Tip="Open source and file" Click="OnOpenSourceClicked" />
     <TextBlock FontFamily="Cascadia Mono, Consolas, monospace" FontSize="12"
                Foreground="{DynamicResource AppTextMutedBrush}" TextTrimming="CharacterEllipsis"
                Text="{Binding LineText, StringFormat='&gt; {0}'}" />

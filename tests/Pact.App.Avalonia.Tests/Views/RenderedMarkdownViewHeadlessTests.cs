@@ -30,6 +30,44 @@ public sealed class RenderedMarkdownViewHeadlessTests
 	private const string Text = "# Title\n\npara one\npara two\npara three\n\n- item\n\ntail\n";
 
 	[AvaloniaTest]
+	public void Historical_view_replaces_local_images_with_single_quoted_titles_and_html_images()
+	{
+		using var folder = TemporaryDirectory.Create();
+		var file = Path.Combine(folder.Path, "current.png");
+		File.WriteAllBytes(file, Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="));
+		var uri = new Uri(file).AbsoluteUri;
+		RenderedMarkdownView view = new() { ProjectRoot = folder.Path };
+		view.Show(new ShownDiff("doc.md", "base", [], [$"![old illustration]({uri} 'title')", "", $"<img src=\"{uri}\" alt=\"old HTML\">"], [], new string('a', 40)), null);
+		var viewers = view.GetLogicalDescendants().OfType<MarkdownScrollViewer>().ToArray();
+		viewers.ShouldNotBeEmpty();
+		string.Join('\n', viewers.Select(viewer => viewer.Markdown)).ShouldNotContain(uri);
+		string.Join('\n', viewers.Select(viewer => viewer.Markdown)).ShouldContain("old illustration (image unavailable in commit view)");
+		string.Join('\n', viewers.Select(viewer => viewer.Markdown)).ShouldContain("old HTML (image unavailable in commit view)");
+		view.GetLogicalDescendants().OfType<Image>().ShouldBeEmpty();
+	}
+
+	[AvaloniaTest]
+	public void A_retained_historical_link_cannot_navigate_a_new_commit_of_the_same_file()
+	{
+		RenderedMarkdownView view = new() { ProjectRoot = "C:/repo" };
+		List<Pact.Presentation.Services.MarkdownLinkTarget> followed = [];
+		view.LinkFollowed += (_, target) => followed.Add(target);
+		var first = new ShownDiff("doc.md", "base", [], ["[heading](#title)"], [], new string('a', 40));
+		view.Show(first, null);
+		var oldViewer = view.GetLogicalDescendants().OfType<MarkdownScrollViewer>().Single();
+		var command = ((global::Markdown.Avalonia.Markdown)oldViewer.Engine).HyperlinkCommand.ShouldNotBeNull();
+		command.Execute("#title");
+		followed.ShouldHaveSingleItem().ShouldBe(new Pact.Presentation.Services.HeadingLink("title"));
+		view.Show(first with { TargetCommit = new string('b', 40) }, null);
+		command.Execute("#title");
+		followed.Count.ShouldBe(1);
+		var current = view.GetLogicalDescendants().OfType<MarkdownScrollViewer>().Single();
+		((global::Markdown.Avalonia.Markdown)current.Engine).HyperlinkCommand.ShouldNotBeNull().Execute("local.md");
+		followed.Count.ShouldBe(2);
+		followed[1].ShouldBeOfType<Pact.Presentation.Services.RefusedLink>().Notice.ShouldContain("commit view");
+	}
+
+	[AvaloniaTest]
 	public async Task Changed_and_added_blocks_carry_a_bar_and_unchanged_ones_do_not()
 	{
 		await WithRenderedAsync(fixture =>

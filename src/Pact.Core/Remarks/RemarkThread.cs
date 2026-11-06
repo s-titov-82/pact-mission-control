@@ -5,7 +5,7 @@ namespace Pact.Core.Remarks;
 /// <summary>Which version of a file a remark's line belongs to.</summary>
 public enum RemarkSide
 {
-	/// <summary>A line of the working tree: an added or an unchanged line.</summary>
+	/// <summary>An added or unchanged line of the working tree or historical target.</summary>
 	New,
 
 	/// <summary>A removed line of the commit the changes were compared with.</summary>
@@ -14,13 +14,15 @@ public enum RemarkSide
 
 /// <summary>Where a remark points: the line as the user saw it, with a little context.</summary>
 /// <param name="Path">Repository-relative path with forward slashes.</param>
-/// <param name="Side">Whether the line is in the working tree or a removed line of the commit.</param>
+/// <param name="Side">Whether the line belongs to the new version or was removed from the base.</param>
 /// <param name="Line">1-based line in the captured revision (New) or in <paramref name="BaseCommit"/> (Old).</param>
 /// <param name="LineText">The line's text when the remark was written.</param>
 /// <param name="Before">Up to three lines above it, nearest last.</param>
 /// <param name="After">Up to three lines below it, nearest first.</param>
 /// <param name="BaseCommit">The commit the changes were compared with; <see langword="null"/> for the empty tree.</param>
 /// <param name="SnapshotId">The stored copy of the file as it was when written; New side only.</param>
+/// <param name="TargetCommit">Full immutable historical target; null preserves working-tree semantics.</param>
+/// <param name="OriginalPath">Old path for a rename, used with the comparison-base revision.</param>
 public sealed record RemarkAnchor(
 	string Path,
 	RemarkSide Side,
@@ -29,7 +31,9 @@ public sealed record RemarkAnchor(
 	IReadOnlyList<string> Before,
 	IReadOnlyList<string> After,
 	string? BaseCommit,
-	string? SnapshotId);
+	string? SnapshotId,
+	string? TargetCommit = null,
+	string? OriginalPath = null);
 
 /// <summary>Who wrote a message of a remark thread.</summary>
 public enum RemarkAuthor

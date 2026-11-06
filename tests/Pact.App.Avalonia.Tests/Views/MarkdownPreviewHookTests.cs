@@ -5,6 +5,30 @@ namespace Pact.App.Avalonia.Tests.Views;
 
 public sealed class MarkdownPreviewHookTests
 {
+	[Test]
+	public void Historical_images_never_use_current_local_assets_and_preserve_code()
+	{
+		using var folder = TemporaryDirectory.Create();
+		File.WriteAllBytes(Path.Combine(folder.Path, "pic.png"), Convert.FromBase64String(OnePixelPng));
+		const string text = "![old illustration](pic.png)\n\n`![sample](pic.png)`\n\n```md\n![sample](pic.png)\n```\n\n![web](https://example.com/pic.png)";
+		MarkdownPreviewHook.Prepare(text, folder.Path, historical: true).ShouldBe(
+			"*old illustration (image unavailable in commit view)*\n\n`![sample](pic.png)`\n\n```md\n![sample](pic.png)\n```\n\n![web](https://example.com/pic.png)");
+	}
+
+	[TestCase("next.md")]
+	[TestCase("file:///C:/docs/current.md")]
+	public void Historical_links_refuse_local_files(string href) =>
+		MarkdownPreviewHook.ResolveLink("C:/repo", "doc.md", href, historical: true).ShouldBeOfType<Pact.Presentation.Services.RefusedLink>()
+			.Notice.ShouldContain("commit view");
+
+	[Test]
+	public void Historical_links_keep_web_and_same_document_headings()
+	{
+		MarkdownPreviewHook.ResolveLink("C:/repo", "doc.md", "#heading", historical: true)
+			.ShouldBe(new Pact.Presentation.Services.HeadingLink("heading"));
+		MarkdownPreviewHook.ResolveLink("C:/repo", "doc.md", "https://example.com/page", historical: true)
+			.ShouldBeOfType<Pact.Presentation.Services.WebLink>();
+	}
 	private const string OnePixelPng = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 
 	[Test]

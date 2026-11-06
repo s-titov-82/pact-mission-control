@@ -99,6 +99,18 @@
     <Grid x:Name="ChangesPanel" Grid.Row="1" IsVisible="False">
       <Grid RowDefinitions="Auto,*,Auto">
         <StackPanel>
+          <StackPanel Margin="10,8,10,2" Spacing="5">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <Button Content="Working tree" Click="OnWorkingTreeClicked" />
+              <Button Content="Current branch" IsEnabled="{Binding Changes.CanChooseCurrentBranch}" Click="OnCurrentBranchClicked" />
+              <Button Content="Choose commit…" IsVisible="{Binding Changes.CanChooseCommit}" Click="OnChooseCommitClicked" />
+              <TextBlock Text="Loading…" IsVisible="{Binding Changes.IsSourceLoading}" VerticalAlignment="Center" />
+            </StackPanel>
+            <SelectableTextBlock Text="{Binding Changes.SourceTitle}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+            <TextBlock Text="{Binding Changes.SourceDescription}" Opacity="0.65" />
+            <TextBlock Text="{Binding Changes.SourceError}" TextWrapping="Wrap"
+                       IsVisible="{Binding Changes.SourceError, Converter={x:Static ObjectConverters.IsNotNull}}" />
+          </StackPanel>
           <!-- How the file is shown; the model keeps the choice across files and falls back where a file does not allow it. -->
           <StackPanel x:Name="ModeBar" Orientation="Horizontal" Spacing="4" Margin="10,6">
             <ToggleButton x:Name="DiffModeButton" Height="26" Padding="10,2" Content="Diff" Click="OnDiffModeClicked" />

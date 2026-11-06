@@ -20,6 +20,7 @@ public sealed record RemarkMessageViewModel(string Id, string AuthorText, string
 public sealed class RemarkThreadViewModel : INotifyPropertyChanged
 {
 	private readonly RemarkBook _book;
+	private readonly Func<CancellationToken, Task>? _openSource;
 	private string _storedDraft = string.Empty;
 
 	// The id of the message the reply box owns: an unsent message put back in it with the pencil, or
@@ -28,9 +29,10 @@ public sealed class RemarkThreadViewModel : INotifyPropertyChanged
 	private int? _placedLine;
 
 	/// <summary>Wraps a thread of <paramref name="book"/>.</summary>
-	public RemarkThreadViewModel(RemarkBook book, RemarkThread thread)
+	public RemarkThreadViewModel(RemarkBook book, RemarkThread thread, Func<CancellationToken, Task>? openSource = null)
 	{
 		_book = book ?? throw new ArgumentNullException(nameof(book));
+		_openSource = openSource;
 		Thread = thread ?? throw new ArgumentNullException(nameof(thread));
 		Update(thread);
 	}
@@ -43,6 +45,15 @@ public sealed class RemarkThreadViewModel : INotifyPropertyChanged
 
 	/// <summary>The thread id, such as <c>C3</c>.</summary>
 	public string Id => Thread.Id;
+
+	/// <summary>The immutable commit, or null for working-tree remarks.</summary>
+	public string? TargetCommit => Thread.Anchor.TargetCommit;
+
+	/// <summary>The source shown beside project-wide threads.</summary>
+	public string SourceLabel => TargetCommit is { } id ? $"Commit {id[..Math.Min(8, id.Length)]}" : "Working tree";
+
+	/// <summary>Opens this thread's source and file before editing a stored message.</summary>
+	public Task OpenSourceAsync(CancellationToken cancellationToken) => _openSource?.Invoke(cancellationToken) ?? Task.CompletedTask;
 
 	/// <summary>Where the thread stands.</summary>
 	public RemarkThreadState State => Thread.State;
@@ -62,7 +73,7 @@ public sealed class RemarkThreadViewModel : INotifyPropertyChanged
 
 	/// <summary>The file and line, such as <c>src/X.cs:121</c> or <c>src/X.cs, removed line 121</c>.</summary>
 	public string LocationText => Thread.Anchor.Side == RemarkSide.Old
-		? string.Create(CultureInfo.InvariantCulture, $"{Thread.Anchor.Path}, removed line {Thread.Anchor.Line}")
+		? string.Create(CultureInfo.InvariantCulture, $"{Thread.Anchor.OriginalPath ?? Thread.Anchor.Path}, removed line {Thread.Anchor.Line}")
 		: string.Create(CultureInfo.InvariantCulture, $"{Thread.Anchor.Path}:{_placedLine ?? Thread.Anchor.Line}");
 
 	/// <summary>The remarked line as the user saw it.</summary>
@@ -77,7 +88,7 @@ public sealed class RemarkThreadViewModel : INotifyPropertyChanged
 		get;
 		set
 		{
-			if (!string.Equals(field, value, StringComparison.Ordinal))
+			if (IsEditingEnabled && !string.Equals(field, value, StringComparison.Ordinal))
 			{
 				field = value ?? string.Empty;
 				Raise(nameof(DraftText), nameof(HasUnsavedDraft));
@@ -87,6 +98,15 @@ public sealed class RemarkThreadViewModel : INotifyPropertyChanged
 
 	/// <summary>Whether the draft box holds text that is not stored yet.</summary>
 	public bool HasUnsavedDraft => !string.Equals(DraftText, _storedDraft, StringComparison.Ordinal);
+
+	/// <summary>False while a confirmed cleanup is being persisted.</summary>
+	public bool IsEditingEnabled { get; private set; } = true;
+
+	internal void SetEditingEnabled(bool enabled)
+	{
+		IsEditingEnabled = enabled;
+		Raise(nameof(IsEditingEnabled));
+	}
 
 	/// <summary>Whether the thread can be resolved.</summary>
 	public bool CanResolve => !Thread.IsResolved;
@@ -235,7 +255,7 @@ public sealed class RemarkThreadViewModel : INotifyPropertyChanged
 				message is { Author: RemarkAuthor.User, Delivery: RemarkDelivery.Draft }))
 			.ToArray();
 		Raise(nameof(Thread), nameof(State), nameof(StateText), nameof(Messages), nameof(CanResolve), nameof(CanReopen), nameof(HasUnsavedDraft),
-			nameof(CanRetry), nameof(LocationText));
+			nameof(CanRetry), nameof(LocationText), nameof(TargetCommit), nameof(SourceLabel));
 	}
 
 	private static string NewDraftId() => Guid.NewGuid().ToString("N");

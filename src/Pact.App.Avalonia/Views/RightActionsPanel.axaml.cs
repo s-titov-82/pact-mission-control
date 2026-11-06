@@ -34,8 +34,10 @@ internal sealed partial class RightActionsPanel : UserControl
 	public event EventHandler<AttentionItem>? AttentionItemRequested;
 	public event EventHandler? RestartAndUpdateRequested;
 
-	/// <summary>Raised when the user clicks the Changes entry.</summary>
+	/// <summary>Raised when the user clicks Working tree.</summary>
 	public event EventHandler? ChangesEntryRequested;
+	/// <summary>Raised when the user clicks the committed tracking-upstream comparison.</summary>
+	public event EventHandler? CurrentBranchEntryRequested;
 
 	/// <summary>Change list shown by the Changes entry; <see langword="null"/> hides the entry.</summary>
 	public ProjectChangesViewModel? Changes
@@ -60,7 +62,9 @@ internal sealed partial class RightActionsPanel : UserControl
 		if (e.PropertyName is nameof(ProjectChangesViewModel.EntryTitle)
 			or nameof(ProjectChangesViewModel.EntrySubtitle)
 			or nameof(ProjectChangesViewModel.IsAvailable)
-			or nameof(ProjectChangesViewModel.FileCount))
+			or nameof(ProjectChangesViewModel.WorkingTreeFileCount)
+			or nameof(ProjectChangesViewModel.CurrentBranchEntryTitle)
+			or nameof(ProjectChangesViewModel.CurrentBranchEntrySubtitle))
 		{
 			RefreshChangesEntry();
 		}
@@ -69,12 +73,14 @@ internal sealed partial class RightActionsPanel : UserControl
 	private void RefreshChangesEntry()
 	{
 		var changes = Changes;
-		ChangesSection.IsVisible = changes is { IsAvailable: true };
-		var dirty = changes?.FileCount > 0;
-		ChangesEntry.IsVisible = dirty;
-		NoChangesText.IsVisible = !dirty;
+		ChangesSection.IsVisible = changes is not null;
+		ChangesEntry.IsVisible = changes is not null;
 		ChangesEntryTitle.Text = changes?.EntryTitle;
 		ChangesEntrySubtitle.Text = changes?.EntrySubtitle;
+		CurrentBranchEntryTitle.Text = changes?.CurrentBranchEntryTitle;
+		CurrentBranchEntrySubtitle.Text = changes?.CurrentBranchEntrySubtitle;
+		CurrentBranchEntry.IsEnabled = changes?.CanChooseCurrentBranch == true;
+		ToolTip.SetTip(CurrentBranchEntry, changes?.TrackingUpstream is { } upstream ? $"HEAD compared with {upstream}" : changes?.CurrentBranchEntrySubtitle);
 	}
 
 	/// <summary>Remark threads of the same project as <see cref="Changes"/>; their open count goes under the entry.</summary>
@@ -112,6 +118,8 @@ internal sealed partial class RightActionsPanel : UserControl
 
 	private void OnChangesEntryClicked(object? sender, RoutedEventArgs e) =>
 		ChangesEntryRequested?.Invoke(this, EventArgs.Empty);
+	private void OnCurrentBranchEntryClicked(object? sender, RoutedEventArgs e) =>
+		CurrentBranchEntryRequested?.Invoke(this, EventArgs.Empty);
 
 	/// <summary>Raised when a linked file is clicked.</summary>
 	public event EventHandler<AgentFileItem>? AgentFileRequested;

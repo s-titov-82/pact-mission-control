@@ -49,16 +49,20 @@ public sealed record DiffRowViewModel(DiffRowKind Kind, string OldNumber, string
 /// <param name="HeadCommit">The commit it was compared with; null for the empty tree.</param>
 /// <param name="Rows">The very rows published as <see cref="ProjectChangesViewModel.DiffRows"/>.</param>
 /// <param name="NewLines">
-/// The working-tree text the rows describe, as lines; null for a deleted file, a placeholder, or a
+/// The selected source's new text as lines; null for a deleted file, a placeholder, or a
 /// file that changed while it was read.
 /// </param>
 /// <param name="RemovedRuns">The removed runs of a whole-file view, folded or not; empty for hunks.</param>
+/// <param name="TargetCommit">Full historical target id, or null for the working tree.</param>
+/// <param name="OriginalPath">The old repository-relative path when the file was renamed.</param>
 public sealed record ShownDiff(
 	string Path,
 	string? HeadCommit,
 	IReadOnlyList<DiffRowViewModel> Rows,
 	IReadOnlyList<string>? NewLines,
-	IReadOnlyList<RemovedRun> RemovedRuns);
+	IReadOnlyList<RemovedRun> RemovedRuns,
+	string? TargetCommit = null,
+	string? OriginalPath = null);
 
 /// <summary>One changed file in the Changes list.</summary>
 public sealed class ChangedFileViewModel : INotifyPropertyChanged
@@ -128,11 +132,11 @@ public sealed class ChangedFileViewModel : INotifyPropertyChanged
 }
 
 /// <summary>
-/// A project's uncommitted changes and the diff of the selected file. While observed it is
+/// A project's live changes and selected working-tree or historical diff. While observed it is
 /// reconciled with git on a timer and on request, never more often than
 /// <see cref="MinRefreshInterval"/>; all UI-facing state changes go through the UI poster.
 /// </summary>
-public sealed class ProjectChangesViewModel : INotifyPropertyChanged, IDisposable
+public sealed partial class ProjectChangesViewModel : INotifyPropertyChanged, IDisposable
 {
 	/// <summary>Shortest time between two reads of git status.</summary>
 	public static readonly TimeSpan MinRefreshInterval = TimeSpan.FromSeconds(2);
@@ -170,11 +174,14 @@ public sealed class ProjectChangesViewModel : INotifyPropertyChanged, IDisposabl
 		string projectRoot,
 		IGitWorkingTreeReader reader,
 		TimeProvider time,
-		Action<Action> postToUi)
+		Action<Action> postToUi,
+		IGitCommitReader? commitReader = null)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(projectRoot);
 		ProjectRoot = projectRoot;
 		_reader = reader ?? throw new ArgumentNullException(nameof(reader));
+		_commitReader = commitReader ?? reader as IGitCommitReader;
+		_comparisonReader = reader as IGitComparisonReader ?? commitReader as IGitComparisonReader;
 		_time = time ?? throw new ArgumentNullException(nameof(time));
 		_postToUi = postToUi ?? throw new ArgumentNullException(nameof(postToUi));
 		_timer = _time.CreateTimer(_ => OnTimer(), null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
@@ -193,7 +200,9 @@ public sealed class ProjectChangesViewModel : INotifyPropertyChanged, IDisposabl
 	public ChangedFileViewModel? SelectedFile { get; private set; }
 
 	/// <summary>Placeholder text of the selected file's diff, or <see langword="null"/> for a line diff.</summary>
-	public string? DiffPlaceholder => _selectedDiff?.Diff.Placeholder;
+	public string? DiffPlaceholder => _selectedDiff?.Diff.Placeholder
+		?? (IsCurrentBranch && _displayedBranch?.Comparison is null ? _displayedBranch?.UnavailableReason
+			: IsCurrentBranch && Files.Count == 0 ? "No committed differences against tracking upstream." : null);
 
 	/// <summary>The shown diff with the text it was built from; null while no file is shown or a pick is loading.</summary>
 	public ShownDiff? ShownDiff { get; private set; }
@@ -266,21 +275,20 @@ public sealed class ProjectChangesViewModel : INotifyPropertyChanged, IDisposabl
 	/// <summary>Current branch, empty until the first read.</summary>
 	public string Branch { get; private set; } = string.Empty;
 
-	/// <summary>The HEAD commit the list compares with, or <see langword="null"/> while HEAD is unborn.</summary>
+	/// <summary>The selected source's comparison base, or null for an empty tree.</summary>
 	public string? HeadCommit { get; private set; }
 
 	/// <summary>False when the last read failed, for instance outside a repository.</summary>
 	public bool IsAvailable { get; private set; } = true;
 
 	/// <summary>Title of the right-column entry.</summary>
-	public string EntryTitle => FileCount == 0
-		? "No uncommitted changes"
-		: string.Create(CultureInfo.InvariantCulture, $"Changes · {FileCount}");
+	public string EntryTitle => _workingTreeChanges is null ? "Working tree"
+		: string.Create(CultureInfo.InvariantCulture, $"Working tree · {WorkingTreeFileCount}");
 
 	/// <summary>Line totals under the entry title; empty for a clean tree.</summary>
-	public string EntrySubtitle => FileCount == 0
-		? string.Empty
-		: string.Create(CultureInfo.InvariantCulture, $"+{AddedLines} −{RemovedLines}");
+	public string EntrySubtitle => _workingTreeChanges is null
+		? "Working tree unavailable"
+		: string.Create(CultureInfo.InvariantCulture, $"+{WorkingTreeAddedLines} −{WorkingTreeRemovedLines}");
 
 	/// <summary>Header of the project screen's Changes tab.</summary>
 	public string TabHeader => FileCount == 0
@@ -352,7 +360,13 @@ public sealed class ProjectChangesViewModel : INotifyPropertyChanged, IDisposabl
 	/// <summary>Selects a file and reads its diff.</summary>
 	public async Task SelectFileAsync(ChangedFileViewModel? file, CancellationToken cancellationToken)
 	{
+		ObjectDisposedException.ThrowIf(_disposed, this);
+		if (IsSourceLoading)
+		{ return; }
 		var version = Interlocked.Increment(ref _selectionVersion);
+		var sourceVersion = Volatile.Read(ref _sourceVersion);
+		var commit = SelectedCommit;
+		var comparison = IsCurrentBranch ? _displayedBranch?.Comparison : _selectedComparison;
 		_selectedPath = file?.Path;
 		_showAll = false;
 		SelectedFile = file;
@@ -370,11 +384,11 @@ public sealed class ProjectChangesViewModel : INotifyPropertyChanged, IDisposabl
 			return;
 		}
 
-		var diff = await LoadDiffAsync(file.Entry, HeadCommit, cancellationToken).ConfigureAwait(false);
+		var diff = await LoadDiffAsync(file.Entry, HeadCommit, cancellationToken, commit, comparison).ConfigureAwait(false);
 		_postToUi(() =>
 		{
 			// A later pick, even of the same file, has its own read in flight.
-			if (Volatile.Read(ref _selectionVersion) == version)
+			if (!_disposed && Volatile.Read(ref _selectionVersion) == version && Volatile.Read(ref _sourceVersion) == sourceVersion)
 			{
 				ApplyDiff(diff);
 			}
@@ -399,6 +413,8 @@ public sealed class ProjectChangesViewModel : INotifyPropertyChanged, IDisposabl
 			}
 
 			_disposed = true;
+			Interlocked.Increment(ref _selectionVersion);
+			Interlocked.Increment(ref _sourceVersion);
 		}
 
 		_timer.Dispose();
@@ -444,14 +460,26 @@ public sealed class ProjectChangesViewModel : INotifyPropertyChanged, IDisposabl
 		try
 		{
 			var selectionVersion = Volatile.Read(ref _selectionVersion);
+			var sourceVersion = Volatile.Read(ref _sourceVersion);
+			var readVersion = Interlocked.Increment(ref _workingReadVersion);
+			var displayWorking = IsWorkingTree && !IsSourceLoading;
 			var changes = await _reader.ReadChangesAsync(ProjectRoot, cancellationToken).ConfigureAwait(false);
+			var branchVersion = Interlocked.Increment(ref _branchReadVersion);
+			var branch = _comparisonReader is null ? null : await _comparisonReader.ReadBranchChangesAsync(ProjectRoot, cancellationToken).ConfigureAwait(false);
 			var files = changes?.Files.Select(entry => new ChangedFileViewModel(entry)).ToArray() ?? [];
-			var selected = Reselect(_files, files, _selectedPath);
+			var selected = displayWorking ? Reselect(_files, files, _selectedPath) : null;
 			var diff = selected is null
 				? null
 				: await LoadDiffAsync(selected.Entry, changes!.HeadCommit, cancellationToken)
 					.ConfigureAwait(false);
-			_postToUi(() => Apply(changes, files, selected, diff, selectionVersion));
+			_postToUi(() =>
+			{
+				if (branch is not null)
+				{ UpdateBranchFacts(branch, branchVersion); }
+				Apply(changes, files, selected, diff, selectionVersion, sourceVersion, readVersion);
+				if (branch is not null)
+				{ ApplyBranchRefresh(branch, sourceVersion); }
+			});
 		}
 		catch (Exception exception) when (exception is OperationCanceledException or ObjectDisposedException
 			or IOException or InvalidOperationException or UnauthorizedAccessException)
@@ -498,7 +526,7 @@ public sealed class ProjectChangesViewModel : INotifyPropertyChanged, IDisposabl
 		ChangedFileViewModel[] files,
 		ChangedFileViewModel? selected,
 		LoadedDiff? diff,
-		int selectionVersion)
+		int selectionVersion, int sourceVersion, int readVersion)
 	{
 		lock (_gate)
 		{
@@ -507,6 +535,10 @@ public sealed class ProjectChangesViewModel : INotifyPropertyChanged, IDisposabl
 				return;
 			}
 		}
+
+		if (!UpdateWorkingFacts(changes, readVersion) || !IsWorkingTree || IsSourceLoading
+			|| sourceVersion != Volatile.Read(ref _sourceVersion))
+		{ return; }
 
 		// The user picked a file while this read ran: their pick and its diff stand, and only the
 		// list and the counts are taken from the read.
@@ -572,16 +604,32 @@ public sealed class ProjectChangesViewModel : INotifyPropertyChanged, IDisposabl
 
 	// Reads the file's text around its diff: when both reads agree, the rows describe that text.
 	// A deleted file has no new side to read.
-	private async Task<LoadedDiff> LoadDiffAsync(GitFileEntry entry, string? headCommit, CancellationToken cancellationToken)
+	private async Task<LoadedDiff> LoadDiffAsync(GitFileEntry entry, string? headCommit, CancellationToken cancellationToken, GitCommitInfo? commit = null, GitRevisionChanges? comparison = null)
 	{
 		var deleted = entry.Kind == GitChangeKind.Deleted;
+		if (comparison is not null)
+		{
+			var historicalDiff = await _comparisonReader!.ReadComparisonDiffAsync(ProjectRoot, entry, comparison.BaseCommit, comparison.TargetCommit, cancellationToken).ConfigureAwait(false);
+			var text = deleted || historicalDiff.Placeholder is not null ? null
+				: await _commitReader!.ReadCommitTextAsync(ProjectRoot, entry.Path, comparison.TargetCommit, cancellationToken).ConfigureAwait(false);
+			return new LoadedDiff(entry.Path, comparison.BaseCommit, historicalDiff,
+				text is null ? null : RemarkLocator.SplitLines(text), deleted, comparison.TargetCommit, entry.OriginalPath);
+		}
+		if (commit is not null)
+		{
+			var historicalDiff = await _commitReader!.ReadCommitDiffAsync(ProjectRoot, entry, commit, cancellationToken).ConfigureAwait(false);
+			var text = deleted || historicalDiff.Placeholder is not null ? null
+				: await _commitReader.ReadCommitTextAsync(ProjectRoot, entry.Path, commit.Id, cancellationToken).ConfigureAwait(false);
+			return new LoadedDiff(entry.Path, commit.BaseCommit, historicalDiff,
+				text is null ? null : RemarkLocator.SplitLines(text), deleted, commit.Id, entry.OriginalPath);
+		}
 		var before = deleted ? null : await _reader.ReadWorkingTextAsync(ProjectRoot, entry.Path, cancellationToken).ConfigureAwait(false);
 		var diff = await _reader.ReadDiffAsync(ProjectRoot, entry, headCommit, cancellationToken).ConfigureAwait(false);
 		var after = deleted ? null : await _reader.ReadWorkingTextAsync(ProjectRoot, entry.Path, cancellationToken).ConfigureAwait(false);
 		var lines = diff.Placeholder is null && before is not null && string.Equals(before, after, StringComparison.Ordinal)
 			? RemarkLocator.SplitLines(before)
 			: null;
-		return new LoadedDiff(entry.Path, headCommit, diff, lines, deleted);
+		return new LoadedDiff(entry.Path, headCommit, diff, lines, deleted, null, entry.OriginalPath);
 	}
 
 	private DiffViewMode Effective(LoadedDiff? loaded)
@@ -602,10 +650,12 @@ public sealed class ProjectChangesViewModel : INotifyPropertyChanged, IDisposabl
 	private void ApplyDiff(LoadedDiff? loaded)
 	{
 		_selectedDiff = loaded;
-		if (!string.Equals(loaded?.Path, _expandedPath, StringComparison.Ordinal))
+		if (!string.Equals(loaded?.Path, _expandedPath, StringComparison.Ordinal)
+			|| !string.Equals(loaded?.TargetCommit, _expandedCommit, StringComparison.Ordinal))
 		{
 			_expandedOldStarts.Clear();
 			_expandedPath = loaded?.Path;
+			_expandedCommit = loaded?.TargetCommit;
 		}
 
 		var diff = loaded?.Diff;
@@ -666,7 +716,7 @@ public sealed class ProjectChangesViewModel : INotifyPropertyChanged, IDisposabl
 
 		HiddenLineCount = total - shown;
 		// A refresh that changed nothing keeps the same instance, so a remark being written on it stands.
-		var next = loaded is null ? null : new ShownDiff(loaded.Path, loaded.HeadCommit, DiffRows, loaded.NewLines, runs);
+		var next = loaded is null ? null : new ShownDiff(loaded.Path, loaded.HeadCommit, DiffRows, loaded.NewLines, runs, loaded.TargetCommit, loaded.OriginalPath);
 		if (!SameShownDiff(ShownDiff, next))
 		{
 			ShownDiff = next;
@@ -680,13 +730,16 @@ public sealed class ProjectChangesViewModel : INotifyPropertyChanged, IDisposabl
 		current is not null && next is not null
 		&& string.Equals(current.Path, next.Path, StringComparison.Ordinal)
 		&& string.Equals(current.HeadCommit, next.HeadCommit, StringComparison.Ordinal)
+		&& string.Equals(current.TargetCommit, next.TargetCommit, StringComparison.Ordinal)
+		&& string.Equals(current.OriginalPath, next.OriginalPath, StringComparison.Ordinal)
 		&& ReferenceEquals(current.Rows, next.Rows)
 		&& (current.NewLines is null ? next.NewLines is null : next.NewLines is not null && current.NewLines.SequenceEqual(next.NewLines))
 		&& current.RemovedRuns.Count == next.RemovedRuns.Count
 		&& current.RemovedRuns.Zip(next.RemovedRuns).All(pair => pair.First.BeforeNewLine == pair.Second.BeforeNewLine
 			&& pair.First.OldStart == pair.Second.OldStart && pair.First.Lines.SequenceEqual(pair.Second.Lines));
 
-	private sealed record LoadedDiff(string Path, string? HeadCommit, FileDiff Diff, IReadOnlyList<string>? NewLines, bool Deleted);
+	private sealed record LoadedDiff(string Path, string? HeadCommit, FileDiff Diff, IReadOnlyList<string>? NewLines, bool Deleted,
+		string? TargetCommit = null, string? OriginalPath = null);
 
 	private static string HunkHeaderText(DiffHunk hunk) => string.Create(
 		CultureInfo.InvariantCulture,

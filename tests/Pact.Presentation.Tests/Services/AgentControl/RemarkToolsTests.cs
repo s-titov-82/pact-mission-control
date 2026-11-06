@@ -9,6 +9,26 @@ namespace Pact.Presentation.Tests.Services.AgentControl;
 
 public sealed class RemarkToolsTests : IDisposable
 {
+	[TestCase(RemarkSide.New)]
+	[TestCase(RemarkSide.Old)]
+	public async Task Historical_mcp_preserves_sha_line_and_not_outdated_when_head_and_disk_differ(RemarkSide side)
+	{
+		var target = new string('a', 40);
+		var parent = new string('b', 40);
+		RemarkAnchor anchor = new("src/X.cs", side, 2, "b", ["a"], [], parent, null, target, "src/Old.cs");
+		await Book.AddAsync(anchor, side == RemarkSide.New ? "a\nb\n" : null, "historical", CancellationToken.None);
+		var batch = await Book.BeginSendAsync("s1", CancellationToken.None);
+		await Book.CompleteSendAsync(batch!, Confirmed, CancellationToken.None);
+		await WriteFileAsync();
+		await File.WriteAllTextAsync(Path.Combine(_root.Path, "src", "X.cs"), "x\na\nb\n");
+		var result = await InvokeAsync("session-project", "pact_list_remarks", new JsonObject());
+		var item = JsonNode.Parse(result.Text)!.AsArray().ShouldHaveSingleItem()!;
+		((string?)item["targetCommit"]).ShouldBe(target);
+		((string?)item["baseCommit"]).ShouldBe(parent);
+		((string?)item["originalPath"]).ShouldBe("src/Old.cs");
+		((int?)item["line"]).ShouldBe(2);
+		((bool?)item["outdated"]).ShouldBe(false);
+	}
 	private static readonly PromptDeliveryResult Confirmed = new(PromptDeliveryOutcome.Confirmed, WriteAttempted: true, SubmitAttempted: true);
 
 	private readonly TemporaryDirectory _root = TemporaryDirectory.Create();

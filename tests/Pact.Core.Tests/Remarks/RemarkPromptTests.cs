@@ -4,6 +4,21 @@ namespace Pact.Core.Tests.Remarks;
 
 public sealed class RemarkPromptTests
 {
+	[TestCase(RemarkSide.New)]
+	[TestCase(RemarkSide.Old)]
+	public void Historical_prompt_names_exact_target_and_base_and_the_correct_side_path(RemarkSide side)
+	{
+		var message = User("check historical line");
+		RemarkAnchor anchor = new("new.cs", side, 7, "captured", [], [], new string('b', 40), null,
+			new string('a', 40), "old.cs");
+		var thread = Thread("C7", anchor, message);
+		var text = RemarkPrompt.Compose([new RemarkPromptEntry(thread, [message], 7, IsOutdated: false)]);
+		text.ShouldContain(new string('a', 40));
+		text.ShouldContain(new string('b', 40));
+		text.ShouldContain(side == RemarkSide.New ? "new.cs:7" : "old.cs, removed line 7");
+		text.ShouldNotContain("uncommitted changes");
+		text.ShouldNotContain("of HEAD");
+	}
 	private const string Header =
 		"Remarks from the user on the uncommitted changes. Answer every id with pact_reply_remark (id, text; resolve: true when it is done); pact_list_remarks shows them again.";
 

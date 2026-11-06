@@ -39,13 +39,16 @@ internal sealed partial class RenderedMarkdownView : UserControl
 	private int? _editorBlock;
 	// Counts editor openings, so a save that finishes late closes only the editor it came from.
 	private int _editorActivation;
+	private IDisposable? _branchInteractionHold;
 
 	public RenderedMarkdownView()
 	{
 		InitializeComponent();
 		_editor.CloseRequested += (_, _) => CloseEditor();
 		_editor.AddRequested += OnAddRequested;
+		DetachedFromVisualTree += (_, _) => CloseEditor();
 	}
+	internal void EndInteraction() => CloseEditor();
 
 	/// <summary>The project the shown file is in, for its links and images.</summary>
 	public string? ProjectRoot { get; set; }
@@ -74,7 +77,8 @@ internal sealed partial class RenderedMarkdownView : UserControl
 
 		if (!ReferenceEquals(shown, _shown))
 		{
-			var samePath = sameOwner && string.Equals(shown.Path, _shown?.Path, StringComparison.Ordinal);
+			var samePath = sameOwner && string.Equals(shown.Path, _shown?.Path, StringComparison.Ordinal)
+				&& string.Equals(shown.TargetCommit, _shown?.TargetCommit, StringComparison.Ordinal);
 			var offset = Scroller.Offset;
 			_shown = shown;
 			_items = RenderedMarkdown.Build(shown);
@@ -172,12 +176,15 @@ internal sealed partial class RenderedMarkdownView : UserControl
 	private MarkdownScrollViewer Viewer(string markdown)
 	{
 		MarkdownScrollViewer viewer = new() { SelectionEnabled = true };
+		var captured = _shown;
+		var root = ProjectRoot;
 		MarkdownPreviewHook.Attach(
 			viewer,
-			() => ProjectRoot is { } root && _shown is { } shown ? (root, shown.Path) : null,
-			target => LinkFollowed?.Invoke(this, target));
-		MarkdownPreviewHook.SetDocument(viewer, ProjectRoot, _shown?.Path);
-		viewer.Markdown = MarkdownPreviewHook.Prepare(markdown, viewer.AssetPathRoot);
+			() => root is not null && captured is not null ? (root, captured.Path) : null,
+			target => { if (ReferenceEquals(captured, _shown) && string.Equals(root, ProjectRoot, StringComparison.Ordinal)) { LinkFollowed?.Invoke(this, target); } },
+			historical: captured?.TargetCommit is not null);
+		MarkdownPreviewHook.SetDocument(viewer, captured?.TargetCommit is null ? root : null, captured?.Path);
+		viewer.Markdown = MarkdownPreviewHook.Prepare(markdown, viewer.AssetPathRoot, historical: captured?.TargetCommit is not null);
 		return viewer;
 	}
 
@@ -249,6 +256,7 @@ internal sealed partial class RenderedMarkdownView : UserControl
 
 		CloseEditor();
 		_editorActivation++;
+		_branchInteractionHold = _remarks?.RetainCurrentComparison();
 		_capture = (shown, block.Row);
 		_editor.Show([], canAdd: true);
 		AttachEditor(block.FirstLine);
@@ -302,6 +310,8 @@ internal sealed partial class RenderedMarkdownView : UserControl
 
 	private void CloseEditor()
 	{
+		_branchInteractionHold?.Dispose();
+		_branchInteractionHold = null;
 		DetachEditor();
 		_capture = null;
 		_editorBlock = null;

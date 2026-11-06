@@ -22,7 +22,7 @@ public sealed record RowThreads(ShownDiff ForDiff, IReadOnlyDictionary<int, IRea
 /// do not, the counts, and sending the drafts to an agent. Markers are placed against the text the
 /// shown diff was built from, never the file on disk, so they stay on the rows the user sees.
 /// </summary>
-public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposable
+public sealed partial class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposable
 {
 	private const int ContextLines = 3;
 
@@ -31,6 +31,7 @@ public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposabl
 	private readonly Func<IReadOnlyList<SessionTarget>> _sessions;
 	private readonly Func<string, string, CancellationToken, Task<PromptDeliveryResult>> _deliver;
 	private readonly Action<Action> _postToUi;
+	private readonly Func<CancellationToken, Task>? _openChanges;
 	private readonly Dictionary<string, RemarkThreadViewModel> _threads = new(StringComparer.Ordinal);
 	// Every diff this project's changes have shown: one screen shows several projects in turn, and a
 	// file of the same name in another project is not this file.
@@ -45,18 +46,21 @@ public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposabl
 	/// <param name="sessions">The project's sessions, read when sending.</param>
 	/// <param name="deliver">Delivers a prompt to a session.</param>
 	/// <param name="postToUi">Runs an action on the UI thread.</param>
+	/// <param name="openChanges">Presents the owning project's Changes tab for source navigation.</param>
 	public ChangesRemarksViewModel(
 		ProjectChangesViewModel changes,
 		RemarkBook book,
 		Func<IReadOnlyList<SessionTarget>> sessions,
 		Func<string, string, CancellationToken, Task<PromptDeliveryResult>> deliver,
-		Action<Action> postToUi)
+		Action<Action> postToUi,
+		Func<CancellationToken, Task>? openChanges = null)
 	{
 		_changes = changes ?? throw new ArgumentNullException(nameof(changes));
 		_book = book ?? throw new ArgumentNullException(nameof(book));
 		_sessions = sessions ?? throw new ArgumentNullException(nameof(sessions));
 		_deliver = deliver ?? throw new ArgumentNullException(nameof(deliver));
 		_postToUi = postToUi ?? throw new ArgumentNullException(nameof(postToUi));
+		_openChanges = openChanges;
 		_changes.PropertyChanged += OnChangesPropertyChanged;
 		_book.Changed += OnBookChanged;
 		Own(_changes.ShownDiff);
@@ -104,6 +108,9 @@ public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposabl
 
 	/// <summary>Why sending is impossible, when it is for want of a session.</summary>
 	public string? SendBlockedReason => SendTargets.Count == 0 ? "No session in this project to send to" : null;
+
+	/// <summary>Keeps the branch comparison shown by an open line editor stable until that editor closes.</summary>
+	public IDisposable RetainCurrentComparison() => _changes.RetainCurrentComparison();
 
 	/// <summary>Whether a row of <paramref name="shown"/> takes a remark.</summary>
 	public bool CanRemarkOn(ShownDiff shown, int row)
@@ -159,7 +166,7 @@ public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposabl
 				OldContext(shown.Rows, row, -1),
 				OldContext(shown.Rows, row, 1),
 				shown.HeadCommit,
-				null);
+				null, shown.TargetCommit, shown.OriginalPath);
 		}
 		else
 		{
@@ -178,7 +185,7 @@ public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposabl
 				lines.Skip(Math.Max(0, index - ContextLines)).Take(Math.Min(index, ContextLines)).ToArray(),
 				lines.Skip(index + 1).Take(ContextLines).ToArray(),
 				shown.HeadCommit,
-				null);
+				null, shown.TargetCommit, shown.OriginalPath);
 			// A final newline, so the copy splits back into the same lines, a last blank line included.
 			captured = lines.Count == 0 ? string.Empty : string.Join('\n', lines) + "\n";
 		}
@@ -197,8 +204,8 @@ public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposabl
 		RemarkBatch? batch = null;
 		var delivering = false;
 		string? status;
-		// A reply typed but not saved goes out too: Send means what is on screen.
-		var typed = _threads.Values.Where(thread => thread.HasUnsavedDraft).ToArray();
+		// Include typed replies in every open project thread, including off-screen sources.
+		var typed = _threads.Values.Where(thread => thread.HasUnsavedDraft && !thread.Thread.IsResolved).ToArray();
 		try
 		{
 			foreach (var thread in typed)
@@ -212,7 +219,7 @@ public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposabl
 				return;
 			}
 
-			var head = _changes.HeadCommit;
+			var head = _changes.WorkingTreeHeadCommit;
 			List<RemarkPromptEntry> entries = [];
 			foreach (var item in batch.Items)
 			{
@@ -269,7 +276,10 @@ public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposabl
 
 		if (e.PropertyName is nameof(ProjectChangesViewModel.ShownDiff)
 			or nameof(ProjectChangesViewModel.Files)
-			or nameof(ProjectChangesViewModel.HeadCommit))
+			or nameof(ProjectChangesViewModel.HeadCommit)
+			or nameof(ProjectChangesViewModel.WorkingTreeHeadCommit)
+			or nameof(ProjectChangesViewModel.SelectedCommit)
+			or nameof(ProjectChangesViewModel.IsSourceLoading))
 		{
 			Recompute();
 		}
@@ -341,7 +351,8 @@ public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposabl
 		DraftCount = CountDrafts(threads);
 		foreach (var file in _changes.Files)
 		{
-			file.OpenRemarks = threads.Count(thread => !thread.IsResolved && string.Equals(thread.Anchor.Path, file.Path, StringComparison.Ordinal));
+			file.OpenRemarks = threads.Count(thread => !thread.IsResolved && IsSelectedSource(thread)
+				&& string.Equals(thread.Anchor.Path, file.Path, StringComparison.Ordinal));
 		}
 
 		if (!_setAsideReported && _book.SetAsideFile is { } aside)
@@ -352,7 +363,7 @@ public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposabl
 
 		Raise(nameof(OpenCount), nameof(OpenThreads), nameof(ResolvedThreads), nameof(DraftCount), nameof(BarText), nameof(CanSend), nameof(SendTargets),
 			nameof(SendBlockedReason), nameof(StatusText));
-		_ = PlaceAsync(version, threads, _changes.ShownDiff, _changes.HeadCommit);
+		_ = PlaceAsync(version, threads, _changes.ShownDiff, _changes.WorkingTreeHeadCommit);
 	}
 
 	private async Task PlaceAsync(int version, IReadOnlyList<RemarkThread> threads, ShownDiff? shown, string? head)
@@ -362,7 +373,9 @@ public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposabl
 		{
 			foreach (var thread in threads)
 			{
-				var onShown = shown is not null && string.Equals(thread.Anchor.Path, shown.Path, StringComparison.Ordinal);
+				var onShown = shown is not null && string.Equals(thread.Anchor.Path, shown.Path, StringComparison.Ordinal)
+					&& string.Equals(thread.Anchor.TargetCommit, shown.TargetCommit, StringComparison.Ordinal)
+					&& (shown.TargetCommit is null || string.Equals(thread.Anchor.BaseCommit, shown.HeadCommit, StringComparison.Ordinal));
 				var placement = onShown
 					? await RemarkPlacer.PlaceInTextAsync(_book, thread, shown!.NewLines, shown.HeadCommit, CancellationToken.None).ConfigureAwait(false)
 					: await RemarkPlacer.PlaceOnDiskAsync(_book, thread, head, CancellationToken.None).ConfigureAwait(false);
@@ -415,7 +428,12 @@ public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposabl
 			return view;
 		}
 
-		view = new RemarkThreadViewModel(_book, thread);
+		view = new RemarkThreadViewModel(_book, thread, async cancellationToken =>
+		{
+			if (_openChanges is not null)
+			{ await _openChanges(cancellationToken).ConfigureAwait(true); }
+			await _changes.OpenRemarkSourceAsync(thread.Anchor.TargetCommit, thread.Anchor.Path, thread.Anchor.BaseCommit, cancellationToken).ConfigureAwait(true);
+		});
 		view.PropertyChanged += OnThreadPropertyChanged;
 		_threads[thread.Id] = view;
 		return view;
@@ -463,8 +481,14 @@ public sealed class ChangesRemarksViewModel : INotifyPropertyChanged, IDisposabl
 	}
 
 	private bool IsOfShownFile(ShownDiff shown) =>
-		_changes.ShownDiff is { } current && string.Equals(shown.Path, current.Path, StringComparison.Ordinal)
+		!_changes.IsSourceLoading && _changes.ShownDiff is { } current && string.Equals(shown.Path, current.Path, StringComparison.Ordinal)
+		&& string.Equals(shown.TargetCommit, current.TargetCommit, StringComparison.Ordinal)
+		&& (shown.TargetCommit is null || string.Equals(shown.HeadCommit, current.HeadCommit, StringComparison.Ordinal))
 		&& (ReferenceEquals(shown, current) || _ownDiffs.TryGetValue(shown, out _));
+
+	private bool IsSelectedSource(RemarkThread thread) =>
+		string.Equals(thread.Anchor.TargetCommit, _changes.DisplayedTargetCommit, StringComparison.Ordinal)
+		&& (thread.Anchor.TargetCommit is null || string.Equals(thread.Anchor.BaseCommit, _changes.HeadCommit, StringComparison.Ordinal));
 
 	private static int? RowOf(ShownDiff shown, RemarkSide side, int line)
 	{

@@ -45,6 +45,7 @@ internal sealed partial class ProjectScreenView : UserControl
 	private int _overlayCapturedRow;
 	// Counts overlay openings, so a save that finishes late clears only the box it came from.
 	private int _overlayActivation;
+	private IDisposable? _branchInteractionHold;
 
 	public ProjectScreenView()
 	{
@@ -86,7 +87,7 @@ internal sealed partial class ProjectScreenView : UserControl
 		_logReloadTimer = new DispatcherTimer { Interval = LogReloadInterval };
 		_logReloadTimer.Tick += OnLogReloadTick;
 		AttachedToVisualTree += (_, _) => _logReloadTimer.Start();
-		DetachedFromVisualTree += (_, _) => _logReloadTimer.Stop();
+		DetachedFromVisualTree += (_, _) => { _logReloadTimer.Stop(); CloseOverlay(); RenderedView.EndInteraction(); };
 	}
 
 	// A press on a fold opens or closes its removed lines; anywhere else in the text it closes the thread.
@@ -238,6 +239,8 @@ internal sealed partial class ProjectScreenView : UserControl
 		var rendered = mode == DiffViewMode.Rendered;
 		RenderedHost.IsVisible = rendered;
 		DiffEditor.IsVisible = !rendered;
+		if (!rendered)
+		{ RenderedView.EndInteraction(); }
 		if (rendered)
 		{
 			CloseOverlay();
@@ -406,6 +409,7 @@ internal sealed partial class ProjectScreenView : UserControl
 		_overlayDiff = shown;
 		_overlayCapturedRow = row;
 		_overlayActivation++;
+		_branchInteractionHold ??= _changes?.RetainCurrentComparison();
 		RemarkOverlay.Show(threads, canAdd);
 		RemarkOverlay.IsVisible = true;
 		PositionOverlay();
@@ -529,6 +533,8 @@ internal sealed partial class ProjectScreenView : UserControl
 
 	private void CloseOverlay()
 	{
+		_branchInteractionHold?.Dispose();
+		_branchInteractionHold = null;
 		SaveTypedDrafts();
 		_overlayRow = null;
 		_overlayDiff = null;

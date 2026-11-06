@@ -13,8 +13,8 @@ public sealed record RemarkPromptEntry(RemarkThread Thread, IReadOnlyList<Remark
 /// <summary>Writes the one prompt that carries every remark the user is sending to an agent.</summary>
 public static class RemarkPrompt
 {
-	private const string Header =
-		"Remarks from the user on the uncommitted changes. Answer every id with pact_reply_remark (id, text; resolve: true when it is done); pact_list_remarks shows them again.";
+	private const string ReplyInstructions =
+		" Answer every id with pact_reply_remark (id, text; resolve: true when it is done); pact_list_remarks shows them again.";
 
 	/// <summary>
 	/// A header, then one block per thread: a head line with the id, the place and the text (or
@@ -23,7 +23,9 @@ public static class RemarkPrompt
 	public static string Compose(IReadOnlyList<RemarkPromptEntry> entries)
 	{
 		ArgumentNullException.ThrowIfNull(entries);
-		StringBuilder text = new(Header);
+		var header = entries.Any(entry => entry.Thread.Anchor.TargetCommit is not null)
+			? "Remarks from the user on repository changes." : "Remarks from the user on the uncommitted changes.";
+		StringBuilder text = new(header + ReplyInstructions);
 		foreach (var entry in entries)
 		{
 			text.Append("\n\n");
@@ -66,6 +68,13 @@ public static class RemarkPrompt
 
 	private static string Location(RemarkAnchor anchor, int line)
 	{
+		if (anchor.TargetCommit is { } target)
+		{
+			var comparison = anchor.BaseCommit ?? "the empty tree";
+			return anchor.Side == RemarkSide.New
+				? string.Create(CultureInfo.InvariantCulture, $"{anchor.Path}:{line} (new side of commit {target}; base {comparison})")
+				: string.Create(CultureInfo.InvariantCulture, $"{anchor.OriginalPath ?? anchor.Path}, removed line {line} of {comparison} (old side of commit {target}; new path {anchor.Path})");
+		}
 		if (anchor.Side == RemarkSide.New)
 		{
 			return string.Create(CultureInfo.InvariantCulture, $"{anchor.Path}:{line}");
@@ -74,7 +83,7 @@ public static class RemarkPrompt
 		var commit = anchor.BaseCommit is { } id
 			? $"HEAD {(id.Length > 7 ? id[..7] : id)}"
 			: "the empty tree";
-		return string.Create(CultureInfo.InvariantCulture, $"{anchor.Path}, removed line {line} of {commit}");
+		return string.Create(CultureInfo.InvariantCulture, $"{anchor.OriginalPath ?? anchor.Path}, removed line {line} of {commit}");
 	}
 
 	// Lines after the first are indented, so a message never reads as a new head line.

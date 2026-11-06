@@ -21,6 +21,35 @@ namespace Pact.App.Avalonia.Tests.Views;
 public sealed class RightActionsPanelHeadlessTests
 {
 	[AvaloniaTest]
+	public async Task Working_tree_and_current_branch_have_independent_counts_and_navigation_requests()
+	{
+		using var changes = Changes(Files("a.cs", "b.cs"), 84, 12);
+		RightActionsPanel panel = new() { Changes = changes };
+		Window window = new() { Content = panel, Width = 360, Height = 700 };
+		window.Show();
+		try
+		{
+			var working = 0;
+			var branch = 0;
+			panel.ChangesEntryRequested += (_, _) => working++;
+			panel.CurrentBranchEntryRequested += (_, _) => branch++;
+			var workingEntry = panel.FindControl<Button>("ChangesEntry").ShouldNotBeNull();
+			var branchEntry = panel.FindControl<Button>("CurrentBranchEntry").ShouldNotBeNull();
+			branchEntry.IsEnabled.ShouldBeTrue();
+			panel.FindControl<TextBlock>("CurrentBranchEntryTitle")!.Text.ShouldBe("Current branch · 3");
+			panel.FindControl<TextBlock>("CurrentBranchEntrySubtitle")!.Text.ShouldBe("+5 −2");
+			branchEntry.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+			workingEntry.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+			branch.ShouldBe(1);
+			working.ShouldBe(1);
+			await changes.SelectCurrentBranchAsync(CancellationToken.None);
+			panel.FindControl<TextBlock>("ChangesEntryTitle")!.Text.ShouldBe("Working tree · 2");
+			panel.FindControl<TextBlock>("ChangesEntrySubtitle")!.Text.ShouldBe("+84 −12");
+			changes.Files.Count.ShouldBe(3);
+		}
+		finally { window.Close(); }
+	}
+	[AvaloniaTest]
 	public void The_actions_title_is_gone_and_the_settings_button_stays()
 	{
 		RightActionsPanel panel = new();
@@ -69,7 +98,7 @@ public sealed class RightActionsPanelHeadlessTests
 
 			entry.IsVisible.ShouldBeTrue();
 			var texts = entry.GetLogicalDescendants().OfType<TextBlock>().Select(text => text.Text).ToList();
-			texts.ShouldContain("Changes · 2");
+			texts.ShouldContain("Working tree · 2");
 			texts.ShouldContain("+84 \u221212");
 			entry.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
 			requested.ShouldBe(1);
@@ -178,7 +207,7 @@ public sealed class RightActionsPanelHeadlessTests
 	}
 
 	[AvaloniaTest]
-	public void A_clean_tree_shows_the_no_changes_line_without_a_button()
+	public void A_clean_tree_keeps_a_clickable_working_tree_entry_with_zero_counts()
 	{
 		using var changes = Changes([], added: 0, removed: 0);
 		RightActionsPanel panel = new() { Changes = changes };
@@ -188,10 +217,9 @@ public sealed class RightActionsPanelHeadlessTests
 		{
 			window.UpdateLayout();
 
-			panel.FindControl<Button>("ChangesEntry")!.IsVisible.ShouldBeFalse();
-			var clean = panel.FindControl<TextBlock>("NoChangesText")!;
-			clean.IsVisible.ShouldBeTrue();
-			clean.Text.ShouldBe("No uncommitted changes");
+			panel.FindControl<Button>("ChangesEntry")!.IsVisible.ShouldBeTrue();
+			panel.FindControl<TextBlock>("ChangesEntryTitle")!.Text.ShouldBe("Working tree · 0");
+			panel.FindControl<TextBlock>("ChangesEntrySubtitle")!.Text.ShouldBe("+0 −0");
 		}
 		finally
 		{
@@ -540,8 +568,18 @@ public sealed class RightActionsPanelHeadlessTests
 		return changes;
 	}
 
-	private sealed class FixedReader(GitFileEntry[] files, int added, int removed) : IGitWorkingTreeReader
+	private sealed class FixedReader(GitFileEntry[] files, int added, int removed) : IGitWorkingTreeReader, IGitCommitReader, IGitComparisonReader
 	{
+		private readonly GitFileEntry[] _branchFiles = Files("one", "two", "three");
+		private readonly GitCommitInfo _head = new(new string('b', 40), [new string('a', 40)], "author", DateTimeOffset.MinValue, "head");
+		public Task<GitBranchChanges> ReadBranchChangesAsync(string root, CancellationToken cancellationToken) => Task.FromResult(new GitBranchChanges("feature", "origin/feature", new(_head.BaseCommit, _head.Id, _branchFiles, 5, 2), null));
+		public Task<GitRevisionChanges> ReadComparisonChangesAsync(string root, string? baseCommit, string targetCommit, CancellationToken cancellationToken) => Task.FromResult(new GitRevisionChanges(baseCommit, targetCommit, _branchFiles, 5, 2));
+		public Task<FileDiff> ReadComparisonDiffAsync(string root, GitFileEntry entry, string? baseCommit, string targetCommit, CancellationToken cancellationToken) => Task.FromResult(FileDiff.AllAdded("branch\n"));
+		public Task<IReadOnlyList<GitCommitInfo>> ReadCommitsAsync(string root, int skip, int count, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<GitCommitInfo>>([_head]);
+		public Task<GitCommitInfo?> ResolveCommitAsync(string root, string revision, CancellationToken cancellationToken) => Task.FromResult<GitCommitInfo?>(_head);
+		public Task<CommitChanges> ReadCommitChangesAsync(string root, GitCommitInfo commit, CancellationToken cancellationToken) => Task.FromResult(new CommitChanges(commit, _branchFiles, 5, 2));
+		public Task<FileDiff> ReadCommitDiffAsync(string root, GitFileEntry entry, GitCommitInfo commit, CancellationToken cancellationToken) => Task.FromResult(FileDiff.AllAdded("branch\n"));
+		public Task<string?> ReadCommitTextAsync(string root, string path, string commitId, CancellationToken cancellationToken) => Task.FromResult<string?>("branch\n");
 		public Task<string?> ReadWorkingTextAsync(string root, string path, CancellationToken cancellationToken) =>
 			Task.FromResult<string?>(null);
 

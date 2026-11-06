@@ -20,19 +20,31 @@ internal static partial class MarkdownPreviewHook
 	public static void Attach(
 		MarkdownScrollViewer viewer,
 		Func<(string ProjectRoot, string DocumentRelativePath)?> document,
-		Action<MarkdownLinkTarget> navigate)
+		Action<MarkdownLinkTarget> navigate,
+		bool historical = false)
 	{
 		ArgumentNullException.ThrowIfNull(viewer);
 		ArgumentNullException.ThrowIfNull(document);
 		ArgumentNullException.ThrowIfNull(navigate);
+		if (historical)
+		{ viewer.Plugins.PathResolver = new HistoricalImageResolver(); }
 		if (viewer.Engine is global::Markdown.Avalonia.Markdown engine)
 		{
 			engine.HyperlinkCommand = new LinkCommand(href =>
 			{
 				var shown = document();
-				navigate(MarkdownLinks.Resolve(shown?.ProjectRoot, shown?.DocumentRelativePath, href));
+				navigate(ResolveLink(shown?.ProjectRoot, shown?.DocumentRelativePath, href, historical));
 			});
 		}
+	}
+
+	/// <summary>Historical previews only follow same-document headings and HTTP(S), without probing local files.</summary>
+	public static MarkdownLinkTarget ResolveLink(string? root, string? path, string href, bool historical)
+	{
+		if (historical && !href.TrimStart().StartsWith('#')
+			&& !(Uri.TryCreate(href, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https"))
+		{ return new RefusedLink("Local file links are unavailable in commit view."); }
+		return MarkdownLinks.Resolve(root, path, href);
 	}
 
 	/// <summary>Draws relative images from the folder of the document shown; set before its text.</summary>
@@ -55,10 +67,12 @@ internal static partial class MarkdownPreviewHook
 	/// that starts as an image but is damaged further on, and a web image that fails to load, still
 	/// show the engine's mark.
 	/// </summary>
-	public static string Prepare(string markdown, string? folder)
+	public static string Prepare(string markdown, string? folder, bool historical = false)
 	{
 		ArgumentNullException.ThrowIfNull(markdown);
-		if (folder is null || !markdown.Contains("![", StringComparison.Ordinal))
+		if ((!historical && folder is null) || (!markdown.Contains("![", StringComparison.Ordinal)
+			&& (!historical || (!markdown.Contains("<img", StringComparison.OrdinalIgnoreCase)
+				&& !markdown.Contains("<image", StringComparison.OrdinalIgnoreCase)))))
 		{
 			return markdown;
 		}
@@ -75,7 +89,7 @@ internal static partial class MarkdownPreviewHook
 		{
 			if (paragraph.Count > 0)
 			{
-				output.Add(OutsideCodeSpans(string.Join('\n', paragraph), text => ReplaceMissingImages(text, folder)));
+				output.Add(OutsideCodeSpans(string.Join('\n', paragraph), text => ReplaceMissingImages(text, folder, historical)));
 				paragraph.Clear();
 			}
 		}
@@ -196,23 +210,50 @@ internal static partial class MarkdownPreviewHook
 		return -1;
 	}
 
-	private static string ReplaceMissingImages(string text, string folder) =>
-		ImagePattern().Replace(text, match =>
+	private static string ReplaceMissingImages(string text, string? folder, bool historical)
+	{
+		var replaced = ImagePattern().Replace(text, match =>
 		{
 			var source = Uri.UnescapeDataString(match.Groups["angle"].Success ? match.Groups["angle"].Value : match.Groups["source"].Value);
-			if (source.Contains("://", StringComparison.Ordinal) || source.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+			if (Uri.TryCreate(source, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https" or "data")
 			{
 				return match.Value;
 			}
 
-			if (CanDecode(Path.Combine(folder, source.TrimStart('/').Replace('/', Path.DirectorySeparatorChar))))
+			if (!historical && folder is not null && CanDecode(Path.Combine(folder, source.TrimStart('/').Replace('/', Path.DirectorySeparatorChar))))
 			{
 				return match.Value;
 			}
 
 			var alt = match.Groups["alt"].Value;
+			if (historical)
+			{ return HistoricalImage(alt); }
 			return alt.Length > 0 ? $"*{alt}*" : $"*(missing image: {source})*";
 		});
+		// Reference and shortcut images must not ask the engine to load a current local asset either.
+		if (!historical)
+		{ return replaced; }
+		replaced = ReferenceImagePattern().Replace(replaced, match => HistoricalImage(match.Groups["alt"].Value));
+		return HtmlImagePattern().Replace(replaced, match =>
+		{
+			string Attribute(string name)
+			{
+				var attribute = HtmlImageAttributePattern().Matches(match.Value).FirstOrDefault(item => string.Equals(item.Groups["name"].Value, name, StringComparison.OrdinalIgnoreCase));
+				return attribute is null ? string.Empty : System.Net.WebUtility.HtmlDecode(attribute.Groups["double"].Success ? attribute.Groups["double"].Value
+					: attribute.Groups["single"].Success ? attribute.Groups["single"].Value : attribute.Groups["bare"].Value);
+			}
+			return Uri.TryCreate(Attribute("src"), UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https" or "data"
+				? match.Value : HistoricalImage(Attribute("alt"));
+		});
+	}
+
+	private static string HistoricalImage(string alt) => $"*{(alt.Length > 0 ? alt : "Image")} (image unavailable in commit view)*";
+	[GeneratedRegex(@"!\[(?<alt>[^\]]*)\](?!\()(?:\[[^\]]*\])?")]
+	private static partial Regex ReferenceImagePattern();
+	[GeneratedRegex(@"<(?:img|image)\b(?:""[^""]*""|'[^']*'|[^'"">])*>", RegexOptions.IgnoreCase)]
+	private static partial Regex HtmlImagePattern();
+	[GeneratedRegex(@"(?<name>src|alt)\s*=\s*(?:""(?<double>[^""]*)""|'(?<single>[^']*)'|(?<bare>[^\s>]+))", RegexOptions.IgnoreCase)]
+	private static partial Regex HtmlImageAttributePattern();
 
 	// A file the engine can draw starts as an image does; anything else would show a broken mark.
 	private static bool CanDecode(string path)
@@ -238,7 +279,7 @@ internal static partial class MarkdownPreviewHook
 		|| (head.Length >= 12 && head.StartsWith("RIFF"u8) && head[8..12].SequenceEqual("WEBP"u8))
 		|| head.StartsWith((ReadOnlySpan<byte>)[0x00, 0x00, 0x01, 0x00])
 		|| head.TrimStart((ReadOnlySpan<byte>)[0xEF, 0xBB, 0xBF, 0x20, 0x09, 0x0D, 0x0A]).StartsWith("<"u8);
-	[GeneratedRegex(@"!\[(?<alt>[^\]]*)\]\((?:<(?<angle>[^>]+)>|(?<source>[^)\s]+))(\s+""[^""]*"")?\)")]
+	[GeneratedRegex(@"!\[(?<alt>[^\]]*)\]\((?:<(?<angle>[^>]+)>|(?<source>[^)\s]+))(\s+(?:""[^""]*""|'[^']*'))?\)")]
 	private static partial Regex ImagePattern();
 	/// <summary>Opens a web link in the system browser, off the UI thread.</summary>
 	public static void OpenWeb(Uri uri)
@@ -329,5 +370,17 @@ internal static partial class MarkdownPreviewHook
 				follow(href);
 			}
 		}
+	}
+
+	// Enforce the resource policy at the loader too: plugin-supported image syntaxes must never
+	// fall through to the working tree when preprocessing cannot recognize their destination.
+	private sealed class HistoricalImageResolver : global::Markdown.Avalonia.Utils.IPathResolver
+	{
+		private readonly global::Markdown.Avalonia.Utils.DefaultPathResolver _web = new();
+		public string? AssetPathRoot { set => _web.AssetPathRoot = value; }
+		public IEnumerable<string>? CallerAssemblyNames { set => _web.CallerAssemblyNames = value; }
+		public Task<Stream?>? ResolveImageResource(string relativeOrAbsolutePath) =>
+			Uri.TryCreate(relativeOrAbsolutePath, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https" or "data"
+				? _web.ResolveImageResource(relativeOrAbsolutePath) : Task.FromResult<Stream?>(null);
 	}
 }

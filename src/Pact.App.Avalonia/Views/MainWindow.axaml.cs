@@ -669,6 +669,11 @@ internal sealed partial class MainWindow : Window, IDisposable
 			handler => RightActions.ChangesEntryRequested -= handler,
 			"open-changes",
 			() => EngineProbeController.OpenCurrentChangesAsync());
+		ObserveEvent(
+			handler => RightActions.CurrentBranchEntryRequested += handler,
+			handler => RightActions.CurrentBranchEntryRequested -= handler,
+			"open-current-branch",
+			() => EngineProbeController.OpenCurrentBranchChangesAsync());
 		ObserveEvent<string>(
 			handler => RightActions.DeleteReviewLogRequested += handler,
 			handler => RightActions.DeleteReviewLogRequested -= handler,

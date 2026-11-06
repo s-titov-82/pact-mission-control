@@ -10,6 +10,120 @@ namespace Pact.Presentation.Tests.ViewModels;
 
 public sealed class ChangesRemarksViewModelTests : IDisposable
 {
+	[Test]
+	public async Task Historical_markers_and_editors_distinguish_the_same_target_with_different_comparison_bases()
+	{
+		var remarks = await OpenAsync();
+		await _changes!.SetAutoSelectFirstFileAsync(true, CancellationToken.None);
+		var target = Historical('a');
+		await _changes.OpenRemarkSourceAsync(target.Id, Path1, new string('c', 40), CancellationToken.None);
+		var captured = _changes.ShownDiff!;
+		var thread = (await remarks.AddRemarkAsync(captured, 2, "old upstream line", CancellationToken.None)).ShouldNotBeNull();
+		thread.Thread.Anchor.BaseCommit.ShouldBe(new string('c', 40));
+		await _changes.OpenRemarkSourceAsync(target.Id, Path1, new string('d', 40), CancellationToken.None);
+		remarks.CanRemarkOn(captured, 2).ShouldBeFalse();
+		remarks.MapRow(captured, 2, _changes.ShownDiff!).ShouldBeNull();
+		_changes.Files[0].OpenRemarks.ShouldBe(0);
+		await thread.OpenSourceAsync(CancellationToken.None);
+		_changes.ShownDiff.ShouldNotBeNull().HeadCommit.ShouldBe(new string('c', 40));
+	}
+	[Test]
+	public async Task Historical_thread_and_agent_reply_are_discoverable_and_openable_after_restart_in_working_tree()
+	{
+		var remarks = await OpenAsync();
+		await _changes!.SetAutoSelectFirstFileAsync(true, CancellationToken.None);
+		var commit = Historical('a');
+		await _changes.SelectCommitAsync(commit, CancellationToken.None);
+		var created = (await remarks.AddRemarkAsync(_changes.ShownDiff!, 3, "historical question", CancellationToken.None)).ShouldNotBeNull();
+		await remarks.SendAsync("s1", CancellationToken.None);
+		await _book!.AgentReplyAsync(created.Id, "historical answer", resolve: false, CancellationToken.None);
+		_remarks!.Dispose();
+		_observation!.Dispose();
+		_changes.Dispose();
+		_book.Dispose();
+		var restored = await OpenAsync();
+		await _changes!.SetAutoSelectFirstFileAsync(true, CancellationToken.None);
+		await WaitForRemarksAsync(restored, () => restored.OpenCount == 1 && restored.OpenThreads[0].Messages.Count == 2);
+		_changes.IsWorkingTree.ShouldBeTrue();
+		restored.DraftCount.ShouldBe(0);
+		var thread = restored.OpenThreads.ShouldHaveSingleItem();
+		thread.SourceLabel.ShouldContain(commit.ShortId);
+		thread.Messages.ShouldContain(message => message.Text == "historical answer");
+		thread.DraftText = "keep my unfinished reply";
+		await thread.OpenSourceAsync(CancellationToken.None);
+		_changes.SelectedCommit.ShouldNotBeNull().Id.ShouldBe(commit.Id);
+		_changes.SelectedFile.ShouldNotBeNull().Path.ShouldBe(Path1);
+		thread.DraftText.ShouldBe("keep my unfinished reply");
+		await WaitForRemarksAsync(restored, () => restored.DraftCount == 1);
+	}
+	[Test]
+	public async Task Sending_from_any_source_includes_all_open_project_drafts_and_typed_replies()
+	{
+		var remarks = await OpenAsync();
+		var live = (await remarks.AddRemarkAsync(_changes!.ShownDiff!, 3, "working draft", CancellationToken.None)).ShouldNotBeNull();
+		var commit = Historical('a');
+		await _changes.SetAutoSelectFirstFileAsync(true, CancellationToken.None);
+		await _changes.SelectCommitAsync(commit, CancellationToken.None);
+		var history = (await remarks.AddRemarkAsync(_changes.ShownDiff!, 3, "historical draft", CancellationToken.None)).ShouldNotBeNull();
+		history.Thread.Anchor.TargetCommit.ShouldBe(commit.Id);
+		history.Thread.Anchor.OriginalPath.ShouldBe("old/X.cs");
+		await _changes.SelectCommitAsync(Historical('b'), CancellationToken.None);
+		var otherHistory = (await remarks.AddRemarkAsync(_changes.ShownDiff!, 3, "other commit draft", CancellationToken.None)).ShouldNotBeNull();
+		remarks.DraftCount.ShouldBe(3);
+		await remarks.SendAsync("s1", CancellationToken.None);
+		_delivered.ShouldHaveSingleItem().Text.ShouldContain(commit.Id);
+		_delivered[0].Text.ShouldContain("historical draft");
+		_delivered[0].Text.ShouldContain("working draft");
+		_delivered[0].Text.ShouldContain("other commit draft");
+		_delivered[0].Text.ShouldContain(Historical('b').Id);
+		history.DraftText = "unsaved historical reply";
+		live.DraftText = "unsaved working reply";
+		await _changes.SelectCommitAsync(null, CancellationToken.None);
+		remarks.DraftCount.ShouldBe(2);
+		remarks.OpenThreads.Single(thread => thread.Id == history.Id).ShouldBeSameAs(history);
+		await remarks.SendAsync("s1", CancellationToken.None);
+		_delivered[1].Text.ShouldContain("unsaved working reply");
+		_delivered[1].Text.ShouldContain("unsaved historical reply");
+		history.DraftText.ShouldBeEmpty();
+		_book!.Threads.Single(thread => thread.Id == live.Id).State.ShouldBe(RemarkThreadState.Sent);
+		await _book.ResolveAsync(history.Id, CancellationToken.None);
+		history.DraftText = "keep resolved reply unsent";
+		otherHistory.DraftText = "send open reply";
+		await remarks.SendAsync("s1", CancellationToken.None);
+		_delivered[2].Text.ShouldContain("send open reply");
+		_delivered[2].Text.ShouldNotContain("keep resolved reply unsent");
+		history.DraftText.ShouldBe("keep resolved reply unsent");
+	}
+
+	[Test]
+	public async Task Sibling_commit_editors_cannot_cross_target_identity()
+	{
+		var remarks = await OpenAsync();
+		await _changes!.SetAutoSelectFirstFileAsync(true, CancellationToken.None);
+		await _changes.SelectCommitAsync(Historical('a'), CancellationToken.None);
+		var from = _changes.ShownDiff!;
+		await _changes.SelectCommitAsync(Historical('b'), CancellationToken.None);
+		remarks.MapRow(from, 3, _changes.ShownDiff!).ShouldBeNull();
+		remarks.CanRemarkOn(from, 3).ShouldBeFalse();
+		(await remarks.AddRemarkAsync(from, 3, "stale editor", CancellationToken.None)).ShouldBeNull();
+		_book!.Threads.ShouldBeEmpty();
+	}
+
+	private static GitCommitInfo Historical(char id) => new(new string(id, 40), [new string('f', 40)], "author", DateTimeOffset.MinValue, "history");
+	private static async Task WaitForRemarksAsync(ChangesRemarksViewModel remarks, Func<bool> ready)
+	{
+		TaskCompletionSource signal = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		void Changed(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
+		{ if (ready()) { signal.TrySetResult(); } }
+		remarks.PropertyChanged += Changed;
+		try
+		{
+			if (ready())
+			{ return; }
+			await signal.Task.WaitAsync(TimeSpan.FromSeconds(10));
+		}
+		finally { remarks.PropertyChanged -= Changed; }
+	}
 	private const string Path1 = "src/X.cs";
 	private static readonly PromptDeliveryResult Confirmed = new(PromptDeliveryOutcome.Confirmed, WriteAttempted: true, SubmitAttempted: true);
 	private static readonly PromptDeliveryResult Unconfirmed = new(PromptDeliveryOutcome.Unconfirmed, WriteAttempted: true, SubmitAttempted: true);
@@ -762,7 +876,8 @@ public sealed class ChangesRemarksViewModelTests : IDisposable
 		string text = "a\nb\nc\n",
 		FileDiff? diff = null,
 		Action<Action>? post = null,
-		bool loadBook = true)
+		bool loadBook = true,
+		IRemarkStore? store = null)
 	{
 		await WriteFileAsync(text);
 		_reader.Texts[Path1] = text;
@@ -770,7 +885,7 @@ public sealed class ChangesRemarksViewModelTests : IDisposable
 		_changes = new ProjectChangesViewModel(_root.Path, _reader, _time, action => action());
 		_observation = _changes.Observe();
 		await _changes.SelectFileAsync(_changes.Files[0], CancellationToken.None);
-		_book = new RemarkBook(_root.Path, new RemarkFileStore(_root.Path), TimeProvider.System);
+		_book = new RemarkBook(_root.Path, store ?? new RemarkFileStore(_root.Path), TimeProvider.System);
 		_remarks = new ChangesRemarksViewModel(
 			_changes,
 			_book,
@@ -820,8 +935,17 @@ public sealed class ChangesRemarksViewModelTests : IDisposable
 		condition().ShouldBeTrue();
 	}
 
-	private sealed class Reader : IGitWorkingTreeReader
+	private sealed class Reader : IGitWorkingTreeReader, IGitCommitReader, IGitComparisonReader
 	{
+		public Task<GitBranchChanges> ReadBranchChangesAsync(string root, CancellationToken cancellationToken) => Task.FromResult(new GitBranchChanges("feature", null, null, "No tracking upstream is configured."));
+		public Task<GitRevisionChanges> ReadComparisonChangesAsync(string root, string? baseCommit, string targetCommit, CancellationToken cancellationToken) =>
+			Task.FromResult(new GitRevisionChanges(baseCommit, targetCommit, [new(Path1, "old/X.cs", GitChangeKind.Modified)], 1, 1));
+		public Task<FileDiff> ReadComparisonDiffAsync(string root, GitFileEntry entry, string? baseCommit, string targetCommit, CancellationToken cancellationToken) => Task.FromResult(DefaultDiff());
+		public Task<IReadOnlyList<GitCommitInfo>> ReadCommitsAsync(string root, int skip, int count, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<GitCommitInfo>>([]);
+		public Task<GitCommitInfo?> ResolveCommitAsync(string root, string revision, CancellationToken cancellationToken) => Task.FromResult<GitCommitInfo?>(Historical(revision[0]));
+		public Task<CommitChanges> ReadCommitChangesAsync(string root, GitCommitInfo commit, CancellationToken cancellationToken) => Task.FromResult(new CommitChanges(commit, [new(Path1, "old/X.cs", GitChangeKind.Modified)], 1, 1));
+		public Task<FileDiff> ReadCommitDiffAsync(string root, GitFileEntry entry, GitCommitInfo commit, CancellationToken cancellationToken) => Task.FromResult(DefaultDiff());
+		public Task<string?> ReadCommitTextAsync(string root, string path, string commitId, CancellationToken cancellationToken) => Task.FromResult<string?>("a\nb\nc\n");
 		public string[] Files { get; set; } = [Path1];
 
 		public Dictionary<string, FileDiff> Diffs { get; } = [];

@@ -88,9 +88,30 @@ internal sealed partial class AvaloniaMainShellController
 			? OpenWorkingTreeChangesAsync(workspace, cancellationToken)
 			: Task.CompletedTask;
 
-	/// <summary>Opens live changes from the dashboard.</summary>
-	public Task OpenWorkingTreeChangesAsync(WorkspaceViewModel workspace, CancellationToken cancellationToken = default) =>
-		OpenProjectScreenAsync(workspace, ProjectScreenTab.Changes, cancellationToken);
+	/// <summary>Opens the current project's committed tracking-upstream comparison.</summary>
+	public async Task OpenCurrentBranchChangesAsync(CancellationToken cancellationToken = default)
+	{
+		if (CurrentChanges is not { CanChooseCurrentBranch: true } changes || FindShownWorkspace() is not { } workspace)
+		{ return; }
+		var intent = changes.ReserveSourceSelection();
+		if (!await OpenProjectScreenCoreAsync(workspace, ProjectScreenTab.Changes, cancellationToken))
+		{ return; }
+		if (changes.IsSourceSelectionCurrent(intent) && CurrentProjectScreen is { } screen && ReferenceEquals(screen.Workspace, workspace)
+			&& ReferenceEquals(screen.Changes, changes))
+		{ await changes.SelectCurrentBranchAsync(cancellationToken); }
+	}
+
+	/// <summary>Opens the live changes named by a working-tree summary.</summary>
+	public async Task OpenWorkingTreeChangesAsync(WorkspaceViewModel workspace, CancellationToken cancellationToken = default)
+	{
+		var changes = GetOrCreateProjectChanges(workspace);
+		var intent = changes?.ReserveSourceSelection();
+		if (!await OpenProjectScreenCoreAsync(workspace, ProjectScreenTab.Changes, cancellationToken))
+		{ return; }
+		if (changes is not null && intent is { } reserved && changes.IsSourceSelectionCurrent(reserved)
+			&& CurrentProjectScreen is { } screen && ReferenceEquals(screen.Workspace, workspace) && ReferenceEquals(screen.Changes, changes))
+		{ await changes.SelectCommitAsync(null, cancellationToken); }
+	}
 
 	private async Task PresentProjectScreenAsync(ProjectScreenViewModel screen, CancellationToken cancellationToken, int? navigationVersion = null)
 	{
@@ -244,7 +265,8 @@ internal sealed partial class AvaloniaMainShellController
 					PromptSender.Outsider,
 					startIfNotRunning: true,
 					cancellationToken),
-			_uiTaskDispatcher.Post);
+			_uiTaskDispatcher.Post,
+			cancellationToken => OpenProjectScreenAsync(workspace, ProjectScreenTab.Changes, cancellationToken));
 
 	private void WatchWorkspace(WorkspaceViewModel workspace)
 	{

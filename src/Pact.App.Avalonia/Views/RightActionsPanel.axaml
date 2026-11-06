@@ -26,12 +26,18 @@
             <TextBlock x:Name="ChangesEntryTitle" FontWeight="SemiBold" />
             <TextBlock x:Name="ChangesEntrySubtitle" FontSize="11"
                        Foreground="{DynamicResource AppTextMutedBrush}" />
-            <TextBlock x:Name="ChangesEntryRemarks" FontSize="11" IsVisible="False"
+          </StackPanel>
+        </Button>
+        <Button x:Name="CurrentBranchEntry" Margin="0,6,0,0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                Padding="10,6" Click="OnCurrentBranchEntryClicked">
+          <StackPanel Spacing="2">
+            <TextBlock x:Name="CurrentBranchEntryTitle" FontWeight="SemiBold" />
+            <TextBlock x:Name="CurrentBranchEntrySubtitle" FontSize="11" TextWrapping="Wrap"
                        Foreground="{DynamicResource AppTextMutedBrush}" />
           </StackPanel>
         </Button>
-        <TextBlock x:Name="NoChangesText" Foreground="{DynamicResource AppTextMutedBrush}"
-                   Text="No uncommitted changes" IsVisible="False" />
+        <TextBlock x:Name="ChangesEntryRemarks" Margin="10,4,0,0" FontSize="11" IsVisible="False"
+                   Foreground="{DynamicResource AppTextMutedBrush}" />
       </StackPanel>
       <StackPanel x:Name="AgentFilesSection" Margin="0,20,0,0" IsVisible="False">
         <TextBlock FontWeight="SemiBold" Text="Agent files" />

@@ -26,6 +26,8 @@ public static class RemarkPlacer
 		ArgumentNullException.ThrowIfNull(book);
 		ArgumentNullException.ThrowIfNull(thread);
 		var anchor = thread.Anchor;
+		if (anchor.TargetCommit is not null)
+		{ return new RemarkPlacement(anchor.Line, IsOutdated: false); }
 		if (anchor.Side == RemarkSide.Old)
 		{
 			return RemarkLocator.IsOldValid(anchor, headCommit) ? new RemarkPlacement(anchor.Line, IsOutdated: false) : Outdated;
@@ -51,6 +53,8 @@ public static class RemarkPlacer
 	{
 		ArgumentNullException.ThrowIfNull(book);
 		ArgumentNullException.ThrowIfNull(thread);
+		if (thread.Anchor.TargetCommit is not null)
+		{ return new RemarkPlacement(thread.Anchor.Line, IsOutdated: false); }
 		var lines = thread.Anchor.Side == RemarkSide.New
 			? await ReadLinesAsync(Path.Combine(book.ProjectRoot, thread.Anchor.Path.Replace('/', Path.DirectorySeparatorChar)), cancellationToken).ConfigureAwait(false)
 			: null;

@@ -6,6 +6,29 @@ namespace Pact.Infrastructure.Tests.Remarks;
 public sealed class RemarkFileStoreTests
 {
 	[Test]
+	public async Task Historical_anchor_round_trips_beside_legacy_working_tree_threads()
+	{
+		using var root = TemporaryDirectory.Create();
+		RemarkFileStore store = new(root.Path);
+		RemarkAnchor live = new("new.cs", RemarkSide.New, 1, "live", [], [], "head", "snapshot");
+		RemarkAnchor history = new("new.cs", RemarkSide.Old, 7, "old", [], [], new string('b', 40), null, new string('a', 40), "old.cs");
+		RemarkMessage message = new("m", RemarkAuthor.User, "review", DateTimeOffset.MinValue, RemarkDelivery.Draft, null);
+		await store.SaveAsync(new(3, [new("C1", live, [message], false), new("C2", history, [message], false)]), CancellationToken.None);
+		var path = Path.Combine(root.Path, ".pact", "remarks", "remarks.json");
+		var json = System.Text.Json.Nodes.JsonNode.Parse(await File.ReadAllTextAsync(path))!;
+		var legacyAnchor = json["threads"]![0]!["anchor"]!.AsObject();
+		legacyAnchor.Remove("targetCommit");
+		legacyAnchor.Remove("originalPath");
+		await File.WriteAllTextAsync(path, json.ToJsonString());
+		var loaded = await store.LoadAsync(CancellationToken.None);
+		loaded.Threads[0].Anchor.TargetCommit.ShouldBeNull();
+		loaded.Threads[1].Anchor.ShouldBe(history, new AnchorComparer());
+		loaded.NextNumber.ShouldBe(3);
+		await store.SaveAsync(loaded, CancellationToken.None);
+		(await store.LoadAsync(CancellationToken.None)).Threads[1].Anchor.ShouldBe(history, new AnchorComparer());
+		Directory.GetFiles(Path.GetDirectoryName(path)!, "*.json").ShouldBe([path]);
+	}
+	[Test]
 	public async Task Threads_and_the_next_number_survive_a_save_and_load()
 	{
 		using var root = TemporaryDirectory.Create();

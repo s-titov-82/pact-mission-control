@@ -1196,6 +1196,51 @@ public sealed class AvaloniaMainShellControllerTests
 	}
 
 	[Test]
+	public async Task Right_panel_navigation_selects_branch_or_working_tree_in_the_same_project_review()
+	{
+		await using ControllerFixture fixture = new(gitRepository: true);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var workspace = fixture.ViewModel.Workspaces.Single();
+		await fixture.Controller.OpenProjectScreenAsync(workspace, ProjectScreenTab.Overview, CancellationToken.None);
+		await fixture.Controller.OpenCurrentBranchChangesAsync(CancellationToken.None);
+		fixture.Controller.CurrentProjectScreen.ShouldNotBeNull().SelectedTab.ShouldBe(ProjectScreenTab.Changes);
+		fixture.Controller.CurrentChanges.ShouldNotBeNull().IsCurrentBranch.ShouldBeTrue();
+		await fixture.Controller.OpenCurrentChangesAsync(CancellationToken.None);
+		fixture.Controller.CurrentChanges.ShouldNotBeNull().IsWorkingTree.ShouldBeTrue();
+		fixture.Controller.CurrentProjectScreen!.Workspace.ShouldBeSameAs(workspace);
+	}
+
+	[TestCase(true)]
+	[TestCase(false)]
+	public async Task Pending_sidebar_navigation_cannot_replace_a_newer_source_choice(bool olderBranch)
+	{
+		GatedMarkdownStore store = new();
+		await using ControllerFixture fixture = new(gitRepository: true, markdownStore: store);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var workspace = fixture.ViewModel.Workspaces.Single();
+		await File.WriteAllTextAsync(Path.Combine(workspace.RootPath, "README.md"), "# Readme");
+		await fixture.Controller.OpenProjectScreenAsync(workspace, ProjectScreenTab.Overview, CancellationToken.None);
+		var screen = fixture.Controller.CurrentProjectScreen!;
+		var docs = screen.SelectTabAsync(ProjectScreenTab.Docs, CancellationToken.None);
+		await store.Entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+		await screen.SelectTabAsync(ProjectScreenTab.Changes, CancellationToken.None);
+		var changes = fixture.Controller.CurrentChanges!;
+		if (!olderBranch)
+		{ await changes.SelectCurrentBranchAsync(CancellationToken.None); }
+		var older = olderBranch ? fixture.Controller.OpenCurrentBranchChangesAsync(CancellationToken.None)
+			: fixture.Controller.OpenCurrentChangesAsync(CancellationToken.None);
+		older.IsCompleted.ShouldBeFalse();
+		if (olderBranch)
+		{ await changes.SelectCommitAsync(null, CancellationToken.None); }
+		else
+		{ await changes.SelectCurrentBranchAsync(CancellationToken.None); }
+		store.Release.SetResult();
+		await older;
+		await docs;
+		changes.IsCurrentBranch.ShouldBe(!olderBranch);
+	}
+
+	[Test]
 	public async Task Remarks_follow_the_shown_project()
 	{
 		await using ControllerFixture fixture = new(gitRepository: true, secondGitProject: true);
@@ -4650,8 +4695,17 @@ public sealed class AvaloniaMainShellControllerTests
 			new(id, AgentKind.Pwsh, title, Path.GetTempPath(), "pwsh", null, SessionStatus.Stopped, now, now);
 	}
 
-	private sealed class CountingWorkingTreeReader : IGitWorkingTreeReader
+	private sealed class CountingWorkingTreeReader : IGitWorkingTreeReader, IGitCommitReader, IGitComparisonReader
 	{
+		private readonly GitCommitInfo _head = new(new string('b', 40), [new string('a', 40)], "author", DateTimeOffset.MinValue, "head");
+		public Task<GitBranchChanges> ReadBranchChangesAsync(string root, CancellationToken cancellationToken) => Task.FromResult(new GitBranchChanges("feature", "origin/feature", new(_head.BaseCommit, _head.Id, [], 0, 0), null));
+		public Task<GitRevisionChanges> ReadComparisonChangesAsync(string root, string? baseCommit, string targetCommit, CancellationToken cancellationToken) => Task.FromResult(new GitRevisionChanges(baseCommit, targetCommit, [], 0, 0));
+		public Task<FileDiff> ReadComparisonDiffAsync(string root, GitFileEntry entry, string? baseCommit, string targetCommit, CancellationToken cancellationToken) => Task.FromResult(new FileDiff(null, []));
+		public Task<IReadOnlyList<GitCommitInfo>> ReadCommitsAsync(string root, int skip, int count, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<GitCommitInfo>>([_head]);
+		public Task<GitCommitInfo?> ResolveCommitAsync(string root, string revision, CancellationToken cancellationToken) => Task.FromResult<GitCommitInfo?>(_head);
+		public Task<CommitChanges> ReadCommitChangesAsync(string root, GitCommitInfo commit, CancellationToken cancellationToken) => Task.FromResult(new CommitChanges(commit, [], 0, 0));
+		public Task<FileDiff> ReadCommitDiffAsync(string root, GitFileEntry entry, GitCommitInfo commit, CancellationToken cancellationToken) => Task.FromResult(new FileDiff(null, []));
+		public Task<string?> ReadCommitTextAsync(string root, string path, string commitId, CancellationToken cancellationToken) => Task.FromResult<string?>(null);
 		public Task<int?> ReadChangedFileCountAsync(string root, CancellationToken cancellationToken) => Task.FromResult<int?>(0);
 		public Task<string?> ReadWorkingTextAsync(string root, string path, CancellationToken cancellationToken) =>
 			Task.FromResult<string?>(null);

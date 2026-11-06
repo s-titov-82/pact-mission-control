@@ -10,6 +10,23 @@ public sealed class RemarkPlacerTests : IDisposable
 
 	public void Dispose() => _root.Dispose();
 
+	[TestCase(RemarkSide.New, false)]
+	[TestCase(RemarkSide.New, true)]
+	[TestCase(RemarkSide.Old, false)]
+	[TestCase(RemarkSide.Old, true)]
+	public async Task Historical_placement_ignores_head_and_changed_or_missing_disk_file(RemarkSide side, bool exists)
+	{
+		using var book = Book();
+		RemarkAnchor anchor = new("src/X.cs", side, 2, "b", ["a"], [], new string('b', 40), null, new string('a', 40));
+		var thread = await book.AddAsync(anchor, side == RemarkSide.New ? "a\nb\n" : null, "review", CancellationToken.None);
+		if (exists)
+		{ await WriteFileAsync("x\na\nb\n"); }
+		(await RemarkPlacer.PlaceOnDiskAsync(book, thread, "different-head", CancellationToken.None))
+			.ShouldBe(new RemarkPlacement(2, IsOutdated: false));
+		(await RemarkPlacer.PlaceInTextAsync(book, thread, ["different"], "different-head", CancellationToken.None))
+			.ShouldBe(new RemarkPlacement(2, IsOutdated: false));
+	}
+
 	[Test]
 	public async Task A_new_side_remark_follows_its_line_in_the_current_file()
 	{

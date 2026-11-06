@@ -1,0 +1,31 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Pact.App.Avalonia.Views.Dialogs.GitCommitPickerWindow"
+        Icon="/Assets/AppIcon.ico" x:CompileBindings="False"
+        Title="Choose commit" Width="760" Height="560" MinWidth="480" MinHeight="340"
+        WindowStartupLocation="CenterOwner">
+  <Grid Margin="16" RowDefinitions="Auto,*,Auto,Auto,Auto" RowSpacing="10">
+    <TextBox x:Name="RevisionBox" PlaceholderText="SHA or ref (optional)" Text="{Binding Revision, Mode=TwoWay}" />
+    <ListBox Grid.Row="1" ItemsSource="{Binding Commits}" SelectedItem="{Binding SelectedCommit, Mode=TwoWay}">
+      <ListBox.ItemTemplate>
+        <DataTemplate>
+          <StackPanel Margin="0,3" Spacing="3">
+            <TextBlock Text="{Binding Subject}" TextTrimming="CharacterEllipsis" />
+            <StackPanel Orientation="Horizontal" Spacing="10" Opacity="0.65">
+              <TextBlock Text="{Binding ShortId}" />
+              <TextBlock Text="{Binding Author}" />
+              <TextBlock Text="{Binding AuthoredAt, StringFormat='{}{0:yyyy-MM-dd HH:mm}'}" />
+            </StackPanel>
+          </StackPanel>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+    <Button Grid.Row="2" Content="Load more" IsVisible="{Binding HasMore}" Click="OnLoadMoreClicked" />
+    <TextBlock Grid.Row="3" Text="{Binding Error}" TextWrapping="Wrap" Foreground="{DynamicResource AppTextMutedBrush}" />
+    <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <TextBlock Text="Loading…" IsVisible="{Binding IsLoading}" VerticalAlignment="Center" />
+      <Button Content="Cancel" IsCancel="True" Click="OnCancelClicked" />
+      <Button Content="Open commit" IsDefault="True" Click="OnAcceptClicked" />
+    </StackPanel>
+  </Grid>
+</Window>

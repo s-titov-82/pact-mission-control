@@ -42,7 +42,7 @@ public sealed class RemarkTools
 	[
 		new AgentControlTool(
 			"pact_reply_remark",
-			"Answer one of the user's remarks on the uncommitted changes by its id (C1, C2, …). "
+			"Answer one of the user's remarks on working-tree or historical commit changes by its id (C1, C2, …). "
 				+ "Pass resolve: true once the remark is dealt with.",
 			() => AgentControlSchema.Object(
 				new()
@@ -60,7 +60,7 @@ public sealed class RemarkTools
 			ReplyAsync),
 		new AgentControlTool(
 			"pact_list_remarks",
-			"The user's remark threads on this project's uncommitted changes: id, file, side, line, the "
+			"The user's remark threads on this project's working-tree and historical changes: id, file, side, line, optional targetCommit and originalPath, the "
 				+ "line's text as the user saw it, the compared commit, whether the line has changed since "
 				+ "(outdated), state and messages. Use it when you lost the prompt that carried them.",
 			() => AgentControlSchema.Object(
@@ -140,7 +140,7 @@ public sealed class RemarkTools
 				});
 			}
 
-			items.Add(new JsonObject
+			var item = new JsonObject
 			{
 				["id"] = thread.Id,
 				["path"] = thread.Anchor.Path,
@@ -151,7 +151,12 @@ public sealed class RemarkTools
 				["outdated"] = placement.IsOutdated,
 				["state"] = StateName(thread.State),
 				["messages"] = messageItems
-			});
+			};
+			if (thread.Anchor.TargetCommit is { } target)
+			{ item["targetCommit"] = target; }
+			if (thread.Anchor.OriginalPath is { } original)
+			{ item["originalPath"] = original; }
+			items.Add(item);
 		}
 
 		return new AgentControlResultData(items.ToJsonString(new JsonSerializerOptions()), IsError: false);

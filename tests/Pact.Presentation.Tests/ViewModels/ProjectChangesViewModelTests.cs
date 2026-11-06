@@ -242,14 +242,14 @@ public sealed class ProjectChangesViewModelTests
 		using var changes = Create();
 		using var observation = changes.Observe();
 
-		changes.EntryTitle.ShouldBe("Changes · 5");
+		changes.EntryTitle.ShouldBe("Working tree · 5");
 		changes.EntrySubtitle.ShouldBe("+84 −12");
 		changes.TabHeader.ShouldBe("Changes 5");
 
 		_reader.Current = Changes();
 		_time.Advance(ProjectChangesViewModel.ReconcileInterval);
-		changes.EntryTitle.ShouldBe("No uncommitted changes");
-		changes.EntrySubtitle.ShouldBe(string.Empty);
+		changes.EntryTitle.ShouldBe("Working tree · 0");
+		changes.EntrySubtitle.ShouldBe("+0 −0");
 		changes.TabHeader.ShouldBe("Changes");
 	}
 
