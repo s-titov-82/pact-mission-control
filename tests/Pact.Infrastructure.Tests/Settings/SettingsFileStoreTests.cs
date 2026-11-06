@@ -204,6 +204,9 @@ public sealed class SettingsFileStoreTests
 			&& template.Name == "Request review"
 			&& template.Body.Contains("pact_request_review", StringComparison.Ordinal)
 			&& template.Body.Contains("pact_submit_review_turn", StringComparison.Ordinal)
+			&& template.Body.Contains("I authorize", StringComparison.Ordinal)
+			&& template.Body.Contains("all iterations", StringComparison.Ordinal)
+			&& template.Body.Contains("code and documentation", StringComparison.Ordinal)
 			&& template.EffectiveType == PromptActionType.Prompt);
 		promptTemplates
 			.Where(template => template.EffectiveType == PromptActionType.Prompt)

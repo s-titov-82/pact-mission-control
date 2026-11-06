@@ -16,6 +16,29 @@ public sealed class ReviewRelayTests : IDisposable
 	private readonly ReviewLogWriter _log = new();
 
 	[Test]
+	public async Task Both_sides_receive_the_full_review_exchange_instruction_before_reading_their_turns()
+	{
+		var (relay, host) = Create();
+		await relay.RequestAsync(Author, Request(maxIterations: 2), CancellationToken.None);
+		await relay.SubmitAsync(Reviewer, (string)Turn(relay, Reviewer)["turnId"]!, "finding", false, CancellationToken.None);
+		await host.WaitForDeliveriesAsync(2);
+		await relay.SubmitAsync(Author, (string)Turn(relay, Author)["turnId"]!, "fixed", false, CancellationToken.None);
+		await host.WaitForDeliveriesAsync(3);
+
+		host.Deliveries.Select(delivery => delivery.SessionId).ShouldBe([Reviewer, Author, Reviewer]);
+		foreach (var delivery in host.Deliveries)
+		{
+			delivery.Text.ShouldContain("pact_get_review_turn");
+			delivery.Text.ShouldContain("pact_submit_review_turn");
+			delivery.Text.ShouldContain("all iterations");
+			delivery.Text.ShouldContain("code and documentation");
+			delivery.Text.ShouldContain("other participant in this Pact review");
+			delivery.Text.ShouldContain("target");
+			delivery.Text.ShouldContain("without asking for separate confirmation for each reply");
+		}
+	}
+
+	[Test]
 	public async Task Request_starts_a_visible_reviewer_and_triggers_it()
 	{
 		var (relay, host) = Create();

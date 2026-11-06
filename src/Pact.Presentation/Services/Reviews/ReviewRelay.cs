@@ -32,7 +32,12 @@ public sealed record ReviewSummary(
 public sealed class ReviewRelay
 {
 	/// <summary>What is typed into the terminal of the side whose turn it is.</summary>
-	public const string TriggerText = "Pact: your review turn is ready — call pact_get_review_turn.";
+	public const string TriggerText = "Pact: your review turn is ready — call pact_get_review_turn. "
+		+ "For all iterations of this review, receive assigned turns through pact_get_review_turn and "
+		+ "send complete results through pact_submit_review_turn to the other participant in this Pact review, "
+		+ "including findings and details from code and documentation relevant to its target. "
+		+ "Continue this review exchange without asking for separate confirmation for each reply. "
+		+ "If the review has ended or no turn is assigned to you, do not submit another turn.";
 
 	private static readonly JsonSerializerOptions JsonOptions = new()
 	{

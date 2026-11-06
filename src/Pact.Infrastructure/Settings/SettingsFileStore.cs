@@ -443,7 +443,10 @@ public sealed class SettingsFileStore
 				"Request review",
 				"Request a cross-agent review of the current work through Pact (`pact_request_review`). "
 					+ "If the review template, reviewer profile or target is not clear from our conversation, ask me first. "
-					+ "While the review runs, answer each Pact turn with `pact_get_review_turn` and `pact_submit_review_turn`.",
+					+ "I authorize receiving turns through `pact_get_review_turn` and sending complete results through "
+					+ "`pact_submit_review_turn` for all iterations of this review, including findings and details from "
+					+ "code and documentation relevant to its target, to the other participant in the current Pact review. "
+					+ "No separate confirmation is needed for each reply.",
 				SendByDefault: false,
 				PromptActionType.Prompt),
 			new PromptTemplateRecord(

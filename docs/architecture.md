@@ -256,8 +256,15 @@ templates are the `scenarios.json` definitions; `ReviewMessageRenderer`
 renders them and appends Pact's protocol paragraph, and the old response-file
 placeholders render as a pointer to `previousTurn`.
 
-The side whose turn it is gets one short trigger line typed into its terminal
-through `DeliverPromptAsync`. A trigger belongs to its turn: accepting the
+The side whose turn it is gets a trigger typed into its terminal through
+`DeliverPromptAsync`. Before either side reads MCP instructions, that trigger
+requests the complete receive/submit exchange for all iterations, including
+target-relevant code/documentation findings to the other participant in this
+review, without a separate confirmation for every reply. It instructs an agent
+not to submit when the review ended or no turn is assigned. The built-in
+user-sent Request review prompt also explicitly authorizes that scoped exchange;
+existing saved or customized prompt templates are preserved.
+A trigger belongs to its turn: accepting the
 turn's answer, or ending the review, cancels the trigger and waits for its
 delivery to finish before anything is relayed, so a trigger never arrives after
 its turn moved on. A delivery that wrote nothing (a question was pending, or the
