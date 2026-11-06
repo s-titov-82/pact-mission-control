@@ -23,6 +23,42 @@ namespace Pact.App.Avalonia.Tests.Views;
 
 public sealed class ProjectScreenRemarksHeadlessTests
 {
+	[AvaloniaTest]
+	public async Task Cleanup_question_can_be_declined_and_explicitly_opened_later_to_clear_the_saved_list()
+	{
+		await WithScreenAsync(async fixture =>
+		{
+			fixture.Panel.ConfigureLifecycle(fixture.EventTasks);
+			await fixture.Remarks.AddRemarkAsync(fixture.Shown, 3, "review question", CancellationToken.None);
+			await fixture.Book.AddAsync(fixture.Book.Threads[0].Anchor with { TargetCommit = new string('a', 40) }, "historical text\n", "historical review question", CancellationToken.None);
+			await fixture.Remarks.SendAsync("s1", CancellationToken.None);
+			TaskCompletionSource offered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+			void Changed(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
+			{ if (fixture.Remarks.PendingCleanup is not null) { offered.TrySetResult(); } }
+			fixture.Remarks.PropertyChanged += Changed;
+			try
+			{
+				await fixture.Book.ResolveAsync("C1", CancellationToken.None);
+				await fixture.Book.ResolveAsync("C2", CancellationToken.None);
+				await offered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+			}
+			finally { fixture.Remarks.PropertyChanged -= Changed; }
+			var question = fixture.Panel.FindControl<Border>("CleanupQuestion").ShouldNotBeNull();
+			question.IsVisible.ShouldBeTrue();
+			fixture.Click(fixture.Panel.FindControl<Button>("DeclineCleanupButton")!);
+			question.IsVisible.ShouldBeFalse();
+			fixture.Book.Threads.Count.ShouldBe(2);
+			var manual = fixture.Panel.FindControl<Button>("CleanupRemarksButton").ShouldNotBeNull();
+			manual.IsEnabled.ShouldBeTrue();
+			fixture.Click(manual);
+			question.IsVisible.ShouldBeTrue();
+			fixture.Click(fixture.Panel.FindControl<Button>("ConfirmCleanupButton")!);
+			await fixture.EventTasks.WaitForIdleAsync();
+			fixture.Book.Threads.ShouldBeEmpty();
+			question.IsVisible.ShouldBeFalse();
+			manual.IsEnabled.ShouldBeFalse();
+		});
+	}
 	private const string FilePath = "src/x.cs";
 	private static readonly string Text = string.Join('\n', Enumerable.Range(1, 60).Select(index => $"line {index}")) + "\n";
 
@@ -698,7 +734,7 @@ public sealed class ProjectScreenRemarksHeadlessTests
 			CtrlEnter(box);
 			await EventuallyAsync(fixture.Window, () => fixture.Book.Threads.Count == 1);
 			fixture.Book.Threads.Single().Anchor.Line.ShouldBe(10);
-		});
+		}, height: 650);
 	}
 
 	[AvaloniaTest]
@@ -724,7 +760,7 @@ public sealed class ProjectScreenRemarksHeadlessTests
 			var anchor = fixture.Book.Threads.Single(thread => thread.Messages[0].Text == "draft").Anchor;
 			anchor.Line.ShouldBe(10);
 			(await fixture.Book.LoadSnapshotLinesAsync(anchor.SnapshotId!, CancellationToken.None))!.Count.ShouldBe(60);
-		});
+		}, height: 650);
 	}
 
 	// The save of a first remark finishes after the user opened another line and typed there.

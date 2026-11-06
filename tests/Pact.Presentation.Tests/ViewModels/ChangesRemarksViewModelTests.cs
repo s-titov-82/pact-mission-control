@@ -28,6 +28,200 @@ public sealed class ChangesRemarksViewModelTests : IDisposable
 		_changes.ShownDiff.ShouldNotBeNull().HeadCommit.ShouldBe(new string('c', 40));
 	}
 	[Test]
+	public async Task Last_resolve_offers_cleanup_and_no_keeps_the_list_until_explicit_cleanup()
+	{
+		var remarks = await OpenAsync();
+		await remarks.AddRemarkAsync(_changes!.ShownDiff!, 3, "first", CancellationToken.None);
+		await remarks.AddRemarkAsync(_changes.ShownDiff!, 3, "second", CancellationToken.None);
+		await remarks.SendAsync("s1", CancellationToken.None);
+		await _book!.ResolveAsync("C1", CancellationToken.None);
+		remarks.PendingCleanup.ShouldBeNull();
+		await _book.ResolveAsync("C2", CancellationToken.None);
+		remarks.PendingCleanup.ShouldNotBeNull().Threads.Count.ShouldBe(2);
+		remarks.DismissCleanup();
+		_book.Threads.Count.ShouldBe(2);
+		await _changes.SelectCommitAsync(null, CancellationToken.None);
+		remarks.PendingCleanup.ShouldBeNull();
+		remarks.CanRequestCleanup.ShouldBeTrue();
+		remarks.RequestCleanup();
+		await remarks.ConfirmCleanupAsync(remarks.PendingCleanup.ShouldNotBeNull(), CancellationToken.None);
+		_book.Threads.ShouldBeEmpty();
+		remarks.CanRequestCleanup.ShouldBeFalse();
+	}
+
+	[Test]
+	public async Task Last_resolve_across_all_sources_offers_one_project_cleanup_independent_of_selection()
+	{
+		var remarks = await OpenAsync();
+		await remarks.AddRemarkAsync(_changes!.ShownDiff!, 3, "working", CancellationToken.None);
+		await remarks.SendAsync("s1", CancellationToken.None);
+		await _changes.SetAutoSelectFirstFileAsync(true, CancellationToken.None);
+		await _changes.SelectCommitAsync(Historical('a'), CancellationToken.None);
+		await remarks.AddRemarkAsync(_changes.ShownDiff!, 3, "historical", CancellationToken.None);
+		await remarks.SendAsync("s1", CancellationToken.None);
+		await _book!.AgentReplyAsync("C1", "done", resolve: true, CancellationToken.None);
+		remarks.PendingCleanup.ShouldBeNull();
+		await _changes.SelectCommitAsync(null, CancellationToken.None);
+		remarks.PendingCleanup.ShouldBeNull();
+		remarks.CanRequestCleanup.ShouldBeFalse();
+		await _book.AgentReplyAsync("C2", "also done", resolve: true, CancellationToken.None);
+		var request = remarks.PendingCleanup.ShouldNotBeNull();
+		request.Threads.Count.ShouldBe(2);
+		await _changes.SelectCommitAsync(Historical('a'), CancellationToken.None);
+		remarks.PendingCleanup.ShouldBeSameAs(request);
+		remarks.DismissCleanup();
+		await _changes.SelectCommitAsync(null, CancellationToken.None);
+		remarks.PendingCleanup.ShouldBeNull();
+		remarks.RequestCleanup();
+		await remarks.ConfirmCleanupAsync(remarks.PendingCleanup.ShouldNotBeNull(), CancellationToken.None);
+		_book.Threads.ShouldBeEmpty();
+	}
+
+	[Test]
+	public async Task Loaded_closed_threads_do_not_ask_again_but_manual_cleanup_remains_available()
+	{
+		var remarks = await OpenAsync();
+		await remarks.AddRemarkAsync(_changes!.ShownDiff!, 3, "working", CancellationToken.None);
+		await remarks.SendAsync("s1", CancellationToken.None);
+		await _book!.ResolveAsync("C1", CancellationToken.None);
+		_remarks!.Dispose();
+		_observation!.Dispose();
+		_changes.Dispose();
+		_book.Dispose();
+		var restored = await OpenAsync();
+		restored.PendingCleanup.ShouldBeNull();
+		restored.CanRequestCleanup.ShouldBeTrue();
+		restored.RequestCleanup();
+		restored.PendingCleanup.ShouldNotBeNull();
+	}
+
+	[Test]
+	public async Task Typed_reply_prevents_cleanup_and_a_late_agent_reply_invalidates_the_offer()
+	{
+		var remarks = await OpenAsync();
+		var thread = (await remarks.AddRemarkAsync(_changes!.ShownDiff!, 3, "working", CancellationToken.None)).ShouldNotBeNull();
+		await remarks.SendAsync("s1", CancellationToken.None);
+		await _book!.ResolveAsync("C1", CancellationToken.None);
+		var request = remarks.PendingCleanup.ShouldNotBeNull();
+		thread.DraftText = "unfinished reply";
+		remarks.CanRequestCleanup.ShouldBeFalse();
+		await remarks.ConfirmCleanupAsync(request, CancellationToken.None);
+		_book.Threads.ShouldHaveSingleItem();
+		thread.DraftText.ShouldBe("unfinished reply");
+		thread.DraftText = string.Empty;
+		remarks.RequestCleanup();
+		request = remarks.PendingCleanup.ShouldNotBeNull();
+		await _book.AgentReplyAsync("C1", "late closed answer", resolve: true, CancellationToken.None);
+		await remarks.ConfirmCleanupAsync(request, CancellationToken.None);
+		_book.Threads.ShouldHaveSingleItem().Messages.ShouldContain(message => message.Text == "late closed answer");
+	}
+
+	[Test]
+	public async Task Queued_book_notifications_preserve_completion_and_reopened_activity_can_offer_again()
+	{
+		ConcurrentQueue<Action> queue = new();
+		var remarks = await OpenAsync(post: queue.Enqueue);
+		await remarks.AddRemarkAsync(_changes!.ShownDiff!, 3, "working", CancellationToken.None);
+		await remarks.SendAsync("s1", CancellationToken.None);
+		await _book!.ResolveAsync("C1", CancellationToken.None);
+		while (queue.TryDequeue(out var action))
+		{ action(); }
+		remarks.PendingCleanup.ShouldNotBeNull();
+		remarks.DismissCleanup();
+		await _book.ReopenAsync("C1", CancellationToken.None);
+		await _book.ResolveAsync("C1", CancellationToken.None);
+		while (queue.TryDequeue(out var action))
+		{ action(); }
+		remarks.PendingCleanup.ShouldNotBeNull();
+	}
+
+	[Test]
+	public async Task Projection_of_newer_state_cannot_replay_a_cleanup_question_after_no()
+	{
+		ConcurrentQueue<Action> queue = new();
+		var remarks = await OpenAsync(post: queue.Enqueue);
+		await remarks.AddRemarkAsync(_changes!.ShownDiff!, 3, "working", CancellationToken.None);
+		while (queue.TryDequeue(out var initialize))
+		{ initialize(); }
+		await remarks.SendAsync("s1", CancellationToken.None);
+		await _book!.ResolveAsync("C1", CancellationToken.None);
+		while (remarks.OpenCount != 0 && queue.TryDequeue(out var first))
+		{ first(); }
+		remarks.OpenCount.ShouldBe(0);
+		remarks.PendingCleanup.ShouldBeNull();
+		var offers = 0;
+		while (queue.TryDequeue(out var action))
+		{
+			action();
+			if (remarks.PendingCleanup is not null)
+			{ offers++; remarks.DismissCleanup(); }
+		}
+		offers.ShouldBe(1);
+		remarks.PendingCleanup.ShouldBeNull();
+		remarks.CanRequestCleanup.ShouldBeTrue();
+	}
+
+	[Test]
+	public async Task Failed_cleanup_preserves_records_and_can_retry_while_editors_are_unblocked()
+	{
+		CleanupStore store = new(new RemarkFileStore(_root.Path));
+		var remarks = await OpenAsync(store: store);
+		var thread = (await remarks.AddRemarkAsync(_changes!.ShownDiff!, 3, "working", CancellationToken.None)).ShouldNotBeNull();
+		await remarks.SendAsync("s1", CancellationToken.None);
+		await _book!.ResolveAsync("C1", CancellationToken.None);
+		var request = remarks.PendingCleanup.ShouldNotBeNull();
+		store.Fail = true;
+		await remarks.ConfirmCleanupAsync(request, CancellationToken.None);
+		_book.Threads.ShouldHaveSingleItem();
+		remarks.PendingCleanup.ShouldBeSameAs(request);
+		remarks.StatusText.ShouldNotBeNull().ShouldContain("Try again");
+		thread.IsEditingEnabled.ShouldBeTrue();
+		store.Fail = false;
+		await remarks.ConfirmCleanupAsync(request, CancellationToken.None);
+		_book.Threads.ShouldBeEmpty();
+	}
+
+	[Test]
+	public async Task Confirmed_cleanup_blocks_new_typing_only_until_the_atomic_save_finishes()
+	{
+		CleanupStore store = new(new RemarkFileStore(_root.Path));
+		var remarks = await OpenAsync(store: store);
+		var thread = (await remarks.AddRemarkAsync(_changes!.ShownDiff!, 3, "working", CancellationToken.None)).ShouldNotBeNull();
+		await remarks.SendAsync("s1", CancellationToken.None);
+		await _book!.ResolveAsync("C1", CancellationToken.None);
+		store.Release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		var cleanup = remarks.ConfirmCleanupAsync(remarks.PendingCleanup.ShouldNotBeNull(), CancellationToken.None);
+		await store.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+		remarks.IsClearingReview.ShouldBeTrue();
+		thread.IsEditingEnabled.ShouldBeFalse();
+		thread.DraftText = "input while disabled";
+		thread.DraftText.ShouldBeEmpty();
+		_book.Threads.ShouldHaveSingleItem();
+		store.Release.SetResult();
+		await cleanup;
+		thread.IsEditingEnabled.ShouldBeTrue();
+		remarks.IsClearingReview.ShouldBeFalse();
+		_book.Threads.ShouldBeEmpty();
+	}
+
+	private sealed class CleanupStore(IRemarkStore inner) : IRemarkStore
+	{
+		public bool Fail { get; set; }
+		public TaskCompletionSource? Release { get; set; }
+		public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		public Task<RemarkFile> LoadAsync(CancellationToken cancellationToken) => inner.LoadAsync(cancellationToken);
+		public async Task SaveAsync(RemarkFile file, CancellationToken cancellationToken)
+		{
+			if (Fail)
+			{ throw new IOException("save failed"); }
+			if (Release is { } gate)
+			{ Started.TrySetResult(); await gate.Task.WaitAsync(cancellationToken); }
+			await inner.SaveAsync(file, cancellationToken);
+		}
+		public Task<string> SaveSnapshotAsync(string text, CancellationToken cancellationToken) => inner.SaveSnapshotAsync(text, cancellationToken);
+		public Task<IReadOnlyList<string>?> LoadSnapshotLinesAsync(string id, CancellationToken cancellationToken) => inner.LoadSnapshotLinesAsync(id, cancellationToken);
+	}
+	[Test]
 	public async Task Historical_thread_and_agent_reply_are_discoverable_and_openable_after_restart_in_working_tree()
 	{
 		var remarks = await OpenAsync();

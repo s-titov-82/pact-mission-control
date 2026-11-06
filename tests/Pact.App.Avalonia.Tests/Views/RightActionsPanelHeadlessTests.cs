@@ -507,8 +507,11 @@ public sealed class RightActionsPanelHeadlessTests
 
 			buttons.IsEffectivelyVisible.ShouldBeTrue();
 			Top(buttons, panel).ShouldBeGreaterThan(Top(list, panel));
-			buttons.GetLogicalDescendants().OfType<Button>().Select(button => button.Content as string)
-				.ShouldBe(["Resolved (0)", "Open (0)", "Send"]);
+			buttons.GetLogicalDescendants().OfType<Button>().Where(button => button.IsEffectivelyVisible)
+				.Select(button => button.Content as string)
+				.ShouldBe(["Resolved (0)", "Open (0)", "Send", "Очистить замечания…"]);
+			buttons.FindControl<Button>("CleanupRemarksButton")!.IsEnabled.ShouldBeFalse();
+			buttons.FindControl<Control>("CleanupQuestion")!.IsVisible.ShouldBeFalse();
 
 			await screen.SelectTabAsync(ProjectScreenTab.Overview, CancellationToken.None);
 			window.UpdateLayout();

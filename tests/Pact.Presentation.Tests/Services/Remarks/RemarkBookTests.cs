@@ -17,6 +17,85 @@ public sealed class RemarkBookTests : IDisposable
 	public void Dispose() => _root.Dispose();
 
 	[Test]
+	public async Task Clearing_a_resolved_review_removes_all_project_sources_and_never_reuses_ids()
+	{
+		using var book = Book();
+		await AddAsync(book);
+		await book.AddAsync(NewAnchor() with { TargetCommit = new string('a', 40) }, "a\nb\n", "historical", CancellationToken.None);
+		await book.CompleteSendAsync((await book.BeginSendAsync("s1", CancellationToken.None))!, Confirmed, CancellationToken.None);
+		await book.ResolveAsync("C1", CancellationToken.None);
+		await book.ResolveAsync("C2", CancellationToken.None);
+		var expected = book.Threads.ToArray();
+		(await book.TryClearReviewAsync(expected, CancellationToken.None)).ShouldBeTrue();
+		book.Threads.ShouldBeEmpty();
+		(await AddAsync(book)).Id.ShouldBe("C3");
+		using var restored = Book();
+		await restored.EnsureLoadedAsync(CancellationToken.None);
+		restored.Threads.Select(thread => thread.Id).ShouldBe(["C3"]);
+	}
+
+	[TestCase("add")]
+	[TestCase("reopen")]
+	[TestCase("reply")]
+	[TestCase("closed_commit")]
+	public async Task Cleanup_rejects_a_changed_review_without_removing_any_threads(string change)
+	{
+		using var book = Book();
+		await AddAsync(book);
+		await book.CompleteSendAsync((await book.BeginSendAsync("s1", CancellationToken.None))!, Confirmed, CancellationToken.None);
+		await book.ResolveAsync("C1", CancellationToken.None);
+		var expected = book.Threads.ToArray();
+		switch (change)
+		{
+			case "add":
+				await AddAsync(book, "new question");
+				break;
+			case "reopen":
+				await book.ReopenAsync("C1", CancellationToken.None);
+				break;
+			case "reply":
+				await book.AgentReplyAsync("C1", "late answer", resolve: true, CancellationToken.None);
+				break;
+			case "closed_commit":
+				await book.AddAsync(NewAnchor() with { TargetCommit = new string('b', 40) }, "a\nb\n", "new historical question", CancellationToken.None);
+				await book.CompleteSendAsync((await book.BeginSendAsync("s1", CancellationToken.None))!, Confirmed, CancellationToken.None);
+				await book.ResolveAsync("C2", CancellationToken.None);
+				break;
+		}
+		var before = book.Threads.ToArray();
+		(await book.TryClearReviewAsync(expected, CancellationToken.None)).ShouldBeFalse();
+		book.Threads.ShouldBe(before);
+	}
+
+	[TestCase(false, RemarkDelivery.Sent)]
+	[TestCase(true, RemarkDelivery.Draft)]
+	[TestCase(true, RemarkDelivery.Sending)]
+	[TestCase(true, RemarkDelivery.Uncertain)]
+	public async Task Cleanup_never_removes_open_or_pending_threads(bool resolved, RemarkDelivery delivery)
+	{
+		var thread = new RemarkThread("C1", NewAnchor(), [new("m1", RemarkAuthor.User, "text", DateTimeOffset.MinValue, delivery, "s1")], resolved);
+		RemarkFileStore store = new(_root.Path);
+		await store.SaveAsync(new(2, [thread]), CancellationToken.None);
+		using var book = Book();
+		await book.EnsureLoadedAsync(CancellationToken.None);
+		(await book.TryClearReviewAsync(book.Threads.ToArray(), CancellationToken.None)).ShouldBeFalse();
+		book.Threads.ShouldHaveSingleItem();
+	}
+
+	[Test]
+	public async Task Sending_includes_open_drafts_from_all_project_sources()
+	{
+		using var book = Book();
+		var working = await AddAsync(book, "working draft");
+		var target = new string('a', 40);
+		var historical = await book.AddAsync(NewAnchor() with { TargetCommit = target }, "a\nb\n", "historical draft", CancellationToken.None);
+		var batch = (await book.BeginSendAsync("s1", CancellationToken.None)).ShouldNotBeNull();
+		batch.Items.Select(item => item.Thread.Id).ShouldBe([working.Id, historical.Id]);
+		await book.CompleteSendAsync(batch, Confirmed, CancellationToken.None);
+		(await book.BeginSendAsync("s1", CancellationToken.None)).ShouldBeNull();
+	}
+
+	[Test]
 	public async Task Ids_count_up_and_are_not_reused_after_a_discard()
 	{
 		using var book = Book();

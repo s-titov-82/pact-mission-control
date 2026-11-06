@@ -85,6 +85,21 @@ internal sealed partial class RemarksPanel : UserControl
 		ResolvedRemarksList.ItemsSource = resolved;
 		SendRemarksButton.IsEnabled = remarks?.CanSend == true;
 		ToolTip.SetTip(SendRemarksButton, remarks?.SendBlockedReason);
+		var cleanup = remarks?.PendingCleanup;
+		CleanupRemarksButton.IsEnabled = remarks?.CanRequestCleanup == true && cleanup is null;
+		ToolTip.SetTip(CleanupRemarksButton, "Clear all remarks in this project after they are resolved and replies delivered or discarded.");
+		CleanupQuestion.IsVisible = cleanup is not null;
+		CleanupDescription.Text = cleanup?.Description;
+		ConfirmCleanupButton.IsEnabled = remarks?.CanRequestCleanup == true;
+		DeclineCleanupButton.IsEnabled = remarks?.IsClearingReview != true;
+	}
+
+	private void OnCleanupClicked(object? sender, RoutedEventArgs e) => Remarks?.RequestCleanup();
+	private void OnDeclineCleanupClicked(object? sender, RoutedEventArgs e) => Remarks?.DismissCleanup();
+	private void OnConfirmCleanupClicked(object? sender, RoutedEventArgs e)
+	{
+		if (Remarks is { PendingCleanup: { } request } remarks)
+		{ _eventTasks.TryRun("remarks-clear-review", () => remarks.ConfirmCleanupAsync(request, CancellationToken.None), static _ => Task.CompletedTask); }
 	}
 
 	// The list opens left of the panel, its right edge on the panel's edge and its bottom near the

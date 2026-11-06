@@ -65,6 +65,7 @@ public sealed partial class ChangesRemarksViewModel : INotifyPropertyChanged, ID
 		_book.Changed += OnBookChanged;
 		Own(_changes.ShownDiff);
 		_ = LoadAsync();
+		ObserveCleanupCompletion(_book.Threads);
 		Recompute();
 	}
 
@@ -285,7 +286,19 @@ public sealed partial class ChangesRemarksViewModel : INotifyPropertyChanged, ID
 		}
 	}
 
-	private void OnBookChanged(object? sender, EventArgs e) => _postToUi(Recompute);
+	private void OnBookChanged(object? sender, EventArgs e)
+	{
+		var notification = Interlocked.Increment(ref _cleanupNotificationVersion);
+		var snapshot = _book.Threads;
+		_postToUi(() =>
+		{
+			if (_disposed || notification <= _cleanupAppliedNotification)
+			{ return; }
+			_cleanupAppliedNotification = notification;
+			ObserveCleanupCompletion(snapshot);
+			Recompute();
+		});
+	}
 
 	// A failed read is reported; the remarks stay empty rather than silently broken.
 	private async Task LoadAsync()
@@ -313,6 +326,9 @@ public sealed partial class ChangesRemarksViewModel : INotifyPropertyChanged, ID
 		}
 
 		var count = CountDrafts(_book.Threads);
+		// Projection updates also notify HasUnsavedDraft. They must not advance the completion
+		// stream past queued book snapshots and later replay an already declined question.
+		ObserveCleanupCompletion(_cleanupObservedThreads);
 		if (count != DraftCount)
 		{
 			DraftCount = count;
@@ -364,6 +380,7 @@ public sealed partial class ChangesRemarksViewModel : INotifyPropertyChanged, ID
 		Raise(nameof(OpenCount), nameof(OpenThreads), nameof(ResolvedThreads), nameof(DraftCount), nameof(BarText), nameof(CanSend), nameof(SendTargets),
 			nameof(SendBlockedReason), nameof(StatusText));
 		_ = PlaceAsync(version, threads, _changes.ShownDiff, _changes.WorkingTreeHeadCommit);
+		RaiseCleanup();
 	}
 
 	private async Task PlaceAsync(int version, IReadOnlyList<RemarkThread> threads, ShownDiff? shown, string? head)

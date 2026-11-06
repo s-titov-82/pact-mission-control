@@ -210,6 +210,24 @@ public sealed class RemarkBook : IDisposable
 	public Task ReopenAsync(string threadId, CancellationToken cancellationToken) =>
 		ChangeThreadAsync(threadId, thread => thread with { IsResolved = false }, cancellationToken);
 
+	/// <summary>Clears the project's entirely resolved list only when its complete captured snapshot still matches.</summary>
+	public async Task<bool> TryClearReviewAsync(IReadOnlyList<RemarkThread> expected, CancellationToken cancellationToken)
+	{
+		ArgumentNullException.ThrowIfNull(expected);
+		var snapshot = expected.ToArray();
+		var cleared = false;
+		await MutateAsync(file =>
+		{
+			var current = file.Threads;
+			if (current.Count == 0 || !current.SequenceEqual(snapshot) || current.Any(thread => !thread.IsResolved
+				|| thread.Messages.Any(message => message.Delivery != RemarkDelivery.Sent)))
+			{ return null; }
+			cleared = true;
+			return file with { Threads = [] };
+		}, cancellationToken).ConfigureAwait(false);
+		return cleared;
+	}
+
 	/// <summary>
 	/// Appends an agent's answer. <paramref name="resolve"/> resolves the thread; an answer without it
 	/// leaves the thread open, reopening it if it was resolved.
@@ -244,8 +262,8 @@ public sealed class RemarkBook : IDisposable
 	}
 
 	/// <summary>
-	/// Marks every unsent message of the open threads as Sending to <paramref name="sessionId"/> and
-	/// returns them, or null when there is nothing to send.
+	/// Marks unsent messages of every open project thread as Sending to
+	/// <paramref name="sessionId"/>, regardless of the displayed file or commit.
 	/// </summary>
 	public async Task<RemarkBatch?> BeginSendAsync(string sessionId, CancellationToken cancellationToken)
 	{
