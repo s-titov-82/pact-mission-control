@@ -26,8 +26,7 @@ internal static partial class MarkdownPreviewHook
 		ArgumentNullException.ThrowIfNull(viewer);
 		ArgumentNullException.ThrowIfNull(document);
 		ArgumentNullException.ThrowIfNull(navigate);
-		if (historical)
-		{ viewer.Plugins.PathResolver = new HistoricalImageResolver(); }
+		viewer.Plugins.PathResolver = new PreviewImageResolver(historical);
 		if (viewer.Engine is global::Markdown.Avalonia.Markdown engine)
 		{
 			engine.HyperlinkCommand = new LinkCommand(href =>
@@ -374,13 +373,41 @@ internal static partial class MarkdownPreviewHook
 
 	// Enforce the resource policy at the loader too: plugin-supported image syntaxes must never
 	// fall through to the working tree when preprocessing cannot recognize their destination.
-	private sealed class HistoricalImageResolver : global::Markdown.Avalonia.Utils.IPathResolver
+	private sealed class PreviewImageResolver(bool historical) : global::Markdown.Avalonia.Utils.IPathResolver
 	{
 		private readonly global::Markdown.Avalonia.Utils.DefaultPathResolver _web = new();
 		public string? AssetPathRoot { set => _web.AssetPathRoot = value; }
 		public IEnumerable<string>? CallerAssemblyNames { set => _web.CallerAssemblyNames = value; }
-		public Task<Stream?>? ResolveImageResource(string relativeOrAbsolutePath) =>
-			Uri.TryCreate(relativeOrAbsolutePath, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https" or "data"
-				? _web.ResolveImageResource(relativeOrAbsolutePath) : Task.FromResult<Stream?>(null);
+		public Task<Stream?>? ResolveImageResource(string relativeOrAbsolutePath)
+		{
+			if (historical && !(Uri.TryCreate(relativeOrAbsolutePath, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https" or "data"))
+			{ return Task.FromResult<Stream?>(null); }
+			var loading = _web.ResolveImageResource(relativeOrAbsolutePath);
+			return loading is null ? null : ReleaseFileAsync(loading);
+		}
+
+		private static async Task<Stream?> ReleaseFileAsync(Task<Stream?> loading)
+		{
+			var stream = await loading;
+			if (stream is not FileStream)
+			{ return stream; }
+			// SVG plugins can retain their input stream for the image's lifetime. Keep the
+			// bytes they need without holding the document's file open until collection.
+			using (stream)
+			{
+				MemoryStream buffer = new();
+				try
+				{
+					await stream.CopyToAsync(buffer);
+					buffer.Position = 0;
+					return buffer;
+				}
+				catch
+				{
+					buffer.Dispose();
+					throw;
+				}
+			}
+		}
 	}
 }

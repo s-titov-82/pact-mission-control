@@ -100,6 +100,9 @@ public sealed class MarkdownPreviewHeadlessTests
 					: image.Image;
 
 				loaded.ShouldNotBeNull().Size.ShouldBe(new Size(12, 8));
+				using var editable = File.Open(Path.Combine(preview.AssetPathRoot!, "img", "pic.svg"),
+					FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+				editable.ReadByte().ShouldBe('<');
 			},
 			image: "docs/img/pic.svg",
 			imageText: "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"12\" height=\"8\"><rect width=\"12\" height=\"8\" fill=\"red\"/></svg>");
