@@ -7,21 +7,21 @@ namespace Pact.Presentation.Tests.ViewModels;
 public sealed class AgentFilesViewModelTests
 {
 	private static readonly DateTimeOffset At = new(2026, 10, 29, 12, 0, 0, TimeSpan.Zero);
-	private static readonly string[] Temp = [@"C:\Users\u\AppData\Local\Temp\"];
+	private static readonly string[] Temp = [@"C:\TestData\Temp\"];
 
 	[Test]
 	public void Items_show_name_and_location_newest_first()
 	{
 		SessionViewModel session = new(Record(
 			new AgentFileLink(@"D:\proj\docs\plan.md", "Plan", At),
-			new AgentFileLink(@"C:\Users\u\AppData\Local\Temp\out.log", null, At)));
+			new AgentFileLink(@"C:\TestData\Temp\out.log", null, At)));
 		using AgentFilesViewModel files = new(session, @"D:\proj", Temp, (_, _, _) => Task.CompletedTask);
 
 		files.HasItems.ShouldBeTrue();
 		files.Items.ShouldBe(
 		[
 			new AgentFileItem(@"D:\proj\docs\plan.md", "plan.md", "project", "Plan\n" + @"D:\proj\docs\plan.md"),
-			new AgentFileItem(@"C:\Users\u\AppData\Local\Temp\out.log", "out.log", "Temp", @"C:\Users\u\AppData\Local\Temp\out.log")
+			new AgentFileItem(@"C:\TestData\Temp\out.log", "out.log", "Temp", @"C:\TestData\Temp\out.log")
 		]);
 	}
 

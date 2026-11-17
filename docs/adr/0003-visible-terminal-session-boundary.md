@@ -38,4 +38,4 @@ input. Terminal busy/idle remains UI evidence, not scenario completion.
 - [Visible shell integration](../../src/Pact.App.Avalonia/Controllers/AvaloniaMainShellController.cs)
 - [Prompt action policy](../../src/Pact.Core/Prompting/PromptActionPolicy.cs)
 - [Runtime coordinator tests](../../tests/Pact.Presentation.Tests/Services/SessionRuntimeCoordinatorTests.cs)
-- [Avalonia scenario runtime tests](../../tests/Pact.App.Avalonia.Tests/Controllers/AvaloniaScenarioRuntimeTests.cs)
+- [Visible shell keyboard tests](../../tests/Pact.App.Avalonia.Tests/Views/MainWindowHeadlessTests.cs)

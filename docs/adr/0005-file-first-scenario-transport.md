@@ -1,9 +1,12 @@
 # ADR 0005: Use file-first scenario transport
 
-- Status: Accepted
+- Status: Superseded by the MCP review relay
 - Date: 2026-07-30
 
 ## Context
+
+This ADR records the retired scenario transport. Reviews now exchange assigned
+turns through MCP while retaining the visible terminal-session boundary.
 
 Review-loop prompts can be long, configurable, and sensitive to terminal
 composer behavior. Typing a full prompt into an interactive TUI is slow and
@@ -36,11 +39,11 @@ Pact-owned directory; startup removes abandoned `.pact-reviews`, never generic
 - Busy/idle evidence cannot block or complete a scenario.
 - Exchange files are run-scoped transport, not durable audit history.
 
-## Current code and evidence
+## Historical code and current replacement
 
 - [Exchange directory](../../src/Pact.Infrastructure/Scenarios/ReviewExchangeDirectory.cs)
-- [Review-loop program](../../src/Pact.Presentation/Services/Scenarios/ReviewLoopScenarioProgram.cs)
-- [Run lifecycle service](../../src/Pact.Presentation/Services/ScenarioRunService.cs)
+- Retired program: `ReviewLoopScenarioProgram`.
+- Retired lifecycle service: `ScenarioRunService`.
 - [Transport tests](../../tests/Pact.Infrastructure.Tests/Scenarios/ReviewExchangeDirectoryTests.cs)
-- [Review-loop behavior tests](../../tests/Pact.Presentation.Tests/Services/Scenarios/ReviewLoopScenarioProgramTests.cs)
-- [Run lifecycle tests](../../tests/Pact.Presentation.Tests/Services/ScenarioRunServiceTests.cs)
+- [Current MCP review relay](../../src/Pact.Presentation/Services/Reviews/ReviewRelay.cs)
+- [Current review behavior tests](../../tests/Pact.Presentation.Tests/Services/Reviews/ReviewRelayTests.cs)
