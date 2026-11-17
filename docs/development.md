@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - Windows 11 x64.
-- .NET 10 SDK; `global.json` requests 10.0.302 and permits roll-forward to a
+- .NET 10 SDK; `global.json` requests 10.0.401 and permits roll-forward to a
   newer .NET 10 feature band.
 - Node.js 22 or newer on `PATH` for terminal-host behavior tests.
 - Microsoft Edge WebView2 Runtime.
@@ -23,8 +23,12 @@ dotnet build Pact.slnx --no-restore -m:2 -nr:false -v q -p:BuildInParallel=false
 dotnet test tests/Pact.Core.Tests/Pact.Core.Tests.csproj --no-build --no-restore -m:1 -nr:false -- NUnit.NumberOfTestWorkers=2
 dotnet test tests/Pact.Infrastructure.Tests/Pact.Infrastructure.Tests.csproj --no-build --no-restore -m:1 -nr:false --filter "TestCategory!=NativeIntegration" -- NUnit.NumberOfTestWorkers=2
 dotnet test tests/Pact.Presentation.Tests/Pact.Presentation.Tests.csproj --no-build --no-restore -m:1 -nr:false -- NUnit.NumberOfTestWorkers=2
-dotnet test tests/Pact.App.Avalonia.Tests/Pact.App.Avalonia.Tests.csproj --no-build --no-restore -m:1 -nr:false -- NUnit.NumberOfTestWorkers=2
+pwsh -NoProfile -File tools/Invoke-PactAppTests.ps1
 ```
+
+The Avalonia runner isolates view fixtures in sequential test hosts to bound
+headless style/template caches. It checks that the summed TRX counts match full
+test discovery, so isolation cannot silently omit tests.
 
 Run the bundled-ConPTY tests separately on Windows:
 

@@ -205,12 +205,18 @@ public sealed class RenderedMarkdownViewHeadlessTests
 			fixture.Click(AddButton(fixture.Block(3)));
 			fixture.NewRemarkBox(3).Text = "draft";
 
-			await fixture.EditAsync("intro\n\n" + Text);
+			var shown = fixture.Changes.ShownDiff;
+			fixture.ChangeFile("intro\n\n" + Text);
 
-			var box = fixture.NewRemarkBox(5);
+			// An open editor retains its local comparison until its captured remark is saved.
+			var box = fixture.NewRemarkBox(3);
 			box.Text.ShouldBe("draft");
 			CtrlEnter(box);
 			await EventuallyAsync(fixture.Window, () => fixture.Book.Threads.Count == 1);
+			await fixture.EventTasks.WaitForIdleAsync();
+			fixture.Time.Advance(ProjectChangesViewModel.ReconcileInterval);
+			fixture.Changes.RequestRefresh();
+			await EventuallyAsync(fixture.Window, () => !ReferenceEquals(fixture.Changes.ShownDiff, shown));
 			fixture.Book.Threads.Single().Anchor.Line.ShouldBe(3);
 		});
 	}
@@ -464,11 +470,17 @@ public sealed class RenderedMarkdownViewHeadlessTests
 		public async Task EditAsync(string text)
 		{
 			var shown = Changes.ShownDiff;
+			ChangeFile(text);
+			await EventuallyAsync(Window, () => !ReferenceEquals(Changes.ShownDiff, shown));
+		}
+
+		public void ChangeFile(string text)
+		{
 			Reader.Text = text;
 			var shift = text.Split('\n').Length - Text.Split('\n').Length;
 			Reader.Diff = Shift(Reader.Diff!, shift);
+			Changes.RequestRefresh();
 			Time.Advance(ProjectChangesViewModel.ReconcileInterval);
-			await EventuallyAsync(Window, () => !ReferenceEquals(Changes.ShownDiff, shown));
 		}
 
 		private static FileDiff Shift(FileDiff diff, int by) =>

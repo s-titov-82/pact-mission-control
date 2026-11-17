@@ -598,6 +598,10 @@ public sealed class ProjectScreenRemarksHeadlessTests
 
 				var scroller = global::Avalonia.VisualTree.VisualExtensions.GetVisualAncestors(list).OfType<ScrollViewer>().First();
 				var buttonBottom = open.TranslatePoint(new Point(0, open.Bounds.Height), fixture.Window)!.Value.Y;
+				// Book updates reach the view asynchronously; one thread can still hold an older reply list.
+				await EventuallyAsync(fixture.Window, () => list.GetLogicalDescendants().OfType<RemarkThreadView>()
+					.SingleOrDefault()?.DataContext is RemarkThreadViewModel { Messages.Count: 4 });
+				fixture.Window.UpdateLayout();
 				list.Bounds.Height.ShouldBeGreaterThan(buttonBottom);
 				scroller.Extent.Height.ShouldBeLessThanOrEqualTo(scroller.Viewport.Height + 1);
 				scroller.Bounds.Width.ShouldBeLessThanOrEqualTo(721);

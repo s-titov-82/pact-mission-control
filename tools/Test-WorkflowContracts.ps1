@@ -73,10 +73,10 @@ function Assert-PactDotnetTestsFailFast {
 
     $testCommands = @([regex]::Matches(
             $Text,
-            '(?m)^\s*dotnet test\s+[^\r\n]+$'))
+            '(?m)^\s*(?:dotnet test\s+|\./tools/Invoke-PactAppTests\.ps1\b)[^\r\n]*$'))
     $guardedCommands = @([regex]::Matches(
             $Text,
-            '(?m)^\s*dotnet test\s+[^\r\n]+\r?\n\s*if \(\$LASTEXITCODE -ne 0\) \{ exit \$LASTEXITCODE \}\s*$'))
+            '(?m)^\s*(?:dotnet test\s+|\./tools/Invoke-PactAppTests\.ps1\b)[^\r\n]*\r?\n\s*if \(\$LASTEXITCODE -ne 0\) \{ exit \$LASTEXITCODE \}\s*$'))
     if ($guardedCommands.Count -ne $testCommands.Count) {
         throw "Every dotnet test command must fail fast on a non-zero native exit; found $($guardedCommands.Count) guards for $($testCommands.Count) commands."
     }
@@ -91,8 +91,9 @@ function Assert-PactSixBoundedTestCommands {
     $testCommands = [regex]::Matches(
         $Text,
         '(?m)^\s*dotnet test\s+(?<command>[^\r\n]+)$')
-    if ($testCommands.Count -ne 6) {
-        throw "$WorkflowName must contain exactly six sequential dotnet test commands; found $($testCommands.Count)."
+    $appCommands = [regex]::Matches($Text, '(?m)^\s*\./tools/Invoke-PactAppTests\.ps1\s*$')
+    if ($testCommands.Count -ne 5 -or $appCommands.Count -ne 1) {
+        throw "$WorkflowName must contain five sequential dotnet test commands and one isolated Avalonia suite."
     }
     $updaterCommands = @($testCommands | Where-Object {
             $_.Groups['command'].Value.Contains(
@@ -284,14 +285,27 @@ uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         'tests/Pact.Core.Tests/Pact.Core.Tests.csproj',
         'tests/Pact.Infrastructure.Tests/Pact.Infrastructure.Tests.csproj',
         'tests/Pact.Presentation.Tests/Pact.Presentation.Tests.csproj',
-        'tests/Pact.App.Avalonia.Tests/Pact.App.Avalonia.Tests.csproj',
         'tests/Pact.Updater.Tests/Pact.Updater.Tests.csproj',
         'tests/Pact.Infrastructure.Tests/Pact.Infrastructure.Tests.csproj') |
         ForEach-Object {
             "dotnet test $_ --no-build --no-restore -m:1 -nr:false -- NUnit.NumberOfTestWorkers=2`nif (`$LASTEXITCODE -ne 0) { exit `$LASTEXITCODE }"
         }
-    $boundedFixture = [string]::Join("`n", $boundedCommands)
+    $boundedFixture = [string]::Join("`n", $boundedCommands) + "`n./tools/Invoke-PactAppTests.ps1`nif (`$LASTEXITCODE -ne 0) { exit `$LASTEXITCODE }"
     Assert-PactSixBoundedTestCommands -Text $boundedFixture -WorkflowName 'Fixture'
+    Assert-PactFixtureFails `
+        -Action {
+            Assert-PactSixBoundedTestCommands `
+                -Text ($boundedFixture -replace '(?m)^\./tools/Invoke-PactAppTests\.ps1\r?\n', '') `
+                -WorkflowName 'Fixture'
+        } `
+        -ExpectedMessage 'isolated Avalonia'
+    Assert-PactFixtureFails `
+        -Action {
+            Assert-PactSixBoundedTestCommands `
+                -Text ($boundedFixture -replace '(\./tools/Invoke-PactAppTests\.ps1)\r?\nif \(\$LASTEXITCODE -ne 0\) \{ exit \$LASTEXITCODE \}', '$1') `
+                -WorkflowName 'Fixture'
+        } `
+        -ExpectedMessage 'fail fast'
     Assert-PactFixtureFails `
         -Action {
             Assert-PactSixBoundedTestCommands `
