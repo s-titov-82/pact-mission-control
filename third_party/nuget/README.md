@@ -12,7 +12,8 @@ an SPDX expression alone:
   `HtmlAgilityPack` 1.11.42 at
   <https://github.com/zzzprojects/html-agility-pack/blob/v1.11.42/LICENSE>;
 - `MS-PL.txt` is the Microsoft Public License text published at
-  <https://licenses.nuget.org/MS-PL> for `Svg.Custom` 4.5.0.
+  <https://licenses.nuget.org/MS-PL> for `Svg.Custom` 4.1.0, whose package
+  metadata declares `MS-PL` (upstream commit `816d4b49724aa50540c15fb60fbb72b67ac1caf9`).
 
 `third_party/runtime-components.json` pins every override to a package version.
 When one of those packages changes, review the new package metadata and license
