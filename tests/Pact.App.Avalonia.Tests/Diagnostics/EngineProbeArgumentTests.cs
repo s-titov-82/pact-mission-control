@@ -64,8 +64,8 @@ public sealed class EngineProbeArgumentTests
 	}
 
 	[Test]
-	[TestCase("\u001b[1t\u001b[c\u001b[?1004h\u001b[?9001h", false)]
-	[TestCase("\u001b[32mFINAL_ENGINE_PROBE_READY\u001b[0m", true)]
+	[TestCase("\u001b[1t\u001b[c\u001b[?1004h\u001b[?9001h", false, TestName = "Visible_output_ignores_terminal_control_sequences")]
+	[TestCase("\u001b[32mFINAL_ENGINE_PROBE_READY\u001b[0m", true, TestName = "Visible_output_accepts_colored_text")]
 	public void Visible_output_wait_gate_ignores_escape_sequences(string output, bool expected) => EngineProbeRunner.HasVisibleText(output).ShouldBe(expected);
 
 	private static AppDataProfile CreateProfile() => new(
