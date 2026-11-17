@@ -5,6 +5,8 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Controls.Primitives.PopupPositioning;
 using Avalonia.Headless.NUnit;
+using Avalonia.Headless;
+using Avalonia.Themes.Fluent;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.LogicalTree;
@@ -19,6 +21,7 @@ using Pact.App.Avalonia.Views.Editing;
 using Pact.Core.Agents;
 using Pact.Core.Presentation;
 using Pact.Core.Projects;
+using Pact.Core.Prompting;
 using Pact.Core.Sessions;
 using Pact.Infrastructure.Storage;
 using Pact.Presentation.ViewModels;
@@ -27,6 +30,63 @@ namespace Pact.App.Avalonia.Tests.Views;
 
 public sealed class MainWindowHeadlessTests
 {
+	[AvaloniaTest]
+	public async Task Quick_action_returns_keyboard_to_terminal_before_paste_and_does_not_refocus_after_delivery()
+	{
+		await using SelectionWindowFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		RightActionsPanel actions = new();
+		PromptTemplateRecord template = new("quick", "Quick", "hello", false);
+		var list = actions.FindControl<ItemsControl>("QuickActionsList")!;
+		var item = list.ItemTemplate!.Build(template)!;
+		item.DataContext = template;
+		var button = item.GetSelfAndVisualDescendants().OfType<Button>().Single();
+		TextBox terminal = new();
+		TextBox otherInput = new();
+		FluentTheme theme = new();
+		Application.Current!.Styles.Add(theme);
+		Window window = new() { Content = new StackPanel { Children = { item, terminal, otherInput } } };
+		window.Show();
+		window.UpdateLayout();
+		fixture.Host.FocusRequested = () => terminal.Focus();
+		Task? delivery = null;
+		var clicks = 0;
+		actions.QuickActionRequested += (_, value) =>
+		{
+			clicks++;
+			delivery = fixture.Controller.RunQuickActionAsync(value);
+		};
+		TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		fixture.Backends[0].InputWriteBlocker = release;
+		var terminalEnterReceived = false;
+		terminal.KeyDown += (_, e) => terminalEnterReceived |= e.Key == Key.Enter;
+		try
+		{
+			button.Focus().ShouldBeTrue();
+			button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+			await fixture.Backends[0].InputWriteStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+			window.KeyPress(Key.Enter, RawInputModifiers.None, PhysicalKey.Enter, null);
+			window.KeyRelease(Key.Enter, RawInputModifiers.None, PhysicalKey.Enter, null);
+			terminalEnterReceived.ShouldBeTrue();
+			clicks.ShouldBe(1);
+			otherInput.Focus().ShouldBeTrue();
+			release.TrySetResult();
+			await delivery!;
+			window.FocusManager!.GetFocusedElement().ShouldBeSameAs(otherInput);
+			fixture.Backends[0].Inputs.Count(value => value.Contains("hello", StringComparison.Ordinal)).ShouldBe(1);
+		}
+		finally
+		{
+			release.TrySetResult();
+			if (delivery is not null)
+			{
+				await delivery;
+			}
+			window.Close();
+			Application.Current.Styles.Remove(theme);
+		}
+	}
+
 	[AvaloniaTest]
 	public void ProjectTreeRendersLoadedWorkspaceCollection()
 	{

@@ -16,6 +16,7 @@ internal sealed class FakeTerminalWebViewHost : ITerminalWebViewHost
 	public List<(string SessionId, string Text)> WrittenOutput { get; } = [];
 	public List<string> SnapshotBaselineResetSessions { get; } = [];
 	public int FocusCallCount { get; private set; }
+	public Action? FocusRequested { get; set; }
 	public List<(string Message, bool IsVisible, bool DimBackground, string? ActionLabel)> BusyOverlayCalls { get; } = [];
 	public Dictionary<string, TaskCompletionSource<bool>> ShowBlockers { get; } = new(StringComparer.Ordinal);
 	public Dictionary<string, TaskCompletionSource> ShowStarted { get; } = new(StringComparer.Ordinal);
@@ -112,6 +113,7 @@ internal sealed class FakeTerminalWebViewHost : ITerminalWebViewHost
 	public Task FocusAsync()
 	{
 		FocusCallCount++;
+		FocusRequested?.Invoke();
 		return Task.CompletedTask;
 	}
 	public Task SetBusyOverlayAsync(

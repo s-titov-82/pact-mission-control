@@ -878,6 +878,9 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 			&& await CurrentDocsAndNotes!.OpenDocumentAsync(relativePath, cancellationToken, heading);
 	}
 
+	/// <summary>
+	/// Inserts a quick action into the selected session and gives its presented terminal keyboard focus.
+	/// </summary>
 	public async Task RunQuickActionAsync(PromptTemplateRecord template, CancellationToken cancellationToken = default)
 	{
 		if (ViewModel.SelectedSession is not { } target)
@@ -886,6 +889,13 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		}
 
 		var text = new PromptTemplateRenderer().Render(template.Body, BuildPromptVariables(target, string.Empty));
+		// Move focus before delivery so Enter cannot activate the action again, and a late
+		// delivery cannot steal focus after the user has moved to another control.
+		if (IsTerminalVisible && _runtimeCoordinator.ActiveSessionId == target.Record.Id)
+		{
+			await _terminalHost.FocusAsync();
+		}
+
 		await SendTextToSessionAsync(target, text, PromptActionPolicy.ShouldSubmit(template), cancellationToken);
 	}
 
