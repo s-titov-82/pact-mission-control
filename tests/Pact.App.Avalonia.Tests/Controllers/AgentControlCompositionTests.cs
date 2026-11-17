@@ -301,8 +301,9 @@ public sealed class AgentControlCompositionTests
 		fixture.Reviewer().ShouldNotBeNull();
 	}
 
-	[Test]
-	public async Task ReviewerProfileCommandUsesTheSharedTerminalLaunchResolver()
+	[TestCase(AgentKind.Claude, "claude-personal --model claude-opus-5")]
+	[TestCase(AgentKind.Codex, "codex-personal --model gpt-5.4")]
+	public async Task ReviewerProfileCommandUsesTheSharedTerminalLaunchResolver(AgentKind kind, string commandLine)
 	{
 		List<(string Command, IReadOnlyList<string> Arguments)> resolvedCommands = [];
 		await using CompositionFixture fixture = new(
@@ -316,8 +317,8 @@ public sealed class AgentControlCompositionTests
 			new ReviewProfile(
 				"claude-personal-opus",
 				"Claude Personal Opus",
-				AgentKind.Claude,
-				"claude-personal --model claude-opus-5"));
+				kind,
+				commandLine));
 		await fixture.InitializeAsync();
 
 		var backendCount = fixture.Backends.Count;
@@ -337,11 +338,19 @@ public sealed class AgentControlCompositionTests
 		result.IsError.ShouldBeFalse(result.Text);
 		var reviewerCommand = resolvedCommands.Single(call =>
 			call.Command.StartsWith(
-				"claude-personal --model claude-opus-5",
+				commandLine,
 				StringComparison.Ordinal));
-		reviewerCommand.Command.ShouldBe("claude-personal --model claude-opus-5");
-		reviewerCommand.Arguments.ShouldContain("--mcp-config");
-		reviewerCommand.Arguments.ShouldContain("--append-system-prompt");
+		reviewerCommand.Command.ShouldBe(commandLine);
+		if (kind == AgentKind.Codex)
+		{
+			reviewerCommand.Arguments.ShouldContain("check_for_update_on_startup=false");
+		}
+		else
+		{
+			reviewerCommand.Arguments.ShouldContain("--mcp-config");
+			reviewerCommand.Arguments.ShouldContain("--append-system-prompt");
+			reviewerCommand.Arguments.ShouldNotContain("check_for_update_on_startup=false");
+		}
 		reviewerCommand.Arguments.ShouldContain(argument =>
 			argument.Contains("PactMcpSkill.md", StringComparison.Ordinal)
 			&& argument.Contains("PactCommonSkill.md", StringComparison.Ordinal));
@@ -526,8 +535,9 @@ public sealed class AgentControlCompositionTests
 			.ShouldBe(CompositionFixture.SessionA);
 	}
 
-	[Test]
-	public async Task Ordinary_and_resume_commands_keep_the_base_command_and_receive_arguments_once()
+	[TestCase(true)]
+	[TestCase(false)]
+	public async Task Automatic_restore_suppresses_Codex_updates_but_manual_fresh_and_resume_do_not(bool agentControlEnabled)
 	{
 		List<(string Command, IReadOnlyList<string> Arguments)> calls = [];
 		await using CompositionFixture fixture = new(
@@ -536,7 +546,11 @@ public sealed class AgentControlCompositionTests
 			{
 				calls.Add((command, arguments.ToArray()));
 				return Task.FromResult<string?>(command);
-			});
+			},
+			agentControlEnabled: agentControlEnabled);
+		await new SessionRestorationStore(fixture.Paths.SessionRestorationPath).SaveAsync(
+			new([CompositionFixture.SessionA], [], [], new(CompositionFixture.ProjectA, CompositionFixture.SessionA), false),
+			CancellationToken.None);
 		await fixture.InitializeAsync();
 
 		var resumed = calls.Single(call =>
@@ -544,12 +558,21 @@ public sealed class AgentControlCompositionTests
 			&& call.Arguments.Count > 0);
 		resumed.Arguments.Count(argument =>
 			argument.StartsWith("developer_instructions=", StringComparison.Ordinal)).ShouldBe(1);
+		resumed.Arguments.Count(argument => argument == "check_for_update_on_startup=false").ShouldBe(1);
+		var resumedUpdateIndex = resumed.Arguments.ToList().IndexOf("check_for_update_on_startup=false");
+		resumed.Arguments[resumedUpdateIndex - 1].ShouldBe("-c");
 
 		var session = fixture.ViewModel.FindSession(CompositionFixture.SessionA)!;
+		await fixture.Controller.RestartSessionAsync(session, preferResumeCommand: true);
+		var manualResume = calls.Last(call => call.Command.StartsWith("codex resume ", StringComparison.Ordinal));
+		manualResume.Arguments.ShouldNotContain("check_for_update_on_startup=false");
+
 		await fixture.Controller.RestartSessionAsync(session, preferResumeCommand: false);
 		var fresh = calls.Last(call => call.Command == "codex --model gpt-5.4");
 		fresh.Arguments.Count(argument =>
 			argument.StartsWith("developer_instructions=", StringComparison.Ordinal)).ShouldBe(1);
+		fresh.Arguments.ShouldNotContain("check_for_update_on_startup=false");
+
 	}
 
 	[Test]
@@ -577,6 +600,7 @@ public sealed class AgentControlCompositionTests
 		var launch = calls.Single(call =>
 			call.Command == profile.CommandTemplate && call.Arguments.Count > 0);
 		launch.Arguments.ShouldContain("--append-system-prompt");
+		launch.Arguments.ShouldNotContain("check_for_update_on_startup=false");
 		launch.Arguments.ShouldContain(argument =>
 			argument.Contains("PactMcpSkill.md", StringComparison.Ordinal));
 	}
@@ -839,7 +863,10 @@ public sealed class AgentControlCompositionTests
 					NextBackend = null;
 					backend.ExitResponse =
 						"codex resume 019f6050-35a4-7951-9748-47239487c08d";
-					Backends.Add(backend);
+					lock (Backends)
+					{
+						Backends.Add(backend);
+					}
 					return backend;
 				});
 			_builder
@@ -930,13 +957,23 @@ public sealed class AgentControlCompositionTests
 		public async Task MakeLatestReviewerReadyAsync(int backendCountBefore)
 		{
 			using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
-			while (Backends.Count <= backendCountBefore)
+			FakeTerminalBackend? backend = null;
+			while (backend is null)
 			{
+				// The endpoint creates the backend on another thread. Publish the list entry
+				// atomically: List.Count alone can be visible before its new item is assigned.
+				lock (Backends)
+				{
+					if (Backends.Count > backendCountBefore)
+					{
+						backend = Backends[^1];
+					}
+				}
 				timeout.Token.ThrowIfCancellationRequested();
 				await Task.Yield();
 			}
 
-			await MakeReviewerReadyAsync(Backends[^1]);
+			await MakeReviewerReadyAsync(backend);
 		}
 
 		public async Task MakeReviewerReadyAsync(FakeTerminalBackend backend)

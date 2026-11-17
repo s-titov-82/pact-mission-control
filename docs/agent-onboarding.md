@@ -252,7 +252,17 @@ quotes, dollar signs, backticks, and other path metacharacters. Claude carries
 the instruction inline through `--append-system-prompt`. Codex carries it as an
 invocation-level `developer_instructions` value, overriding the same key from
 an explicitly selected Codex config profile without replacing any other
-profile values.
+account/model profile values.
+
+Automatic Codex launches receive `-c check_for_update_on_startup=false`: reviewer
+startup, checkpoint restoration, and prompt/MCP-driven starts of stopped sessions.
+Manual session creation, start, restart and resume do not receive this override,
+so Codex retains its configured update prompt for the user. The launcher requires
+each caller to identify the launch origin; resume versus fresh is independent
+of that origin. The automatic override prevents update menus blocking readiness,
+even when MCP is off or skill publication failed. It never persists a profile/global
+configuration change or installs updates. Apply it before the existing embedded-mode
+selection so the new config override follows the same no-daemon rule.
 
 Skill publication is attempted before external settings and terminals are
 initialized. If it fails, Pact records a diagnostic and continues to inject
