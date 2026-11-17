@@ -2,6 +2,7 @@ using System.Reflection;
 using Avalonia.Controls;
 using Avalonia.Headless.NUnit;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Pact.App.Avalonia.Lifecycle;
 using Pact.App.Avalonia.Tests.Fakes;
 using Pact.App.Avalonia.Web;
@@ -12,6 +13,84 @@ namespace Pact.App.Avalonia.Tests.Web;
 
 public sealed class AvaloniaWebPageHostContractTests
 {
+	[AvaloniaTest]
+	public async Task Empty_http_error_shows_status_and_retry_instead_of_a_blank_native_view()
+	{
+		ObservedTaskGroup tasks = new(static (_, _) => Task.CompletedTask);
+		Grid container = new();
+		NativeWebView view = new();
+		container.Children.Add(view);
+		AvaloniaWebPageHost host = new("page", view, container,
+			eventTasks: tasks, scriptInvoker: (_, _) => Task.FromResult<string?>("""{"status":503,"hasContent":false}"""));
+		string? failure = null;
+		host.NavigationFailed += (_, value) => failure = value;
+		host.GetType().GetMethod("OnNavigationCompleted", BindingFlags.Instance | BindingFlags.NonPublic)!
+			.Invoke(host, [null, new WebViewNavigationCompletedEventArgs
+			{
+				Request = new Uri("https://example.test/unavailable"), IsSuccess = false
+			}]);
+		await Dispatcher.UIThread.InvokeAsync(static () => { });
+		await tasks.CompleteAndDrainAsync();
+		failure.ShouldNotBeNull().ShouldContain("503");
+		view.IsVisible.ShouldBeFalse();
+		var message = container.Children.OfType<Border>().Single();
+		message.GetVisualDescendants().OfType<TextBlock>().Select(block => block.Text)
+			.ShouldContain(text => text != null && text.Contains("503", StringComparison.Ordinal));
+		message.GetVisualDescendants().OfType<Button>().ShouldHaveSingleItem();
+		await host.HideAsync(CancellationToken.None);
+		message.IsVisible.ShouldBeFalse();
+		await host.ShowAsync(CancellationToken.None);
+		message.IsVisible.ShouldBeTrue();
+		RaiseNavigationStarted(host);
+		container.Children.ShouldNotContain(message);
+		await host.DisposeAsync();
+		container.Children.ShouldBeEmpty();
+	}
+
+	[AvaloniaTest]
+	public async Task Http_error_with_server_content_keeps_the_native_document_visible()
+	{
+		ObservedTaskGroup tasks = new(static (_, _) => Task.CompletedTask);
+		Grid container = new();
+		NativeWebView view = new();
+		container.Children.Add(view);
+		AvaloniaWebPageHost host = new("page", view, container,
+			eventTasks: tasks, scriptInvoker: (_, _) => Task.FromResult<string?>("""{"status":403,"hasContent":true}"""));
+		host.GetType().GetMethod("OnNavigationCompleted", BindingFlags.Instance | BindingFlags.NonPublic)!
+			.Invoke(host, [null, new WebViewNavigationCompletedEventArgs
+			{
+				Request = new Uri("https://example.test/forbidden"), IsSuccess = false
+			}]);
+		await Dispatcher.UIThread.InvokeAsync(static () => { });
+		await tasks.CompleteAndDrainAsync();
+		view.IsVisible.ShouldBeTrue();
+		container.Children.ShouldHaveSingleItem().ShouldBeSameAs(view);
+		await host.DisposeAsync();
+	}
+
+	[AvaloniaTest]
+	public async Task An_old_document_inspection_cannot_replace_a_new_navigation_with_an_error()
+	{
+		ObservedTaskGroup tasks = new(static (_, _) => Task.CompletedTask);
+		TaskCompletionSource<string?> inspection = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		Grid container = new();
+		NativeWebView view = new();
+		container.Children.Add(view);
+		AvaloniaWebPageHost host = new("page", view, container,
+			eventTasks: tasks, scriptInvoker: (_, _) => inspection.Task);
+		var completions = 0;
+		host.NavigationCompleted += (_, _) => completions++;
+		host.GetType().GetMethod("OnNavigationCompleted", BindingFlags.Instance | BindingFlags.NonPublic)!
+			.Invoke(host, [null, new WebViewNavigationCompletedEventArgs { IsSuccess = false }]);
+		await Dispatcher.UIThread.InvokeAsync(static () => { });
+		RaiseNavigationStarted(host);
+		inspection.SetResult("""{"status":503,"hasContent":false}""");
+		await tasks.CompleteAndDrainAsync();
+		completions.ShouldBe(0);
+		container.Children.ShouldHaveSingleItem().ShouldBeSameAs(view);
+		await host.DisposeAsync();
+	}
+
 	[AvaloniaTest]
 	public void BrowserFactoryAcceptsDefaultWebView2Profile()
 	{

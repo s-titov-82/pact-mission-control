@@ -3,6 +3,8 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using Avalonia.Media;
+using Avalonia.Layout;
 using Pact.App.Avalonia.Diagnostics;
 using Pact.App.Avalonia.Lifecycle;
 using Pact.App.Avalonia.Platform;
@@ -30,6 +32,8 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 	private bool _isPresented;
 	private bool _isNavigationLoading;
 	private bool _isNativelyVisible;
+	private Border? _failureSurface;
+	private long _navigationGeneration;
 	private int _disposed;
 	private int _eventProducersAttached = 1;
 
@@ -238,6 +242,7 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 			RecordDiagnostic("host-disposing");
 			var holderWindow = _captureHolderWindow(_webView);
 			_container.Children.Remove(_webView);
+			ClearFailureSurface();
 			if (holderWindow is { } window)
 			{
 				// Removal queues the controller's disposal; the holder outlives it by design, so it
@@ -268,6 +273,8 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 	{
 		RunOnUiThreadInOrder(() =>
 		{
+			_navigationGeneration++;
+			ClearFailureSurface();
 			_isNavigationLoading = true;
 			ApplyNativeVisibility();
 			RecordDiagnostic("navigation-started", $"source={_webView.Source?.AbsoluteUri ?? string.Empty}");
@@ -279,17 +286,96 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 	{
 		RunOnUiThreadInOrder(() =>
 		{
-			var url = _webView.Source?.AbsoluteUri ?? string.Empty;
+			var url = args.Request?.AbsoluteUri ?? Source?.AbsoluteUri ?? string.Empty;
 			RecordDiagnostic("navigation-completed", $"source={url};success={args.IsSuccess}");
-			if (args.IsSuccess)
+			var generation = _navigationGeneration;
+			_eventTasks.TryRun("browser-navigation-result",
+				() => CompleteNavigationAsync(url, args.IsSuccess, generation));
+		});
+	}
+
+	private async Task CompleteNavigationAsync(string url, bool isSuccess, long generation)
+	{
+		var status = 0;
+		var hasContent = isSuccess;
+		try
+		{
+			var result = await _scriptInvoker(_webView, """
+				(() => ({
+				    status: performance.getEntriesByType('navigation')[0]?.responseStatus ?? 0,
+				    hasContent: !!(document.body?.innerText?.trim() ||
+				        document.body?.querySelector('img,svg,canvas,video,audio,iframe,object,embed,input,button,textarea,select'))
+				}))()
+				""");
+			using var outer = JsonDocument.Parse(result ?? "null");
+			using var document = JsonDocument.Parse(outer.RootElement.ValueKind == JsonValueKind.String
+				? outer.RootElement.GetString() ?? "null" : outer.RootElement.GetRawText());
+			status = document.RootElement.GetProperty("status").GetInt32();
+			hasContent = document.RootElement.GetProperty("hasContent").GetBoolean();
+		}
+		catch (Exception exception) when (exception is not OperationCanceledException)
+		{
+			RecordDiagnostic("navigation-document-unavailable", exception.GetType().Name);
+		}
+
+		await Dispatcher.UIThread.InvokeAsync(() =>
+		{
+			if (_disposed != 0 || generation != _navigationGeneration)
 			{
-				OnNavigated(url, string.Empty);
+				return;
+			}
+
+			if (!isSuccess || status >= 400)
+			{
+				if (!hasContent)
+				{
+					ShowFailureSurface(url, status);
+				}
+				OnLoadFailed(url, status > 0 ? status : -1, string.Empty);
 			}
 			else
 			{
-				OnLoadFailed(url, -1, string.Empty);
+				OnNavigated(url, string.Empty);
 			}
 		});
+	}
+
+	private void ShowFailureSurface(string url, int status)
+	{
+		ClearFailureSurface();
+		Button reload = new() { Content = "Reload", HorizontalAlignment = HorizontalAlignment.Left };
+		reload.Click += (_, _) => _eventTasks.TryRun("browser-retry", () => ReloadAsync(CancellationToken.None));
+		_failureSurface = new Border
+		{
+			Background = new SolidColorBrush(Color.Parse("#0f172a")),
+			Padding = new global::Avalonia.Thickness(32),
+			Child = new StackPanel
+			{
+				VerticalAlignment = VerticalAlignment.Center,
+				HorizontalAlignment = HorizontalAlignment.Center,
+				MaxWidth = 720,
+				Spacing = 16,
+				Children =
+				{
+					new TextBlock { Text = status > 0 ? $"Page could not be loaded (HTTP {status})" : "Page could not be loaded",
+						FontSize = 20, Foreground = Brushes.White, TextWrapping = TextWrapping.Wrap },
+					new TextBlock { Text = status > 0 ? "The server returned no visible content." : "Check the address and your network connection.",
+						Foreground = Brushes.White, TextWrapping = TextWrapping.Wrap },
+					new TextBlock { Text = url, Foreground = Brushes.LightGray, TextWrapping = TextWrapping.Wrap },
+					reload
+				}
+			}
+		};
+		_container.Children.Add(_failureSurface);
+	}
+
+	private void ClearFailureSurface()
+	{
+		if (_failureSurface is { } surface)
+		{
+			_container.Children.Remove(surface);
+			_failureSurface = null;
+		}
 	}
 
 	private void OnNewWindowRequested(object? sender, WebViewNewWindowRequestedEventArgs args)
@@ -421,7 +507,11 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 
 	private void ApplyNativeVisibility()
 	{
-		var visible = _isPresented && !_isNavigationLoading;
+		var visible = _isPresented && !_isNavigationLoading && _failureSurface is null;
+		if (_failureSurface is { } surface)
+		{
+			surface.IsVisible = _isPresented && !_isNavigationLoading;
+		}
 		if (!visible)
 		{
 			// Every hide, a navigation's included: WebView2 crashes when a hidden control keeps focus.
