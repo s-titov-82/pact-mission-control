@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.13] - 2026-11-17
+
+### Added
+
+- ROOT opens a dashboard with active projects, agent states and uncommitted
+  changes, plus quick restore/open actions for paused projects and recent folders.
+- The attention feed collects unread replies, input requests and terminal or
+  review delivery failures. Double-click a ready agent to toggle a persistent
+  Read later bookmark. Active tabs, selection and unread markers survive restarts.
+- Project Overview combines repository details, installed IDE launch buttons,
+  project links and Notes. Docs and Review logs have dedicated project sections.
+- Changes supports Uncommitted, Unmerged and Unpushed comparisons, commit history
+  and SHA/ref selection, with Diff, Whole file and Rendered Markdown views.
+- Review remarks attach to file lines and exact revisions, support replies from
+  agents and resolution, and offer project-wide cleanup when the review is done.
+- Agents can add session file links through Pact; the right panel lists them and
+  opens a read-only preview over the terminal.
+- Agents can exchange review turns through Pact's MCP review relay, with visible
+  sessions, review participation indicators and retained review logs.
+
+### Changed
+
+- Notes and project documents use the shared source editor. Markdown links open
+  inside Pact, and previews resolve project-relative links and images.
+- Review launch prompts authorize the complete review exchange. Review delivery
+  failures surface for attention instead of silently leaving a review waiting.
+- Monitored browser pages keep updating while their tabs are hidden.
+
+### Fixed
+
+- Automatic Codex starts suppress the startup update prompt so it cannot block
+  reviews or restoration. Manual starts retain the configured update prompt.
+- Quick actions return keyboard focus to the terminal, so Enter submits the
+  inserted prompt instead of pressing the action button again.
+- Empty HTTP error pages show their status, address and a Reload button. Server
+  error pages with content remain visible.
+- Clipboard operations preserve the client terminal's native text/image behavior
+  and support pasting copied local file paths.
+- Agent file previews fit their host pane and dismiss reliably with Escape or
+  an outside click.
+- Local SVG previews release their source file so it remains editable while the
+  preview is open.
+
 ## [0.1.12] - 2026-10-01
 
 ### Added
@@ -119,5 +162,6 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 - Single-owner data-root lease and bounded cleanup of disposable runtime data.
 
+[0.1.13]: https://github.com/s-titov-82/pact-mission-control/releases/tag/v0.1.13
 [0.1.1]: https://github.com/s-titov-82/pact-mission-control/releases/tag/v0.1.1
 [0.1.0]: https://github.com/s-titov-82/pact-mission-control/releases/tag/v0.1.0
