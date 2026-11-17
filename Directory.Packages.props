@@ -22,6 +22,11 @@
     <PackageVersion Include="YamlDotNet" Version="16.3.0" />
   </ItemGroup>
 
+  <!-- Keep the updater's implicit SDK tool stable across SDK patch roll-forward. -->
+  <ItemGroup>
+    <PackageVersion Include="Microsoft.NET.ILLink.Tasks" Version="10.0.14" />
+  </ItemGroup>
+
   <!-- Test packages -->
   <ItemGroup>
     <PackageVersion Include="Avalonia.Headless.NUnit" Version="12.1.0" />

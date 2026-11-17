@@ -11,6 +11,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- An explicit reference prevents the SDK from changing the locked tool version. -->
+    <PackageReference Include="Microsoft.NET.ILLink.Tasks" PrivateAssets="all" />
     <ProjectReference Include="..\Pact.Core\Pact.Core.csproj" />
   </ItemGroup>
 
