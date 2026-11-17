@@ -60,6 +60,12 @@ hidden (the transition back still reaches the page), and runs a pending
 animation-frame callback on a timer while the tab is actually hidden. The engine
 probe's `background-visibility` and `background-frames` checks cover it.
 
+The frame wrapper covers requests made after installation. Enabling monitoring
+on an already-hidden loaded page cannot recover a native frame request queued
+before installation; show the page once or reload it to start that loop through
+the wrapper. The native probe waits for a visible frame after installation
+before measuring continued frame delivery while hidden.
+
 Terminal screen and viewport facts cross into C# as immutable snapshots. Screen
 snapshots retain physical rows/wrapping and UTF-16 Dim ranges from the bottom 15
 xterm rows, alongside the existing logical-text projection. The browser captures

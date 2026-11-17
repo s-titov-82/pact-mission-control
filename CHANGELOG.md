@@ -32,6 +32,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Review launch prompts authorize the complete review exchange. Review delivery
   failures surface for attention instead of silently leaving a review waiting.
 - Monitored browser pages keep updating while their tabs are hidden.
+  When enabling monitoring on an already-hidden page, show it once or reload it
+  so pre-existing animation loops can adopt the background frame wrapper.
 
 ### Fixed
 

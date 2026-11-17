@@ -414,6 +414,9 @@ internal sealed class EngineProbeRunner
 		// the monitor to see. Monitoring turns this on for tabs that match a rule; the probe page
 		// matches none, so it is turned on directly.
 		await browserHost.SetKeepsRunningWhileHiddenAsync(true, CancellationToken.None);
+		// The page queued a native frame before the override was installed. Let that
+		// callback schedule its successor through the wrapper before testing hidden frames.
+		await WaitForWrappedFrameAsync(browserHost);
 		(string Probe, string Selector, int MinimumAdvance)[] counters =
 		[
 			("background-timer", "#background-tick", 10),
@@ -439,6 +442,21 @@ internal sealed class EngineProbeRunner
 		}
 
 		return evidence;
+	}
+
+	private static async Task WaitForWrappedFrameAsync(AvaloniaWebPageHost browserHost)
+	{
+		var before = await ReadCounterAsync(browserHost, "#frame-tick");
+		var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(5);
+		while (DateTimeOffset.UtcNow < deadline)
+		{
+			if (before is int first && await ReadCounterAsync(browserHost, "#frame-tick") is int current && current > first)
+			{
+				return;
+			}
+			await Task.Delay(TimeSpan.FromMilliseconds(50));
+		}
+		throw new TimeoutException("The visible probe page did not advance its animation frame after installing the background override.");
 	}
 
 	private static async Task<int?> ReadCounterAsync(AvaloniaWebPageHost browserHost, string selector)
