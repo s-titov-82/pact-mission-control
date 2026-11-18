@@ -42,6 +42,7 @@ internal static class CompositionRoot
 		services.AddSingleton<IProjectStore, JsonProjectStore>();
 		services.AddSingleton<IRootTabsStore, JsonRootTabsStore>();
 		services.AddSingleton<IProjectNotesStore, ProjectNotesStore>();
+		services.AddSingleton<Pact.Core.Boards.IProjectBoardStore, ProjectBoardStore>();
 		services.AddSingleton<IProjectMarkdownFileStore, ProjectMarkdownFileStore>();
 		services.AddSingleton<IUiTaskDispatcher, UiTaskDispatcher>();
 		services.AddSingleton<TimeProvider>(TimeProvider.System);

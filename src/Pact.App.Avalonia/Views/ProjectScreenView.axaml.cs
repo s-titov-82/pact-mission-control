@@ -50,6 +50,21 @@ internal sealed partial class ProjectScreenView : UserControl
 	public ProjectScreenView()
 	{
 		InitializeComponent();
+		BoardPanel.OpenJiraRequested += (_, card) => RunOverviewAction(async () =>
+		{
+			if (_controller is { } controller && _screen is { } screen && card.JiraUrl is { } url)
+			{
+				await controller.OpenProjectLinkAsync(screen.Workspace,
+					new Pact.Core.Projects.ProjectLink(card.Title, url, "issue", DateTimeOffset.UtcNow));
+			}
+		});
+		BoardPanel.OpenSessionRequested += (_, session) => _eventTasks.TryRun("board-open-session", async () =>
+		{
+			if (_controller is { } controller)
+			{
+				await controller.SelectSessionAsync(session, startIfNeeded: false);
+			}
+		});
 		DocumentsPane.HideSectionTabs();
 		DiffEditor.Options.LineHeightFactor = DiffLineHeightFactor;
 		DiffEditor.TextArea.LeftMargins.Insert(0, _diffNumbers);
@@ -130,6 +145,7 @@ internal sealed partial class ProjectScreenView : UserControl
 		_changes?.PropertyChanged -= OnChangesPropertyChanged;
 		_remarks?.PropertyChanged -= OnRemarksPropertyChanged;
 		_screen = screen;
+		BoardPanel.DataContext = screen?.Board;
 		DocumentsPane.Workspace = screen?.Documents;
 		RefreshOverviewActions();
 		_changes = screen?.Changes;
@@ -209,6 +225,8 @@ internal sealed partial class ProjectScreenView : UserControl
 	{
 		var tab = _screen?.SelectedTab ?? ProjectScreenTab.Overview;
 		OverviewTab.IsChecked = tab == ProjectScreenTab.Overview;
+		BoardTab.IsChecked = tab == ProjectScreenTab.Board;
+		BoardPanel.IsVisible = tab == ProjectScreenTab.Board;
 		DocsTab.IsChecked = tab == ProjectScreenTab.Docs;
 		ChangesTab.IsChecked = tab == ProjectScreenTab.Changes;
 		ReviewLogsTab.IsChecked = tab == ProjectScreenTab.ReviewLogs;
@@ -586,6 +604,7 @@ internal sealed partial class ProjectScreenView : UserControl
 	}
 
 	private void OnOverviewTabClicked(object? sender, RoutedEventArgs e) => SelectTab(ProjectScreenTab.Overview);
+	private void OnBoardTabClicked(object? sender, RoutedEventArgs e) => SelectTab(ProjectScreenTab.Board);
 
 	private void OnDocsTabClicked(object? sender, RoutedEventArgs e) => SelectTab(ProjectScreenTab.Docs);
 
@@ -599,7 +618,8 @@ internal sealed partial class ProjectScreenView : UserControl
 		RefreshTab();
 		if (_screen is { } screen)
 		{
-			_eventTasks.TryRun("project-screen-tab", () => screen.SelectTabAsync(tab, CancellationToken.None), static _ => Task.CompletedTask);
+			_eventTasks.TryRun("project-screen-tab", () => screen.SelectTabAsync(tab, CancellationToken.None),
+				exception => _controller?.ReportUiFailureAsync("Project tab", exception) ?? Task.CompletedTask);
 		}
 	}
 

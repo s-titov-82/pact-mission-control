@@ -18,7 +18,10 @@ public enum ProjectScreenTab
 	Changes,
 
 	/// <summary>The review logs in <c>.pact/reviews</c>.</summary>
-	ReviewLogs
+	ReviewLogs,
+
+	/// <summary>Independent project tasks and their explicit workflow states.</summary>
+	Board
 }
 
 /// <summary>How a request to delete a review log ended.</summary>
@@ -57,6 +60,7 @@ public sealed class ProjectScreenViewModel : INotifyPropertyChanged
 	/// <param name="openDocument">Shows a project Markdown file in the Docs pane, for links in logs and rendered files.</param>
 	/// <param name="documents">The project's retained document owner, shared with Notes operations.</param>
 	/// <param name="repository">The existing Git panel also supplies the repository address.</param>
+	/// <param name="board">The retained project card surface, shared with MCP.</param>
 	public ProjectScreenViewModel(
 		WorkspaceViewModel workspace,
 		ProjectChangesViewModel? changes,
@@ -65,8 +69,10 @@ public sealed class ProjectScreenViewModel : INotifyPropertyChanged
 		ChangesRemarksViewModel? remarks = null,
 		Func<string, string?, CancellationToken, Task<bool>>? openDocument = null,
 		DocsAndNotesWorkspaceViewModel? documents = null,
-		GitPanelViewModel? repository = null)
+		GitPanelViewModel? repository = null,
+		ProjectBoardViewModel? board = null)
 	{
+		Board = board;
 		Repository = repository;
 		Documents = documents;
 		Remarks = remarks;
@@ -86,6 +92,9 @@ public sealed class ProjectScreenViewModel : INotifyPropertyChanged
 
 	/// <summary>The retained Notes and Markdown documents shared with project MCP operations.</summary>
 	public DocsAndNotesWorkspaceViewModel? Documents { get; }
+
+	/// <summary>The retained Board surface.</summary>
+	public ProjectBoardViewModel? Board { get; }
 
 	/// <summary>Invalidates pending tab and log publication when this retained screen leaves its owner surface.</summary>
 	public void Deactivate()
@@ -209,6 +218,18 @@ public sealed class ProjectScreenViewModel : INotifyPropertyChanged
 		var version = ++_tabVersion;
 		_logVersion++;
 		TabNavigationRequested?.Invoke(this, EventArgs.Empty);
+		if (Board is { } board)
+		{
+			if (SelectedTab == ProjectScreenTab.Board && tab != ProjectScreenTab.Board && board.Editor is { } editor)
+			{
+				// A retained conflict may be resolved after returning to Board; project departure remains strict.
+				await editor.FlushAsync(cancellationToken);
+			}
+			if (tab == ProjectScreenTab.Board)
+			{
+				await board.LoadAsync(cancellationToken);
+			}
+		}
 		if (Documents is { } documents)
 		{
 			if (tab is ProjectScreenTab.Overview or ProjectScreenTab.Docs)

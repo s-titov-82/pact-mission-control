@@ -369,6 +369,24 @@ public sealed class AgentControlDispatcherTests
 
 	internal sealed class FakeAgentControlHost : IAgentControlHost
 	{
+		public Pact.Core.Boards.BoardState Board { get; set; } = Pact.Core.Boards.BoardState.Empty;
+		public Task<Pact.Core.Boards.BoardSnapshot> ReadProjectBoardAsync(string projectId, CancellationToken cancellationToken)
+		{
+			if (projectId != "project-1")
+			{
+				throw new KeyNotFoundException("Project no longer exists.");
+			}
+			return Task.FromResult(new Pact.Core.Boards.BoardSnapshot(Board, "disk", Pact.Core.Boards.BoardRevisions.ForOrder(Board)));
+		}
+		public async Task<Pact.Core.Boards.BoardMutationResult> MutateProjectBoardAsync(string projectId, Pact.Core.Boards.BoardCommand command,
+			Pact.Core.Boards.BoardActor actor, CancellationToken cancellationToken)
+		{
+			await ReadProjectBoardAsync(projectId, cancellationToken);
+			var result = Pact.Core.Boards.BoardRules.Apply(Board, command, actor, DateTimeOffset.UnixEpoch);
+			Board = result.State;
+			return new(result.Outcome, await ReadProjectBoardAsync(projectId, cancellationToken), result.CardId, result.CommentId);
+		}
+
 		public List<string> LinkProjectIds { get; } = [];
 		private readonly List<ProjectLink> _projectLinks = [];
 

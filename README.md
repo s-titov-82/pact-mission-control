@@ -24,7 +24,11 @@ one place.
   agent, control active reviews, inspect running-project Notes and saved web
   tabs, and relay status while the workstation is locked.
 - Persists projects and nested sessions under one selectable data root.
-- Opens each project on **Overview · Docs · Changes · Review logs**. Overview
+- Provides a project **Board** with Backlog, Ready, In Progress, Verification and
+  Done cards, comments, manual ordering and a Done archive. Ordinary project
+  agents share the same board through MCP. “Take next” claims only the first
+  Ready card; an empty queue stays empty. Jira links are optional references.
+- Opens each project on **Overview · Board · Docs · Changes · Review logs**. Overview
   keeps Notes below repository information, installed IDEs, active reviews and
   durable agent-added links; Docs browses and edits all project Markdown.
 - Changes offers **Uncommitted** (HEAD → local), **Unmerged** (merge base with a

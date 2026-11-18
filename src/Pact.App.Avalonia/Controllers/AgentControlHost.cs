@@ -10,7 +10,7 @@ namespace Pact.App.Avalonia.Controllers;
 /// <summary>
 /// Adapts authenticated agent actions to the existing UI-owned shell and view-model operations.
 /// </summary>
-internal sealed class AgentControlHost : IAgentControlHost
+internal sealed partial class AgentControlHost : IAgentControlHost
 {
 	public async Task<ProjectLink> AddProjectLinkAsync(string projectId, string title, string url, string? kind, CancellationToken cancellationToken)
 	{

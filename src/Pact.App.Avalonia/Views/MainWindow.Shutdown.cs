@@ -7,6 +7,7 @@ namespace Pact.App.Avalonia.Views;
 
 internal sealed partial class MainWindow
 {
+	private bool _boardClosePreparation;
 	internal void OnClosing(object? sender, WindowClosingEventArgs e)
 	{
 		if (_closeApproved)
@@ -15,7 +16,7 @@ internal sealed partial class MainWindow
 		}
 
 		e.Cancel = true;
-		if (_gracefulShutdownTask is not null)
+		if (_gracefulShutdownTask is not null || _boardClosePreparation)
 		{
 			return;
 		}
@@ -60,11 +61,27 @@ internal sealed partial class MainWindow
 
 	private void StartGracefulShutdown()
 	{
-		if (_gracefulShutdownTask is not null)
+		if (_gracefulShutdownTask is not null || _boardClosePreparation)
 		{
 			return;
 		}
+		_boardClosePreparation = true;
+		RunUiEvent("save-board-before-close", async () =>
+		{
+			try
+			{
+				await EngineProbeController.ViewModel.FlushAllBoardsAsync(CancellationToken.None);
+				StartPreparedShutdown();
+			}
+			finally
+			{
+				_boardClosePreparation = false;
+			}
+		});
+	}
 
+	private void StartPreparedShutdown()
+	{
 		if (StartGracefulShutdownOverride is not null)
 		{
 			_gracefulShutdownTask = Task.CompletedTask;

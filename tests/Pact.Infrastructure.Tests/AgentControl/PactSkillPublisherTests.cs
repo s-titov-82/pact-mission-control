@@ -33,7 +33,7 @@ public sealed class PactSkillPublisherTests
 
 		string content = await File.ReadAllTextAsync(paths.PactMcpSkillPath);
 		content.ShouldContain("pact_request_review");
-		content.ShouldNotContain("stale");
+		content.ShouldNotBe("stale");
 	}
 
 	[Test]

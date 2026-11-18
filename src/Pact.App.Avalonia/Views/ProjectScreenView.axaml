@@ -38,6 +38,7 @@
     <Border Padding="10,8" BorderBrush="{StaticResource AppPanelBorderBrush}" BorderThickness="0,0,0,1">
       <StackPanel Orientation="Horizontal" Spacing="6">
         <ToggleButton x:Name="OverviewTab" Height="32" Content="Overview" Click="OnOverviewTabClicked" />
+        <ToggleButton x:Name="BoardTab" Height="32" Content="Board" Click="OnBoardTabClicked" />
         <ToggleButton x:Name="DocsTab" Height="32" Content="Docs" Click="OnDocsTabClicked" />
         <ToggleButton x:Name="ChangesTab" Height="32" Click="OnChangesTabClicked"
                       Content="{Binding Changes.TabHeader}" IsVisible="{Binding HasChanges}" />
@@ -45,6 +46,7 @@
       </StackPanel>
     </Border>
 
+    <views:ProjectBoardView Grid.Row="1" x:Name="BoardPanel" IsVisible="False" />
     <Grid x:Name="DocumentsPanel" Grid.Row="1" RowDefinitions="*,2*">
       <ScrollViewer x:Name="OverviewPanel" HorizontalScrollBarVisibility="Disabled">
         <StackPanel Margin="14,10" Spacing="6">

@@ -1,0 +1,71 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:md="https://github.com/whistyun/Markdown.Avalonia"
+             x:Class="Pact.App.Avalonia.Views.ProjectBoardView" x:CompileBindings="False">
+  <Grid RowDefinitions="Auto,Auto,*" Margin="12">
+    <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
+      <TextBlock Text="Project board" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" />
+      <Button Grid.Column="1" x:Name="RefreshButton" Content="Refresh" Click="OnRefresh" />
+      <Button Grid.Column="2" x:Name="ArchiveButton" Content="Archive" Click="OnArchiveView" />
+      <Button Grid.Column="3" x:Name="CreateButton" Content="+ Create card" Click="OnCreate" />
+    </Grid>
+    <TextBlock Grid.Row="1" x:Name="ErrorText" Margin="0,8" TextWrapping="Wrap" Foreground="{DynamicResource AppTextMutedBrush}" />
+    <Grid Grid.Row="2">
+      <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+        <StackPanel x:Name="Columns" Orientation="Horizontal" Spacing="10" />
+      </ScrollViewer>
+      <Border x:Name="Drawer" IsVisible="False" HorizontalAlignment="Right" Width="520"
+              KeyboardNavigation.TabNavigation="Cycle"
+              Background="{DynamicResource AppPaneBackgroundBrush}" BorderBrush="{DynamicResource AppPanelBorderBrush}"
+              BorderThickness="1" Padding="16">
+        <Grid RowDefinitions="Auto,*" RowSpacing="12">
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock x:Name="CardHeading" FontWeight="SemiBold" VerticalAlignment="Center" />
+            <Button Grid.Column="1" x:Name="CloseButton" Content="Close" Click="OnClose" />
+          </Grid>
+          <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Spacing="10">
+              <TextBlock Text="Title" />
+              <TextBox x:Name="TitleBox" MaxLength="256" Text="{Binding Title, Mode=TwoWay}" />
+              <TextBlock Text="Description · include the closure condition" />
+              <TextBox x:Name="DescriptionBox" MinHeight="150" MaxLength="16384" AcceptsReturn="True" TextWrapping="Wrap"
+                       Text="{Binding Description, Mode=TwoWay}" />
+              <Expander Header="Markdown preview">
+                <md:MarkdownScrollViewer x:Name="DescriptionPreview" MaxHeight="300" />
+              </Expander>
+              <TextBlock x:Name="SaveText" TextWrapping="Wrap" />
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button x:Name="RetryButton" Content="Retry save" Click="OnRetry" />
+                <Button x:Name="ReloadButton" Content="Reload fields" Click="OnReload" />
+                <Button x:Name="SaveMineButton" Content="Save my fields" Click="OnSaveMine" />
+              </StackPanel>
+              <TextBlock Text="Status" />
+              <ComboBox x:Name="StatusBox" HorizontalAlignment="Stretch" SelectionChanged="OnStatusChanged" />
+              <TextBlock Text="Assigned session" />
+              <ComboBox x:Name="SessionBox" HorizontalAlignment="Stretch" SelectionChanged="OnSessionChanged" />
+              <Button x:Name="OpenSessionButton" Content="Open session" Click="OnOpenSession" />
+              <TextBlock x:Name="MissingSessionText" Text="Assigned session is no longer available" IsVisible="False" />
+              <TextBlock Text="Jira URL (optional)" />
+              <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                <TextBox x:Name="JiraBox" MaxLength="2048" PlaceholderText="https://…" />
+                <Button Grid.Column="1" x:Name="SaveJiraButton" Content="Save link" Click="OnSaveJira" />
+                <Button Grid.Column="2" x:Name="OpenJiraButton" Content="Open" Click="OnOpenJira" />
+              </Grid>
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button x:Name="MoveUpButton" Content="Move up" Click="OnMoveUp" />
+                <Button x:Name="MoveDownButton" Content="Move down" Click="OnMoveDown" />
+                <Button x:Name="ArchiveCardButton" Content="Archive card" Click="OnArchiveCard" />
+              </StackPanel>
+              <TextBlock Text="Comments" FontWeight="SemiBold" />
+              <StackPanel x:Name="CommentsPanel" Spacing="12" />
+              <Button x:Name="MoreCommentsButton" Content="Show older comments" Click="OnMoreComments" />
+              <TextBox x:Name="CommentBox" MinHeight="70" MaxLength="4096" AcceptsReturn="True" TextWrapping="Wrap"
+                       PlaceholderText="Clarification or result…" TextChanged="OnCommentTextChanged" />
+              <Button x:Name="AddCommentButton" Content="Add comment" HorizontalAlignment="Right" Click="OnAddComment" />
+            </StackPanel>
+          </ScrollViewer>
+        </Grid>
+      </Border>
+    </Grid>
+  </Grid>
+</UserControl>

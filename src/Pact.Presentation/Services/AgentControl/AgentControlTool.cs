@@ -16,11 +16,15 @@ public sealed class AgentControlToolSet(IReadOnlyList<AgentControlTool> tools)
 	private readonly IReadOnlyList<AgentControlTool> _tools = tools ?? throw new ArgumentNullException(nameof(tools));
 
 	/// <summary>Builds the result returned by <c>tools/list</c>.</summary>
-	public JsonNode BuildToolsList()
+	public JsonNode BuildToolsList(bool includeBoard = true)
 	{
 		JsonArray items = [];
 		foreach (var tool in _tools)
 		{
+			if (!includeBoard && BoardTools.IsBoardTool(tool.Name))
+			{
+				continue;
+			}
 			items.Add(new JsonObject
 			{
 				["name"] = tool.Name,

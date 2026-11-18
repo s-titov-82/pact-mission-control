@@ -10,6 +10,28 @@
 
 **Spec:** [Согласованная спека](../specs/2026-11-18-project-board-design.md).
 
+## Результат реализации — 2026-11-18
+
+Tasks 1–6 реализованы в `feat/project-board`. Core и storage записаны отдельными
+коммитами; Presentation, MCP, UI и lifecycle объединены из-за общего владельца
+доски. Детали карточки встроены в ProjectBoardView. Удаление комментария без
+подтверждения соответствует спецификации, где подтверждение необязательно.
+
+Проверки: Core 613/613, Presentation 1186/1186. Infrastructure: первоначальный
+полный прогон 445/445; после изменений две ошибки повторного прогона устранены
+или перепроверены целевым прогоном 15/15 (точная проверка sentinel miniskill и
+повтор существующего ConPTY-теста после гонки чтения файла). Все 34 UI-fixture
+прошли изолированно; 39 JavaScript-тестов повторно прошли после добавления
+локального Node в PATH. Финальные проверки Board/MainWindow/controller — 15/15,
+затем Board с дополнительными проверками фокуса и Jira — 4/4.
+
+Fable одобрил ревью b5135310e0a74a3092a292fcc481e282: все 11 замечаний закрыты.
+Ручной протокол остаётся непроверенным; автоматические тесты его не заменяют.
+Диагностический пакет собирается напрямую теми же framework-dependent win-x64
+аргументами publish: Publish-Pact.ps1 не поддерживает произвольную выходную
+папку и дополнительно выпускает установщик. Релиз не выполняется.
+Чекбоксы ниже сохраняют исходный порядок работ; актуальный итог проверок — здесь.
+
 ## Global Constraints
 
 - Статусы: Backlog, Ready, In Progress, Verification, Done; любые явные переходы разрешены.
@@ -123,7 +145,7 @@ no-op не меняет токен. Файловая ревизия отдель
 **Interfaces:** производит контракты выше и функции
 `BoardRevisions.ForCard(BoardCard)`, `ForOrder(BoardState)` → string.
 
-- [ ] Написать поведенческие тесты команд и ревизий. Именованные случаи:
+- [x] Написать поведенческие тесты команд и ревизий. Именованные случаи:
   `TakeNext_ClaimsFirstReadyAndReassigns`, `TakeNext_EmptyDoesNotChangeState`,
   `TakeNext_StaleRevisionDoesNotClaimSecond`, `OrderRevision_DetectsMoveAwayAndBack`,
   `Comment_DoesNotInvalidateCardOrOrder`, `Archive_OnlyDone_RestoreAtEnd`,
@@ -139,11 +161,11 @@ BoardRevisions.ForCard(afterCard).ShouldBe(beforeCardRevision);
 BoardRevisions.ForOrder(afterState).ShouldBe(beforeOrderRevision);
 ```
 
-- [ ] Собрать только Core test project с ограничениями ниже; зафиксировать
+- [x] Собрать только Core test project с ограничениями ниже; зафиксировать
   ожидаемое падение новых тестов, затем реализовать минимальные команды.
-- [ ] Проверить все явные переходы, несколько назначений одной сессии,
+- [x] Проверить все явные переходы, несколько назначений одной сессии,
   создание в конце Backlog, порядок после перемещения и восстановления.
-- [ ] Выполнить Core board tests; требуется ненулевое число тестов, Failed: 0.
+- [x] Выполнить Core board tests; требуется ненулевое число тестов, Failed: 0.
   Коммит с Core-реализацией включает эту спеку и план, не наоборот.
 
 ## Task 2: Атомарное хранилище
@@ -157,14 +179,14 @@ BoardRevisions.ForOrder(afterState).ShouldBe(beforeOrderRevision);
 конструктор `(AppPaths paths, TimeProvider timeProvider)`.
 Добавляет `AppPaths.BoardsDirectory` внутри Settings.
 
-- [ ] Написать тесты на пустую доску без создания файла, round-trip,
+- [x] Написать тесты на пустую доску без создания файла, round-trip,
   одинаковый ключ нормализованных путей и сохранность после пересоздания store.
-- [ ] Добавить `ConcurrentTakeNext_OnlyOneWins`, `ExternalEdit_RefreshesProjection`,
+- [x] Добавить `ConcurrentTakeNext_OnlyOneWins`, `ExternalEdit_RefreshesProjection`,
   `MalformedOrUnknownSchema_DoesNotOverwrite`, `CommentDeletion_Persists`,
   `WriteFailure_LeavesPreviousBytes`. Для конкуренции использовать barriers/TCS,
   не sleep. Ошибку записи воспроизвести файловой блокировкой Windows или
   существующим тестовым механизмом, не добавлять универсальный filesystem wrapper.
-- [ ] Реализовать общий gate по нормализованному полному пути файла,
+- [x] Реализовать общий gate по нормализованному полному пути файла,
   чтение текущих байтов под gate перед каждой командой, проверку схемы и правил,
   `AtomicFileWriter.WriteTextAsync` с `AppPaths.AtomicTempDirectory`.
   Несохранённое новое состояние не публикуется. Не создавать lock-файлы/backup.

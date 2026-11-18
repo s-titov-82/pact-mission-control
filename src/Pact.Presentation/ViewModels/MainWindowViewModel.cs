@@ -91,8 +91,10 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 		IProjectNotesStore notesStore,
 		IProjectMarkdownFileStore markdownFileStore,
 		TerminalTabStatusCoordinator terminalTabStatuses,
-		IRootTabsStore? rootTabsStore = null)
+		IRootTabsStore? rootTabsStore = null,
+		Pact.Core.Boards.IProjectBoardStore? boardStore = null)
 	{
+		_boardStore = boardStore;
 		_projectStore = projectStore ?? throw new ArgumentNullException(nameof(projectStore));
 		_rootTabsStore = rootTabsStore ?? new VolatileRootTabsStore();
 		_rootPersistence = new RootTabsPersistenceCoordinator(_rootTabsStore);
@@ -961,6 +963,11 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(projectId);
 		ArgumentNullException.ThrowIfNull(edit);
+		if (edit.RootPath is not null && FindWorkspaceViewModel(projectId) is { } previous
+			&& _boards.TryGetValue(ProjectNoteFileKey.FromRootPath(previous.RootPath), out var board))
+		{
+			await board.FlushAsync(cancellationToken);
+		}
 		var modifiedAt = DateTimeOffset.UtcNow;
 
 		var updatedProject = await _persistence.UpdateProjectAsync(
@@ -1508,11 +1515,16 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 	public async Task FlushAllNoteDocumentsAsync(CancellationToken cancellationToken)
 	{
 		List<Exception> failures = [];
-		foreach (var workspace in _docsAndNotesWorkspaces.Values)
+		List<Func<CancellationToken, Task>> flushes =
+		[
+			.. _boards.Values.Select(board => new Func<CancellationToken, Task>(token => board.FlushAsync(token))),
+			.. _docsAndNotesWorkspaces.Values.Select(workspace => (Func<CancellationToken, Task>)workspace.FlushAsync)
+		];
+		foreach (var flush in flushes)
 		{
 			try
 			{
-				await workspace.FlushAsync(cancellationToken);
+				await flush(cancellationToken);
 			}
 			catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
 			{

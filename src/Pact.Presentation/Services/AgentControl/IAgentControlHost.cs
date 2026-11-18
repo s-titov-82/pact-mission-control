@@ -13,6 +13,15 @@ public sealed record ProjectSlotConflict(string? ActiveRunId);
 /// <summary>Narrow shell operations deliberately exposed to agent-requested actions.</summary>
 public interface IAgentControlHost
 {
+	/// <summary>Reads the shared board of a running project.</summary>
+	Task<Pact.Core.Boards.BoardSnapshot> ReadProjectBoardAsync(string projectId, CancellationToken cancellationToken) =>
+		throw new NotSupportedException("Board storage is not available.");
+
+	/// <summary>Mutates the board after resolving the actor and assignment in its live project.</summary>
+	Task<Pact.Core.Boards.BoardMutationResult> MutateProjectBoardAsync(string projectId, Pact.Core.Boards.BoardCommand command,
+		Pact.Core.Boards.BoardActor actor, CancellationToken cancellationToken) =>
+		throw new NotSupportedException("Board storage is not available.");
+
 	/// <summary>Persists a resource under the resolved project owner.</summary>
 	Task<ProjectLink> AddProjectLinkAsync(string projectId, string title, string url, string? kind, CancellationToken cancellationToken);
 

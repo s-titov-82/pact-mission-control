@@ -180,7 +180,30 @@ messages are retained in memory only.
 
 `Settings/projects.json` owns project state and nested saved terminal and web
 sessions. Project Markdown files remain in their repositories; Pact-owned
-notes live under `Settings/Notes`.
+notes live under `Settings/Notes`. Project boards live under `Settings/Boards`,
+one JSON per normalized `ProjectNoteFileKey`, outside the repository.
+
+### Project Board
+
+`Pact.Core.Boards` owns immutable snapshots, commands, limits and transitions.
+`ProjectBoardStore` serializes each read-modify-write and uses `AtomicFileWriter`;
+corrupt or unknown-schema JSON is reported without replacement. Card revisions
+cover editable fields and a monotonic version; order revisions cover active
+membership/order/status and a separate version. Comments invalidate neither.
+Disk revisions hash raw bytes and are not persisted fields.
+
+`MainWindowViewModel` caches one `ProjectBoardWorkspace` by normalized root key,
+independently of whether Board has ever been opened. The native view and the
+ordinary project MCP dispatcher share this owner. UI updates pass through the
+UI dispatcher. The text editor retains local fields and rebases unrelated
+changes; a same-field conflict keeps the buffer for explicit reload or save.
+Leaving the surface, root changes and normal shutdown flush pending edits.
+
+Eight Board MCP tools resolve ownership from the caller token. ROOT and the
+orchestrator cannot use them. Assignment resolves only a session of the same
+project; it never launches or prompts that session. `take_next` atomically claims
+the first Ready using the displayed order revision. Empty Ready does nothing.
+Board has no dependency on agent reports, terminal busy/idle, or Jira APIs.
 
 Markdown previews use the official `Markdown.Avalonia` renderer and its native
 Avalonia controls, without a browser surface. The package and its transitive
@@ -422,7 +445,7 @@ also carries its loading state and a focus request that waits for loading to
 clear, so showing anything else drops both. `MainWindow` draws the panes from
 that value through `CenterPaneVisibility`. Selection stays in the view model.
 
-`ProjectScreenViewModel` presents Overview, Docs, Changes and Review logs. Its
+`ProjectScreenViewModel` presents Overview, Board, Docs, Changes and Review logs. Its
 documents come from the existing project-root cache in `MainWindowViewModel`:
 Overview embeds the same Notes document that MCP edits; Docs uses its Markdown
 tree and revision-aware editor. Pending document navigation is invalidated on

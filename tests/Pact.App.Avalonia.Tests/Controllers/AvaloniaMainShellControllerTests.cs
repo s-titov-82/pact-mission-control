@@ -5,6 +5,7 @@ using Pact.App.Avalonia.Lifecycle;
 using Pact.App.Avalonia.SelectionActions;
 using Pact.App.Avalonia.Tests.Fakes;
 using Pact.Core.Agents;
+using Pact.Core.Boards;
 using Pact.Core.Git;
 using Pact.Core.Orchestrator;
 using Pact.Core.Platform;
@@ -1055,6 +1056,45 @@ public sealed class AvaloniaMainShellControllerTests
 		await fixture.Controller.ShutdownAsync();
 		var saved = await File.ReadAllTextAsync(fixture.Paths.SessionRestorationPath);
 		saved.ShouldContain("guide.md");
+	}
+
+	[Test]
+	public async Task Board_conflict_retains_text_across_same_project_navigation_and_blocks_departure()
+	{
+		await using ControllerFixture fixture = new(seedCheckpoint: false, withBoard: true);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var project = fixture.ViewModel.Workspaces.Single();
+		await fixture.Controller.OpenProjectScreenAsync(project, ProjectScreenTab.Board);
+		var screen = fixture.Controller.CurrentProjectScreen!;
+		var board = screen.Board!;
+		await board.CreateAsync("Task", CancellationToken.None);
+		var card = board.SelectedCard!;
+		board.Editor!.Description = "Mine";
+		await board.Workspace.ExecuteAsync(new UpdateCard(card.Id, BoardRevisions.ForCard(card), new() { Description = new("Agent") }), new("agent", "Agent"), CancellationToken.None);
+		await screen.SelectTabAsync(ProjectScreenTab.Docs, CancellationToken.None);
+		screen.SelectedTab.ShouldBe(ProjectScreenTab.Docs);
+		await fixture.Controller.SelectSessionAsync(project.Sessions.First(), startIfNeeded: false);
+		fixture.Controller.CurrentProjectScreen.ShouldBeNull();
+		await Should.ThrowAsync<InvalidOperationException>(() => fixture.Controller.OpenDashboardAsync());
+		await fixture.Controller.OpenProjectScreenAsync(project, ProjectScreenTab.Board);
+		board.Editor.Description.ShouldBe("Mine");
+		board.Editor.SaveStatus.State.ShouldBe(DocumentSaveState.Conflict);
+		board.Editor.Reload();
+		await fixture.Controller.OpenDashboardAsync();
+	}
+
+	[Test]
+	public async Task Startup_restores_board_and_cards_without_starting_terminals()
+	{
+		await using ControllerFixture fixture = new(withBoard: true);
+		var projectRoot = (await fixture.Store.LoadAsync(CancellationToken.None)).Projects[0].RootPath;
+		await fixture.ViewModel.GetOrCreateProjectBoard(projectRoot).ExecuteAsync(new CreateCard("Retained", "", null), new(null, "You"), CancellationToken.None);
+		await File.WriteAllTextAsync(fixture.Paths.SessionRestorationPath,
+			"""{"schemaVersion":1,"liveTerminalIds":[],"loadedWebPageIds":[],"unreadTerminalIds":[],"selection":{"projectId":"project-1","itemId":null,"projectScreenTab":"Board"},"orchestratorWasRunning":false}""");
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		fixture.Controller.CurrentProjectScreen!.SelectedTab.ShouldBe(ProjectScreenTab.Board);
+		fixture.Controller.CurrentProjectScreen.Board!.Cards.Single().Title.ShouldBe("Retained");
+		fixture.Backends.ShouldBeEmpty();
 	}
 
 	[Test]
@@ -4484,7 +4524,8 @@ public sealed class AvaloniaMainShellControllerTests
 			bool secondGitProject = false,
 			IProjectMarkdownFileStore? markdownStore = null,
 			bool seedCheckpoint = true,
-			AgentKind firstKind = AgentKind.Codex)
+			AgentKind firstKind = AgentKind.Codex,
+			bool withBoard = false)
 		{
 			if (gitRepository)
 			{
@@ -4613,7 +4654,8 @@ public sealed class AvaloniaMainShellControllerTests
 				notesStore ?? new EmptyNotesStore(),
 				markdownStore ?? new ProjectMarkdownFileStore(),
 				Statuses,
-				RootStore);
+				RootStore,
+				withBoard ? new ProjectBoardStore(new(Root), TimeProvider.System) : null);
 			Host = new FakeTerminalWebViewHost();
 			Host.KindOf = id => ViewModel.FindSession(id)?.Record.Kind;
 			AppPaths paths = new(Root);

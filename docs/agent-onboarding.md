@@ -366,6 +366,39 @@ that state; never add it to `orchestrator.json`, logs, transcripts, or scenario
 journals. Scenario-locked sessions remain readable but reject orchestrator
 messages through the normal prompt lock.
 
+## Project Board contracts
+
+Board is a native project tab backed by `Settings/Boards/<ProjectNoteFileKey>.json`.
+Changing the root uses another board key and preserves the old file. No card
+Markdown, transcripts or journals are written into the project repository.
+The store accepts schema 1 and preserves malformed/unsupported files for repair.
+
+Cards have Backlog, Ready, InProgress, Verification and Done states. Transitions
+are explicit and unrestricted. Done is a completed closure condition, not merely
+an agent finishing its turn. Only Done can be manually archived; restore appends
+to Done. Comments retain author labels after session removal and may be deleted
+by any user or ordinary agent in the project. Jira URLs are references only.
+
+All active cards fit one response (maximum 200). Title/description/comment/Jira
+limits are 256/16384/4096/2048 UTF-16 units. Archive pages use stable card numbers
+(`afterNumber`, default 50/max 100); comments use stable numbers (`beforeNumber`,
+default 10/max 20), so deleting a boundary does not invalidate traversal.
+Summary responses omit descriptions and comment bodies. Each supported response
+with maximum permitted text fits within 1 MiB UTF-8 after JSON escaping.
+
+Use the shared `ProjectBoardWorkspace` for UI and MCP. Do not cache an independent
+mutable board in the view, or require opening Board before agent operations.
+`expectedCardRevision` protects fields; `expectedOrderRevision` protects explicit
+movement and `take_next`. A pure reorder ignores unrelated field changes.
+After a lost create/comment response, inspect data before retrying. After a lost
+take response, never obtain a new token merely to retry the same intent.
+
+Pending title/description edits use Clean/Dirty/Saving/Conflict/Failed. Comments
+and unrelated fields rebase without discarding text. Same-field changes require
+explicit resolution. Failed/conflicting edits block departure to another project
+and normal close; same-project navigation retains the editor for later resolution.
+See [manual Board checks](manual-tests/project-board.md) for native interactions.
+
 ## Packaging
 
 The only supported package is framework-dependent `win-x64`

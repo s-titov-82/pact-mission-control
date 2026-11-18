@@ -12,6 +12,23 @@ namespace Pact.App.Avalonia.Tests.Controllers;
 
 public sealed class SoftRestartRestorerTests
 {
+	[Test]
+	public async Task Board_selection_restores_without_starting_a_terminal()
+	{
+		SoftRestartSelection? selection = null;
+		var starts = 0;
+		SoftRestartRestorer restorer = new(
+			_ => null,
+			(_, _) => { starts++; throw new InvalidOperationException("No terminal should start."); },
+			_ => null, (_, _) => Task.CompletedTask,
+			(_, _) => false, _ => Task.FromResult(false),
+			(saved, _) => { selection = saved; return Task.FromResult(true); },
+			_ => false, TimeProvider.System);
+		await restorer.RestoreAsync(new SessionRestorationState([], [], [], new("project", null, "Board"), false), CancellationToken.None);
+		selection!.ProjectScreenTab.ShouldBe("Board");
+		starts.ShouldBe(0);
+	}
+
 	[AvaloniaTest]
 	public async Task Restoration_preserves_the_ui_dispatch_context_between_items()
 	{

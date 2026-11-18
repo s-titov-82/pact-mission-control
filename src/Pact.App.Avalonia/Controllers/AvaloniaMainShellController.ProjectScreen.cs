@@ -139,7 +139,7 @@ internal sealed partial class AvaloniaMainShellController
 		{ return; }
 		var version = navigationVersion ?? ++_projectNavigationVersion;
 		ClearSelectionActions(restoreTerminalFocus: false);
-		await FlushCurrentNoteAsync(cancellationToken);
+		await FlushCurrentNoteAsync(cancellationToken, screen.Workspace.Id);
 		if (version != _projectNavigationVersion)
 		{
 			return;
@@ -221,6 +221,8 @@ internal sealed partial class AvaloniaMainShellController
 	private static bool IsReviewLogPath(string relativePath) =>
 		relativePath.StartsWith(ReviewLogFiles.Folder + "/", StringComparison.OrdinalIgnoreCase);
 
+	[System.Diagnostics.CodeAnalysis.SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope",
+		Justification = "The cached screen owns its board surface, disposed by DropProject or DisposeProjectScreens after document flushing.")]
 	private ProjectScreenViewModel GetOrCreateProjectScreen(WorkspaceViewModel workspace)
 	{
 		if (_projectScreens.TryGetValue(workspace.Id, out var screen)
@@ -237,7 +239,9 @@ internal sealed partial class AvaloniaMainShellController
 			_projectRemarks.GetValueOrDefault(workspace.Id),
 			(relativePath, heading, cancellationToken) => OpenProjectDocumentAsync(workspace.Id, relativePath, heading, cancellationToken),
 			ViewModel.GetOrCreateDocsAndNotesWorkspace(workspace.RootPath),
-			workspace.IsGitRepository ? GetOrCreateGitPanel(workspace) : null);
+			workspace.IsGitRepository ? GetOrCreateGitPanel(workspace) : null,
+			ViewModel.HasBoardStore ? new ProjectBoardViewModel(ViewModel.GetOrCreateProjectBoard(workspace.RootPath),
+				_uiTaskDispatcher.Post, () => workspace.Sessions.ToArray(), _timeProvider, workspace.Sessions) : null);
 		_projectScreens[workspace.Id] = screen;
 		WatchWorkspace(workspace);
 		return screen;
@@ -438,6 +442,7 @@ internal sealed partial class AvaloniaMainShellController
 		if (_projectScreens.Remove(workspace.Id, out var screen))
 		{
 			screen.Deactivate();
+			screen.Board?.Dispose();
 		}
 	}
 
@@ -460,6 +465,7 @@ internal sealed partial class AvaloniaMainShellController
 		foreach (var screen in _projectScreens.Values)
 		{
 			screen.Deactivate();
+			screen.Board?.Dispose();
 		}
 		_projectScreens.Clear();
 		foreach (var workspace in _watchedWorkspaces.ToArray())

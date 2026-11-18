@@ -8,6 +8,19 @@ public sealed class BoardRulesTests
 	private static readonly DateTimeOffset Now = new(2026, 11, 18, 12, 0, 0, TimeSpan.Zero);
 
 	[Test]
+	public void Pure_move_ignores_description_revision_but_combined_edit_does_not()
+	{
+		var initial = ReadyPair();
+		var token = BoardRevisions.ForCard(initial.Cards[1]);
+		var changed = Apply(initial, new UpdateCard("b", token, new() { Description = new("New brief") })).State;
+		var moved = Apply(changed, new UpdateCard("b", token, new(), "a", BoardRevisions.ForOrder(initial), true));
+		moved.Outcome.ShouldBe(BoardMutationOutcome.Applied);
+		moved.State.Cards[0].Description.ShouldBe("New brief");
+		Apply(changed, new UpdateCard("b", token, new() { Title = new("Changed") }, "a", BoardRevisions.ForOrder(initial), true))
+			.Outcome.ShouldBe(BoardMutationOutcome.Conflict);
+	}
+
+	[Test]
 	public void TakeNext_claims_first_ready_and_reassigns_without_touching_backlog()
 	{
 		var state = ReadyPair();

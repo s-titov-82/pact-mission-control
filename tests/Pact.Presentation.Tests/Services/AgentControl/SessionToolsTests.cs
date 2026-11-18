@@ -44,6 +44,8 @@ public sealed class SessionToolsTests
 		result["tools"]!.AsArray().Select(tool => (string?)tool!["name"])
 			.ShouldBe(
 				[
+					"pact_list_cards", "pact_get_card", "pact_create_card", "pact_update_card",
+					"pact_add_card_comment", "pact_delete_card_comment", "pact_archive_card", "pact_take_next_card",
 					"pact_request_review",
 					"pact_get_review_turn",
 					"pact_submit_review_turn",

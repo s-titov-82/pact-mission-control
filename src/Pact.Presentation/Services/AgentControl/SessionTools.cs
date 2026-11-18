@@ -60,6 +60,7 @@ public static class SessionTools
 
 		return new AgentControlToolSet(
 		[
+			.. BoardTools.Create(dispatcher),
 			new AgentControlTool(
 				"pact_add_project_link",
 				"Save an HTTP(S) resource in this session's project Overview. Does not open a browser or fetch status.",

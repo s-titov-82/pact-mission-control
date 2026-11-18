@@ -27,7 +27,7 @@ public sealed record AgentControlResult(
 }
 
 /// <summary>Validates agent requests and delegates accepted actions to their shell owner.</summary>
-public sealed class AgentControlDispatcher
+public sealed partial class AgentControlDispatcher
 {
 	/// <summary>Adds a durable resource under the calling session's project.</summary>
 	public async Task<AgentControlResult> AddProjectLinkAsync(string sessionId, string title, string url, string? kind, CancellationToken cancellationToken)

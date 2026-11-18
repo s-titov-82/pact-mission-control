@@ -16,6 +16,30 @@ public sealed class ProjectBoardStoreTests : IDisposable
 	public void Dispose() => _directory.Dispose();
 
 	[Test]
+	public async Task Archive_larger_than_a_tool_response_loads_and_does_not_consume_active_limit()
+	{
+		var cards = Enumerable.Range(1, 210).Select(number => new BoardCard
+		{
+			Id = Guid.NewGuid().ToString("N"),
+			Number = number,
+			Title = "Archived",
+			Description = new string('x', BoardLimits.Description),
+			Status = BoardCardStatus.Done,
+			IsArchived = true,
+			CreatedAt = DateTimeOffset.UnixEpoch,
+			UpdatedAt = DateTimeOffset.UnixEpoch
+		}).ToArray();
+		Directory.CreateDirectory(Paths.BoardsDirectory);
+		await File.WriteAllTextAsync(BoardPath, JsonSerializer.Serialize(new BoardState { Cards = cards, NextCardNumber = 211 }));
+		new FileInfo(BoardPath).Length.ShouldBeGreaterThan(1024 * 1024);
+		(await Store().LoadAsync(Project, CancellationToken.None)).State.Cards.Count.ShouldBe(210);
+		var created = await Execute(new CreateCard("Active", "", null));
+		created.Outcome.ShouldBe(BoardMutationOutcome.Applied);
+		created.Snapshot.State.Cards.Count(card => !card.IsArchived).ShouldBe(1);
+		created.Snapshot.State.Cards.Count(card => card.IsArchived).ShouldBe(210);
+	}
+
+	[Test]
 	public async Task Missing_file_is_empty_without_creating_file()
 	{
 		(await Store().LoadAsync(Project, CancellationToken.None)).State.Cards.ShouldBeEmpty();

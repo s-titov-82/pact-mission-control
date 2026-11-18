@@ -168,7 +168,7 @@
           <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Name}" />
           <TextBlock Grid.Row="1" Grid.Column="0" Classes="SettingsFieldLabel" Text="Root path" />
           <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding RootPath}"
-                   ToolTip.Tip="Applies to future launches and the git panel; running terminals keep their directory." />
+                   ToolTip.Tip="Applies to future launches and the git panel; running terminals keep their directory. Board data belongs to the root path: changing it opens a separate board and preserves the old board file." />
           <TextBlock Grid.Row="2" Grid.Column="0" Classes="SettingsFieldLabel" Text="GitLab repo id" />
           <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding GitLabRepoId}" />
           <TextBlock Grid.Row="3" Grid.Column="0" Classes="SettingsFieldLabel" Text="TeamCity project id" />

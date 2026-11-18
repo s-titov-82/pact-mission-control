@@ -94,7 +94,11 @@ public static class BoardRules
 		switch (command)
 		{
 			case UpdateCard update:
-				if (update.ExpectedCardRevision != BoardRevisions.ForCard(card))
+				var editsFields = update.Patch.Title is not null || update.Patch.Description is not null
+					|| update.Patch.JiraUrl is not null || update.Patch.AssignedSessionId is not null
+					|| update.Patch.AssignedSessionName is not null
+					|| (update.Patch.Status is { } status && status.Value != card.Status);
+				if ((!update.Move || editsFields) && update.ExpectedCardRevision != BoardRevisions.ForCard(card))
 				{
 					return Reject(BoardMutationOutcome.Conflict);
 				}

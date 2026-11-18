@@ -16,6 +16,38 @@ For a project session, use `pact_get_notes` to read the exact Notes text and rev
 
 The orchestrator targets a running project explicitly: use `pact_get_project_notes`, `pact_replace_project_notes`, and `pact_append_project_note` with its `workspaceId`. Paused projects are deliberately not orchestrator targets. ROOT has no project Notes.
 
+## Project board
+
+Ordinary project sessions can use `pact_list_cards`, `pact_get_card`,
+`pact_create_card`, `pact_update_card`, `pact_add_card_comment`,
+`pact_delete_card_comment`, `pact_archive_card`, and `pact_take_next_card`.
+ROOT and the orchestrator have no Board tools. These tools never launch a
+session, send a prompt, or report a request for human attention.
+
+When asked to take the next task, read the active board and pass its
+`orderRevision` as `expectedOrderRevision` to `pact_take_next_card`. It claims
+the first Ready card and assigns this session. If Ready is empty, say so;
+do not begin analysing Backlog automatically. After a lost response, inspect
+the board before doing anything else. Reuse the original revision for a
+transport retry: obtaining a fresh revision to retry could claim another card.
+
+Statuses are Backlog, Ready, InProgress, Verification, Done. Any explicit
+transition is permitted. Verification covers checks or release preparation;
+mark Done only when the card's closure condition has been met. Assignment
+is a reference, not a reservation. Multiple cards can be in progress for one
+session. Jira is an optional HTTP(S) link, without synchronization.
+
+Patch only the fields you intend to change, using `expectedCardRevision`.
+For an explicit move also pass `expectedOrderRevision`; `beforeCardId` is an
+anchor in the target column, or null for its end. A pure reorder without field
+updates needs only the order revision. Comments do not invalidate
+field/order revisions. Read current data after a conflict; never overwrite
+an entire stale card. Create/comment operations have no revision precondition:
+after an unknown result, inspect existing cards/comments before retrying.
+Delete comments explicitly. Archive only Done cards; restore returns them to
+the end of Done. Active list fits one response; archive uses `afterNumber`,
+older comments use `beforeNumber`. Continue with returned cursors.
+
 ## Documents
 
 For a project session, use `pact_open_document` with a Markdown `path` (relative to the project root, or absolute inside it) to show a file you wrote, such as a plan or spec, in the project's Docs pane. It switches the user to that document, so call it when they should read it now.

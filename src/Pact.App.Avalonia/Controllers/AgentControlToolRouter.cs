@@ -15,8 +15,8 @@ internal sealed class AgentControlToolRouter(
 	private readonly AgentControlToolSet _orchestratorTools = orchestratorTools ?? throw new ArgumentNullException(nameof(orchestratorTools));
 
 	/// <summary>Lists the tools the caller may use.</summary>
-	public JsonNode BuildToolsList(bool orchestrator) =>
-		(orchestrator ? _orchestratorTools : _sessionTools).BuildToolsList();
+	public JsonNode BuildToolsList(bool orchestrator, bool projectSession = true) =>
+		(orchestrator ? _orchestratorTools : _sessionTools).BuildToolsList(includeBoard: !orchestrator && projectSession);
 
 	/// <summary>Validates a tool call's arguments and runs it.</summary>
 	public Task<AgentControlResultData> InvokeAsync(

@@ -261,7 +261,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 					status => _uiTaskDispatcher.InvokeAsync(() => ReportStatusAsync(status)))),
 			OrchestratorTools.Create(_orchestratorDispatcher));
 		AgentControlJsonRpc agentControlRpc = new(
-			caller => toolRouter.BuildToolsList(caller.IsOrchestrator),
+			caller => toolRouter.BuildToolsList(caller.IsOrchestrator, agentControlDispatcher.IsProjectSession(caller.SessionId)),
 			toolRouter.InvokeAsync);
 		_agentControlEndpoint = new AgentControlEndpoint(_agentControlTokens, agentControlRpc);
 		AgentControlAddress = _agentControlEndpoint.Start(
@@ -647,7 +647,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		{ return !_disposed && intent == _navigationIntent && OwnerNavigationCurrent(ownerId, ownerEpoch); }
 		_projectNavigationVersion++;
 		ClearSelectionActions(restoreTerminalFocus: false);
-		await FlushCurrentNoteAsync(cancellationToken);
+		await FlushCurrentNoteAsync(cancellationToken, ownerId);
 		if (!IsCurrent())
 		{ return; }
 		timing.Mark("note");
@@ -742,7 +742,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 				|| ViewModel.Workspaces.Any(workspace => workspace.WebPages.Contains(webPage)));
 		}
 		ClearSelectionActions(restoreTerminalFocus: false);
-		await FlushCurrentNoteAsync(cancellationToken);
+		await FlushCurrentNoteAsync(cancellationToken, ownerId);
 		if (!CanPresent())
 		{
 			return;
@@ -1450,6 +1450,10 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		var navigation = CaptureNavigationReturn(workspace);
 		await RunNavigationMutationAsync(navigation, async () =>
 		{
+			if (ViewModel.HasBoardStore && !ReferenceEquals(CurrentProjectScreen?.Workspace, workspace))
+			{
+				await ViewModel.GetOrCreateProjectBoard(workspace.RootPath).FlushAsync(cancellationToken);
+			}
 			if (ReferenceEquals(CurrentProjectScreen?.Workspace, workspace))
 			{
 				await FlushCurrentNoteAsync(cancellationToken);
@@ -1798,6 +1802,10 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		var navigation = CaptureNavigationReturn(workspace);
 		await RunNavigationMutationAsync(navigation, async () =>
 		{
+			if (ViewModel.HasBoardStore && !ReferenceEquals(CurrentProjectScreen?.Workspace, workspace))
+			{
+				await ViewModel.GetOrCreateProjectBoard(workspace.RootPath).FlushAsync(cancellationToken);
+			}
 			if (ReferenceEquals(CurrentProjectScreen?.Workspace, workspace))
 			{
 				await FlushCurrentNoteAsync(cancellationToken);
@@ -2194,6 +2202,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		finally
 		{
 			DisposeProjectScreens();
+			ViewModel.DisposeBoards();
 			ViewModel.Attention.Dispose();
 			DisposeAgentFiles();
 			RemarkBooks.Dispose();
@@ -2374,15 +2383,26 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		};
 	}
 
-	private async Task FlushCurrentNoteAsync(CancellationToken cancellationToken)
+	private async Task FlushCurrentNoteAsync(CancellationToken cancellationToken, string? targetProjectId = null)
 	{
-		if (CurrentDocsAndNotes is { } workspace)
+		try
 		{
-			await workspace.FlushAsync(cancellationToken);
+			if (ViewModel.HasBoardStore && FindShownWorkspace() is { } source)
+			{
+				await ViewModel.GetOrCreateProjectBoard(source.RootPath).FlushAsync(cancellationToken,
+					requireClean: source.Id != targetProjectId);
+			}
 		}
-		else if (CurrentNoteDocument is { } document)
+		finally
 		{
-			await document.FlushAsync(cancellationToken);
+			if (CurrentDocsAndNotes is { } workspace)
+			{
+				await workspace.FlushAsync(cancellationToken);
+			}
+			else if (CurrentNoteDocument is { } document)
+			{
+				await document.FlushAsync(cancellationToken);
+			}
 		}
 	}
 
