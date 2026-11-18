@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.14] - 2026-11-18
+
+### Fixed
+
+- Ctrl+V pastes clipboard images in Codex without reinterpreting the shortcut
+  through the foreground window's keyboard layout.
+- Ctrl+V invokes Claude's native image paste when the clipboard contains no
+  text or copied files. Text and copied file paths retain their existing paste behavior.
+- Terminal input modes remain detectable when an escape sequence is split
+  between output chunks.
+- Claude subscription limits are decoded as UTF-8 when read from a background
+  PowerShell process and recognized in either standard output or standard error.
+
 ## [0.1.13] - 2026-11-17
 
 ### Added
