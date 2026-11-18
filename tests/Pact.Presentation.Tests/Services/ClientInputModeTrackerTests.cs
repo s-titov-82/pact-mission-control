@@ -7,6 +7,19 @@ public sealed class ClientInputModeTrackerTests
 	private static readonly string Esc = ((char)0x1b).ToString();
 
 	[Test]
+	public void Win32_input_survives_every_output_chunk_boundary([Range(1, 7)] int split)
+	{
+		TerminalDisplayOutputFilter filter = new();
+		ClientInputModeTracker tracker = new();
+		var sequence = $"{Esc}[?9001h";
+
+		tracker.Scan(filter.Filter(sequence[..split]));
+		tracker.Scan(filter.Filter(sequence[split..]));
+
+		tracker.IsWin32InputActive.ShouldBeTrue();
+	}
+
+	[Test]
 	public void Tracker_is_inactive_by_default()
 	{
 		ClientInputModeTracker tracker = new();
@@ -58,14 +71,14 @@ public sealed class ClientInputModeTrackerTests
 		tracker.IsSgrMouseActive.ShouldBeTrue();
 	}
 
-	[TestCase("\u001b[?1003;1006h", true)]
-	[TestCase("\u001b[?1000h\u001b[?1006h", true)]
-	[TestCase("\u001b[?1003h", false)]
-	[TestCase("\u001b[?1006h", false)]
-	[TestCase("\u001b[?1003;1006h\u001b[?1003;1006l", false)]
-	[TestCase("\u001b[?1003;1006l\u001b[?1002;1006h", true)]
-	[TestCase("\u001b[?1000h\u001b[?1003h\u001b[?1000l\u001b[?1006h", true)]
-	[TestCase("\u001b[?1000;1003;1006h\u001b[?1000;1003l", false)]
+	[TestCase("\u001b[?1003;1006h", true, TestName = "Sgr_mouse_combined_modes_on")]
+	[TestCase("\u001b[?1000h\u001b[?1006h", true, TestName = "Sgr_mouse_separate_modes_on")]
+	[TestCase("\u001b[?1003h", false, TestName = "Sgr_mouse_tracking_without_encoding")]
+	[TestCase("\u001b[?1006h", false, TestName = "Sgr_mouse_encoding_without_tracking")]
+	[TestCase("\u001b[?1003;1006h\u001b[?1003;1006l", false, TestName = "Sgr_mouse_combined_modes_off")]
+	[TestCase("\u001b[?1003;1006l\u001b[?1002;1006h", true, TestName = "Sgr_mouse_last_toggle_wins")]
+	[TestCase("\u001b[?1000h\u001b[?1003h\u001b[?1000l\u001b[?1006h", true, TestName = "Sgr_mouse_other_tracking_mode_remains")]
+	[TestCase("\u001b[?1000;1003;1006h\u001b[?1000;1003l", false, TestName = "Sgr_mouse_all_tracking_modes_off")]
 	public void Sgr_mouse_follows_the_last_tracking_and_encoding_modes(string output, bool expected)
 	{
 		ClientInputModeTracker tracker = new();

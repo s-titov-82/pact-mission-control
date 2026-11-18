@@ -279,7 +279,7 @@ public sealed partial class SessionRuntimeCoordinatorTests
 	public void RewriteInput_CodexWin32Mode_EncodesCtrlLetters(char control, int virtualKey, int scanCode)
 	{
 		var esc = (char)0x1b;
-		var code = (int)control;
+		var code = 'a' + control - 1;
 
 		AgentKeyEncoder.RewriteTyped(control.ToString(), AgentKind.Codex, true).ShouldBe(
 			$"{esc}[{virtualKey};{scanCode};{code};1;8;1_{esc}[{virtualKey};{scanCode};{code};0;8;1_");

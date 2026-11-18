@@ -2731,6 +2731,11 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 				await _runtimeCoordinator.PasteAsKeyboardAsync(e.SessionId, text);
 				return;
 			}
+			if (pasteRuntime.Kind == AgentKind.Claude)
+			{
+				// Claude's Windows image paste is Alt+V; let the agent read the clipboard itself.
+				e = (e.SessionId, "\u001bv");
+			}
 		}
 		var runtimeActive = _runtimeCoordinator.TryGetActiveController(
 			e.SessionId,

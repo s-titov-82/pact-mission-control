@@ -73,15 +73,22 @@ public sealed class AvaloniaMainShellControllerTests
 		fixture.ViewModel.SelectedWorkspace.ShouldBeSameAs(original);
 		fixture.ViewModel.Workspaces.Count(owner => owner.RootPath == folder.Path).ShouldBe(1);
 	}
-	[TestCase(false)]
-	[TestCase(true)]
-	public async Task Ctrl_v_keeps_native_console_clipboard_except_for_copied_files(bool file)
+	[TestCase(false, false)]
+	[TestCase(true, false)]
+	[TestCase(false, true)]
+	[TestCase(true, true)]
+	public async Task Ctrl_v_keeps_native_console_clipboard_except_for_copied_files(bool file, bool splitMode)
 	{
 		await using ControllerFixture fixture = new();
 		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
 		TaskCompletionSource modeSeen = new(TaskCreationOptions.RunContinuationsAsynchronously);
 		fixture.Host.OutputWritten = text => { if (text.Contains("mode-ready", StringComparison.Ordinal)) { modeSeen.TrySetResult(); } };
-		fixture.Backends[0].EmitOutput("\u001b[?9001hmode-ready");
+		if (splitMode)
+		{
+			fixture.Backends[0].EmitOutput("\u001b");
+			await fixture.Backends[0].FirstOutputProcessed.Task.WaitAsync(TimeSpan.FromSeconds(10));
+		}
+		fixture.Backends[0].EmitOutput(splitMode ? "[?9001hmode-ready" : "\u001b[?9001hmode-ready");
 		await modeSeen.Task.WaitAsync(TimeSpan.FromSeconds(10));
 		fixture.Clipboard.NextRead = Task.FromResult("native text");
 		if (file)
@@ -91,10 +98,11 @@ public sealed class AvaloniaMainShellControllerTests
 		fixture.Backends[0].Inputs.ShouldBe([file ? "\u001b[200~C:\\one.txt\u001b[201~" : Pact.Core.Terminal.Win32InputEncoder.CtrlLetter('\u0016')]);
 	}
 
-	[Test]
-	public async Task Ctrl_v_abandons_clipboard_read_after_selection_changes()
+	[TestCase(AgentKind.Codex)]
+	[TestCase(AgentKind.Claude)]
+	public async Task Ctrl_v_abandons_clipboard_read_after_selection_changes(AgentKind kind)
 	{
-		await using ControllerFixture fixture = new();
+		await using ControllerFixture fixture = new(firstKind: kind);
 		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
 		TaskCompletionSource<string> text = new(TaskCreationOptions.RunContinuationsAsynchronously);
 		fixture.Clipboard.NextRead = text.Task;
@@ -116,10 +124,11 @@ public sealed class AvaloniaMainShellControllerTests
 		fixture.Backends[0].Inputs.ShouldBe(["\u001b[200~first\nsecond\u001b[201~"]);
 	}
 
-	[Test]
-	public async Task Ctrl_v_pastes_copied_file_paths_without_submitting()
+	[TestCase(AgentKind.Codex)]
+	[TestCase(AgentKind.Claude)]
+	public async Task Ctrl_v_pastes_copied_file_paths_without_submitting(AgentKind kind)
 	{
-		await using ControllerFixture fixture = new();
+		await using ControllerFixture fixture = new(firstKind: kind);
 		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
 		fixture.Clipboard.FilePaths = [@"C:\my files\one.txt", @"C:\two.txt"];
 		fixture.Host.RaiseInputReceived("session-1", "\u0016");
@@ -127,14 +136,15 @@ public sealed class AvaloniaMainShellControllerTests
 		fixture.Backends[0].Inputs.ShouldBe(["\u001b[200~\"C:\\my files\\one.txt\" C:\\two.txt\u001b[201~"]);
 	}
 
-	[Test]
-	public async Task Ctrl_v_preserves_the_client_key_when_the_clipboard_has_no_text_or_files()
+	[TestCase(AgentKind.Codex, "\u0016", TestName = "Ctrl_v_empty_text_clipboard_keeps_Codex_key")]
+	[TestCase(AgentKind.Claude, "\u001bv", TestName = "Ctrl_v_empty_text_clipboard_uses_Claude_native_image_paste")]
+	public async Task Ctrl_v_routes_native_paste_when_the_clipboard_has_no_text_or_files(AgentKind kind, string expected)
 	{
-		await using ControllerFixture fixture = new();
+		await using ControllerFixture fixture = new(firstKind: kind);
 		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
 		fixture.Host.RaiseInputReceived("session-1", "\u0016");
 		await WaitForEventTasksAsync(fixture);
-		fixture.Backends[0].Inputs.ShouldBe(["\u0016"]);
+		fixture.Backends[0].Inputs.ShouldBe([expected]);
 	}
 	[Test]
 	public async Task Cancelled_dashboard_navigation_leaves_the_original_surface_selected()

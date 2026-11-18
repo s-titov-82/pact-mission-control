@@ -41,6 +41,11 @@ public sealed partial class TerminalDisplayOutputFilter
 
 	private static int FindTrailingIncompleteCandidate(string text)
 	{
+		if (text.EndsWith('\u001b'))
+		{
+			return text.Length - 1;
+		}
+
 		var escapeIndex = text.LastIndexOf("\u001b[", StringComparison.Ordinal);
 		if (escapeIndex < 0)
 		{

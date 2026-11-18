@@ -5,6 +5,16 @@ namespace Pact.Core.Tests.Terminal;
 
 public sealed class AgentKeyEncoderTests
 {
+	[TestCase('v', 86, 47)]
+	[TestCase('u', 85, 22)]
+	[TestCase('c', 67, 46)]
+	public void Codex_control_shortcuts_preserve_the_terminal_letter(char letter, int virtualKey, int scanCode)
+	{
+		var control = ((char)(letter - 'a' + 1)).ToString();
+		var written = AgentKeyEncoder.RewriteTyped(control, AgentKind.Codex, win32InputModeActive: true);
+		written.ShouldBe($"\u001b[{virtualKey};{scanCode};{(int)letter};1;8;1_\u001b[{virtualKey};{scanCode};{(int)letter};0;8;1_");
+	}
+
 	[Test]
 	public void Codex_in_win32_mode_gets_encoded_enter_and_escape()
 	{

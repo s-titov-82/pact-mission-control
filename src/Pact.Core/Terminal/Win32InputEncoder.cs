@@ -42,7 +42,7 @@ public static class Win32InputEncoder
 	public static readonly string EscapeKey =
 		$"{Escape}[27;1;27;1;0;1_{Escape}[27;1;27;0;0;1_";
 
-	// VK_C=67 (0x43), scan code 46 (0x2E), unicode char ETX (3),
+	// VK_C=67 (0x43), scan code 46 (0x2E), unicode char 'c' (99),
 	// LEFT_CTRL_PRESSED=8 (0x0008), repeat count 1; keydown then keyup.
 	// A bare VT ETX byte ('\x03') is not surfaced as a Ctrl+C key press while
 	// win32-input-mode is active, so the interrupt never reaches the client
@@ -52,7 +52,7 @@ public static class Win32InputEncoder
 	/// <c>\x03</c> is not surfaced as a key press while the mode is active.
 	/// </summary>
 	public static readonly string CtrlC =
-		$"{Escape}[67;46;3;1;8;1_{Escape}[67;46;3;0;8;1_";
+		$"{Escape}[67;46;99;1;8;1_{Escape}[67;46;99;0;8;1_";
 
 	// Set-1 scan codes of the letter keys A..Z, in alphabetical order.
 	private static readonly int[] LetterScanCodes =
@@ -65,7 +65,9 @@ public static class Win32InputEncoder
 	/// Encodes the control character a terminal sends for Ctrl+letter (0x01 for Ctrl+A through
 	/// 0x1A for Ctrl+Z) as a key-event pair with the letter's virtual key and Ctrl held. A bare
 	/// control byte reaches the client as a character without the Ctrl modifier, so editing
-	/// shortcuts such as Ctrl+U never fire.
+	/// shortcuts such as Ctrl+U never fire. The Unicode field carries the ASCII letter already
+	/// identified by the terminal: a control character makes Codex's console reader translate
+	/// the virtual key again using the foreground window's keyboard layout.
 	/// </summary>
 	public static string CtrlLetter(char control)
 	{
@@ -73,7 +75,7 @@ public static class Win32InputEncoder
 		ArgumentOutOfRangeException.ThrowIfGreaterThan(control, (char)0x1A);
 		var virtualKey = 'A' + control - 1;
 		var scanCode = LetterScanCodes[control - 1];
-		var code = (int)control;
+		var code = 'a' + control - 1;
 		return $"{Escape}[{virtualKey};{scanCode};{code};1;8;1_{Escape}[{virtualKey};{scanCode};{code};0;8;1_";
 	}
 }
