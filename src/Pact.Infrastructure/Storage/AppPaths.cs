@@ -44,6 +44,7 @@ public sealed class AppPaths
 		WindowLayoutPath = Path.Combine(SettingsDirectory, "window-layout.json");
 		AppearancePath = Path.Combine(SettingsDirectory, "appearance.json");
 		NotesDirectory = Path.Combine(SettingsDirectory, "Notes");
+		BoardsDirectory = Path.Combine(SettingsDirectory, "Boards");
 
 	}
 
@@ -52,6 +53,9 @@ public sealed class AppPaths
 
 	/// <summary>Gets the durable user and application settings directory.</summary>
 	public string SettingsDirectory { get; }
+
+	/// <summary>Gets durable project boards, independent of repository files.</summary>
+	public string BoardsDirectory { get; }
 
 	/// <summary>Gets the durable content-free startup checkpoint path.</summary>
 	public string SessionRestorationPath { get; }
