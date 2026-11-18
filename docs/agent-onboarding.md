@@ -620,6 +620,10 @@ an empty completion closes it.
   boundary pastes copied local file paths, and clipboard text for VT clients,
   without Enter. Console-key mode keeps its native Ctrl+V text/image behavior;
   with no text or files the key is forwarded so the client can read an image.
+  For Claude, that fallback sends Alt+V, its native Windows image-paste shortcut;
+  the agent reads the image itself. Codex's win32 key records carry the ASCII
+  letter with Ctrl held, avoiding a second translation through the foreground
+  window's keyboard layout.
   Pending clipboard reads are discarded after selection or controller replacement.
 
 - xterm HTTP(S) links publish the source session id to the application host.
