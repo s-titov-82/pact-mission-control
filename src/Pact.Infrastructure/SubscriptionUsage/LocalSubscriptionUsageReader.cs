@@ -228,7 +228,7 @@ public sealed partial class LocalSubscriptionUsageReader : ISubscriptionUsageRea
 
 		var parsed = TryParseClaudeUsageOutput(
 			profile,
-			result.StandardOutput,
+			rawResponse ?? string.Empty,
 			result.UpdatedAt,
 			rawResponse);
 		return parsed ?? CreateFailed(

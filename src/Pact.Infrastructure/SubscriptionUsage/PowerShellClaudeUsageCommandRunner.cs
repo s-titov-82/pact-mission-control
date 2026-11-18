@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Text;
 
 namespace Pact.Infrastructure.SubscriptionUsage;
 /// <summary>
@@ -58,6 +59,8 @@ public sealed class PowerShellClaudeUsageCommandRunner : IClaudeUsageCommandRunn
 				CreateNoWindow = true,
 				RedirectStandardOutput = true,
 				RedirectStandardError = true,
+				StandardOutputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+				StandardErrorEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
 				UseShellExecute = false
 			};
 			startInfo.ArgumentList.Add("-NoLogo");

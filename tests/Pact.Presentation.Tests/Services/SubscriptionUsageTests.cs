@@ -421,21 +421,23 @@ public sealed class SubscriptionUsageTests : IDisposable
 		snapshot.StatusText.ShouldBe("No Claude usage data");
 	}
 
-	[Test]
-	public async Task LocalReader_reads_claude_usage_command_output()
+	[TestCase(false)]
+	[TestCase(true)]
+	public async Task LocalReader_reads_claude_usage_command_output(bool limitsOnStandardError)
 	{
 		var root = CreateTempDirectory();
 		DateTimeOffset updatedAt = new(2026, 7, 8, 10, 0, 0, TimeSpan.Zero);
-		StubClaudeUsageCommandRunner commandRunner = new(new ClaudeUsageCommandResult(
-			Succeeded: true,
-			StandardOutput: """
+		const string limits = """
             You are currently using your subscription to power your Claude Code usage
 
             Current session: 2% used · resets Jul 8, 5:59pm (Europe/Moscow)
             Current week (all models): 75% used · resets Jul 10, 5:59am (Europe/Moscow)
             Current week (Fable): 67% used · resets Jul 10, 5:59am (Europe/Moscow)
-            """,
-			StandardError: string.Empty,
+            """;
+		StubClaudeUsageCommandRunner commandRunner = new(new ClaudeUsageCommandResult(
+			Succeeded: true,
+			StandardOutput: limitsOnStandardError ? "What's contributing to your usage?\nLast 24h · 25 requests" : limits,
+			StandardError: limitsOnStandardError ? limits : string.Empty,
 			FailureMessage: null,
 			updatedAt));
 		LocalSubscriptionUsageReader reader = new(
