@@ -30,6 +30,12 @@ Fable одобрил ревью b5135310e0a74a3092a292fcc481e282: все 11 за
 Диагностический пакет собирается напрямую теми же framework-dependent win-x64
 аргументами publish: Publish-Pact.ps1 не поддерживает произвольную выходную
 папку и дополнительно выпускает установщик. Релиз не выполняется.
+Диагностическая сборка `artifacts/local-diag/Pact.App.Avalonia.exe` из коммита
+`2eacd78311f2c5df4acdd87c8a47af3858755548` собрана успешно; native WebView gate
+прошёл, включая styled snapshot round-trip. Доказательство привязано к SHA-256
+исполняемого файла и коммиту в локальном журнале
+`.superpowers/sdd/2026-11-18-project-board/native-gate.json`.
+Два предупреждения AVLN5001 относятся к прежним RemarkOverlay/RemarkThreadView.
 Чекбоксы ниже сохраняют исходный порядок работ; актуальный итог проверок — здесь.
 
 ## Global Constraints
