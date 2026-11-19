@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.16] - 2026-11-19
+
+### Added
+
+- Project cards on the ROOT dashboard show loaded browser tabs with active
+  monitoring. Select a row to open its tab. The row disappears when the
+  activity ends.
+
+### Changed
+
+- Changes groups files in a collapsible folder tree and remembers which
+  folders are open as the file list refreshes.
+- Uncommitted, Unmerged, and Unpushed label the file count separately from the
+  line totals. Change counters use muted colors. The commit selector shows the
+  aggregate and individual commits. Use the Uncommitted scope for local edits.
+
+### Fixed
+
+- Restored monitored tabs can show activity and report its completion while
+  they remain in the background, even when the browser pane has never opened.
+- The remarks cleanup button and its confirmation use English labels.
+
 ## [0.1.15] - 2026-11-19
 
 ### Added
