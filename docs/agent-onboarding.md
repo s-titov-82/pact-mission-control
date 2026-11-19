@@ -139,9 +139,11 @@ the owning run, a scenario lock. A busy agent or text in the composer never
 refuses. Manual actions start a stopped session and wait for readiness; MCP
 callers start one with `pact_start_session`. A newly launched session becomes
 ready on one bounded budget covering its first output, settle delay, and at most
-one Enter for the folder-trust dialog. Right before Enter a fresh screen capture
-(`ITerminalWebViewHost.CaptureScreenAsync`) is checked for a question; after
-Enter, delivery is confirmed only by a fresh capture showing an empty composer.
+one Enter for the folder-trust dialog. For Codex's **Folder access** menu this
+requires the startup dialog with **Trust and continue** selected. Right before
+prompt submission, Pact checks a fresh screen capture
+(`ITerminalWebViewHost.CaptureScreenAsync`) for a question. After Enter, Pact
+confirms delivery only when a fresh capture shows an empty composer.
 If a capture still shows the text, Pact repeats Enter once; it never pastes
 twice. Sessions whose profile reads no composer end as submitted.
 
@@ -254,15 +256,11 @@ invocation-level `developer_instructions` value, overriding the same key from
 an explicitly selected Codex config profile without replacing any other
 account/model profile values.
 
-Automatic Codex launches receive `-c check_for_update_on_startup=false`: reviewer
-startup, checkpoint restoration, and prompt/MCP-driven starts of stopped sessions.
-Manual session creation, start, restart and resume do not receive this override,
-so Codex retains its configured update prompt for the user. The launcher requires
-each caller to identify the launch origin; resume versus fresh is independent
-of that origin. The automatic override prevents update menus blocking readiness,
-even when MCP is off or skill publication failed. It never persists a profile/global
-configuration change or installs updates. Apply it before the existing embedded-mode
-selection so the new config override follows the same no-daemon rule.
+Every Codex process started by Pact receives `-c check_for_update_on_startup=false`,
+including manual starts, resumes, reviewers, and restored sessions. The override
+applies to the launched process even when MCP is off or skill publication failed.
+It follows the same embedded-mode rule as Pact's other Codex overrides. Standalone
+Codex uses its own configured update behavior.
 
 Skill publication is attempted before external settings and terminals are
 initialized. If it fails, Pact records a diagnostic and continues to inject

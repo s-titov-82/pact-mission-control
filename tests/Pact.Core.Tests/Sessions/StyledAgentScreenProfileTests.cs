@@ -140,6 +140,30 @@ public sealed class StyledAgentScreenProfileTests
 		verdict.PromptIsEmpty.ShouldBe(true);
 	}
 
+	[TestCase(true, "Quit", "enter continue and create sandbox · esc quit", AgentScreenProfileBase.TrustPromptDescription)]
+	[TestCase(true, "Quit", "enter continue · esc quit", AgentScreenProfileBase.TrustPromptDescription)]
+	[TestCase(false, "Quit", "enter continue · esc quit", "Folder access selection")]
+	[TestCase(true, "Keep current directory", "enter continue · esc cancel", "Folder access selection")]
+	public void Current_Codex_folder_access_menu_allows_Enter_only_on_selected_startup_trust(
+		bool trustSelected, string cancelLabel, string footer, string expectedDescription)
+	{
+		var screen = TerminalScreenSnapshot.FromRows([
+			new("  Folder access", false, []),
+			new("  D:\\work\\project", false, []),
+			new("", false, []),
+			new("  Trust this folder? Codex can read, edit, and run files here,", false, []),
+			new("  subject to your permission settings.", false, []),
+			new("", false, []),
+			new($"  {(trustSelected ? '›' : ' ')} 1. Trust and continue", false, []),
+			new($"  {(trustSelected ? ' ' : '›')} 2. {cancelLabel}", false, []),
+			new("", false, []),
+			new($"  {footer}", false, [])], 80, true);
+
+		var verdict = CodexScreenProfile.Instance.Classify(screen);
+		verdict.State.ShouldBe(TerminalScreenVerdictState.InputRequested);
+		verdict.Description.ShouldBe(expectedDescription);
+	}
+
 	[Test]
 	public void Codex_work_below_the_start_banner_is_still_busy()
 	{

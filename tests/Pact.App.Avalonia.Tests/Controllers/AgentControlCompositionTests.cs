@@ -537,7 +537,7 @@ public sealed class AgentControlCompositionTests
 
 	[TestCase(true)]
 	[TestCase(false)]
-	public async Task Automatic_restore_suppresses_Codex_updates_but_manual_fresh_and_resume_do_not(bool agentControlEnabled)
+	public async Task Restore_manual_start_and_manual_resume_suppress_Codex_updates(bool agentControlEnabled)
 	{
 		List<(string Command, IReadOnlyList<string> Arguments)> calls = [];
 		await using CompositionFixture fixture = new(
@@ -565,14 +565,13 @@ public sealed class AgentControlCompositionTests
 		var session = fixture.ViewModel.FindSession(CompositionFixture.SessionA)!;
 		await fixture.Controller.RestartSessionAsync(session, preferResumeCommand: true);
 		var manualResume = calls.Last(call => call.Command.StartsWith("codex resume ", StringComparison.Ordinal));
-		manualResume.Arguments.ShouldNotContain("check_for_update_on_startup=false");
+		manualResume.Arguments.ShouldContain("check_for_update_on_startup=false");
 
 		await fixture.Controller.RestartSessionAsync(session, preferResumeCommand: false);
 		var fresh = calls.Last(call => call.Command == "codex --model gpt-5.4");
 		fresh.Arguments.Count(argument =>
 			argument.StartsWith("developer_instructions=", StringComparison.Ordinal)).ShouldBe(1);
-		fresh.Arguments.ShouldNotContain("check_for_update_on_startup=false");
-
+		fresh.Arguments.ShouldContain("check_for_update_on_startup=false");
 	}
 
 	[Test]

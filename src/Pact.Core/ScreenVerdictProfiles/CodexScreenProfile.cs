@@ -30,6 +30,29 @@ public sealed partial class CodexScreenProfile : AgentScreenProfileBase
 	protected override string TrustRequestMarker => "Do you trust the contents of this directory?";
 
 	/// <inheritdoc />
+	private protected override string? DescribeTrustRequest(string screen)
+	{
+		var menu = FolderAccessMenuRx().Match(screen);
+		if (!menu.Success)
+		{
+			return base.DescribeTrustRequest(screen);
+		}
+
+		// Codex also shows this menu when changing folders. Enter is safe for the
+		// startup readiness flow only with its affirmative option still selected.
+		return menu.Groups["trust"].Success && menu.Groups["exit"].Value == "Quit"
+			? TrustPromptDescription
+			: "Folder access selection";
+	}
+
+	[GeneratedRegex(
+		@"^[ \t]*Folder access[ \t]*\r?$.*?^[ \t]*Trust this folder\?.*?^[ \t]*(?<trust>›)?[ \t]*1\. Trust and continue[ \t]*\r?\n"
+		+ @"[ \t]*›?[ \t]*2\. (?<exit>Quit|Keep current directory|Back to Agent Command Center)[ \t]*\r?\n"
+		+ @"\s*enter continue(?: and create sandbox)? · esc (?:quit|cancel|back)\s*\z",
+		RegexOptions.Multiline | RegexOptions.Singleline)]
+	private static partial Regex FolderAccessMenuRx();
+
+	/// <inheritdoc />
 	protected override Regex InterruptedRegex => InterruptedRx();
 
 	/// <inheritdoc />

@@ -50,13 +50,12 @@ internal sealed class SessionLauncher(
 
 	/// <summary>
 	/// Resizes a session's live process, or starts one when <paramref name="startIfNeeded"/> asks for it.
-	/// Automatic starts suppress Codex's startup update menu; manual starts retain its configured behavior.
+	/// Codex processes started by Pact suppress the startup update menu.
 	/// </summary>
 	public async Task<SessionStartPlan> ActivateAsync(
 		SessionViewModel session,
 		bool startIfNeeded,
 		bool preferResumeCommand,
-		bool automaticStart,
 		CancellationToken cancellationToken)
 	{
 		ArgumentNullException.ThrowIfNull(session);
@@ -77,7 +76,7 @@ internal sealed class SessionLauncher(
 		}
 
 		var injection = CreateAgentLaunchInjection(session.Record);
-		if (automaticStart && session.Record.Kind == AgentKind.Codex)
+		if (session.Record.Kind == AgentKind.Codex)
 		{
 			// Startup update menus block prompt readiness. Suppress them only for this process;
 			// the configured profile and the user's standalone Codex settings stay untouched.

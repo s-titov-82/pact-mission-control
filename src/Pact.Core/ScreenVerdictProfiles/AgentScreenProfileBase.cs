@@ -43,6 +43,12 @@ namespace Pact.Core.ScreenVerdictProfiles
 		/// </summary>
 		protected abstract string TrustRequestMarker { get; }
 
+		/// <summary>Describes a folder-trust menu on a screen without a current composer.</summary>
+		private protected virtual string? DescribeTrustRequest(string screen) =>
+			!string.IsNullOrWhiteSpace(TrustRequestMarker) && screen.Contains(TrustRequestMarker, StringComparison.Ordinal)
+				? TrustPromptDescription
+				: null;
+
 		/// <summary>Matches text shown while the agent is actively working.</summary>
 		protected abstract Regex WorkingRegex { get; }
 
@@ -75,9 +81,8 @@ namespace Pact.Core.ScreenVerdictProfiles
 		protected virtual Regex? LastMessageRegex => null;
 
 		/// <summary>
-		/// Description carried by every agent's folder-trust dialog, so callers key off one
-		/// constant instead of per-agent wording. Only this description authorizes Pact to
-		/// answer a question on the user's behalf.
+		/// Description for a startup folder-trust dialog that Pact can answer with Enter.
+		/// Callers key off this constant instead of per-agent wording.
 		/// </summary>
 		public const string TrustPromptDescription = "Folder trust request";
 
@@ -163,10 +168,9 @@ namespace Pact.Core.ScreenVerdictProfiles
 				return new(TerminalScreenVerdictState.Unknown, "Scrolled");
 			}
 
-			if (!currentComposer && !string.IsNullOrWhiteSpace(TrustRequestMarker) && screen.Contains(TrustRequestMarker, StringComparison.Ordinal))
+			if (!currentComposer && DescribeTrustRequest(screen) is { } trustRequest)
 			{
-				return new(
-					TerminalScreenVerdictState.InputRequested, TrustPromptDescription);
+				return new(TerminalScreenVerdictState.InputRequested, trustRequest);
 			}
 
 			if (!currentComposer && ResumeSessionMarkers.Length > 0 && ResumeSessionMarkers.Any(marker => screen.Contains(marker, StringComparison.Ordinal)))

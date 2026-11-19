@@ -691,7 +691,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 				if (!IsCurrent())
 				{ return; }
 				timing.Mark("show");
-				await _launcher.ActivateAsync(target, startIfNeeded, preferResumeCommand, automaticStart: false, ct);
+				await _launcher.ActivateAsync(target, startIfNeeded, preferResumeCommand, ct);
 				timing.Mark("runtime");
 			},
 			async _ =>
@@ -2261,7 +2261,6 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 			session,
 			startIfNeeded: true,
 			preferResumeCommand: true,
-			automaticStart: true,
 			cancellationToken);
 	}
 
@@ -2373,7 +2372,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 	private async Task StartPromptRuntimeAsync(SessionViewModel session, CancellationToken cancellationToken)
 	{
 		await _terminalHost.CreateTerminalAsync(session.Record.Id);
-		await _launcher.ActivateAsync(session, startIfNeeded: true, preferResumeCommand: true, automaticStart: true, cancellationToken);
+		await _launcher.ActivateAsync(session, startIfNeeded: true, preferResumeCommand: true, cancellationToken);
 	}
 
 	private Dictionary<string, string> BuildPromptVariables(SessionViewModel target, string selectedText)
