@@ -332,7 +332,7 @@ public sealed class AgentControlCompositionTests
 				["target"] = "HEAD",
 				["maxIterations"] = 1
 			});
-		await fixture.MakeLatestReviewerReadyAsync(backendCount);
+		await fixture.MakeLatestReviewerReadyAsync(backendCount, showStartupTrust: true);
 		var result = await resultTask;
 
 		result.IsError.ShouldBeFalse(result.Text);
@@ -537,7 +537,7 @@ public sealed class AgentControlCompositionTests
 
 	[TestCase(true)]
 	[TestCase(false)]
-	public async Task Restore_manual_start_and_manual_resume_suppress_Codex_updates(bool agentControlEnabled)
+	public async Task Restore_and_manual_resume_suppress_Codex_updates_but_manual_fresh_start_does_not(bool agentControlEnabled)
 	{
 		List<(string Command, IReadOnlyList<string> Arguments)> calls = [];
 		await using CompositionFixture fixture = new(
@@ -571,8 +571,56 @@ public sealed class AgentControlCompositionTests
 		var fresh = calls.Last(call => call.Command == "codex --model gpt-5.4");
 		fresh.Arguments.Count(argument =>
 			argument.StartsWith("developer_instructions=", StringComparison.Ordinal)).ShouldBe(1);
-		fresh.Arguments.ShouldContain("check_for_update_on_startup=false");
+		fresh.Arguments.ShouldNotContain("check_for_update_on_startup=false");
+
+		await fixture.ViewModel.UpdateSessionResumeCommandAsync(
+			CompositionFixture.SessionA, "invalid resume command", TestContext.CurrentContext.CancellationToken);
+		await fixture.Controller.RestartSessionAsync(session, preferResumeCommand: true);
+		var fallback = calls[^1];
+		fallback.Command.ShouldBe(fresh.Command);
+		fallback.Arguments.ShouldNotContain("check_for_update_on_startup=false");
 	}
+
+	[Test]
+	public async Task Manual_start_confirms_only_the_startup_trust_dialog_once_per_process()
+	{
+		await using CompositionFixture fixture = new(twoProjects: false);
+		await fixture.InitializeAsync();
+		const string sessionId = CompositionFixture.SessionA;
+		var session = fixture.ViewModel.FindSession(sessionId)!;
+		await fixture.Controller.RestartSessionAsync(session, preferResumeCommand: false);
+		var backend = fixture.Backends[^1];
+		var eventTasks = fixture.Controller.GetEventTasks();
+
+		fixture.Host.RaiseScreenSnapshotReceived(sessionId, "• Approve this command?\n›", stable: true);
+		fixture.Host.RaiseScreenSnapshotReceived(sessionId, CodexTrustMenu, stable: false);
+		await eventTasks.WaitForIdleAsync();
+		backend.Inputs.ShouldBeEmpty();
+
+		fixture.Host.RaiseScreenSnapshotReceived(sessionId, CodexTrustMenu, stable: true);
+		fixture.Host.RaiseScreenSnapshotReceived(sessionId, CodexTrustMenu, stable: true);
+		await eventTasks.WaitForIdleAsync();
+		backend.Inputs.ShouldBe(["\r"]);
+
+		await fixture.Controller.RestartSessionAsync(session, preferResumeCommand: true);
+		var restarted = fixture.Backends[^1];
+		fixture.Host.RaiseScreenSnapshotReceived(sessionId, CodexTrustMenu, stable: true);
+		await eventTasks.WaitForIdleAsync();
+		restarted.Inputs.ShouldBe(["\r"]);
+	}
+
+	private const string CodexTrustMenu = """
+		  Folder access
+		  D:\work\project
+
+		  Trust this folder? Codex can read, edit, and run files here,
+		  subject to your permission settings.
+
+		› 1. Trust and continue
+		  2. Quit
+
+		  enter continue · esc quit
+		""";
 
 	[Test]
 	public async Task Claude_root_session_receives_inline_instruction_without_changing_profile_command()
@@ -953,7 +1001,7 @@ public sealed class AgentControlCompositionTests
 		public FakeTerminalBackend BackendOf(string sessionId) =>
 			_backendBySession[sessionId];
 
-		public async Task MakeLatestReviewerReadyAsync(int backendCountBefore)
+		public async Task MakeLatestReviewerReadyAsync(int backendCountBefore, bool showStartupTrust = false)
 		{
 			using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
 			FakeTerminalBackend? backend = null;
@@ -972,10 +1020,10 @@ public sealed class AgentControlCompositionTests
 				await Task.Yield();
 			}
 
-			await MakeReviewerReadyAsync(backend);
+			await MakeReviewerReadyAsync(backend, showStartupTrust);
 		}
 
-		public async Task MakeReviewerReadyAsync(FakeTerminalBackend backend)
+		public async Task MakeReviewerReadyAsync(FakeTerminalBackend backend, bool showStartupTrust = false)
 		{
 			await backend.StartStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
 			var reviewer = Sessions(ProjectA).Single(session =>
@@ -991,6 +1039,18 @@ public sealed class AgentControlCompositionTests
 			}
 			backend.EmitOutput("reviewer ready");
 			await backend.FirstOutputProcessed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+			if (showStartupTrust)
+			{
+				Host.RaiseScreenSnapshotReceived(
+					reviewer.Record.Id,
+					reviewer.Record.Kind == AgentKind.Codex
+						? CodexTrustMenu
+						: "❯ 1. Yes, I trust this folder\n  2. No, exit",
+					stable: true);
+				await backend.InputWriteStarted.Task.WaitAsync(timeout.Token);
+				await Controller.GetEventTasks().WaitForIdleAsync().WaitAsync(timeout.Token);
+				backend.Inputs.ShouldBe(["\r"]);
+			}
 			Host.RaiseScreenSnapshotReceived(
 				reviewer.Record.Id,
 				reviewer.Record.Kind == AgentKind.Codex

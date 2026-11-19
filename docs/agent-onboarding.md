@@ -137,11 +137,12 @@ sender, `SessionRuntimeCoordinator.DeliverPromptAsync`, which holds the session
 for the whole delivery and refuses only a pending question or, for anyone but
 the owning run, a scenario lock. A busy agent or text in the composer never
 refuses. Manual actions start a stopped session and wait for readiness; MCP
-callers start one with `pact_start_session`. A newly launched session becomes
-ready on one bounded budget covering its first output, settle delay, and at most
-one Enter for the folder-trust dialog. For Codex's **Folder access** menu this
-requires the startup dialog with **Trust and continue** selected. Right before
-prompt submission, Pact checks a fresh screen capture
+callers start one with `pact_start_session`. Pact checks stable startup screens
+on every launch, including manual starts. It sends at most one Enter per process
+when it recognizes the folder-trust dialog. For Codex's **Folder access** menu
+this requires the startup dialog with **Trust and continue** selected. A prompt
+sender waits on one bounded budget covering first output, the settle delay, and
+trust handling. Right before prompt submission, Pact checks a fresh screen capture
 (`ITerminalWebViewHost.CaptureScreenAsync`) for a question. After Enter, Pact
 confirms delivery only when a fresh capture shows an empty composer.
 If a capture still shows the text, Pact repeats Enter once; it never pastes
@@ -256,11 +257,11 @@ invocation-level `developer_instructions` value, overriding the same key from
 an explicitly selected Codex config profile without replacing any other
 account/model profile values.
 
-Every Codex process started by Pact receives `-c check_for_update_on_startup=false`,
-including manual starts, resumes, reviewers, and restored sessions. The override
-applies to the launched process even when MCP is off or skill publication failed.
-It follows the same embedded-mode rule as Pact's other Codex overrides. Standalone
-Codex uses its own configured update behavior.
+Codex receives `-c check_for_update_on_startup=false` on Resume and on automatic
+launches, including review, checkpoint restoration, and prompt-driven starts.
+Manual fresh starts use the configured Codex update behavior, including when a
+manual Resume falls back to a fresh start. The override applies to the launched process
+and follows Pact's embedded-mode rule even when MCP is off.
 
 Skill publication is attempted before external settings and terminals are
 initialized. If it fails, Pact records a diagnostic and continues to inject

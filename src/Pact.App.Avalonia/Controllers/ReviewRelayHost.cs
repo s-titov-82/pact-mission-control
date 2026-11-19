@@ -97,6 +97,7 @@ internal sealed class ReviewRelayHost(
 				reviewer,
 				startIfNeeded: true,
 				preferResumeCommand: false,
+				automaticStart: true,
 				cancellationToken);
 			_trace($"review-launch phase=activated reviewer={reviewerSessionId} plan={plan} "
 				+ $"running={_runtimeCoordinator.TryGetActiveController(reviewerSessionId, out _, out _)}");

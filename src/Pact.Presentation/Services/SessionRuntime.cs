@@ -21,6 +21,7 @@ public sealed class SessionRuntime(string sessionId)
 	private readonly ExclusiveQueue _deliveryQueue = new();
 	private long _keyboardInputCount;
 	private TerminalController? _controller;
+	private bool _startupTrustFinished;
 	private EventHandler<string>? _outputHandler;
 	private EventHandler? _exitedHandler;
 	private Func<string, Task>? _inputWritingHandler;
@@ -49,6 +50,7 @@ public sealed class SessionRuntime(string sessionId)
 			var priorController = _controller;
 			DetachHandlers();
 			_controller = controller;
+			_startupTrustFinished = false;
 			_outputHandler = outputHandler;
 			_exitedHandler = exitedHandler;
 			_inputWritingHandler = inputWritingHandler;
@@ -56,6 +58,21 @@ public sealed class SessionRuntime(string sessionId)
 			_viewportChangedHandler = viewportChangedHandler;
 			AttachHandlers();
 			return priorController;
+		}
+	}
+
+	// Shared by the screen observer and readiness wait for the same process.
+	internal bool TryFinishStartupTrust(TerminalController controller)
+	{
+		lock (_gate)
+		{
+			if (!ReferenceEquals(_controller, controller) || _startupTrustFinished)
+			{
+				return false;
+			}
+
+			_startupTrustFinished = true;
+			return true;
 		}
 	}
 

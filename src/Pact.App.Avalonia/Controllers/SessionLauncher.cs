@@ -50,12 +50,13 @@ internal sealed class SessionLauncher(
 
 	/// <summary>
 	/// Resizes a session's live process, or starts one when <paramref name="startIfNeeded"/> asks for it.
-	/// Codex processes started by Pact suppress the startup update menu.
+	/// Automatic starts and resume commands suppress the Codex update menu.
 	/// </summary>
 	public async Task<SessionStartPlan> ActivateAsync(
 		SessionViewModel session,
 		bool startIfNeeded,
 		bool preferResumeCommand,
+		bool automaticStart,
 		CancellationToken cancellationToken)
 	{
 		ArgumentNullException.ThrowIfNull(session);
@@ -76,10 +77,9 @@ internal sealed class SessionLauncher(
 		}
 
 		var injection = CreateAgentLaunchInjection(session.Record);
-		if (session.Record.Kind == AgentKind.Codex)
+		if (session.Record.Kind == AgentKind.Codex && (automaticStart || startPlan.Mode != TerminalStartMode.Normal))
 		{
-			// Startup update menus block prompt readiness. Suppress them only for this process;
-			// the configured profile and the user's standalone Codex settings stay untouched.
+			// This override applies to the launched process and lets unattended starts reach readiness.
 			injection = injection with { Arguments = [.. injection.Arguments, "-c", "check_for_update_on_startup=false"] };
 		}
 		injection = CodexEmbeddedMode.Apply(
@@ -107,6 +107,9 @@ internal sealed class SessionLauncher(
 				session.Record.Id,
 				startPlan.Mode,
 				DateTimeOffset.UtcNow);
+			// The first stable screen can arrive while the Running record is being saved.
+			_viewModel.TerminalTabStatuses.OnLifecycleChanged(
+				session.Record.Id, SessionStatus.Running, DateTimeOffset.UtcNow);
 			await StartProcessAsync(
 				session.Record.Id,
 				session.Record.Kind,
@@ -120,6 +123,8 @@ internal sealed class SessionLauncher(
 		{
 			await _runtimeCoordinator.StopAsync(session.Record.Id);
 			_agentControlTokens.Revoke(session.Record.Id);
+			_viewModel.TerminalTabStatuses.OnLifecycleChanged(
+				session.Record.Id, session.Record.Status, DateTimeOffset.UtcNow);
 			throw;
 		}
 	}

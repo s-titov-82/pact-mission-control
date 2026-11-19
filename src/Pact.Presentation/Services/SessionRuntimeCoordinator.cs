@@ -537,6 +537,50 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 	}
 
 	/// <summary>
+	/// Handles a retained stable startup screen even when nobody is waiting to send a prompt.
+	/// A launched process gets at most one confirmation of its recognized folder-trust dialog.
+	/// </summary>
+	public Task ObserveStartupScreenAsync(string sessionId, CancellationToken cancellationToken)
+	{
+		var facts = SessionFacts ?? throw new InvalidOperationException("Session facts are not configured.");
+		return ObserveStartupScreenAsync(sessionId, () => facts.ReadScreen(sessionId), cancellationToken);
+	}
+
+	private Task<bool> ObserveStartupScreenAsync(
+		string sessionId,
+		Func<SessionScreenState?> readScreenState,
+		CancellationToken cancellationToken)
+	{
+		if (!TryGetActiveController(sessionId, out var runtime, out var controller))
+		{
+			return Task.FromResult(false);
+		}
+
+		var keyboardInputCount = runtime.KeyboardInputCount;
+		var screen = readScreenState();
+		if (screen is not null && (IsReadyForPrompt(screen) || screen.VerdictState == TerminalScreenVerdictState.Busy))
+		{
+			runtime.TryFinishStartupTrust(controller);
+		}
+		if (!IsStartupTrustPrompt(screen))
+		{
+			return Task.FromResult(false);
+		}
+
+		return runtime.RunInputExclusiveAsync(
+			() => controller.IsActive
+				&& runtime.KeyboardInputCount == keyboardInputCount
+				&& IsStartupTrustPrompt(readScreenState())
+				&& runtime.TryFinishStartupTrust(controller)
+					? controller.WriteInputAsync(runtime.EncodeEnter())
+					: Task.FromResult(false),
+			cancellationToken);
+	}
+
+	private static bool IsStartupTrustPrompt(SessionScreenState? state) =>
+		state is { InputRequested: true, StatusLine: AgentScreenProfileBase.TrustPromptDescription };
+
+	/// <summary>
 	/// Waits until a launched session can receive a prompt: its retained stable screen has a done
 	/// verdict or a recognized empty composer, with no question or activity. The folder-trust dialog is answered with
 	/// Enter, which is its own default, once per launched session; every other question, and a
@@ -617,31 +661,14 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 
 				if (state.InputRequested)
 				{
-					if (trustAnswerSent
-						|| !string.Equals(
-							state.StatusLine,
-							AgentScreenProfileBase.TrustPromptDescription,
-							StringComparison.Ordinal))
+					if (!IsStartupTrustPrompt(state)
+						|| !TryGetActiveController(sessionId, out _, out _))
 					{
 						return NotReady();
 					}
 
-					if (!TryGetRuntime(sessionId, out runtime)
-						|| !runtime.TryGetController(out var controller)
-						|| !controller.IsActive)
-					{
-						return NotReady();
-					}
-
-					var trustRuntime = runtime;
-					if (!await trustRuntime.RunInputExclusiveAsync(
-							() => controller.WriteInputAsync(trustRuntime.EncodeEnter()),
-							cancellationToken).ConfigureAwait(false))
-					{
-						return NotReady();
-					}
-
-					trustAnswerSent = true;
+					trustAnswerSent |= await ObserveStartupScreenAsync(sessionId, readScreenState, cancellationToken)
+						.ConfigureAwait(false);
 				}
 			}
 
