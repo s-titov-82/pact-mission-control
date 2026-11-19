@@ -10,8 +10,9 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 ### Added
 
 - The project dashboard has a Board tab for tracking work from Backlog through
-  Ready, In Progress, Verification, and Done. Reorder cards, add Markdown
-  descriptions and comments, link a Jira issue, and assign a project session.
+  Ready, In Progress, Verification, and Done. Drop a card on empty space in a
+  column to place it last. Cards can hold Markdown descriptions, comments,
+  Jira links, and a project session assignment.
 - Project agents can update cards through Pact MCP. Taking the next task claims
   the first Ready card for the calling session in one operation. An empty Ready
   column leaves the board unchanged.

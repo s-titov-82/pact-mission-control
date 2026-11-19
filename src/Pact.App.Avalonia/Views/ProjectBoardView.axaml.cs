@@ -204,8 +204,19 @@ internal sealed partial class ProjectBoardView : UserControl
 				AttachDrop(button, status, card.Id);
 				column.Children.Add(button);
 			}
-			AttachDrop(column, status, null);
-			Columns.Children.Add(new ScrollViewer { Content = column, VerticalScrollBarVisibility = global::Avalonia.Controls.Primitives.ScrollBarVisibility.Auto });
+			ScrollViewer viewport = new()
+			{
+				Content = column,
+				Background = Brushes.Transparent,
+				VerticalScrollBarVisibility = global::Avalonia.Controls.Primitives.ScrollBarVisibility.Auto
+			};
+			if (!_board.ShowArchive)
+			{
+				// Leave a reachable drop area even when the last card fills the viewport.
+				column.Margin = new Thickness(0, 0, 0, 24);
+				AttachDrop(viewport, status, null);
+			}
+			Columns.Children.Add(viewport);
 		}
 	}
 

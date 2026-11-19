@@ -9,8 +9,11 @@ they do not certify drag gestures, native focus or visual layout.
    Close the drawer and verify focus returns to its card or Create.
 2. Narrow the window. Scroll the columns horizontally; the drawer stays inside
    the project surface and its fields remain reachable vertically.
-3. Drag cards within Ready and between columns. Verify the Next marker follows
-   the first Ready card. Repeat with Move up/down and the status selector.
+3. Drag cards within Ready and between columns. Drop a card in a gap between
+   cards and in the space below the last card. Both drops append to the target
+   column. Check that a full column has space beneath its last card when scrolled
+   to the end. Verify the Next marker follows the first Ready card. Repeat with
+   Move up/down and the status selector.
 4. Open the same board from two project agent sessions. Read one order revision
    and concurrently call `pact_take_next_card` with it: exactly one succeeds,
    the other conflicts. Repeating a successful token must not claim another card.

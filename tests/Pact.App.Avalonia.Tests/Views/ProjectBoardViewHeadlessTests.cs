@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless.NUnit;
 using Avalonia.Headless;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.LogicalTree;
 using Avalonia.Themes.Fluent;
@@ -37,6 +38,49 @@ public sealed class ProjectBoardViewHeadlessTests
 			window.MouseUp(new Point(position.X + 20, position.Y + 20), global::Avalonia.Input.MouseButton.Left);
 			started.ShouldBe(1, $"presses={presses}, moves={moves}, bounds={card.Bounds}, point={position}");
 			board.Cards.Single().Title.ShouldBe("Drag me");
+		});
+	}
+
+	[AvaloniaTest]
+	public async Task Dropping_in_empty_column_space_appends_to_the_end()
+	{
+		await WithBoard(async (board, view, window) =>
+		{
+			foreach (var title in new[] { "First", "Second", "Third" })
+			{
+				await board.CreateAsync(title, CancellationToken.None);
+				await board.UpdateAsync(new() { Status = new(BoardCardStatus.Ready) }, CancellationToken.None);
+			}
+			await board.OpenAsync(null, CancellationToken.None);
+
+			DropFirstCard(belowLast: true);
+			board.Cards.Select(card => card.Title).ShouldBe(["Second", "Third", "First"]);
+			DropFirstCard(belowLast: false);
+			board.Cards.Select(card => card.Title).ShouldBe(["Third", "First", "Second"]);
+
+			void DropFirstCard(bool belowLast)
+			{
+				window.UpdateLayout();
+				var cards = view.FindControl<StackPanel>("Columns")!.GetLogicalDescendants().OfType<Button>().ToArray();
+				var start = cards[0].TranslatePoint(new Point(20, 20), window)!.Value;
+				var anchor = belowLast ? cards[^1] : cards[0];
+				var drop = anchor.TranslatePoint(new Point(40, anchor.Bounds.Height + (belowLast ? 40 : 4)), window)!.Value;
+				view.BeginDragAsync = (_, transfer) =>
+				{
+					var target = window.InputHitTest(drop).ShouldBeAssignableTo<Control>().ShouldNotBeNull();
+					var args = new DragEventArgs(DragDrop.DropEvent, transfer, target, window.TranslatePoint(drop, target)!.Value, KeyModifiers.None);
+					if (DragDrop.GetAllowDrop(target))
+					{
+						target.RaiseEvent(args);
+					}
+					return Task.FromResult(args.DragEffects);
+				};
+				window.MouseMove(start);
+				window.MouseDown(start, MouseButton.Left);
+				var moved = new Point(start.X + 20, start.Y + 20);
+				window.MouseMove(moved, RawInputModifiers.LeftMouseButton);
+				window.MouseUp(moved, MouseButton.Left);
+			}
 		});
 	}
 
