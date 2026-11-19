@@ -69,6 +69,21 @@
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
+                <ItemsControl ItemsSource="{Binding ActiveWebPages}" IsVisible="{Binding HasActiveWebPages}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="vm:WebPageViewModel">
+                      <Button Classes="dashboard-web-page" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                              Margin="0,0,0,4" Padding="8,6" Click="OnWebPageClicked"
+                              AutomationProperties.Name="{Binding Title}" ToolTip.Tip="{Binding MonitorToolTip}">
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
+                          <TextBlock Classes="dashboard-indicator" FontFamily="Cascadia Mono, Consolas, monospace"
+                                     Text="{Binding LoadingGlyph}" />
+                          <TextBlock Grid.Column="1" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                        </Grid>
+                      </Button>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
                 <Button Classes="dashboard-changes" Content="{Binding ChangesText}" IsVisible="{Binding HasGitRepository}"
                         HorizontalAlignment="Left" Click="OnChangesClicked" />
               </StackPanel>

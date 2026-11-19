@@ -216,6 +216,9 @@ internal sealed partial class MainWindow : Window, IDisposable
 			"dashboard-agent", session => EngineProbeController.ViewModel.Workspaces.Any(w => w.Sessions.Contains(session))
 				&& EngineProbeController.HasActiveTerminalProcess(session)
 				? EngineProbeController.SelectItemAsync(session) : Task.CompletedTask);
+		ObserveEvent<WebPageViewModel>(h => RootDashboard.WebPageRequested += h, h => RootDashboard.WebPageRequested -= h,
+			"dashboard-web-page", page => page.IsBrowserLoaded && EngineProbeController.ViewModel.Workspaces.Any(w => w.WebPages.Contains(page))
+				? EngineProbeController.SelectWebPageAsync(page) : Task.CompletedTask);
 		ObserveEvent(h => RootDashboard.AddProjectRequested += h, h => RootDashboard.AddProjectRequested -= h,
 			"dashboard-add-project", OpenDirectorySelectionAsync);
 		ObserveEvent<WorkspaceViewModel>(h => RootDashboard.ResumeProjectRequested += h, h => RootDashboard.ResumeProjectRequested -= h,

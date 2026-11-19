@@ -14,6 +14,10 @@ public sealed class ProjectDashboardCardViewModel(WorkspaceViewModel workspace) 
 	public string RootPath { get; } = workspace.RootPath;
 	/// <summary>Live agent sessions; status remains owned by each session.</summary>
 	public IReadOnlyList<SessionViewModel> Agents { get; private set; } = [];
+	/// <summary>Loaded project browser tabs currently showing monitored activity.</summary>
+	public IReadOnlyList<WebPageViewModel> ActiveWebPages { get; private set; } = [];
+	/// <summary>Whether the card has a monitored browser row to display.</summary>
+	public bool HasActiveWebPages => ActiveWebPages.Count > 0;
 	/// <summary>Whether this project has no live agent sessions.</summary>
 	public bool HasNoAgents => Agents.Count == 0;
 	/// <summary>Whether this project offers working-tree changes.</summary>
@@ -29,6 +33,16 @@ public sealed class ProjectDashboardCardViewModel(WorkspaceViewModel workspace) 
 		Agents = agents;
 		PropertyChanged?.Invoke(this, new(nameof(Agents)));
 		PropertyChanged?.Invoke(this, new(nameof(HasNoAgents)));
+	}
+
+	internal void RefreshWebPages()
+	{
+		var pages = Workspace.WebPages.Where(page => page.IsBrowserLoaded && page.ShowMonitorActivity).ToArray();
+		if (ActiveWebPages.SequenceEqual(pages))
+		{ return; }
+		ActiveWebPages = pages;
+		PropertyChanged?.Invoke(this, new(nameof(ActiveWebPages)));
+		PropertyChanged?.Invoke(this, new(nameof(HasActiveWebPages)));
 	}
 
 	internal void SetCount(int? count)

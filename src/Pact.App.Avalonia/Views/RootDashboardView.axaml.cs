@@ -17,6 +17,8 @@ public sealed partial class RootDashboardView : UserControl
 	public event EventHandler<WorkspaceViewModel>? ProjectRequested;
 	/// <summary>Activates one existing live agent.</summary>
 	public event EventHandler<SessionViewModel>? AgentRequested;
+	/// <summary>Opens one of the project's loaded monitored browser tabs.</summary>
+	public event EventHandler<WebPageViewModel>? WebPageRequested;
 	/// <summary>Opens the original project's Changes tab.</summary>
 	public event EventHandler<WorkspaceViewModel>? ChangesRequested;
 	/// <summary>Uses the application's existing project picker.</summary>
@@ -51,6 +53,12 @@ public sealed partial class RootDashboardView : UserControl
 		args.Handled = true;
 		if (sender is Control { DataContext: SessionViewModel session })
 		{ AgentRequested?.Invoke(this, session); }
+	}
+	private void OnWebPageClicked(object? sender, RoutedEventArgs args)
+	{
+		args.Handled = true;
+		if (sender is Control { DataContext: WebPageViewModel page })
+		{ WebPageRequested?.Invoke(this, page); }
 	}
 	private void OnAddProjectClicked(object? sender, RoutedEventArgs args) => AddProjectRequested?.Invoke(this, EventArgs.Empty);
 	private void OnResumeProjectClicked(object? sender, RoutedEventArgs args)

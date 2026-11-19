@@ -17,6 +17,7 @@ public sealed class RootDashboardViewModel : INotifyPropertyChanged, IDisposable
 	private IReadOnlyList<string> _recentRoots = [];
 	private int _recentLoadVersion;
 	private readonly HashSet<WorkspaceViewModel> _watched = [];
+	private readonly HashSet<WebPageViewModel> _watchedPages = [];
 	private CancellationTokenSource _epoch = new();
 	private Task _refreshTask = Task.CompletedTask;
 	private bool _active;
@@ -106,6 +107,32 @@ public sealed class RootDashboardViewModel : INotifyPropertyChanged, IDisposable
 		{ Changed(); }
 	}
 	private void OnSessionsChanged(object? sender, NotifyCollectionChangedEventArgs args) => RefreshAgents();
+	private void OnWebPagesChanged(object? sender, NotifyCollectionChangedEventArgs args) => ReconcileWebPages();
+	private void OnWebPageChanged(object? sender, PropertyChangedEventArgs args)
+	{
+		if (sender is WebPageViewModel page
+			&& args.PropertyName is nameof(WebPageViewModel.IsBrowserLoaded) or nameof(WebPageViewModel.ShowMonitorActivity))
+		{
+			foreach (var card in Cards.Where(card => card.Workspace.WebPages.Contains(page)))
+			{ card.RefreshWebPages(); }
+		}
+	}
+	private void ReconcileWebPages()
+	{
+		var pages = Cards.SelectMany(card => card.Workspace.WebPages).ToHashSet();
+		foreach (var removed in _watchedPages.Except(pages).ToArray())
+		{
+			removed.PropertyChanged -= OnWebPageChanged;
+			_watchedPages.Remove(removed);
+		}
+		foreach (var page in pages)
+		{
+			if (_watchedPages.Add(page))
+			{ page.PropertyChanged += OnWebPageChanged; }
+		}
+		foreach (var card in Cards)
+		{ card.RefreshWebPages(); }
+	}
 	private void Changed()
 	{
 		if (_disposed)
@@ -122,6 +149,7 @@ public sealed class RootDashboardViewModel : INotifyPropertyChanged, IDisposable
 		{
 			removed.PropertyChanged -= OnWorkspaceChanged;
 			removed.Sessions.CollectionChanged -= OnSessionsChanged;
+			removed.WebPages.CollectionChanged -= OnWebPagesChanged;
 			_watched.Remove(removed);
 		}
 		foreach (var project in owners)
@@ -130,6 +158,7 @@ public sealed class RootDashboardViewModel : INotifyPropertyChanged, IDisposable
 			{
 				project.PropertyChanged += OnWorkspaceChanged;
 				project.Sessions.CollectionChanged += OnSessionsChanged;
+				project.WebPages.CollectionChanged += OnWebPagesChanged;
 			}
 		}
 		var desired = _projects.Select(project => Cards.FirstOrDefault(card =>
@@ -146,6 +175,7 @@ public sealed class RootDashboardViewModel : INotifyPropertyChanged, IDisposable
 		while (Cards.Count > desired.Length)
 		{ Cards.RemoveAt(Cards.Count - 1); }
 		RefreshAgents();
+		ReconcileWebPages();
 		FilterRecentDirectories();
 		PropertyChanged?.Invoke(this, new(nameof(IsPausedEmpty)));
 		PropertyChanged?.Invoke(this, new(nameof(IsEmpty)));
@@ -276,7 +306,11 @@ public sealed class RootDashboardViewModel : INotifyPropertyChanged, IDisposable
 		{
 			project.PropertyChanged -= OnWorkspaceChanged;
 			project.Sessions.CollectionChanged -= OnSessionsChanged;
+			project.WebPages.CollectionChanged -= OnWebPagesChanged;
 		}
 		_watched.Clear();
+		foreach (var page in _watchedPages)
+		{ page.PropertyChanged -= OnWebPageChanged; }
+		_watchedPages.Clear();
 	}
 }

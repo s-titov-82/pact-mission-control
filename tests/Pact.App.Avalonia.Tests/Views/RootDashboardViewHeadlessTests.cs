@@ -10,6 +10,8 @@ using Pact.Core.Agents;
 using Pact.Core.Git;
 using Pact.Core.Projects;
 using Pact.Core.Sessions;
+using Pact.Core.Web;
+using Pact.Core.Web.Monitoring;
 using Pact.Presentation.ViewModels;
 
 namespace Pact.App.Avalonia.Tests.Views;
@@ -65,6 +67,11 @@ public sealed class RootDashboardViewHeadlessTests
 		SessionViewModel session = new(new SessionRecord("agent", AgentKind.Claude, "Claude", "C:/one",
 			"claude", null, SessionStatus.Running, DateTimeOffset.MinValue, DateTimeOffset.MinValue));
 		project.Sessions.Add(session);
+		WebPageViewModel page = new(new WebPageRecord("build", "Build", "https://example.test/", "https://example.test/",
+			DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch));
+		project.WebPages.Add(page);
+		page.SetBrowserLoaded(true);
+		page.SetMonitorStatus(WebMonitorStatus.Activity);
 		using RootDashboardViewModel dashboard = new([project], new UnusedReader(), _ => true, a => a(), TimeProvider.System);
 		dashboard.Cards.ShouldHaveSingleItem().Agents.ShouldBe([session]);
 		RootDashboardView view = new() { DataContext = dashboard };
@@ -86,10 +93,16 @@ public sealed class RootDashboardViewHeadlessTests
 			WorkspaceViewModel? opened = null;
 			WorkspaceViewModel? changes = null;
 			SessionViewModel? agent = null;
+			WebPageViewModel? browser = null;
 			view.ProjectRequested += (_, p) => opened = p;
 			view.ChangesRequested += (_, p) => changes = p;
 			view.AgentRequested += (_, s) => agent = s;
+			view.WebPageRequested += (_, p) => browser = p;
 			var buttons = view.GetVisualDescendants().OfType<Button>().ToArray();
+			buttons.Single(button => button.Classes.Contains("dashboard-web-page"))
+				.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+			browser.ShouldBeSameAs(page);
+			opened.ShouldBeNull();
 			var agentButton = buttons.Single(b => b.Classes.Contains("dashboard-agent"));
 			agentButton.Focus();
 			dashboard.RefreshAgents();

@@ -4,12 +4,41 @@ using Pact.Core.Agents;
 using Pact.Core.Git;
 using Pact.Core.Projects;
 using Pact.Core.Sessions;
+using Pact.Core.Web;
+using Pact.Core.Web.Monitoring;
 using Pact.Presentation.ViewModels;
 
 namespace Pact.Presentation.Tests.ViewModels;
 
 public sealed class RootDashboardViewModelTests
 {
+	[Test]
+	public void Project_card_tracks_monitor_activity_on_its_loaded_web_tabs()
+	{
+		var project = Project("one");
+		var other = Project("two");
+		using RootDashboardViewModel dashboard = new([project, other], new Reader(_ => Task.FromResult<int?>(0)),
+			_ => false, action => action(), new ManualTimeProvider());
+		WebPageViewModel page = new(new WebPageRecord("build", "Build", "https://example.test/", "https://example.test/",
+			DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch));
+		project.WebPages.Add(page);
+		var card = dashboard.Cards[0];
+		page.SetMonitorStatus(WebMonitorStatus.Activity);
+		card.ActiveWebPages.ShouldBeEmpty();
+		page.SetBrowserLoaded(true);
+		card.ActiveWebPages.ShouldBe([page]);
+		dashboard.Cards[1].ActiveWebPages.ShouldBeEmpty();
+		page.SetLoading(true);
+		card.ActiveWebPages.ShouldBeEmpty();
+		page.SetLoading(false);
+		card.ActiveWebPages.ShouldBe([page]);
+		page.SetMonitorStatus(WebMonitorStatus.Unread);
+		card.ActiveWebPages.ShouldBeEmpty();
+		page.SetMonitorStatus(WebMonitorStatus.Activity);
+		project.WebPages.Remove(page);
+		card.ActiveWebPages.ShouldBeEmpty();
+	}
+
 	[Test]
 	public async Task Recent_folders_exclude_active_and_paused_roots_and_keep_history_order()
 	{
