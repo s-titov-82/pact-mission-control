@@ -250,7 +250,7 @@ public sealed class ProjectCommitChangesViewModelTests
 		await changes.SelectCommitAsync(commit, CancellationToken.None);
 		_repository.Working = Working("next-head", "live-one", "live-two");
 		_time.Advance(ProjectChangesViewModel.ReconcileInterval);
-		changes.EntryTitle.ShouldBe("Uncommitted · 2");
+		changes.EntryTitle.ShouldBe("Uncommitted · 2 files");
 		changes.WorkingTreeHeadCommit.ShouldBe("next-head");
 		changes.Files.ShouldHaveSingleItem().Path.ShouldBe("historic");
 		changes.HeadCommit.ShouldBe(commit.BaseCommit);

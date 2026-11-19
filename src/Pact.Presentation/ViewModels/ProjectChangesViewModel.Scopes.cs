@@ -67,6 +67,16 @@ public sealed partial class ProjectChangesViewModel
 	public string UnpushedEntryTitle => ScopeEntryTitle(GitReviewScope.Unpushed);
 	/// <summary>Unpushed totals or an explicit unavailable state.</summary>
 	public string UnpushedEntrySubtitle => ScopeEntrySubtitle(GitReviewScope.Unpushed);
+	/// <summary>Gets line totals for a current scope summary, or null while it is unavailable or stale.</summary>
+	public (int Added, int Removed)? GetReviewLineTotals(GitReviewScope scope)
+	{
+		if (_scopeErrors.ContainsKey(scope))
+		{ return null; }
+		if (scope == GitReviewScope.Uncommitted)
+		{ return _workingTreeChanges is { } local ? (local.AddedLines, local.RemovedLines) : null; }
+		return _scopeSummaries.GetValueOrDefault(scope) is { Changes: not null, UnavailableReason: null } review
+			? (review.AddedLines, review.RemovedLines) : null;
+	}
 	/// <summary>The exact server-comparison contract, fallback and divergence explanation.</summary>
 	public string UnpushedDescription => _scopeSummaries.GetValueOrDefault(GitReviewScope.Unpushed) is not { } review ? "Remote refs reflect the last fetch/pull."
 		: review.UnavailableReason ?? (review.IsFallback ? $"No tracking branch — using merge base with {review.BaseRef}."
@@ -77,7 +87,9 @@ public sealed partial class ProjectChangesViewModel
 
 	private string? TargetFor(string branch) => _targetBranches.GetValueOrDefault(branch);
 	private string ScopeEntryTitle(GitReviewScope scope) => _scopeSummaries.GetValueOrDefault(scope)?.Changes is { } changes
-		? string.Create(CultureInfo.InvariantCulture, $"{scope} · {changes.Files.Count}") : scope.ToString();
+		? FormatScopeFileCount(scope, changes.Files.Count) : scope.ToString();
+	private static string FormatScopeFileCount(GitReviewScope scope, int count) =>
+		string.Create(CultureInfo.InvariantCulture, $"{scope} · {count} {(count == 1 ? "file" : "files")}");
 	private string ScopeEntrySubtitle(GitReviewScope scope) => _scopeErrors.TryGetValue(scope, out var error) ? "Stale · " + error
 		: _scopeSummaries.GetValueOrDefault(scope) is not { } review ? "Loading…"
 		: review.UnavailableReason ?? string.Create(CultureInfo.InvariantCulture, $"+{review.AddedLines} −{review.RemovedLines}");

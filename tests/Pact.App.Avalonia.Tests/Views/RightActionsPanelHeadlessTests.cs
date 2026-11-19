@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Documents;
 using Avalonia.Headless.NUnit;
 using Avalonia.Interactivity;
 using Avalonia.LogicalTree;
@@ -7,6 +8,7 @@ using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Pact.App.Avalonia.Views;
+using Pact.App.Avalonia.Views.Diff;
 using Pact.Core.Git;
 using Pact.Core.Projects;
 using Pact.Core.Remarks;
@@ -35,15 +37,16 @@ public sealed class RightActionsPanelHeadlessTests
 			view.FindControl<Button>("UnmergedScopeButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
 			await EventuallyAsync(() => changes.SelectedReviewScope == GitReviewScope.Unmerged && changes.ScopeCommits.Count == 1);
 			var filter = view.FindControl<ComboBox>("ReviewFilter")!;
-			filter.Items.Count.ShouldBe(3);
-			filter.SelectedIndex = 2;
+			filter.Items.Count.ShouldBe(2);
+			filter.SelectedIndex = 1;
 			await EventuallyAsync(() => changes.SelectedCommit is not null);
 			changes.SelectedReviewScope.ShouldBe(GitReviewScope.Unmerged);
-			filter.SelectedIndex = 1;
-			await EventuallyAsync(() => changes.IsUncommittedFilter);
-			changes.WorkingTreeFileCount.ShouldBe(1);
 			filter.SelectedIndex = 0;
 			await EventuallyAsync(() => changes.SelectedCommit is null && !changes.IsUncommittedFilter && changes.Files.Count == 3);
+			view.FindControl<Button>("UncommittedScopeButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+			await EventuallyAsync(() => changes.SelectedReviewScope == GitReviewScope.Uncommitted && changes.Files.Count == 1);
+			view.FindControl<Button>("UnmergedScopeButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+			await EventuallyAsync(() => changes.SelectedReviewScope == GitReviewScope.Unmerged && changes.ScopeCommits.Count == 1);
 			window.UpdateLayout();
 			view.FindControl<Control>("ReviewTargetButton")!.IsEffectivelyVisible.ShouldBeTrue();
 			view.GetLogicalDescendants().OfType<TextBlock>().Single(text => text.Text == "Loading…").IsVisible.ShouldBeFalse();
@@ -104,8 +107,8 @@ public sealed class RightActionsPanelHeadlessTests
 			var workingEntry = panel.FindControl<Button>("ChangesEntry").ShouldNotBeNull();
 			var branchEntry = panel.FindControl<Button>("UnmergedEntry").ShouldNotBeNull();
 			branchEntry.IsEnabled.ShouldBeTrue();
-			panel.FindControl<TextBlock>("UnmergedEntryTitle")!.Text.ShouldBe("Unmerged · 3");
-			panel.FindControl<TextBlock>("UnmergedEntrySubtitle")!.Text.ShouldBe("+5 −2");
+			panel.FindControl<TextBlock>("UnmergedEntryTitle")!.Text.ShouldBe("Unmerged · 3 files");
+			ScopeSubtitle(panel, "UnmergedEntrySubtitle").ShouldBe("+5 −2");
 			branchEntry.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
 			workingEntry.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
 			branch.ShouldBe(1);
@@ -114,10 +117,10 @@ public sealed class RightActionsPanelHeadlessTests
 			panel.ReviewScopeRequested += (_, scope) => { if (scope == GitReviewScope.Unpushed) { unpushed++; } };
 			panel.FindControl<Button>("UnpushedEntry")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
 			unpushed.ShouldBe(1);
-			panel.FindControl<TextBlock>("UnpushedEntryTitle")!.Text.ShouldBe("Unpushed · 3");
+			panel.FindControl<TextBlock>("UnpushedEntryTitle")!.Text.ShouldBe("Unpushed · 3 files");
 			await changes.SelectReviewScopeAsync(GitReviewScope.Unmerged, CancellationToken.None);
-			panel.FindControl<TextBlock>("ChangesEntryTitle")!.Text.ShouldBe("Uncommitted · 2");
-			panel.FindControl<TextBlock>("ChangesEntrySubtitle")!.Text.ShouldBe("+84 −12");
+			panel.FindControl<TextBlock>("ChangesEntryTitle")!.Text.ShouldBe("Uncommitted · 2 files");
+			ScopeSubtitle(panel, "ChangesEntrySubtitle").ShouldBe("+84 −12");
 			changes.Files.Count.ShouldBe(3);
 		}
 		finally { window.Close(); }
@@ -171,8 +174,8 @@ public sealed class RightActionsPanelHeadlessTests
 
 			entry.IsVisible.ShouldBeTrue();
 			var texts = entry.GetLogicalDescendants().OfType<TextBlock>().Select(text => text.Text).ToList();
-			texts.ShouldContain("Uncommitted · 2");
-			texts.ShouldContain("+84 \u221212");
+			texts.ShouldContain("Uncommitted · 2 files");
+			ScopeSubtitle(panel, "ChangesEntrySubtitle").ShouldBe("+84 −12");
 			entry.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
 			requested.ShouldBe(1);
 		}
@@ -291,8 +294,8 @@ public sealed class RightActionsPanelHeadlessTests
 			window.UpdateLayout();
 
 			panel.FindControl<Button>("ChangesEntry")!.IsVisible.ShouldBeTrue();
-			panel.FindControl<TextBlock>("ChangesEntryTitle")!.Text.ShouldBe("Uncommitted · 0");
-			panel.FindControl<TextBlock>("ChangesEntrySubtitle")!.Text.ShouldBe("+0 −0");
+			panel.FindControl<TextBlock>("ChangesEntryTitle")!.Text.ShouldBe("Uncommitted · 0 files");
+			ScopeSubtitle(panel, "ChangesEntrySubtitle").ShouldBe("+0 −0");
 		}
 		finally
 		{
@@ -327,7 +330,7 @@ public sealed class RightActionsPanelHeadlessTests
 	public async Task The_changes_tab_lists_the_files_under_the_entry_without_quick_actions()
 	{
 		using var root = TemporaryDirectory.Create();
-		using var changes = Changes(Files("a.cs", "b.cs"), added: 1, removed: 1, root.Path);
+		using var changes = Changes(Files("src/a.cs", "src/nested/b.cs", "README.md"), added: 1, removed: 1, root.Path);
 		var screen = Screen(root.Path, changes);
 		await screen.SelectTabAsync(ProjectScreenTab.Changes, CancellationToken.None);
 		RightActionsPanel panel = new() { Changes = changes, ProjectScreen = screen };
@@ -336,9 +339,11 @@ public sealed class RightActionsPanelHeadlessTests
 		try
 		{
 			window.UpdateLayout();
-			var list = panel.FindControl<ListBox>("ChangedFilesList")!;
+			var list = panel.FindControl<TreeView>("ChangedFilesTree")!;
 
 			list.IsEffectivelyVisible.ShouldBeTrue();
+			var folder = list.Items.OfType<ChangedFileTreeNode>().Single(node => node.IsFolder);
+			folder.Path.ShouldBe("src");
 			list.ItemCount.ShouldBe(2);
 			panel.FindControl<ListBox>("ReviewLogList")!.IsVisible.ShouldBeFalse();
 			var entry = panel.FindControl<Control>("ChangesEntry")!;
@@ -346,9 +351,14 @@ public sealed class RightActionsPanelHeadlessTests
 			Top(list, panel).ShouldBeGreaterThan(Top(entry, panel));
 			panel.FindControl<Control>("QuickActionsSection")!.IsVisible.ShouldBeFalse();
 
-			list.SelectedItem = changes.Files[1];
-
-			changes.SelectedFile.ShouldBeSameAs(changes.Files[1]);
+			var file = changes.Files.Single(candidate => candidate.Path == "src/nested/b.cs");
+			await changes.SelectFileAsync(file, CancellationToken.None);
+			var nested = folder.Children.Single(node => node.IsFolder);
+			folder.IsExpanded.ShouldBeTrue();
+			nested.IsExpanded.ShouldBeTrue();
+			list.SelectedItem.ShouldBeSameAs(nested.Children.Single());
+			list.SelectedItem = folder.Children.Single(node => !node.IsFolder);
+			changes.SelectedFile!.Path.ShouldBe("src/a.cs");
 		}
 		finally
 		{
@@ -376,7 +386,7 @@ public sealed class RightActionsPanelHeadlessTests
 
 			list.IsEffectivelyVisible.ShouldBeTrue();
 			list.ItemCount.ShouldBe(2);
-			panel.FindControl<ListBox>("ChangedFilesList")!.IsVisible.ShouldBeFalse();
+			panel.FindControl<TreeView>("ChangedFilesTree")!.IsVisible.ShouldBeFalse();
 
 			list.SelectedItem = ".pact/reviews/2026-10-26-1200-a.md";
 
@@ -549,7 +559,7 @@ public sealed class RightActionsPanelHeadlessTests
 			await book.AddAsync(OldAnchor("b.cs"), null, "two", CancellationToken.None);
 			window.UpdateLayout();
 
-			var list = panel.FindControl<ListBox>("ChangedFilesList")!;
+			var list = panel.FindControl<TreeView>("ChangedFilesTree")!;
 			await EventuallyAsync(() => RowTexts(list, 1).Contains("2 remarks"));
 			RowTexts(list, 0).ShouldNotContain(text => text != null && text.Contains("remark", StringComparison.Ordinal));
 		}
@@ -576,13 +586,13 @@ public sealed class RightActionsPanelHeadlessTests
 		{
 			window.UpdateLayout();
 			var buttons = panel.FindControl<Control>("RemarksPanel")!;
-			var list = panel.FindControl<ListBox>("ChangedFilesList")!;
+			var list = panel.FindControl<TreeView>("ChangedFilesTree")!;
 
 			buttons.IsEffectivelyVisible.ShouldBeTrue();
 			Top(buttons, panel).ShouldBeGreaterThan(Top(list, panel));
 			buttons.GetLogicalDescendants().OfType<Button>().Where(button => button.IsEffectivelyVisible)
 				.Select(button => button.Content as string)
-				.ShouldBe(["Resolved (0)", "Open (0)", "Send", "Очистить замечания…"]);
+				.ShouldBe(["Resolved (0)", "Open (0)", "Send", "Clear remarks…"]);
 			buttons.FindControl<Button>("CleanupRemarksButton")!.IsEnabled.ShouldBeFalse();
 			buttons.FindControl<Control>("CleanupQuestion")!.IsVisible.ShouldBeFalse();
 
@@ -597,7 +607,10 @@ public sealed class RightActionsPanelHeadlessTests
 		}
 	}
 
-	private static List<string?> RowTexts(ListBox list, int index) =>
+	private static string ScopeSubtitle(RightActionsPanel panel, string name) =>
+		string.Concat(panel.FindControl<TextBlock>(name)!.Inlines!.OfType<Run>().Select(run => run.Text));
+
+	private static List<string?> RowTexts(TreeView list, int index) =>
 		list.ContainerFromIndex(index)?.GetLogicalDescendants().OfType<TextBlock>()
 			.Where(text => text.IsEffectivelyVisible)
 			.Select(text => text.Text)

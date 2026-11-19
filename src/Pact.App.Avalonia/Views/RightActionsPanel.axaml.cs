@@ -1,10 +1,12 @@
 using System.ComponentModel;
 using System.Globalization;
 using Avalonia.Controls;
+using Avalonia.Controls.Documents;
 using Avalonia.Data.Converters;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Pact.App.Avalonia.Lifecycle;
+using Pact.App.Avalonia.Views.Diff;
 using Pact.Core.Prompting;
 using Pact.Presentation.ViewModels;
 
@@ -76,15 +78,33 @@ internal sealed partial class RightActionsPanel : UserControl
 		ChangesSection.IsVisible = changes is not null;
 		ChangesEntry.IsVisible = changes is not null;
 		ChangesEntryTitle.Text = changes?.EntryTitle;
-		ChangesEntrySubtitle.Text = changes?.EntrySubtitle;
+		SetLineTotals(ChangesEntryMessage, ChangesEntryAdded, ChangesEntryRemoved,
+			changes?.EntrySubtitle, changes?.GetReviewLineTotals(GitReviewScope.Uncommitted));
 		UnmergedEntryTitle.Text = changes?.UnmergedEntryTitle;
-		UnmergedEntrySubtitle.Text = changes?.UnmergedEntrySubtitle;
+		SetLineTotals(UnmergedEntryMessage, UnmergedEntryAdded, UnmergedEntryRemoved,
+			changes?.UnmergedEntrySubtitle, changes?.GetReviewLineTotals(GitReviewScope.Unmerged));
 		UnmergedEntry.IsEnabled = changes?.CanChooseReviewScopes == true;
 		UnpushedEntry.IsEnabled = changes?.CanChooseReviewScopes == true;
 		UnpushedEntryTitle.Text = changes?.UnpushedEntryTitle;
-		UnpushedEntrySubtitle.Text = changes?.UnpushedEntrySubtitle;
+		SetLineTotals(UnpushedEntryMessage, UnpushedEntryAdded, UnpushedEntryRemoved,
+			changes?.UnpushedEntrySubtitle, changes?.GetReviewLineTotals(GitReviewScope.Unpushed));
 		ToolTip.SetTip(UnmergedEntry, changes?.TargetDescription);
 		ToolTip.SetTip(UnpushedEntry, changes?.UnpushedDescription);
+	}
+
+	private static void SetLineTotals(Run message, Run added, Run removed, string? fallback, (int Added, int Removed)? totals)
+	{
+		if (totals is { } counts)
+		{
+			message.Text = null;
+			added.Text = string.Create(CultureInfo.InvariantCulture, $"+{counts.Added} ");
+			removed.Text = string.Create(CultureInfo.InvariantCulture, $"−{counts.Removed}");
+		}
+		else
+		{
+			message.Text = fallback;
+			added.Text = removed.Text = null;
+		}
 	}
 
 	/// <summary>Remark threads of the same project as <see cref="Changes"/>; their open count goes under the entry.</summary>
@@ -201,6 +221,7 @@ internal sealed partial class RightActionsPanel : UserControl
 			_screenChanges?.PropertyChanged -= OnScreenChangesPropertyChanged;
 			field = value;
 			_screenChanges = value?.Changes;
+			ResetChangedFileTree();
 			field?.PropertyChanged += OnProjectScreenPropertyChanged;
 			_screenChanges?.PropertyChanged += OnScreenChangesPropertyChanged;
 			RefreshProjectList();
@@ -236,7 +257,7 @@ internal sealed partial class RightActionsPanel : UserControl
 		var showsLogs = tab == ProjectScreenTab.ReviewLogs;
 		ProjectListSection.IsVisible = showsFiles || showsLogs;
 		ProjectListTitle.Text = showsFiles ? "Changed files" : "Review logs";
-		ChangedFilesList.IsVisible = showsFiles;
+		ChangedFilesTree.IsVisible = showsFiles;
 		ReviewLogList.IsVisible = showsLogs;
 		DeleteAllReviewLogsButton.IsVisible = showsLogs && ProjectScreen!.HasReviewLogs;
 		// The remark buttons sit under the files they are about; a project screen has no quick actions.
@@ -246,8 +267,8 @@ internal sealed partial class RightActionsPanel : UserControl
 		_syncingSelection = true;
 		try
 		{
-			ChangedFilesList.ItemsSource = showsFiles ? _screenChanges!.Files : null;
-			ChangedFilesList.SelectedItem = showsFiles ? _screenChanges!.SelectedFile : null;
+			if (showsFiles)
+			{ RefreshChangedFileTree(_screenChanges!); }
 			ReviewLogList.ItemsSource = showsLogs ? ProjectScreen!.ReviewLogs : null;
 			ReviewLogList.SelectedItem = showsLogs ? ProjectScreen!.SelectedReviewLog : null;
 		}
@@ -262,7 +283,7 @@ internal sealed partial class RightActionsPanel : UserControl
 	private void OnChangedFileSelectionChanged(object? sender, SelectionChangedEventArgs e)
 	{
 		if (_syncingSelection || _screenChanges is not { } changes
-			|| ChangedFilesList.SelectedItem is not ChangedFileViewModel file
+			|| ChangedFilesTree.SelectedItem is not ChangedFileTreeNode { File: { } file }
 			|| ReferenceEquals(file, changes.SelectedFile))
 		{
 			return;

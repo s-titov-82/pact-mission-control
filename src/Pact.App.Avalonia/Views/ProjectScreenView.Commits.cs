@@ -70,7 +70,6 @@ internal sealed partial class ProjectScreenView
 				_filterCommits = changes?.ScopeCommits;
 				ReviewFilter.Items.Clear();
 				ReviewFilter.Items.Add(new ComboBoxItem { Content = "All changes" });
-				ReviewFilter.Items.Add(new ComboBoxItem { Content = "Uncommitted", Tag = "local" });
 				foreach (var commit in _filterCommits ?? [])
 				{ ReviewFilter.Items.Add(new ComboBoxItem { Content = $"{commit.ShortId} · {commit.Subject}", Tag = commit }); }
 			}
@@ -86,7 +85,7 @@ internal sealed partial class ProjectScreenView
 				ReviewFilter.SelectedItem = item;
 			}
 			else
-			{ ReviewFilter.SelectedIndex = changes?.IsUncommittedFilter == true ? 1 : 0; }
+			{ ReviewFilter.SelectedIndex = 0; }
 		}
 		finally { _syncingReviewFilter = false; }
 	}
@@ -94,7 +93,7 @@ internal sealed partial class ProjectScreenView
 	{
 		if (_syncingReviewFilter || _changes is not { IsScopeHistoryVisible: true } changes || ReviewFilter.SelectedItem is not ComboBoxItem item)
 		{ return; }
-		_eventTasks.TryRun("changes-review-filter", () => changes.SelectReviewFilterAsync(item.Tag as GitCommitInfo, item.Tag is string, CancellationToken.None), static _ => Task.CompletedTask);
+		_eventTasks.TryRun("changes-review-filter", () => changes.SelectReviewFilterAsync(item.Tag as GitCommitInfo, uncommitted: false, CancellationToken.None), static _ => Task.CompletedTask);
 	}
 	private void OnMoreScopeCommitsClicked(object? sender, RoutedEventArgs e)
 	{

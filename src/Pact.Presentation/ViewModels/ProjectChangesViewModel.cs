@@ -284,7 +284,7 @@ public sealed partial class ProjectChangesViewModel : INotifyPropertyChanged, ID
 
 	/// <summary>Title of the right-column entry.</summary>
 	public string EntryTitle => _workingTreeChanges is null ? "Uncommitted"
-		: string.Create(CultureInfo.InvariantCulture, $"Uncommitted · {WorkingTreeFileCount}");
+		: FormatScopeFileCount(GitReviewScope.Uncommitted, WorkingTreeFileCount);
 
 	/// <summary>Line totals under the entry title; empty for a clean tree.</summary>
 	public string EntrySubtitle => _scopeErrors.TryGetValue(GitReviewScope.Uncommitted, out var error) ? "Stale · " + error : _workingTreeChanges is null

@@ -18,8 +18,11 @@
                    IsVisible="{Binding IsGitRunning}" />
         <TextBlock FontWeight="SemiBold" Text="{Binding BranchText}" TextTrimming="CharacterEllipsis" />
       </DockPanel>
-      <TextBlock Margin="0,3,0,10" FontFamily="Cascadia Mono, Consolas, monospace"
-                 Foreground="{DynamicResource AppPanelBorderBrush}" Text="{Binding SummaryText}" />
+      <TextBlock x:Name="GitChangeCounts" Margin="0,3,0,10" FontFamily="Cascadia Mono, Consolas, monospace"
+                 Foreground="{DynamicResource AppTextMutedBrush}"
+                 IsVisible="{Binding Snapshot, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <Run Text="{Binding Snapshot.Added, StringFormat='+{0}'}" Foreground="{DynamicResource AppGitAddedBrush}" /><Run Text="{Binding Snapshot.Modified, StringFormat=' ~{0}'}" Foreground="{DynamicResource AppGitModifiedBrush}" /><Run Text="{Binding Snapshot.Deleted, StringFormat=' -{0}'}" Foreground="{DynamicResource AppGitRemovedBrush}" /><Run Text="{Binding AdditionalChangeCounts}" />
+      </TextBlock>
     </StackPanel>
 
     <ItemsControl Grid.Row="1" x:Name="PopupButtonsList" ItemsSource="{Binding PopupButtons}">

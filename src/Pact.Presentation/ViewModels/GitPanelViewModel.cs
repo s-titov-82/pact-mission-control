@@ -67,6 +67,8 @@ public sealed class GitPanelViewModel : INotifyPropertyChanged
 	public string AheadBehindText { get; private set; } = string.Empty;
 	/// <summary>Working-tree change counts, formatted for display.</summary>
 	public string SummaryText { get; private set; } = string.Empty;
+	/// <summary>Optional untracked and conflicted counts, following the three main counters.</summary>
+	public string AdditionalChangeCounts => Snapshot is { } snapshot ? FormatAdditionalCounts(snapshot) : string.Empty;
 	/// <summary>Whether any path is conflicted, which blocks actions needing a settled tree.</summary>
 	public bool HasConflicts { get; private set; }
 	/// <summary>Number of stash entries.</summary>
@@ -142,6 +144,7 @@ public sealed class GitPanelViewModel : INotifyPropertyChanged
 
 		Snapshot = GitStatusParser.Parse(status.StandardOutput);
 		OnPropertyChanged(nameof(Snapshot));
+		OnPropertyChanged(nameof(AdditionalChangeCounts));
 		OnPropertyChanged(nameof(HasStashableChanges));
 		OnPropertyChanged(nameof(ShowStashButton));
 		NotifyPopupButtonStates();
@@ -551,21 +554,14 @@ public sealed class GitPanelViewModel : INotifyPropertyChanged
 		return string.Join(' ', parts);
 	}
 
-	private static string FormatSummary(GitStatusSnapshot snapshot)
+	private static string FormatSummary(GitStatusSnapshot snapshot) =>
+		$"+{snapshot.Added} ~{snapshot.Modified} -{snapshot.Deleted}{FormatAdditionalCounts(snapshot)}";
+
+	private static string FormatAdditionalCounts(GitStatusSnapshot snapshot)
 	{
-		List<string> parts = [$"+{snapshot.Added}", $"~{snapshot.Modified}", $"-{snapshot.Deleted}"];
-
-		if (snapshot.Untracked > 0)
-		{
-			parts.Add($"?{snapshot.Untracked}");
-		}
-
-		if (snapshot.Conflicted > 0)
-		{
-			parts.Add($"!{snapshot.Conflicted}");
-		}
-
-		return string.Join(' ', parts);
+		var untracked = snapshot.Untracked;
+		var conflicted = snapshot.Conflicted;
+		return (untracked > 0 ? $" ?{untracked}" : string.Empty) + (conflicted > 0 ? $" !{conflicted}" : string.Empty);
 	}
 
 	private static bool IsStashableChange(GitFileEntry file) => file.Kind is GitChangeKind.Added or GitChangeKind.Modified or GitChangeKind.Deleted;
@@ -574,6 +570,7 @@ public sealed class GitPanelViewModel : INotifyPropertyChanged
 	{
 		Snapshot = null;
 		OnPropertyChanged(nameof(Snapshot));
+		OnPropertyChanged(nameof(AdditionalChangeCounts));
 		OnPropertyChanged(nameof(HasStashableChanges));
 		OnPropertyChanged(nameof(ShowStashButton));
 		NotifyPopupButtonStates();

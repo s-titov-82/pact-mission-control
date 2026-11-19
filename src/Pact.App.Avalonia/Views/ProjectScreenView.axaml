@@ -126,7 +126,7 @@
             <Button x:Name="ReviewTargetButton" Content="{Binding Changes.TargetDescription}" Click="OnReviewTargetClicked"
                     IsVisible="{Binding Changes.CanChooseReviewScopes}" HorizontalAlignment="Left" />
             <StackPanel IsVisible="{Binding Changes.IsScopeHistoryVisible}" Spacing="4">
-              <TextBlock Text="Filter · commits show local-side first-parent patches, not a decomposition of All changes" FontSize="11" TextWrapping="Wrap" Opacity="0.65" />
+              <TextBlock Text="Commits show local-side first-parent patches" FontSize="11" TextWrapping="Wrap" Opacity="0.65" />
               <Grid ColumnDefinitions="*,Auto">
                 <ComboBox x:Name="ReviewFilter" HorizontalAlignment="Stretch" SelectionChanged="OnReviewFilterChanged" />
                 <Button Grid.Column="1" Margin="6,0,0,0" Content="More commits…" IsVisible="{Binding Changes.HasMoreScopeCommits}" Click="OnMoreScopeCommitsClicked" />

@@ -63,18 +63,20 @@ them. No automatic pull, push or checkout, and no separate Fetch-only action.
 ## Presentation
 
 Replace Working tree/Current branch source actions with Uncommitted, Unmerged,
-Unpushed. Right panel has three matching entries with independent net file/+/-
-counts, explicit unavailable/loading states, and navigation to the chosen scope.
-Changing the displayed commit never changes these aggregate counters.
+Unpushed. Right panel has three matching entries with explicit file counts,
+muted added and removed line counts, unavailable/loading states, and navigation
+to the chosen scope. Changing the displayed commit never changes these
+aggregate counters. The file tree groups paths by folder and keeps folder
+expansion across refreshes. Opening a file by path expands its ancestors.
 
-Unmerged/Unpushed have an inner selector: All changes, Uncommitted, and their
-commits (newest first, bounded/paged). The commit set is HEAD history excluding
+Unmerged/Unpushed have an inner selector with All changes and their commits
+(newest first, bounded/paged). The commit set is HEAD history excluding
 commits reachable from the scope base; for diverged tracking refs it contains
 only local-side commits. A selected commit shows its first-parent diff, or empty
 tree for a root commit; it is not an ownership filter on the aggregate patch.
-Uncommitted in the inner selector shows HEAD versus local contents while
-retaining the surrounding scope and commit list. Returning to All changes
-restores its aggregate. Keep Choose commit for arbitrary SHA/ref/history.
+The top Uncommitted action selects HEAD versus local contents. Returning to
+All changes restores the current scope's aggregate. Keep Choose commit for
+arbitrary SHA/ref/history.
 
 Captured local remarks open a separate Fixed base source, outside scope/filter
 selection: label it `Fixed base <sha> vs local` (or empty tree). Its base stays

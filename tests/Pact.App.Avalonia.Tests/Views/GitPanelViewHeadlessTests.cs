@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Controls.Documents;
 using Avalonia.Headless.NUnit;
 using Avalonia.LogicalTree;
 using Pact.App.Avalonia.Views;
@@ -50,6 +51,8 @@ public sealed class GitPanelViewHeadlessTests
 			window.UpdateLayout();
 
 			indicator.IsVisible.ShouldBeFalse();
+			var counts = view.FindControl<TextBlock>("GitChangeCounts")!.Inlines!.OfType<Run>();
+			string.Concat(counts.Select(run => run.Text)).ShouldBe("+0 ~0 -0");
 		}
 		finally
 		{

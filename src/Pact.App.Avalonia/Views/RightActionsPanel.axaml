@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:Pact.Presentation.ViewModels;assembly=Pact.Presentation"
              xmlns:local="clr-namespace:Pact.App.Avalonia.Views"
+             xmlns:diff="using:Pact.App.Avalonia.Views.Diff"
              xmlns:remarks="clr-namespace:Pact.App.Avalonia.Views.Remarks"
              x:Class="Pact.App.Avalonia.Views.RightActionsPanel"
              x:CompileBindings="False">
@@ -24,24 +25,27 @@
                 Padding="10,6" Click="OnChangesEntryClicked">
           <StackPanel Spacing="2">
             <TextBlock x:Name="ChangesEntryTitle" FontWeight="SemiBold" />
-            <TextBlock x:Name="ChangesEntrySubtitle" FontSize="11"
-                       Foreground="{DynamicResource AppTextMutedBrush}" />
+            <TextBlock x:Name="ChangesEntrySubtitle" FontSize="11" Foreground="{DynamicResource AppTextMutedBrush}">
+              <Run x:Name="ChangesEntryMessage" /><Run x:Name="ChangesEntryAdded" Foreground="{DynamicResource AppGitAddedBrush}" /><Run x:Name="ChangesEntryRemoved" Foreground="{DynamicResource AppGitRemovedBrush}" />
+            </TextBlock>
           </StackPanel>
         </Button>
         <Button x:Name="UnmergedEntry" Margin="0,6,0,0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
                 Padding="10,6" Click="OnUnmergedEntryClicked">
           <StackPanel Spacing="2">
             <TextBlock x:Name="UnmergedEntryTitle" FontWeight="SemiBold" />
-            <TextBlock x:Name="UnmergedEntrySubtitle" FontSize="11" TextWrapping="Wrap"
-                       Foreground="{DynamicResource AppTextMutedBrush}" />
+            <TextBlock x:Name="UnmergedEntrySubtitle" FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource AppTextMutedBrush}">
+              <Run x:Name="UnmergedEntryMessage" /><Run x:Name="UnmergedEntryAdded" Foreground="{DynamicResource AppGitAddedBrush}" /><Run x:Name="UnmergedEntryRemoved" Foreground="{DynamicResource AppGitRemovedBrush}" />
+            </TextBlock>
           </StackPanel>
         </Button>
         <Button x:Name="UnpushedEntry" Margin="0,6,0,0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
                 Padding="10,6" Click="OnUnpushedEntryClicked">
           <StackPanel Spacing="2">
             <TextBlock x:Name="UnpushedEntryTitle" FontWeight="SemiBold" />
-            <TextBlock x:Name="UnpushedEntrySubtitle" FontSize="11" TextWrapping="Wrap"
-                       Foreground="{DynamicResource AppTextMutedBrush}" />
+            <TextBlock x:Name="UnpushedEntrySubtitle" FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource AppTextMutedBrush}">
+              <Run x:Name="UnpushedEntryMessage" /><Run x:Name="UnpushedEntryAdded" Foreground="{DynamicResource AppGitAddedBrush}" /><Run x:Name="UnpushedEntryRemoved" Foreground="{DynamicResource AppGitRemovedBrush}" />
+            </TextBlock>
           </StackPanel>
         </Button>
         <TextBlock x:Name="ChangesEntryRemarks" Margin="10,4,0,0" FontSize="11" IsVisible="False"
@@ -109,29 +113,32 @@
             </StackPanel>
           </Button>
         </StackPanel>
-        <ListBox x:Name="ChangedFilesList" Grid.Row="1" Margin="0,8,0,0"
-                 SelectionChanged="OnChangedFileSelectionChanged">
-          <ListBox.ItemTemplate>
-            <DataTemplate>
+        <TreeView x:Name="ChangedFilesTree" Grid.Row="1" Margin="0,8,0,0"
+                  SelectionChanged="OnChangedFileSelectionChanged">
+          <TreeView.Styles>
+            <Style Selector="TreeViewItem">
+              <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+            </Style>
+          </TreeView.Styles>
+          <TreeView.ItemTemplate>
+            <TreeDataTemplate DataType="diff:ChangedFileTreeNode" ItemsSource="{Binding Children}">
               <Grid ColumnDefinitions="16,*,Auto" ToolTip.Tip="{Binding Path}">
+                <PathIcon Width="12" Height="12" VerticalAlignment="Center" Data="{StaticResource AppFolderIcon}"
+                          IsVisible="{Binding IsFolder}" />
                 <TextBlock FontFamily="Cascadia Mono, Consolas, monospace" FontWeight="SemiBold"
-                           Text="{Binding StatusLetter}" />
-                <StackPanel Grid.Column="1">
-                  <TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis" />
-                  <TextBlock Foreground="{DynamicResource AppTextMutedBrush}" FontSize="11"
-                             Text="{Binding Folder}" TextTrimming="CharacterEllipsis" />
-                </StackPanel>
-                <StackPanel Grid.Column="2" Margin="6,0,0,0" VerticalAlignment="Center">
+                           Text="{Binding File.StatusLetter}" IsVisible="{Binding !IsFolder}" />
+                <TextBlock Grid.Column="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                <StackPanel Grid.Column="2" Margin="6,0,0,0" VerticalAlignment="Center" IsVisible="{Binding !IsFolder}">
                   <TextBlock FontSize="10" HorizontalAlignment="Right"
                              Foreground="{DynamicResource AppTextMutedBrush}" Text="staged"
-                             IsVisible="{Binding IsStaged}" />
-                  <TextBlock FontSize="10" HorizontalAlignment="Right" Text="{Binding RemarksText}"
-                             IsVisible="{Binding RemarksText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                             IsVisible="{Binding File.IsStaged}" />
+                  <TextBlock FontSize="10" HorizontalAlignment="Right" Text="{Binding File.RemarksText}"
+                             IsVisible="{Binding File.RemarksText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                 </StackPanel>
               </Grid>
-            </DataTemplate>
-          </ListBox.ItemTemplate>
-        </ListBox>
+            </TreeDataTemplate>
+          </TreeView.ItemTemplate>
+        </TreeView>
         <ListBox x:Name="ReviewLogList" Grid.Row="1" Margin="0,8,0,0"
                  SelectionChanged="OnReviewLogSelectionChanged">
           <ListBox.ItemTemplate>

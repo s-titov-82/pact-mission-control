@@ -57,16 +57,16 @@
       </Button>
       <Button x:Name="SendRemarksButton" Grid.Column="4" Content="Send" Click="OnSendRemarksClicked" />
     </Grid>
-    <Button x:Name="CleanupRemarksButton" Content="Очистить замечания…" Click="OnCleanupClicked"
+    <Button x:Name="CleanupRemarksButton" Content="Clear remarks…" Click="OnCleanupClicked"
             HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
     <Border x:Name="CleanupQuestion" IsVisible="False" Padding="8" CornerRadius="4"
             Background="{DynamicResource AppPopupBackgroundBrush}">
       <StackPanel Spacing="6">
-        <TextBlock Text="Ревью завершено? Очистить список замечаний?" TextWrapping="Wrap" />
+        <TextBlock Text="Review complete? Clear the remarks list?" TextWrapping="Wrap" />
         <TextBlock x:Name="CleanupDescription" Foreground="{DynamicResource AppTextMutedBrush}" TextWrapping="Wrap" />
         <StackPanel Orientation="Horizontal" Spacing="6">
-          <Button x:Name="ConfirmCleanupButton" Content="Очистить" Click="OnConfirmCleanupClicked" />
-          <Button x:Name="DeclineCleanupButton" Content="Нет" Click="OnDeclineCleanupClicked" />
+          <Button x:Name="ConfirmCleanupButton" Content="Clear" Click="OnConfirmCleanupClicked" />
+          <Button x:Name="DeclineCleanupButton" Content="Cancel" Click="OnDeclineCleanupClicked" />
         </StackPanel>
       </StackPanel>
     </Border>
