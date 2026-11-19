@@ -377,6 +377,11 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 	}
 	internal IWebPageHost? GetWebPageHostForDiagnostics(string id) =>
 		_webPageCoordinator.TryGetHost(id, out var host) ? host : null;
+	internal async Task ResumeMonitoredPageForDiagnosticsAsync(WebPageViewModel page, WebMonitorRule rule)
+	{
+		await _webMonitorCoordinator.SetRulesAsync([rule], CancellationToken.None);
+		await _webPageCoordinator.ResumeInBackgroundAsync(page, CancellationToken.None);
+	}
 	public IClipboardService Clipboard { get; }
 	public IWebPageHostFactory? WebPageHostFactory
 	{

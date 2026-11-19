@@ -22,6 +22,7 @@ internal sealed class AvaloniaWebPageCoordinator : IDisposable
 		new(StringComparer.Ordinal);
 	private readonly Dictionary<string, Action> _detachments =
 		new(StringComparer.Ordinal);
+	private IReadOnlyList<string> _loadedPageIds = [];
 	private IWebPageHost? _activeHost;
 	private bool _disposed;
 
@@ -58,19 +59,12 @@ internal sealed class AvaloniaWebPageCoordinator : IDisposable
 	/// <summary>Relays a stable document URL for persistence.</summary>
 	public event EventHandler<WebMonitorStableUrlChangedEventArgs>? StableUrlChanged;
 
-	/// <summary>Copies the ids of pages whose native browser hosts are currently loaded.</summary>
-	internal IReadOnlyList<string> GetLoadedPageIds()
-	{
-		_lifecycleGate.Wait();
-		try
-		{
-			return _hosts.Keys.Order(StringComparer.Ordinal).ToArray();
-		}
-		finally
-		{
-			_lifecycleGate.Release();
-		}
-	}
+	/// <summary>Reads the host snapshot without blocking the UI thread during navigation.</summary>
+	internal IReadOnlyList<string> GetLoadedPageIds() => Volatile.Read(ref _loadedPageIds);
+
+	private void PublishLoadedPageIds() => Volatile.Write(
+		ref _loadedPageIds,
+		Array.AsReadOnly(_hosts.Keys.Order(StringComparer.Ordinal).ToArray()));
 
 	/// <summary>
 	/// Ensures one host and monitoring registration exist for <paramref name="page"/>.
@@ -384,13 +378,16 @@ internal sealed class AvaloniaWebPageCoordinator : IDisposable
 			await _monitor.RegisterAsync(
 				page.Record.Id,
 				host,
+				new Uri(page.Record.ResumeUrl),
 				cancellationToken);
+			PublishLoadedPageIds();
 			page.SetBrowserLoaded(true);
 			return host;
 		}
 		catch
 		{
 			_hosts.Remove(page.Record.Id);
+			PublishLoadedPageIds();
 			_pages.Remove(page.Record.Id);
 			DetachHostEvents(page.Record.Id);
 			await host.DisposeAsync();
@@ -423,6 +420,7 @@ internal sealed class AvaloniaWebPageCoordinator : IDisposable
 		_pages.Remove(pageId, out var page);
 		if (_hosts.Remove(pageId, out var host))
 		{
+			PublishLoadedPageIds();
 			DetachHostEvents(pageId);
 			if (ReferenceEquals(_activeHost, host))
 			{

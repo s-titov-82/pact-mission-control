@@ -266,9 +266,20 @@ public sealed class WebMonitorCoordinator : IAsyncDisposable
 	/// Restores retained state before exposing a loaded host to polling and starts monitoring only
 	/// when at least one enabled rule exists.
 	/// </summary>
+	public Task RegisterAsync(
+		string webPageId,
+		IWebPageHost host,
+		CancellationToken cancellationToken) =>
+		RegisterAsync(webPageId, host, initialUrl: null, cancellationToken);
+
+	/// <summary>
+	/// Registers a loaded host and prepares background execution for a matching initial address
+	/// before an empty host begins navigation. The actual document URL still controls monitoring.
+	/// </summary>
 	public async Task RegisterAsync(
 		string webPageId,
 		IWebPageHost host,
+		Uri? initialUrl,
 		CancellationToken cancellationToken)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(webPageId);
@@ -301,6 +312,12 @@ public sealed class WebMonitorCoordinator : IAsyncDisposable
 			registration.Navigating = host.Source is null;
 			registration.AwaitingPostNavigationConfirmation = registration.Navigating;
 			ApplyCurrentPresentationFacts(registration);
+			var compiled = GetCompiledRules();
+			if (sourceIdentity is null && FindFirstMatch(compiled, TryNormalize(initialUrl)) is not null)
+			{
+				await SyncKeepsRunningWhileHiddenAsync(registration, keepRunning: true, cancellationToken)
+					.ConfigureAwait(false);
+			}
 
 			lock (_sync)
 			{
@@ -332,7 +349,6 @@ public sealed class WebMonitorCoordinator : IAsyncDisposable
 
 			PublishStatus(registration, restored.Status);
 
-			var compiled = GetCompiledRules();
 			if (compiled.Length == 0)
 			{
 				await ClearForNoMatchAsync(registration).ConfigureAwait(false);

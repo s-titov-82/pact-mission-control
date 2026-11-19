@@ -699,10 +699,11 @@ section" writes only the active section's file and sets the status line to
 `Saved <label> (N items).`; each section validates its own fields before
 saving.
 
-Web monitoring rules are evaluated only for web tabs whose WebView host has
-actually been loaded. Restored or paused pages have no host and no polling;
-their retained unread state can still project from the snapshot. A loaded but
-hidden page keeps updating because a tab matching a rule is told it is visible (see
+Web monitoring rules are evaluated only for web tabs with a loaded WebView host.
+An unloaded tab can still show retained unread state from its snapshot. A tab
+restored with a matching rule starts its WebView in the background and installs
+the visibility override before loading the page. A matched hidden page keeps
+updating because it is told it is visible (see
 `WebAssets/backgroundVisibility.js` in [Architecture](architecture.md)); do not
 remove it, or pages that pause while hidden never change for the monitor. A
 loaded page uses the first matching enabled rule in file order, rebaselines after navigation

@@ -115,6 +115,47 @@ public sealed class AvaloniaWebPageCoordinatorTests
 		fixture.Page.IsBrowserLoaded.ShouldBeTrue();
 	}
 
+	[TestCase("^https://example\\.com/current$", true)]
+	[TestCase("^https://example\\.com/other$", false)]
+	public async Task ResumeInBackground_applies_rules_before_the_first_navigation(string pattern, bool monitored)
+	{
+		FakeWebPageHost host = new("web-1") { Source = null };
+		await using CoordinatorFixture fixture = new(host);
+		await fixture.Monitor.SetRulesAsync([new WebMonitorRule(
+			"test-rule", "Test rule", Enabled: true, pattern,
+			WebMonitorRuleCompiler.MinimumPollIntervalSeconds,
+			new(".running", WebMonitorValueSource.Exists, null, null, null), Revision: null)],
+			CancellationToken.None);
+
+		await fixture.Coordinator.ResumeInBackgroundAsync(fixture.Page, CancellationToken.None);
+
+		host.KeptRunningWhenNavigated.ShouldBe(monitored);
+	}
+
+	[Test]
+	public async Task Restart_can_read_loaded_pages_while_background_navigation_is_pending()
+	{
+		TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		TaskCompletionSource finish = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		FakeWebPageHost host = new("web-1")
+		{
+			Navigating = (_, _) => { entered.SetResult(); return finish.Task; }
+		};
+		await using CoordinatorFixture fixture = new(host);
+		var resume = fixture.Coordinator.ResumeInBackgroundAsync(fixture.Page, CancellationToken.None);
+		try
+		{
+			await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+			var loaded = await Task.Run(fixture.Coordinator.GetLoadedPageIds).WaitAsync(TimeSpan.FromSeconds(5));
+			loaded.ShouldBe([fixture.Page.Record.Id]);
+		}
+		finally
+		{
+			finish.TrySetResult();
+			await resume;
+		}
+	}
+
 	[Test]
 	public async Task ResumeInBackground_navigation_failure_rolls_back_host_and_allows_retry()
 	{
@@ -326,8 +367,10 @@ public sealed class AvaloniaWebPageCoordinatorTests
 
 	private sealed class FakeWebPageHost(string id) : IWebPageHost
 	{
+		private bool _keepsRunningWhileHidden;
 		public string Id { get; } = id;
-		public Uri? Source { get; private set; } = new("https://example.com/");
+		public Uri? Source { get; set; } = new("https://example.com/");
+		public bool? KeptRunningWhenNavigated { get; private set; }
 		public List<string> Calls { get; } = [];
 		public Uri? NavigatedUri { get; private set; }
 		public Func<Task>? Disposing { get; set; }
@@ -354,6 +397,7 @@ public sealed class AvaloniaWebPageCoordinatorTests
 		{
 			Calls.Add("navigate");
 			NavigatedUri = uri;
+			KeptRunningWhenNavigated = _keepsRunningWhileHidden;
 			Source = uri;
 			return Navigating?.Invoke(uri, cancellationToken)
 				?? Task.CompletedTask;
@@ -380,6 +424,12 @@ public sealed class AvaloniaWebPageCoordinatorTests
 		public Task FocusAsync(CancellationToken cancellationToken)
 		{
 			Calls.Add("focus");
+			return Task.CompletedTask;
+		}
+
+		public Task SetKeepsRunningWhileHiddenAsync(bool enabled, CancellationToken cancellationToken)
+		{
+			_keepsRunningWhileHidden = enabled;
 			return Task.CompletedTask;
 		}
 

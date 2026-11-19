@@ -8,7 +8,9 @@ using Pact.Presentation.ViewModels;
 
 namespace Pact.App.Avalonia.Views;
 
-internal sealed partial class BrowserPaneView : UserControl
+// A Grid attaches its children even when hidden. A templated UserControl delays
+// attaching the WebView host until the browser pane is presented for the first time.
+internal sealed partial class BrowserPaneView : Grid
 {
 	public BrowserPaneView()
 	{

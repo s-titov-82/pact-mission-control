@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Avalonia.Threading;
 using Pact.App.Avalonia.Views;
 using Pact.App.Avalonia.Web;
@@ -32,13 +33,18 @@ internal sealed class EngineProbeRunner
 		    <span id="background-tick">0</span>
 		    <span id="visible-tick">0</span>
 		    <span id="frame-tick">0</span>
+		    <span id="monitor-phase">Idle</span>
 		  </main>
 		  <script>
 		    let backgroundTick = 0;
 		    let visibleTick = 0;
 		    let frameTick = 0;
+		    const phase = document.querySelector("#monitor-phase");
 		    const countFrame = () => {
 		      document.querySelector("#frame-tick").textContent = String(++frameTick);
+		      if (frameTick === 1) phase.textContent = "Running";
+		      // Keep the activity observable across the monitor's five-second poll interval.
+		      if (frameTick === 80) phase.textContent = "Finished";
 		      requestAnimationFrame(countFrame);
 		    };
 		    requestAnimationFrame(countFrame);
@@ -220,32 +226,35 @@ internal sealed class EngineProbeRunner
 				"Engine probe",
 				localPage.AbsoluteUri,
 				CancellationToken.None);
-			await controller.SelectWebPageAsync(probePage, CancellationToken.None);
-			var portableBrowserHost = controller.GetWebPageHostForDiagnostics(probePage.Record.Id);
-			var browserHost = portableBrowserHost as AvaloniaWebPageHost
-				?? throw new InvalidOperationException("The production controller did not create an Avalonia browser host.");
-
-			if (!await WaitUntilAsync(
-				() => browserHost.DiagnosticSnapshot.Any(entry =>
-					entry.Phase is "document-response" or "navigation-failed"),
-				TimeSpan.FromSeconds(15)))
+			await controller.ResumeMonitoredPageForDiagnosticsAsync(probePage, new WebMonitorRule(
+				"engine-probe", "Engine probe", Enabled: true,
+				"^" + Regex.Escape(localPage.AbsoluteUri) + "$",
+				WebMonitorRuleCompiler.MinimumPollIntervalSeconds,
+				new("#monitor-phase", WebMonitorValueSource.Text, null, "^Running$", null),
+				new("#monitor-phase", WebMonitorValueSource.Text, null, null, null)));
+			var hiddenHost = await WaitForBrowserDocumentAsync(controller, probePage);
+			await WaitForMonitorStatusAsync(probePage, WebMonitorStatus.Activity);
+			domEvidence = await CollectDomEvidenceAsync(hiddenHost);
+			await WaitForMonitorStatusAsync(probePage, WebMonitorStatus.Unread);
+			if (window.IsBrowserPaneVisible || hiddenHost.DiagnosticSnapshot.Any(entry => entry.Phase == "shown"))
 			{
-				throw new TimeoutException(
-					"The production browser did not complete navigation within 15 seconds.");
+				throw new InvalidOperationException("The background probe page was presented before evidence was collected.");
 			}
-
-			if (browserHost.DiagnosticSnapshot.Any(entry => entry.Phase == "navigation-failed"))
-			{
-				throw new InvalidOperationException(
-					"The production browser failed to navigate to the local probe page.");
-			}
-
-			domEvidence = await CollectDomEvidenceAsync(browserHost);
 			domEvidence = new Dictionary<string, string?>(domEvidence, StringComparer.Ordinal)
 			{
 				["styled-screen"] = "passed",
 				["styled-capture-ms-200x50"] = captureMilliseconds
 			};
+			// Use a fresh page to also verify first render for a foreground open.
+			await controller.CloseWebPageAsync(probePage, CancellationToken.None);
+			probePage = await controller.ViewModel.CreateWebPageAsync(
+				$"engine-probe-{Guid.NewGuid():N}",
+				workspace.Id,
+				"Engine probe",
+				localPage.AbsoluteUri,
+				CancellationToken.None);
+			await controller.SelectWebPageAsync(probePage, CancellationToken.None);
+			var browserHost = await WaitForBrowserDocumentAsync(controller, probePage);
 			webProcessAttribution = await browserHost.ReadProcessAttributionAsync(
 				CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(10));
 			await controller.SelectSessionAsync(
@@ -370,6 +379,34 @@ internal sealed class EngineProbeRunner
 			workspaceId: workspace.Id);
 	}
 
+	private static async Task<AvaloniaWebPageHost> WaitForBrowserDocumentAsync(
+		Controllers.AvaloniaMainShellController controller,
+		WebPageViewModel page)
+	{
+		var browserHost = controller.GetWebPageHostForDiagnostics(page.Record.Id) as AvaloniaWebPageHost
+			?? throw new InvalidOperationException("The production controller did not create an Avalonia browser host.");
+		if (!await WaitUntilAsync(
+			() => browserHost.DiagnosticSnapshot.Any(entry =>
+				entry.Phase is "document-response" or "navigation-failed"),
+			TimeSpan.FromSeconds(15)))
+		{
+			throw new TimeoutException("The production browser did not complete navigation within 15 seconds.");
+		}
+		if (browserHost.DiagnosticSnapshot.Any(entry => entry.Phase == "navigation-failed"))
+		{
+			throw new InvalidOperationException("The production browser failed to navigate to the local probe page.");
+		}
+		return browserHost;
+	}
+
+	private static async Task WaitForMonitorStatusAsync(WebPageViewModel page, WebMonitorStatus expected)
+	{
+		if (!await WaitUntilAsync(() => page.MonitorStatus == expected, TimeSpan.FromSeconds(15)))
+		{
+			throw new TimeoutException($"Background monitoring did not reach {expected}; last status was {page.MonitorStatus}.");
+		}
+	}
+
 	private static async Task<IReadOnlyDictionary<string, string?>> CollectDomEvidenceAsync(
 		AvaloniaWebPageHost browserHost)
 	{
@@ -409,14 +446,8 @@ internal sealed class EngineProbeRunner
 					CaptureGroup: null)),
 		};
 
-		// A hidden monitored tab must keep running timers, keep reporting itself visible, and keep
-		// getting animation frames, or pages that pause live updates while hidden never change for
-		// the monitor to see. Monitoring turns this on for tabs that match a rule; the probe page
-		// matches none, so it is turned on directly.
-		await browserHost.SetKeepsRunningWhileHiddenAsync(true, CancellationToken.None);
-		// The page queued a native frame before the override was installed. Let that
-		// callback schedule its successor through the wrapper before testing hidden frames.
-		await WaitForWrappedFrameAsync(browserHost);
+		// The page must run its first animation frame without ever being presented, as when
+		// Pact restores a monitored browser tab behind a terminal at startup.
 		(string Probe, string Selector, int MinimumAdvance)[] counters =
 		[
 			("background-timer", "#background-tick", 10),
@@ -429,7 +460,6 @@ internal sealed class EngineProbeRunner
 			before[index] = await ReadCounterAsync(browserHost, counters[index].Selector);
 		}
 
-		await browserHost.HideAsync(CancellationToken.None);
 		await Task.Delay(TimeSpan.FromSeconds(3));
 		for (var index = 0; index < counters.Length; index++)
 		{
@@ -442,21 +472,6 @@ internal sealed class EngineProbeRunner
 		}
 
 		return evidence;
-	}
-
-	private static async Task WaitForWrappedFrameAsync(AvaloniaWebPageHost browserHost)
-	{
-		var before = await ReadCounterAsync(browserHost, "#frame-tick");
-		var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(5);
-		while (DateTimeOffset.UtcNow < deadline)
-		{
-			if (before is int first && await ReadCounterAsync(browserHost, "#frame-tick") is int current && current > first)
-			{
-				return;
-			}
-			await Task.Delay(TimeSpan.FromMilliseconds(50));
-		}
-		throw new TimeoutException("The visible probe page did not advance its animation frame after installing the background override.");
 	}
 
 	private static async Task<int?> ReadCounterAsync(AvaloniaWebPageHost browserHost, string selector)

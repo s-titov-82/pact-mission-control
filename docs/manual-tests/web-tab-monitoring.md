@@ -16,6 +16,9 @@ fixture from `127.0.0.1`; do not depend on a private authenticated service.
    visible active page acknowledges it.
 3. Hide the loaded page behind a terminal or note without unloading it. Continue
    mutating the fixture and verify polling and state transitions remain active.
+   Restart with the terminal selected and the monitored tab in the restoration
+   checkpoint. Without selecting the browser, repeat the activity and completion
+   changes on a fixture that updates its DOM through `requestAnimationFrame`.
 4. Minimize or deactivate Pact during a change. Unread is retained and clears
    only after the page is selected in an active visible window.
 5. Force one evaluation past its timeout, then restore the fixture. The error is

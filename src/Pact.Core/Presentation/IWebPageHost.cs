@@ -60,8 +60,8 @@ public interface IWebPageHost : IAsyncDisposable
 
 	/// <summary>
 	/// Sets whether the page is told it is visible while its view is hidden, so a page that
-	/// pauses live updates in the background keeps updating for monitoring. Turning it off
-	/// applies from the next document; the current one keeps updating until it is replaced.
+	/// pauses live updates in the background keeps updating for monitoring. Setting this before
+	/// the first navigation lets the host prepare that document before page scripts run.
 	/// </summary>
 	Task SetKeepsRunningWhileHiddenAsync(bool enabled, CancellationToken cancellationToken) =>
 		Task.CompletedTask;

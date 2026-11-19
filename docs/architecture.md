@@ -50,21 +50,23 @@ Chromium to suspend hidden content.
 Those arguments do not change what a page is told: a hidden browser tab's
 WebView2 controller is invisible, so the page sees `document.hidden` and gets no
 animation frames, and pages such as TeamCity then pause their live updates.
-A tab whose address matches an enabled monitoring rule therefore runs
-`WebAssets/backgroundVisibility.js` at document creation: `WebMonitorCoordinator`
-turns it on through `IWebPageHost.SetKeepsRunningWhileHiddenAsync` when the
-confirmed address matches and off when no rule matches, which also gives the
-already loaded page its real visibility back. A failed change is retried by the
-next monitor pass. Other tabs pause normally while hidden. It reports the document as visible, withholds only the transition to
-hidden (the transition back still reaches the page), and runs a pending
-animation-frame callback on a timer while the tab is actually hidden. The engine
-probe's `background-visibility` and `background-frames` checks cover it.
+A hidden browser pane keeps its native host container attached to the window,
+so a restored tab can create its WebView2 adapter without opening the pane.
+When the initial address matches an enabled monitoring rule,
+`WebMonitorCoordinator` requests background execution before navigation. The
+host waits for its adapter and installs `WebAssets/backgroundVisibility.js`
+before loading the document. The confirmed address still determines the rule
+after a redirect or later navigation. A confirmed address without a rule gets
+its real visibility back, and the next monitor pass retries a failed change.
+The script reports the document as visible, withholds transitions to hidden,
+and runs pending animation-frame callbacks on a timer while the tab is hidden.
 
 The frame wrapper covers requests made after installation. Enabling monitoring
 on an already-hidden loaded page cannot recover a native frame request queued
 before installation; show the page once or reload it to start that loop through
-the wrapper. The native probe waits for a visible frame after installation
-before measuring continued frame delivery while hidden.
+the wrapper. The native probe verifies continued frame delivery and the
+Activity-to-Unread transition on a monitored page that starts hidden and has
+never been presented.
 
 Terminal screen and viewport facts cross into C# as immutable snapshots. Screen
 snapshots retain physical rows/wrapping and UTF-16 Dim ranges from the bottom 15
