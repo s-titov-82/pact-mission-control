@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.15] - 2026-11-19
+
+### Added
+
+- The project dashboard has a Board tab for tracking work from Backlog through
+  Ready, In Progress, Verification, and Done. Reorder cards, add Markdown
+  descriptions and comments, link a Jira issue, and assign a project session.
+- Project agents can update cards through Pact MCP. Taking the next task claims
+  the first Ready card for the calling session in one operation. An empty Ready
+  column leaves the board unchanged.
+- Pact saves each project's board alongside its settings. Completed cards can
+  be archived and restored to the Done column.
+
 ## [0.1.14] - 2026-11-18
 
 ### Fixed
