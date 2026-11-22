@@ -34,6 +34,37 @@ public sealed class SettingsWindowInteractionTests : IDisposable
 	public void Dispose() => _temporaryDirectory.Dispose();
 
 	[AvaloniaTest]
+	public async Task Root_test_terminal_requires_saved_template_edits()
+	{
+		(var vm, _) = await CreateViewModelAsync();
+		AgentProfileRecord? launched = null;
+		using SettingsWindow window = new(vm, new RecordingExternalLauncher())
+		{
+			InitialSection = SettingsSection.LaunchProfiles,
+			LaunchTestProfileAsync = (profile, _) =>
+			{
+				launched = profile;
+				return Task.CompletedTask;
+			}
+		};
+		await window.InitializeAsync();
+		window.Show();
+		await DrainUiTwiceAsync();
+		var section = vm.ActiveSection.ShouldBeOfType<LaunchProfilesSectionViewModel>();
+		var item = section.SelectedItem.ShouldBeOfType<ShellProfileItemViewModel>();
+		item.CommandTemplate = "saved-cli";
+		var button = window.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Tag, "LaunchTestProfile"));
+		button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+		await WaitUntilAsync(() => window.FindControl<TextBlock>("StatusText")!.Text?.StartsWith("Save or revert", StringComparison.Ordinal) == true);
+		launched.ShouldBeNull();
+		(await section.SaveAsync(CancellationToken.None)).ShouldBeTrue();
+		button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+		await WaitUntilAsync(() => launched is not null);
+		launched!.CommandTemplate.ShouldBe("saved-cli");
+		window.Close();
+	}
+
+	[AvaloniaTest]
 	public async Task Updates_section_hides_file_actions_and_routes_manual_check()
 	{
 		await using UpdateCoordinator coordinator = new(

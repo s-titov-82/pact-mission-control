@@ -13,6 +13,7 @@ internal sealed partial class App : Application
 	internal static AppearancePreferences CurrentAppearance { get; private set; } =
 		new(AppearanceMode.System);
 	public static IServiceProvider Services => Bootstrap.Services;
+	internal static event EventHandler? AppearanceChanged;
 
 	public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
@@ -50,6 +51,7 @@ internal sealed partial class App : Application
 		ArgumentNullException.ThrowIfNull(preferences);
 		CurrentAppearance = preferences;
 		ApplyAppearance(preferences.Theme);
+		AppearanceChanged?.Invoke(null, EventArgs.Empty);
 	}
 
 	internal static void Shutdown(int exitCode)

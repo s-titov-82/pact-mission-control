@@ -2,12 +2,85 @@ using Avalonia;
 using Avalonia.Controls;
 using Pact.App.Avalonia.Platform;
 using Pact.Presentation.Services;
+using Pact.Core.Sessions;
+using Pact.Presentation.ViewModels;
+using System.ComponentModel;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Pact.App.Avalonia.Views;
 
 internal sealed partial class MainWindow
 {
 	private bool _hasTaskbarCompletionAttention;
+	private AttentionNotificationList? _notifications;
+
+	private void WireWindowsNotifications(string profileRoot)
+	{
+		var feed = EngineProbeController.ViewModel.Attention;
+		var group = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(profileRoot.ToUpperInvariant())))[..16];
+		void Report(Exception ex)
+		{
+			RunUiEvent("notification-failure", () => EngineProbeController.ReportUiFailureAsync("Windows notifications", ex));
+		}
+		_notifications = new AttentionNotificationList((item, preferences) =>
+		{
+			var reason = item.Indicator switch
+			{
+				TerminalTabIndicator.InputRequested => "Waiting for your answer",
+				TerminalTabIndicator.Failed => "Needs attention",
+				_ => "Unread update"
+			};
+			return new WindowsAttentionNotification(group, $"{item.OwnerName} · {item.Title}", reason, preferences,
+				() => RunUiEvent("open-notification", async () =>
+				{
+					if (!feed.Owns(item))
+					{
+						return;
+					}
+					if (WindowState == WindowState.Minimized)
+					{
+						WindowState = WindowState.Normal;
+					}
+					Activate();
+					await OpenAttentionTargetAsync(item);
+				}), Report);
+		}, Report);
+		void Refresh(object? sender, EventArgs args)
+		{
+			_notifications.Update(feed.Items, App.CurrentAppearance);
+		}
+		void FeedChanged(object? sender, PropertyChangedEventArgs args)
+		{
+			if (args.PropertyName == nameof(feed.Items))
+			{
+				Refresh(sender, args);
+			}
+		}
+		feed.PropertyChanged += FeedChanged;
+		App.AppearanceChanged += Refresh;
+		_eventDetachments.Add(() =>
+		{
+			feed.PropertyChanged -= FeedChanged;
+			App.AppearanceChanged -= Refresh;
+		});
+	}
+
+	private async Task OpenAttentionTargetAsync(AttentionItem item)
+	{
+		if (item.IsOrchestrator)
+		{
+			await EngineProbeController.SelectOrchestratorAsync();
+		}
+		else
+		{
+			await EngineProbeController.SelectItemAsync(item.Target);
+		}
+		if (EngineProbeController.ViewModel.Attention.Owns(item))
+		{
+			ProjectTree.RevealAttentionItem(item);
+		}
+	}
 
 	private void WireAttentionEvents()
 	{

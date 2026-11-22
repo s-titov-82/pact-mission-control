@@ -50,6 +50,7 @@ package metadata uses a license file or legacy URL:
 - `Avalonia.Angle.Windows.Natives` — BSD-3-Clause;
 - `HtmlAgilityPack` — MIT;
 - `Microsoft.Web.WebView2` — BSD-3-Clause plus its package NOTICE;
+- `Microsoft.Windows.SDK.NET.Ref` — Windows SDK license for the Windows notification API projections;
 - `Svg.Custom` — Microsoft Public License (`MS-PL`).
 
 This inventory and its license classifications are an engineering record, not

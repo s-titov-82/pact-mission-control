@@ -66,6 +66,68 @@ public sealed class AppearanceSectionViewModelTests : IDisposable
 	}
 
 	[Test]
+	public async Task Notification_options_default_to_off_and_round_trip_through_the_editor()
+	{
+		AppearanceSettingsStore store = new(Path.Combine(_directory, "appearance.json"));
+		AppearanceSectionViewModel section = new(store, _ => { });
+		await section.LoadAsync(CancellationToken.None);
+		section.ShowNotifications.ShouldBeFalse();
+		section.NotificationModeIndex.ShouldBe((int)NotificationBannerMode.WindowsDefault);
+		section.IsCustomNotificationTimeout.ShouldBeFalse();
+		section.ShowNotifications = true;
+		section.NotificationSoundIndex = (int)NotificationSoundMode.Station;
+		section.NotificationSeconds = 17;
+		section.NotificationModeIndex = (int)NotificationBannerMode.CustomTimeout;
+		(await section.SaveAsync(CancellationToken.None)).ShouldBeTrue();
+		AppearanceSectionViewModel reopened = new(store, _ => { });
+		await reopened.LoadAsync(CancellationToken.None);
+		reopened.ShowNotifications.ShouldBeTrue();
+		reopened.NotificationSoundIndex.ShouldBe((int)NotificationSoundMode.Station);
+		reopened.NotificationSeconds.ShouldBe(17);
+		reopened.IsCustomNotificationTimeout.ShouldBeTrue();
+	}
+
+	[Test]
+	[TestCase("true", NotificationSoundMode.Windows)]
+	[TestCase("false", NotificationSoundMode.Silent)]
+	public async Task Existing_sound_checkbox_preserves_its_effect(string enabled, NotificationSoundMode expected)
+	{
+		var path = Path.Combine(_directory, "appearance.json");
+		await File.WriteAllTextAsync(path, $"{{\"notificationSound\":{enabled}}}");
+		var preferences = await new AppearanceSettingsStore(path).LoadPreferencesAsync(CancellationToken.None);
+		preferences.NotificationSoundMode.ShouldBe(expected);
+	}
+
+	[Test]
+	public async Task Imported_profile_inherits_defaults_and_remains_editable_after_restart()
+	{
+		AppearanceSettingsStore store = new(Path.Combine(_directory, "appearance.json"));
+		AppearanceSectionViewModel editor = new(store, _ => { });
+		await editor.LoadAsync(CancellationToken.None);
+		editor.LoadProfiles("""
+			{
+			  // Windows Terminal accepts comments and trailing commas.
+			  "profiles": { "defaults": { "font": { "face": "Consolas", "size": 11 } },
+			    "list": [{"name":"Shell"}, {"name":"PowerShell","font":{"size":12},"background":"#123",}] },
+			  "schemes": []
+			}
+			""");
+		editor.ProfileIndex = 1;
+		editor.ImportProfile(dark: true);
+		editor.FontFamily.ShouldBe("Consolas");
+		editor.FontSize.ShouldBe(16);
+		editor.PreviewBackground.ShouldBe("#112233");
+		editor.Palette.Single(c => c.Name == "magenta").Value.ShouldBe("#881798");
+		editor.Palette.Single(c => c.Name == "green").Value = "#123456";
+		(await editor.SaveAsync(CancellationToken.None)).ShouldBeTrue();
+
+		AppearanceSectionViewModel reopened = new(store, _ => { });
+		await reopened.LoadAsync(CancellationToken.None);
+		reopened.PreviewGreen.ShouldBe("#123456");
+		reopened.FontSize.ShouldBe(16);
+	}
+
+	[Test]
 	public async Task Section_marks_dirty_saves_applies_and_reloads()
 	{
 		AppearanceSettingsStore store = new(Path.Combine(_directory, "appearance.json"));

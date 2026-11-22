@@ -1,7 +1,7 @@
 namespace Pact.Presentation.Settings.ViewModels;
 
 /// <summary>Edits and applies the persisted application color-theme preference.</summary>
-public sealed class AppearanceSectionViewModel : SettingsSectionViewModelBase
+public sealed partial class AppearanceSectionViewModel : SettingsSectionViewModelBase
 {
 	private readonly AppearanceSettingsStore _store;
 	private readonly Action<AppearancePreferences> _apply;
@@ -20,6 +20,10 @@ public sealed class AppearanceSectionViewModel : SettingsSectionViewModelBase
 	{
 		_store = store;
 		_apply = apply ?? throw new ArgumentNullException(nameof(apply));
+		foreach (var color in Palette)
+		{
+			color.PropertyChanged += (_, _) => TerminalChanged();
+		}
 	}
 
 	// A base-constructor argument is evaluated before the body, so the null check cannot
@@ -29,6 +33,65 @@ public sealed class AppearanceSectionViewModel : SettingsSectionViewModelBase
 	{
 		ArgumentNullException.ThrowIfNull(store);
 		return store.Path;
+	}
+
+	/// <summary>Show reminders for new items in the attention feed.</summary>
+	public bool ShowNotifications
+	{
+		get;
+		set
+		{
+			if (SetField(ref field, value) && !_loading)
+			{
+				MarkDirty();
+			}
+		}
+	}
+
+	/// <summary>Selected notification sound in editor display order.</summary>
+	public int NotificationSoundIndex
+	{
+		get;
+		set
+		{
+			if (SetField(ref field, value) && !_loading)
+			{
+				MarkDirty();
+			}
+		}
+	}
+
+	/// <summary>Selected banner mode in the order offered by the editor.</summary>
+	public int NotificationModeIndex
+	{
+		get;
+		set
+		{
+			if (SetField(ref field, value))
+			{
+				OnPropertyChanged(nameof(IsCustomNotificationTimeout));
+				if (!_loading)
+				{
+					MarkDirty();
+				}
+			}
+		}
+	}
+
+	/// <summary>Whether the seconds field is used by the current mode.</summary>
+	public bool IsCustomNotificationTimeout => NotificationModeIndex == (int)NotificationBannerMode.CustomTimeout;
+
+	/// <summary>Seconds before moving the reminder to Notification Center in custom mode.</summary>
+	public int NotificationSeconds
+	{
+		get;
+		set
+		{
+			if (SetField(ref field, value) && !_loading)
+			{
+				MarkDirty();
+			}
+		}
 	}
 
 	/// <summary>Lists the supported theme choices in display order.</summary>
@@ -84,7 +147,13 @@ public sealed class AppearanceSectionViewModel : SettingsSectionViewModelBase
 			SelectedMode = preferences.Theme;
 			ShowSelectedTabDetails = preferences.ShowSelectedTabDetails;
 			ShowExternalProcessMetrics = preferences.ShowExternalProcessMetrics;
+			ShowNotifications = preferences.ShowNotifications;
+			NotificationSoundIndex = (int)preferences.NotificationSoundMode;
+			NotificationSeconds = preferences.NotificationSeconds;
+			NotificationModeIndex = (int)preferences.NotificationMode;
+			SetTerminal(preferences.Terminal ?? new());
 			StatusText = null;
+			await LoadDefaultProfilesAsync(cancellationToken);
 			ClearDirty();
 		}
 		finally
@@ -96,14 +165,33 @@ public sealed class AppearanceSectionViewModel : SettingsSectionViewModelBase
 	/// <inheritdoc />
 	public override async Task<bool> SaveAsync(CancellationToken cancellationToken)
 	{
-		AppearancePreferences preferences = new(
-			SelectedMode,
-			ShowSelectedTabDetails,
-			ShowExternalProcessMetrics);
+		var terminal = new TerminalAppearance
+		{
+			FontFamily = FontFamily.Trim(),
+			FontSize = FontSize,
+			LineHeight = LineHeight,
+			Colors = Palette.Where(c => !string.IsNullOrWhiteSpace(c.Value)).ToDictionary(c => c.Name, c => c.Value.Trim())
+		};
+		if (!terminal.IsValid)
+		{
+			StatusText = "Enter a font name, a size from 4 to 128 px, line height from 1 to 4 and colors as #RRGGBB.";
+			return false;
+		}
+		var preferences = GetPreviewPreferences() with { Terminal = terminal.UsesDefaults ? null : terminal };
 		await _store.SaveAsync(preferences, cancellationToken);
 		_apply(preferences);
 		StatusText = $"Saved Appearance ({SelectedMode}).";
 		ClearDirty();
 		return true;
 	}
+
+	/// <summary>Captures the current banner and sound choices for a preview before saving.</summary>
+	public AppearancePreferences GetPreviewPreferences() =>
+		new(SelectedMode, ShowSelectedTabDetails, ShowExternalProcessMetrics)
+		{
+			ShowNotifications = ShowNotifications,
+			NotificationSoundMode = (NotificationSoundMode)NotificationSoundIndex,
+			NotificationSeconds = NotificationSeconds,
+			NotificationMode = (NotificationBannerMode)NotificationModeIndex
+		};
 }

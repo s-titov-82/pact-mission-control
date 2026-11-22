@@ -89,6 +89,7 @@ const terminalThemes = {
 };
 
 let currentThemeName = 'dark';
+let terminalAppearance = null;
 
 const terminalOptions = {
   cursorBlink: true,
@@ -281,7 +282,7 @@ function getBusyOverlay() {
 
 function applyTerminalTheme(name) {
   currentThemeName = name === 'light' ? 'light' : 'dark';
-  const theme = terminalThemes[currentThemeName];
+  const theme = { ...terminalThemes[currentThemeName], ...terminalAppearance?.colors };
   terminalOptions.theme = theme;
 
   document.documentElement.style.background = theme.background;
@@ -676,8 +677,18 @@ document.addEventListener('contextmenu', event => {
 });
 
 window.agentTerminal = {
-  setTheme: function (name) {
+  setTheme: function (name, appearance) {
+    terminalAppearance = appearance;
+    terminalOptions.fontFamily = appearance?.fontFamily || 'Cascadia Mono, Consolas, monospace';
+    terminalOptions.fontSize = appearance?.fontSize ?? 15;
+    terminalOptions.lineHeight = appearance?.lineHeight ?? 1.1;
     applyTerminalTheme(name);
+    for (const instance of terminals.values()) {
+      instance.term.options.fontFamily = terminalOptions.fontFamily;
+      instance.term.options.fontSize = terminalOptions.fontSize;
+      instance.term.options.lineHeight = terminalOptions.lineHeight;
+    }
+    resizeAllInstances();
   },
   createTerminal: function (sessionId, options) {
     createInstance(sessionId, options);

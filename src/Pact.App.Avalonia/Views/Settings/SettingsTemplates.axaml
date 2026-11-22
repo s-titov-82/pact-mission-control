@@ -6,21 +6,101 @@
   <local:NullToBooleanConverter x:Key="HasValue" />
   <local:NullToBooleanConverter x:Key="IsNull" Invert="True" />
   <local:BooleanNegationConverter x:Key="Not" />
+  <local:TerminalPreviewBrushConverter x:Key="PreviewBrush" />
 
   <DataTemplate x:Key="AppearanceSectionTemplate" DataType="s:AppearanceSectionViewModel">
-    <StackPanel Margin="0,10,20,0" Spacing="8">
-      <TextBlock Classes="SettingsFieldLabel" Text="Theme" />
-      <ComboBox Width="220" HorizontalAlignment="Left"
-                ItemsSource="{Binding Modes}" SelectedItem="{Binding SelectedMode}" />
-      <TextBlock Foreground="{DynamicResource AppTextMutedBrush}" TextWrapping="Wrap"
-                 Text="System follows the Windows theme. Light and Dark override it." />
-      <CheckBox Margin="0,8,0,0" Content="Show selected tab details"
-                IsChecked="{Binding ShowSelectedTabDetails}" />
-      <CheckBox Content="Show external process metrics"
-                IsChecked="{Binding ShowExternalProcessMetrics}" />
-      <TextBlock Foreground="{DynamicResource AppTextMutedBrush}" TextWrapping="Wrap"
-                 Text="Opt-in CPU and memory totals for the selected live terminal or loaded web tab." />
-    </StackPanel>
+    <TabControl>
+      <TabItem Header="General">
+        <ScrollViewer>
+          <StackPanel Margin="0,10,20,0" Spacing="8">
+            <TextBlock Classes="SettingsFieldLabel" Text="Theme" />
+            <ComboBox Width="220" HorizontalAlignment="Left"
+                      ItemsSource="{Binding Modes}" SelectedItem="{Binding SelectedMode}" />
+            <TextBlock Foreground="{DynamicResource AppTextMutedBrush}" TextWrapping="Wrap"
+                       Text="System follows the Windows theme. Light and Dark override it." />
+            <CheckBox Margin="0,8,0,0" Content="Show selected tab details"
+                      IsChecked="{Binding ShowSelectedTabDetails}" />
+            <CheckBox Content="Show external process metrics"
+                      IsChecked="{Binding ShowExternalProcessMetrics}" />
+            <TextBlock Foreground="{DynamicResource AppTextMutedBrush}" TextWrapping="Wrap"
+                       Text="Opt-in CPU and memory totals for the selected live terminal or loaded web tab." />
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+      <TabItem Header="Terminal theme">
+        <ScrollViewer>
+          <StackPanel Margin="0,10,20,0" Spacing="8">
+            <TextBlock Classes="SettingsFieldLabel" Text="Windows Terminal profile" />
+            <Button Content="Choose settings.json…" HorizontalAlignment="Left" Tag="LoadTerminalProfiles"
+                    IsVisible="{Binding HasProfiles, Converter={StaticResource Not}}" />
+            <WrapPanel IsVisible="{Binding HasProfiles}">
+              <ComboBox MinWidth="144" Margin="0,0,6,0" ItemsSource="{Binding ProfileNames}" SelectedIndex="{Binding ProfileIndex}" />
+              <Button Content="Use profile" Tag="ImportTerminalProfile" />
+            </WrapPanel>
+            <TextBlock Text="Font family" />
+            <TextBox Text="{Binding FontFamily}" />
+            <WrapPanel>
+              <StackPanel Margin="0,0,12,0"><TextBlock Text="Font size (px)" />
+                <NumericUpDown Width="110" Minimum="4" Maximum="128" Increment="0.5" Value="{Binding FontSize}"/></StackPanel>
+              <StackPanel><TextBlock Text="Line height" />
+                <NumericUpDown Width="110" Minimum="1" Maximum="4" Increment="0.05" Value="{Binding LineHeight}"/></StackPanel>
+            </WrapPanel>
+            <Border Padding="12" x:Name="TerminalPreview">
+              <Border.Background><MultiBinding Converter="{StaticResource PreviewBrush}" ConverterParameter="background">
+                <Binding Path="PreviewBackground"/><Binding Path="SelectedMode"/><Binding Path="ActualThemeVariant" RelativeSource="{RelativeSource Self}"/>
+              </MultiBinding></Border.Background>
+              <TextBlock FontFamily="{Binding FontFamily}" FontSize="{Binding FontSize}" LineHeight="{Binding PreviewLineHeight}">
+                <TextBlock.Foreground><MultiBinding Converter="{StaticResource PreviewBrush}" ConverterParameter="foreground">
+                  <Binding Path="PreviewForeground"/><Binding Path="SelectedMode"/><Binding ElementName="TerminalPreview" Path="ActualThemeVariant"/>
+                </MultiBinding></TextBlock.Foreground>
+                <Run Text="❯ Review the changes"/><LineBreak/>
+                <Run Text="● Read 2 files"/><LineBreak/>
+                <Run Text="+ All checks passed"><Run.Foreground><MultiBinding Converter="{StaticResource PreviewBrush}" ConverterParameter="green">
+                  <Binding Path="PreviewGreen"/><Binding Path="SelectedMode"/><Binding ElementName="TerminalPreview" Path="ActualThemeVariant"/>
+                </MultiBinding></Run.Foreground></Run>
+              </TextBlock>
+            </Border>
+            <Expander Header="Terminal colors">
+              <ItemsControl ItemsSource="{Binding Palette}">
+                <ItemsControl.ItemTemplate><DataTemplate>
+                  <Grid ColumnDefinitions="160,*" Margin="0,2">
+                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                    <TextBox Grid.Column="1" Text="{Binding Value}" PlaceholderText="Theme default · #RRGGBB" />
+                  </Grid>
+                </DataTemplate></ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </Expander>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+      <TabItem Header="Notifications">
+        <ScrollViewer>
+          <StackPanel Margin="0,10,20,0" Spacing="8">
+            <CheckBox Content="Show Windows notifications" IsChecked="{Binding ShowNotifications}" />
+            <StackPanel IsEnabled="{Binding ShowNotifications}" Spacing="4">
+              <TextBlock Text="Sound" />
+              <ComboBox SelectedIndex="{Binding NotificationSoundIndex}">
+                <ComboBoxItem Content="Silent"/>
+                <ComboBoxItem Content="Windows default"/>
+                <ComboBoxItem Content="ICQ (Аська)"/>
+                <ComboBoxItem Content="Station (Вокзал)"/>
+              </ComboBox>
+              <TextBlock Text="Banner duration" />
+              <ComboBox SelectedIndex="{Binding NotificationModeIndex}">
+                <ComboBoxItem Content="Use Windows settings"/>
+                <ComboBoxItem Content="Keep until dismissed"/>
+                <ComboBoxItem Content="Hide after a custom interval"/>
+              </ComboBox>
+              <TextBlock IsVisible="{Binding IsCustomNotificationTimeout}" Text="Hide after (seconds)" />
+              <NumericUpDown IsVisible="{Binding IsCustomNotificationTimeout}" Width="110" HorizontalAlignment="Left" Minimum="1" Maximum="3600"
+                             Increment="1" FormatString="0" Value="{Binding NotificationSeconds}" />
+              <TextBlock TextWrapping="Wrap" Text="Hidden banners stay in Notification Center while the event needs attention. Windows notification settings apply." />
+              <Button HorizontalAlignment="Left" Content="Test notification" Tag="TestNotification" />
+            </StackPanel>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+    </TabControl>
   </DataTemplate>
 
 	<DataTemplate x:Key="UpdatesSectionTemplate" DataType="s:UpdatesSectionViewModel">

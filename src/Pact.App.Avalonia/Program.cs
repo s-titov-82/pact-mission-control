@@ -10,6 +10,10 @@ internal static partial class Program
 	[STAThread]
 	public static int Main(string[] args)
 	{
+		if (args is ["-ToastActivated"])
+		{
+			return Task.Run(Platform.WindowsNotificationActivation.ForwardActivation).GetAwaiter().GetResult();
+		}
 		var options = AppLaunchOptions.Parse(args);
 		var profile = options.Profile;
 		var probeRunner = EngineProbeRunner.TryCreate(

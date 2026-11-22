@@ -125,6 +125,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 		UpdateExternalProcessMetrics();
 		ApplyWindowLayout(_windowLayoutStore.Load());
 		_userAttention = new AvaloniaUserAttention(this);
+		WireWindowsNotifications(appPaths.RootDirectory);
 		WireAttentionEvents();
 		DataContext = EngineProbeController.ViewModel;
 		ProjectTree.DataContext = EngineProbeController.ViewModel;
@@ -245,18 +246,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 					return;
 				}
 				RightPanelPopup.IsOpen = false;
-				if (item.IsOrchestrator)
-				{
-					await EngineProbeController.SelectOrchestratorAsync();
-				}
-				else
-				{
-					await EngineProbeController.SelectItemAsync(item.Target);
-				}
-				if (feed.Owns(item))
-				{
-					ProjectTree.RevealAttentionItem(item);
-				}
+				await OpenAttentionTargetAsync(item);
 			});
 		ObserveEvent(
 			handler => ProjectTree.SelectOrchestratorRequested += handler,
@@ -1679,6 +1669,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 		_updateController?.Stop();
 		_usageRefreshCancellation.Cancel();
 		SelectionActions.DetachEventProducers();
+		_notifications?.Dispose();
 		AgentFile.Hide();
 		NotesPane.DetachEventProducers();
 		ProjectScreen.DetachEventProducers();

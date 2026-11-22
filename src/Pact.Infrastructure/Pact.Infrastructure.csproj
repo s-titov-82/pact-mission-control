@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <EmbeddedResource Include="AgentControl\PactSkills\*.md" />
+    <EmbeddedResource Include="Settings\WindowsTerminalSchemes.json" />
     <Content Include="Defaults\**\*.*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

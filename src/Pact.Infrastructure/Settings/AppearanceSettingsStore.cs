@@ -4,6 +4,30 @@ using Pact.Infrastructure.Storage;
 
 namespace Pact.Infrastructure.Settings;
 
+/// <summary>Sound played when a new Windows attention notification appears.</summary>
+public enum NotificationSoundMode
+{
+	/// <summary>Deliver notifications silently.</summary>
+	Silent,
+	/// <summary>Use the notification sound selected in the Windows sound scheme.</summary>
+	Windows,
+	/// <summary>Play Pact's short messenger chirp.</summary>
+	Icq,
+	/// <summary>Play Pact's station announcement chime.</summary>
+	Station
+}
+
+/// <summary>How Windows presents an attention event before moving it to Notification Center.</summary>
+public enum NotificationBannerMode
+{
+	/// <summary>Use the user's Windows banner duration.</summary>
+	WindowsDefault,
+	/// <summary>Keep a reminder visible until the user acts.</summary>
+	UntilDismissed,
+	/// <summary>Move the reminder to Notification Center after a configured interval.</summary>
+	CustomTimeout
+}
+
 /// <summary>Identifies how the application chooses its color theme.</summary>
 public enum AppearanceMode
 {
@@ -24,7 +48,19 @@ public enum AppearanceMode
 public sealed record AppearancePreferences(
 	AppearanceMode Theme,
 	bool ShowSelectedTabDetails = true,
-	bool ShowExternalProcessMetrics = false);
+	bool ShowExternalProcessMetrics = false)
+{
+	/// <summary>Terminal rendering overrides. Missing overrides follow the application theme.</summary>
+	public TerminalAppearance? Terminal { get; init; }
+	/// <summary>Controls native Windows notifications for new attention events.</summary>
+	public bool ShowNotifications { get; init; }
+	/// <summary>Audio cue for new attention events.</summary>
+	public NotificationSoundMode NotificationSoundMode { get; init; }
+	/// <summary>Presentation mode for new notifications.</summary>
+	public NotificationBannerMode NotificationMode { get; init; }
+	/// <summary>Banner timeout in seconds when using a custom interval.</summary>
+	public int NotificationSeconds { get; init; } = 10;
+}
 
 /// <summary>Persists the application appearance preference independently of editable feature settings.</summary>
 public sealed class AppearanceSettingsStore
@@ -65,7 +101,15 @@ public sealed class AppearanceSettingsStore
 			return new(
 				Parse(settings?.Theme),
 				settings?.ShowSelectedTabDetails ?? true,
-				settings?.ShowExternalProcessMetrics ?? false);
+				settings?.ShowExternalProcessMetrics ?? false)
+			{
+				Terminal = settings?.Terminal is { IsValid: true } terminal ? terminal : null,
+				ShowNotifications = settings?.ShowNotifications ?? false,
+				NotificationSoundMode = settings?.NotificationSoundMode ??
+					(settings?.NotificationSound == true ? NotificationSoundMode.Windows : NotificationSoundMode.Silent),
+				NotificationMode = settings?.NotificationMode ?? NotificationBannerMode.WindowsDefault,
+				NotificationSeconds = Math.Clamp(settings?.NotificationSeconds ?? 10, 1, 3600)
+			};
 		}
 		catch (JsonException)
 		{
@@ -94,6 +138,24 @@ public sealed class AppearanceSettingsStore
 		root["theme"] = preferences.Theme.ToString().ToLowerInvariant();
 		root["showSelectedTabDetails"] = preferences.ShowSelectedTabDetails;
 		root["showExternalProcessMetrics"] = preferences.ShowExternalProcessMetrics;
+		root["showNotifications"] = preferences.ShowNotifications;
+		root.Remove("notificationSound");
+		root["notificationSoundMode"] = JsonSerializer.SerializeToNode(preferences.NotificationSoundMode, SettingsFileStore.JsonOptions);
+		root["notificationSeconds"] = preferences.NotificationSeconds;
+		root["notificationMode"] = JsonSerializer.SerializeToNode(preferences.NotificationMode, SettingsFileStore.JsonOptions);
+		if (preferences.Terminal is not null || root["terminal"] is JsonObject)
+		{
+			var terminal = root["terminal"] as JsonObject ?? new JsonObject();
+			var appearance = preferences.Terminal ?? new TerminalAppearance();
+			terminal["fontFamily"] = appearance.FontFamily;
+			terminal["fontSize"] = appearance.FontSize;
+			terminal["lineHeight"] = appearance.LineHeight;
+			terminal["colors"] = JsonSerializer.SerializeToNode(appearance.Colors, SettingsFileStore.JsonOptions);
+			if (terminal.Parent is null)
+			{
+				root["terminal"] = terminal;
+			}
+		}
 		await AtomicFileWriter.WriteTextAsync(
 			Path,
 			root.ToJsonString(SettingsFileStore.JsonOptions),
@@ -134,5 +196,11 @@ public sealed class AppearanceSettingsStore
 	private sealed record AppearanceSettings(
 		string Theme,
 		bool? ShowSelectedTabDetails,
-		bool? ShowExternalProcessMetrics);
+		bool? ShowExternalProcessMetrics,
+		TerminalAppearance? Terminal,
+		bool ShowNotifications,
+		bool NotificationSound,
+		NotificationSoundMode? NotificationSoundMode,
+		int? NotificationSeconds,
+		NotificationBannerMode? NotificationMode);
 }

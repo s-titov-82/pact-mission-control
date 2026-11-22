@@ -402,6 +402,17 @@ function runThemeSwitchBehavior() {
   window.agentTerminal.setTheme('dark');
   assert.equal(firstTerminal.options.theme.background, '#09090b');
   assert.equal(terminalInstances[1].options.theme.background, '#09090b');
+  window.agentTerminal.setTheme('dark', {
+    fontFamily: 'Consolas', fontSize: 17, lineHeight: 1.25, colors: { green: '#123456' }
+  });
+  window.agentTerminal.createTerminal('session-3', {});
+  for (const terminal of terminalInstances) {
+    assert.equal(terminal.options.fontFamily, 'Consolas');
+    assert.equal(terminal.options.fontSize, 17);
+    assert.equal(terminal.options.lineHeight, 1.25);
+    assert.equal(terminal.options.theme.green, '#123456');
+    assert.equal(terminal.options.theme.background, '#09090b');
+  }
 }
 
 function runAdaptiveOutputBatchingBehavior() {

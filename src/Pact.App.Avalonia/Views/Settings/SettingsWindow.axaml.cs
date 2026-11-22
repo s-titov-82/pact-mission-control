@@ -4,9 +4,12 @@ using Avalonia.Controls;
 using Avalonia.Controls.Templates;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
+using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Pact.App.Avalonia.Lifecycle;
+using Pact.App.Avalonia.Platform;
 using Pact.App.Avalonia.Views.Dialogs;
 using Pact.Core.Platform;
 using Pact.Core.Agents;
@@ -43,6 +46,7 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 	private bool _closeApproved;
 	private bool _closePromptRunning;
 	private bool _closing;
+	private WindowsAttentionNotification? _testNotification;
 
 	public SettingsWindow()
 	{
@@ -419,6 +423,31 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 
 		switch (action)
 		{
+			case "TestNotification" when button.DataContext is AppearanceSectionViewModel { ShowNotifications: true } preview:
+				_testNotification?.Dispose();
+				_testNotification = new WindowsAttentionNotification("PactPreview", "Pact · Test notification",
+					"This is a preview of your notification settings.", preview.GetPreviewPreferences(),
+					Activate, ex => RunEvent("settings-notification-preview", () => _reportUserFailureAsync(ex)));
+				break;
+			case "LoadTerminalProfiles" when button.DataContext is AppearanceSectionViewModel appearance:
+				var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+					"Packages", "Microsoft.WindowsTerminal_8wekyb3d8bbwe", "LocalState");
+				var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+				{
+					Title = "Choose Windows Terminal settings.json",
+					SuggestedStartLocation = Directory.Exists(folder) ? await StorageProvider.TryGetFolderFromPathAsync(folder) : null,
+					FileTypeFilter = [new FilePickerFileType("Terminal settings") { Patterns = ["*.json", "*.jsonc"] }]
+				});
+				if (files.Count > 0)
+				{
+					await using var stream = await files[0].OpenReadAsync();
+					using StreamReader reader = new(stream);
+					appearance.LoadProfiles(await reader.ReadToEndAsync(_lifetimeCancellation.Token));
+				}
+				break;
+			case "ImportTerminalProfile" when button.DataContext is AppearanceSectionViewModel terminal:
+				terminal.ImportProfile(ActualThemeVariant == ThemeVariant.Dark);
+				break;
 			case "CheckProfile" when button.DataContext is ShellProfileItemViewModel profile && CheckProfileAsync is { } check:
 				await profile.CheckAsync(check, _lifetimeCancellation.Token);
 				break;
@@ -610,7 +639,7 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 			updates.Dispose();
 		}
 
-		_lifetimeCancellation.Dispose();
+		Dispose();
 	}
 
 	private bool RunEvent(string operationName, Func<Task> operation) =>
@@ -720,5 +749,9 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 		}
 	}
 
-	public void Dispose() => _lifetimeCancellation.Dispose();
+	public void Dispose()
+	{
+		_testNotification?.Dispose();
+		_lifetimeCancellation.Dispose();
+	}
 }

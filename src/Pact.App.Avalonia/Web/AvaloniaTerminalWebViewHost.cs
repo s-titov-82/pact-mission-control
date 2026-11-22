@@ -51,6 +51,7 @@ internal sealed class AvaloniaTerminalWebViewHost : ITerminalWebViewHost, IAsync
 		_webView.AdapterDestroyed += OnAdapterDestroyed;
 		_webView.NavigationCompleted += OnNavigationCompleted;
 		_webView.ActualThemeVariantChanged += OnActualThemeVariantChanged;
+		App.AppearanceChanged += OnActualThemeVariantChanged;
 		RecordDiagnostic("host-created");
 	}
 
@@ -458,7 +459,7 @@ internal sealed class AvaloniaTerminalWebViewHost : ITerminalWebViewHost, IAsync
 		{
 			var themeName = _webView.ActualThemeVariant == ThemeVariant.Dark ? "dark" : "light";
 			_webView.InvokeScript(
-				$"window.agentTerminal.setTheme({JsonSerializer.Serialize(themeName)});");
+				$"window.agentTerminal.setTheme({JsonSerializer.Serialize(themeName)}, {JsonSerializer.Serialize(App.CurrentAppearance.Terminal, JsonSerializerOptions.Web)});");
 		});
 	}
 
@@ -528,6 +529,7 @@ internal sealed class AvaloniaTerminalWebViewHost : ITerminalWebViewHost, IAsync
 			_webView.AdapterDestroyed -= OnAdapterDestroyed;
 			_webView.NavigationCompleted -= OnNavigationCompleted;
 			_webView.ActualThemeVariantChanged -= OnActualThemeVariantChanged;
+			App.AppearanceChanged -= OnActualThemeVariantChanged;
 		});
 	}
 }

@@ -62,14 +62,19 @@ public sealed class SettingsWindowHeadlessTests
 			out var resource).ShouldBeTrue();
 		var template = resource.ShouldBeAssignableTo<IDataTemplate>()!;
 
-		var root = template.Build(null).ShouldBeAssignableTo<Control>()!;
-
-		root.GetSelfAndVisualDescendants().OfType<CheckBox>()
+		var tabs = template.Build(null).ShouldBeAssignableTo<TabControl>()!;
+		var pages = tabs.Items.Cast<TabItem>().ToArray();
+		pages.Select(page => page.Header).ShouldBe(["General", "Terminal theme", "Notifications"]);
+		var general = ((ScrollViewer)pages[0].Content!).Content.ShouldBeAssignableTo<StackPanel>()!;
+		general.Children.OfType<CheckBox>()
 			.Select(checkBox => checkBox.Content)
 			.ShouldBe([
 				"Show selected tab details",
 				"Show external process metrics"
 			]);
+		var notifications = ((ScrollViewer)pages[2].Content!).Content.ShouldBeAssignableTo<StackPanel>()!;
+		notifications.GetSelfAndVisualDescendants().OfType<Button>()
+			.Single(button => Equals(button.Content, "Test notification")).Tag.ShouldBe("TestNotification");
 	}
 
 	[AvaloniaTest]

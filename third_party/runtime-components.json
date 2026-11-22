@@ -2,14 +2,25 @@
   "schemaVersion": 1,
   "referencePackages": [
     {
+      "assetName": "runtimepack.Microsoft.Windows.SDK.NET.Ref",
+      "packageName": "Microsoft.Windows.SDK.NET.Ref"
+    },
+    {
       "assetName": "Microsoft.Web.WebView2.Core",
       "packageName": "Microsoft.Web.WebView2"
     }
   ],
   "licenseReferences": {
+    "BSD-2-Clause": "https://licenses.nuget.org/BSD-2-Clause",
     "MIT": "https://licenses.nuget.org/MIT"
   },
   "packageOverrides": [
+    {
+      "packageName": "Microsoft.Windows.SDK.NET.Ref",
+      "version": "10.0.19041.57",
+      "license": "LicenseRef-Microsoft-Windows-SDK",
+      "licenseFiles": ["licenses/nuget/Microsoft.Windows.SDK.NET.Ref-LICENSE.txt"]
+    },
     {
       "packageName": "Avalonia.Angle.Windows.Natives",
       "version": "2.1.27548.20260419",

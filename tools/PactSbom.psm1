@@ -3,6 +3,7 @@ $ErrorActionPreference = "Stop"
 $script:PactSupportedLicenseExpressions = @(
 	"BSD-2-Clause",
 	"BSD-3-Clause",
+	"LicenseRef-Microsoft-Windows-SDK",
 	"MIT",
 	"MS-PL")
 
@@ -368,7 +369,7 @@ function Get-PactRuntimePackages
 			{
 				$packageName = $dependency.Name
 			}
-			elseif ($type -eq "reference")
+			elseif ($type -in @("reference", "runtimepack"))
 			{
 				$packageName = $null
 				if (-not $ComponentManifest.ReferencePackages.TryGetValue(
@@ -641,6 +642,18 @@ function Complete-PactSbom
 			$runtimePackage `
 			$package `
 			$componentManifest
+		if ($licenseDecision.License -eq "LicenseRef-Microsoft-Windows-SDK")
+		{
+			$extracted = @(Get-PactPropertyValue $sbom "hasExtractedLicensingInfos" |
+				Where-Object { $_ -and $_.licenseId -ne $licenseDecision.License })
+			$extracted += [pscustomobject]@{
+				licenseId = $licenseDecision.License
+				name = "Microsoft Windows Software Development Kit"
+				extractedText = [IO.File]::ReadAllText((Join-Path $PublishRoot $licenseDecision.Evidence[0]))
+				seeAlsos = @("https://aka.ms/WinSDKLicenseURL")
+			}
+			Set-PactPropertyValue $sbom "hasExtractedLicensingInfos" $extracted
+		}
 		$downloadLocation = Get-PactNuGetDownloadLocation `
 			$runtimePackage.Name `
 			$runtimePackage.Version
