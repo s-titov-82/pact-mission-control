@@ -5,6 +5,22 @@ namespace Pact.Infrastructure.Tests.AgentControl;
 public sealed class AgentControlTokenRegistryTests
 {
 	[Test]
+	public void Initialization_evidence_is_bound_to_the_active_credential()
+	{
+		var registry = new AgentControlTokenRegistry();
+		var first = registry.Issue("session");
+		registry.HasInitialized("session").ShouldBeFalse();
+		registry.RecordInitialization(first);
+		registry.HasInitialized("session").ShouldBeTrue();
+		var next = registry.Issue("session");
+		registry.RecordInitialization(first);
+		registry.HasInitialized("session").ShouldBeFalse();
+		registry.RecordInitialization(next);
+		registry.Revoke("session");
+		registry.HasInitialized("session").ShouldBeFalse();
+	}
+
+	[Test]
 	public void TryResolve_ReturnsSessionForIssuedToken()
 	{
 		AgentControlTokenRegistry registry = new();

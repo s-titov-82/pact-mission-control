@@ -33,7 +33,8 @@ public static class ConptyLibrary
 		return Path.Combine(baseDirectory, "conpty", "conpty.dll");
 	}
 
-	internal static void EnsureBundleAvailable(string baseDirectory)
+	/// <summary>Checks that the package contains both required ConPTY files and names any missing files.</summary>
+	public static void EnsureBundleAvailable(string baseDirectory)
 	{
 		var missingFiles = new List<string>();
 		if (!File.Exists(ResolveDllPath(baseDirectory)))

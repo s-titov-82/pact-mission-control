@@ -246,7 +246,7 @@ public sealed class TerminalCommandResolver
 		return builder.ToString();
 	}
 
-	private static bool TrySplitCommandLine(
+	internal static bool TrySplitCommandLine(
 		string commandLine,
 		out string executable,
 		out string arguments)

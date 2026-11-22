@@ -24,6 +24,7 @@ public sealed class AgentControlTokenRegistry
 	private readonly Lock _sync = new();
 	private readonly Dictionary<string, string> _sessionByToken = new(StringComparer.Ordinal);
 	private readonly Dictionary<string, string> _tokenBySession = new(StringComparer.Ordinal);
+	private readonly HashSet<string> _initializedSessions = new(StringComparer.Ordinal);
 	private string? _orchestratorCredential;
 
 	/// <summary>Mints a token, replacing any token already issued for the session.</summary>
@@ -40,10 +41,32 @@ public sealed class AgentControlTokenRegistry
 			}
 
 			_tokenBySession[sessionId] = token;
+			_initializedSessions.Remove(sessionId);
 			_sessionByToken[token] = sessionId;
 		}
 
 		return token;
+	}
+
+	/// <summary>Records a successful MCP handshake only while its original credential is current.</summary>
+	internal void RecordInitialization(string token)
+	{
+		lock (_sync)
+		{
+			if (_sessionByToken.TryGetValue(token, out var sessionId))
+			{
+				_initializedSessions.Add(sessionId);
+			}
+		}
+	}
+
+	/// <summary>Whether this session's current credential has completed MCP initialization.</summary>
+	public bool HasInitialized(string sessionId)
+	{
+		lock (_sync)
+		{
+			return _initializedSessions.Contains(sessionId);
+		}
 	}
 
 	/// <summary>Resolves an issued token without revealing whether any other session exists.</summary>
@@ -110,6 +133,7 @@ public sealed class AgentControlTokenRegistry
 			if (_tokenBySession.Remove(sessionId, out var token))
 			{
 				_sessionByToken.Remove(token);
+				_initializedSessions.Remove(sessionId);
 			}
 		}
 	}

@@ -105,9 +105,16 @@ public sealed class AgentControlEndpointTests : IDisposable
 	public async Task Post_AnswersInitializeForIssuedToken()
 	{
 		var token = _registry.Issue("session-1");
+		using var rejected = await PostAsync(_client, token, sessionId: "invalid");
+		rejected.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+		_registry.HasInitialized("session-1").ShouldBeFalse();
+		using var notification = await PostAsync(_client, token, """{"jsonrpc":"2.0","method":"initialize"}""");
+		notification.StatusCode.ShouldBe(HttpStatusCode.Accepted);
+		_registry.HasInitialized("session-1").ShouldBeFalse();
 		using var response = await PostAsync(_client, token);
 
 		response.StatusCode.ShouldBe(HttpStatusCode.OK);
+		_registry.HasInitialized("session-1").ShouldBeTrue();
 		JsonNode.Parse(await response.Content.ReadAsStringAsync())!["result"]!["serverInfo"]!["name"]!
 			.GetValue<string>().ShouldBe("pact");
 	}

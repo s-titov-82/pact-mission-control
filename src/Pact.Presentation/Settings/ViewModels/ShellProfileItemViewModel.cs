@@ -15,6 +15,8 @@ public sealed class ShellProfileItemViewModel : SettingsItemViewModelBase
 	private string? _resumeCommandTemplate;
 	private string _defaultShell;
 	private string? _nativeConfigDirectory;
+	private const string Untested = "Launch, restore and MCP connection: Not tested.";
+	private bool _checking;
 
 	/// <summary>Creates an item over its JSON node.</summary>
 	public ShellProfileItemViewModel(JsonObject node)
@@ -44,7 +46,49 @@ public sealed class ShellProfileItemViewModel : SettingsItemViewModelBase
 		{
 			if (SetField(ref _nativeConfigDirectory, value))
 			{
-				RaiseChanged();
+				ProfileChanged();
+			}
+		}
+	}
+
+	/// <summary>Most recent user-requested check for the current editor values.</summary>
+	public string Diagnostics
+	{
+		get;
+		private set => SetField(ref field, value);
+	} = Untested;
+
+	/// <summary>Prevents overlapping launch and diagnostic actions for this profile.</summary>
+	public bool CanCheck => !_checking;
+
+	/// <summary>Checks the current values and drops results if the user edits them during the check.</summary>
+	public async Task CheckAsync(Func<AgentProfileRecord, CancellationToken, Task<string>> check, CancellationToken token)
+	{
+		ArgumentNullException.ThrowIfNull(check);
+		if (_checking)
+		{
+			return;
+		}
+
+		var profile = ToProfile();
+		_checking = true;
+		OnPropertyChanged(nameof(CanCheck));
+		Diagnostics = "Checking profile…";
+		try
+		{
+			var result = await check(profile, token);
+			if (profile == ToProfile())
+			{
+				Diagnostics = result;
+			}
+		}
+		finally
+		{
+			_checking = false;
+			OnPropertyChanged(nameof(CanCheck));
+			if (Diagnostics == "Checking profile…")
+			{
+				Diagnostics = Untested;
 			}
 		}
 	}
@@ -56,6 +100,12 @@ public sealed class ShellProfileItemViewModel : SettingsItemViewModelBase
 			NativeConfigDirectory = string.IsNullOrWhiteSpace(NativeConfigDirectory) ? null : NativeConfigDirectory.Trim()
 		};
 
+	private void ProfileChanged()
+	{
+		Diagnostics = Untested;
+		RaiseChanged();
+	}
+
 	/// <summary>Stable key referenced by sessions; must survive profile edits.</summary>
 	public string Id
 	{
@@ -65,7 +115,7 @@ public sealed class ShellProfileItemViewModel : SettingsItemViewModelBase
 			if (SetField(ref _id, value))
 			{
 				OnPropertyChanged(nameof(TabHeader));
-				RaiseChanged();
+				ProfileChanged();
 			}
 		}
 	}
@@ -80,7 +130,7 @@ public sealed class ShellProfileItemViewModel : SettingsItemViewModelBase
 		{
 			if (SetField(ref _kind, value))
 			{
-				RaiseChanged();
+				ProfileChanged();
 			}
 		}
 	}
@@ -107,7 +157,7 @@ public sealed class ShellProfileItemViewModel : SettingsItemViewModelBase
 		{
 			if (SetField(ref _commandTemplate, value))
 			{
-				RaiseChanged();
+				ProfileChanged();
 			}
 		}
 	}
@@ -120,7 +170,7 @@ public sealed class ShellProfileItemViewModel : SettingsItemViewModelBase
 		{
 			if (SetField(ref _resumeCommandTemplate, value))
 			{
-				RaiseChanged();
+				ProfileChanged();
 			}
 		}
 	}
@@ -133,7 +183,7 @@ public sealed class ShellProfileItemViewModel : SettingsItemViewModelBase
 		{
 			if (SetField(ref _defaultShell, value))
 			{
-				RaiseChanged();
+				ProfileChanged();
 			}
 		}
 	}

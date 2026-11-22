@@ -230,6 +230,11 @@
                      Text="Native configuration directory" />
           <TextBox Grid.Row="6" Grid.Column="1" Text="{Binding NativeConfigDirectory}" PlaceholderText="Agent default" />
         </Grid>
+        <StackPanel Orientation="Horizontal" Spacing="8" IsEnabled="{Binding CanCheck}">
+          <Button Tag="CheckProfile" Content="Check profile" />
+          <Button Tag="LaunchTestProfile" Content="Open test terminal in ROOT" />
+        </StackPanel>
+        <SelectableTextBlock Text="{Binding Diagnostics}" TextWrapping="Wrap" />
         <Button HorizontalAlignment="Right" Foreground="{DynamicResource AppDangerStrongBrush}"
                 Tag="Delete" Content="Delete profile" />
       </StackPanel>

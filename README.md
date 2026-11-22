@@ -154,6 +154,9 @@ read only when needed; it is not copied into every prompt. With agent control
 enabled, supported sessions also receive an ephemeral connection to Pact's
 loopback MCP server. Session launch leaves global Codex and Claude configuration untouched.
 
+In **Settings → Terminal templates**, select a profile and check its CLI, version,
+runtime dependencies, and skill directories. Opening a test terminal gives Pact
+a visible session for observing startup and MCP initialization.
 
 Open **Skill catalog** beside the settings gear in the main window or at the
 top of the Settings sidebar. The catalog reads `~/.agents/skills` and the native

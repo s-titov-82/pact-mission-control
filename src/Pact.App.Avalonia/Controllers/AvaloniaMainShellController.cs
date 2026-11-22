@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using Avalonia.Threading;
 using Pact.App.Avalonia.Diagnostics;
 using Pact.App.Avalonia.Lifecycle;
+using Pact.App.Avalonia.Platform;
 using Pact.App.Avalonia.SelectionActions;
 using Pact.App.Avalonia.Web;
 using Pact.Core.Agents;
@@ -18,16 +19,16 @@ using Pact.Core.Updates;
 using Pact.Core.Web;
 using Pact.Core.Web.Monitoring;
 using Pact.Infrastructure.AgentControl;
-using Pact.Infrastructure.Reviews;
-using Pact.Infrastructure.Orchestrator;
-using Pact.Infrastructure.Storage;
 using Pact.Infrastructure.Diagnostics;
+using Pact.Infrastructure.Orchestrator;
+using Pact.Infrastructure.Reviews;
+using Pact.Infrastructure.Storage;
 using Pact.Infrastructure.Updates;
 using Pact.Presentation.Services;
 using Pact.Presentation.Services.AgentControl;
-using Pact.Presentation.Services.Reviews;
 using Pact.Presentation.Services.Orchestrator;
 using Pact.Presentation.Services.Remarks;
+using Pact.Presentation.Services.Reviews;
 using Pact.Presentation.Services.WebMonitoring;
 using Pact.Presentation.Settings.ViewModels;
 using Pact.Presentation.ViewModels;
@@ -1657,6 +1658,23 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 			startIfNeeded: true,
 			preferResumeCommand: false,
 			cancellationToken);
+	}
+
+	internal async Task<string> CheckProfileAsync(AgentProfileRecord profile, CancellationToken cancellationToken)
+	{
+		var result = await new ProfileDiagnostics(Paths, new AvaloniaExecutableLocator()).CheckAsync(profile,
+			ViewModel.RootTabs.Sessions.Concat(ViewModel.Workspaces.SelectMany(workspace => workspace.Sessions)),
+			_agentControlTokens.HasInitialized, cancellationToken);
+		try
+		{
+			var version = Microsoft.Web.WebView2.Core.CoreWebView2Environment.GetAvailableBrowserVersionString();
+			return $"{result}{Environment.NewLine}WebView2 Runtime: {version}";
+		}
+		catch (Exception ex) when (ex is Microsoft.Web.WebView2.Core.WebView2RuntimeNotFoundException
+			or System.Runtime.InteropServices.COMException or DllNotFoundException)
+		{
+			return $"{result}{Environment.NewLine}WebView2 Runtime: install or repair the Microsoft Edge WebView2 Runtime. {ex.Message}";
+		}
 	}
 
 	public async Task AddWebPageAsync(WorkspaceViewModel workspace, CancellationToken cancellationToken = default)

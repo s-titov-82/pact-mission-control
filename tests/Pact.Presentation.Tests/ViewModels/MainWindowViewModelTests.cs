@@ -52,6 +52,7 @@ public sealed class MainWindowViewModelTests
 		store.UpdateCallCount.ShouldBe(1);
 		session.Record.Id.ShouldBe("session-1");
 		session.Record.LaunchCommand.ShouldBe("pwsh");
+		store.Document.Projects.Single().Sessions.Single().LaunchProfileId.ShouldBe(string.Empty);
 		viewModel.SelectedSession.ShouldBeSameAs(session);
 		viewModel.Sessions.ShouldHaveSingleItem().ShouldBeSameAs(session);
 		workspace.Sessions.ShouldHaveSingleItem().ShouldBeSameAs(session);

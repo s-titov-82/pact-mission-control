@@ -313,9 +313,12 @@ public sealed class AgentControlEndpoint : IDisposable
 		}
 
 		var bytes = Encoding.UTF8.GetBytes(response.ToJsonString());
-		if (string.Equals((string?)request["method"], "initialize", StringComparison.Ordinal))
+		var isInitialize = string.Equals((string?)request["method"], "initialize", StringComparison.Ordinal)
+			&& response["result"] is not null;
+		if (isInitialize)
 		{
 			context.Response.Headers["Mcp-Session-Id"] = CreateSessionId(bearerToken);
+			_registry.RecordInitialization(bearerToken);
 		}
 
 		context.Response.StatusCode = (int)HttpStatusCode.OK;

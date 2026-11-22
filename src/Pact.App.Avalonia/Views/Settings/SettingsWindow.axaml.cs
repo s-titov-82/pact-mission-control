@@ -99,6 +99,10 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 
 	public string? InitialSubItemId { get; set; }
 
+	internal Func<AgentProfileRecord, CancellationToken, Task<string>>? CheckProfileAsync { get; init; }
+
+	internal Func<AgentProfileRecord, CancellationToken, Task>? LaunchTestProfileAsync { get; init; }
+
 	private void OnOpenSkillsClicked(object? sender, RoutedEventArgs e) =>
 		RunEvent("settings-skills", OpenSkillsAsync);
 
@@ -415,6 +419,30 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 
 		switch (action)
 		{
+			case "CheckProfile" when button.DataContext is ShellProfileItemViewModel profile && CheckProfileAsync is { } check:
+				await profile.CheckAsync(check, _lifetimeCancellation.Token);
+				break;
+			case "LaunchTestProfile" when button.DataContext is ShellProfileItemViewModel profile && LaunchTestProfileAsync is { } launch:
+				if (_viewModel.ActiveSection is not LaunchProfilesSectionViewModel { IsDirty: false } profiles
+					|| !profiles.Items.Contains(profile))
+				{
+					StatusText.Text = "Save or revert terminal template edits before opening a test terminal in ROOT.";
+					break;
+				}
+				await profile.CheckAsync(async (snapshot, token) =>
+				{
+					try
+					{
+						await launch(snapshot, token);
+					}
+					catch (Exception ex) when (ex is InvalidOperationException or IOException or Win32Exception or ArgumentException)
+					{
+						return $"Launch failed. {ex.Message}";
+					}
+					return CheckProfileAsync is { } refresh
+						? await refresh(snapshot, token) : "Check the terminal in ROOT.";
+				}, _lifetimeCancellation.Token);
+				break;
 			case "AddItem":
 				switch (button.DataContext)
 				{

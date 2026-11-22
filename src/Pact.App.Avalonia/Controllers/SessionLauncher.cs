@@ -132,6 +132,7 @@ internal sealed class SessionLauncher(
 				OnControllerExited,
 				cancellationToken);
 			await _viewModel.UpdateSessionStatusAsync(session.Record.Id, SessionStatus.Running, cancellationToken);
+			session.LastStartedMode = startPlan.Mode;
 			return startPlan;
 		}
 		catch

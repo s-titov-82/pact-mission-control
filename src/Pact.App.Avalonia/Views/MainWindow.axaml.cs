@@ -921,6 +921,8 @@ internal sealed partial class MainWindow : Window, IDisposable
 			restartAndUpdateAsync: RequestRestartAndUpdateAsync)
 		{
 			InitialSection = section,
+			CheckProfileAsync = EngineProbeController.CheckProfileAsync,
+			LaunchTestProfileAsync = EngineProbeController.AddRootSessionAsync,
 			InitialItemId = itemId,
 			InitialSubItemId = subItemId
 		};
