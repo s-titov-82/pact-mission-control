@@ -23,6 +23,12 @@ public sealed record AppWindowLayout(
 	double LeftColumnWidth,
 	double RightColumnWidth)
 {
+	/// <summary>Whether the project tree has already introduced the paused-project list.</summary>
+	public bool PausedProjectsHintShown { get; init; }
+
+	/// <summary>Whether the actions panel stays open. Older layouts restore it pinned.</summary>
+	public bool RightPanelPinned { get; init; } = true;
+
 	/// <summary>
 	/// Whether the layout is large enough and numerically sane to apply. A layout failing this
 	/// check is discarded in favor of defaults, so a corrupt file cannot produce an unusable or

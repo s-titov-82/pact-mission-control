@@ -8,6 +8,9 @@
              x:CompileBindings="False">
   <Grid Margin="20,18" RowDefinitions="Auto,Auto,*">
     <DockPanel>
+      <Button x:Name="RightPanelPinButton" DockPanel.Dock="Left" Width="30" Height="30" Padding="0"
+              FontFamily="Segoe MDL2 Assets" HorizontalContentAlignment="Center"
+              VerticalContentAlignment="Center" />
       <Button x:Name="SettingsButton" DockPanel.Dock="Right" Width="34" Height="30" Padding="0"
               HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
               ToolTip.Tip="Settings" Click="OnSettingsClicked"><PathIcon Width="16" Height="16" Data="{StaticResource AppSettingsIcon}" /></Button>

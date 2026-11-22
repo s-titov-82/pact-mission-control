@@ -481,6 +481,13 @@ reported from that isolated gate and never kills processes by image name.
 
 ## Right Panel Prompt Actions
 
+The right panel starts pinned. Unpinning leaves a tab on the right edge
+and expands the terminal. Hover over the tab or select it to open the panel
+over the terminal. Select the pin to restore the docked layout.
+When a session needs attention, the tab shows an indicator. Select the tab
+to see the feed across running projects, ROOT and the enabled orchestrator.
+The pin preference is saved with the window layout.
+
 - Selection actions use one contextual cursor popover over the center pane.
   Terminal mouse selection anchors it to the xterm completion point; Claude
   OSC 52 copy uses its supplied point when available and otherwise falls back

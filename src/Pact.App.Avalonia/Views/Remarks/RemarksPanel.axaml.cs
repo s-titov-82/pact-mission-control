@@ -4,6 +4,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Interactivity;
+using Avalonia.LogicalTree;
 using Pact.App.Avalonia.Lifecycle;
 using Pact.Presentation.ViewModels;
 
@@ -114,6 +115,15 @@ internal sealed partial class RemarksPanel : UserControl
 			|| button.Flyout is not PopupFlyoutBase flyout)
 		{
 			return;
+		}
+
+		// An unpinned actions panel lives in its own native popup. The space to its
+		// left belongs to the main window, outside this popup's coordinate system.
+		if (top is PopupRoot && this.FindLogicalAncestorOfType<Window>() is { } owner)
+		{
+			at = owner.PointToClient(button.PointToScreen(default));
+			edge = owner.PointToClient(anchor.PointToScreen(default));
+			top = owner;
 		}
 
 		var room = Math.Max(0, edge.X - ListMargin);

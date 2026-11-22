@@ -2406,6 +2406,24 @@ public sealed class AvaloniaMainShellControllerTests
 	}
 
 	[Test]
+	public async Task AddingPausedProjectDirectoryRestoresItsSavedSessions()
+	{
+		await using ControllerFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		var workspace = fixture.ViewModel.Workspaces[0];
+		var sessionIds = workspace.Sessions.Select(session => session.Record.Id).ToArray();
+		sessionIds.ShouldNotBeEmpty();
+		await fixture.Controller.PauseWorkspaceAsync(workspace);
+		fixture.ViewModel.PausedWorkspaces.ShouldContain(workspace);
+
+		await fixture.Controller.AddProjectFromDirectoryAsync(workspace.RootPath);
+
+		fixture.ViewModel.PausedWorkspaces.ShouldNotContain(workspace);
+		var restored = fixture.ViewModel.Workspaces.Single(item => item.Id == workspace.Id);
+		restored.Sessions.Select(session => session.Record.Id).ShouldBe(sessionIds);
+	}
+
+	[Test]
 	public async Task TerminalInputEventRecordsProductionControllerBoundary()
 	{
 		await using ControllerFixture fixture = new();

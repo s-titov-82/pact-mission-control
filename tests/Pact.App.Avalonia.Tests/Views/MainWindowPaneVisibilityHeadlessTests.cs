@@ -30,6 +30,53 @@ namespace Pact.App.Avalonia.Tests.Views;
 public sealed class MainWindowPaneVisibilityHeadlessTests
 {
 	[AvaloniaTest]
+	public async Task Auto_hidden_right_panel_shows_background_attention_without_resizing_the_center_on_reveal()
+	{
+		using ApplicationStyleScope styles = new();
+		await using WindowFixture fixture = new();
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), TestContext.CurrentContext.CancellationToken);
+		using MainWindow window = new(fixture.Controller);
+		var center = window.FindControl<Grid>("CenterPane")!;
+		center.Children.Remove(window.FindControl<TerminalPaneView>("TerminalPane")!);
+		center.Children.Remove(window.FindControl<BrowserPaneView>("BrowserPane")!);
+		window.Show();
+		window.UpdateLayout();
+		var pinnedWidth = center.Bounds.Width;
+		var pin = window.GetVisualDescendants().OfType<Button>().Single(button => button.Name == "RightPanelPinButton");
+		var rail = window.FindControl<Button>("RightPanelRail")!;
+		var badge = window.FindControl<Control>("RightPanelAttentionBadge")!;
+		var popup = window.FindControl<global::Avalonia.Controls.Primitives.Popup>("RightPanelPopup")!;
+		rail.IsEffectivelyVisible.ShouldBeFalse();
+		pin.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+		window.UpdateLayout();
+		var expandedWidth = center.Bounds.Width;
+		expandedWidth.ShouldBeGreaterThan(pinnedWidth);
+		rail.IsEffectivelyVisible.ShouldBeTrue();
+		popup.IsOpen.ShouldBeFalse();
+		badge.IsVisible.ShouldBeFalse();
+
+		var backgroundPage = fixture.ViewModel.Workspaces.Single().WebPages.Last();
+		backgroundPage.SetMonitorUnread(true);
+		Dispatcher.UIThread.RunJobs();
+		badge.IsEffectivelyVisible.ShouldBeTrue();
+		rail.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+		Dispatcher.UIThread.RunJobs();
+		window.UpdateLayout();
+		popup.IsOpen.ShouldBeTrue();
+		center.Bounds.Width.ShouldBe(expandedWidth);
+		backgroundPage.HasMonitorUnread.ShouldBeTrue();
+		backgroundPage.SetMonitorUnread(false);
+		Dispatcher.UIThread.RunJobs();
+		badge.IsVisible.ShouldBeFalse();
+		pin.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+		window.UpdateLayout();
+		popup.IsOpen.ShouldBeFalse();
+		rail.IsEffectivelyVisible.ShouldBeFalse();
+		center.Bounds.Width.ShouldBe(pinnedWidth);
+		window.Close();
+	}
+
+	[AvaloniaTest]
 	public async Task Overview_notes_are_read_only_until_initial_load_and_keep_existing_text()
 	{
 		using ApplicationStyleScope styles = new(includeEditor: true);
@@ -491,6 +538,7 @@ public sealed class MainWindowPaneVisibilityHeadlessTests
 
 		fixture.ViewModel.Workspaces.ShouldContain(workspace);
 		fixture.Controller.GetActiveSessions(workspace.Sessions).ShouldNotBeEmpty();
+		window.CaptureWindowLayout().PausedProjectsHintShown.ShouldBeFalse();
 
 		window.ShowMessageDialogAsyncOverride = _ =>
 			Task.FromResult(MessageDialogResult.Yes);
@@ -498,6 +546,7 @@ public sealed class MainWindowPaneVisibilityHeadlessTests
 
 		fixture.ViewModel.Workspaces.ShouldNotContain(workspace);
 		fixture.ViewModel.PausedWorkspaces.ShouldContain(workspace);
+		window.CaptureWindowLayout().PausedProjectsHintShown.ShouldBeTrue();
 		fixture.Controller.GetActiveSessions(workspace.Sessions).ShouldBeEmpty();
 	}
 

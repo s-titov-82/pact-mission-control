@@ -270,10 +270,17 @@
     <DockPanel DockPanel.Dock="Top">
       <Button x:Name="AddProjectButton" Classes="compact-icon" DockPanel.Dock="Right"
               IsEnabled="False" ToolTip.Tip="Add project" Click="OnAddProjectClicked"><PathIcon Width="12" Height="12" Data="{StaticResource AppAddIcon}" /></Button>
-      <Button x:Name="PausedProjectsButton" Classes="compact-icon" DockPanel.Dock="Right"
-              Margin="0,0,8,0" IsEnabled="False" ToolTip.Tip="Paused projects"><PathIcon Width="12" Height="12" Data="{StaticResource AppPauseIcon}" />
+      <Button x:Name="PausedProjectsButton" DockPanel.Dock="Right" Height="24"
+              Margin="0,0,8,0" MinWidth="38" Padding="5,0" IsEnabled="False"
+              AutomationProperties.Name="Open paused projects" ToolTip.Tip="Open paused projects">
+        <StackPanel Orientation="Horizontal" Spacing="4">
+          <PathIcon Width="16" Height="12" Data="{StaticResource AppPausePlayIcon}" />
+          <TextBlock Text="{Binding PausedWorkspaces.Count}" VerticalAlignment="Center" />
+        </StackPanel>
         <Button.Flyout>
           <Flyout Placement="Bottom">
+            <StackPanel Spacing="6">
+            <TextBlock Text="Paused projects · Select a project to resume it." />
             <ItemsControl x:Name="PausedWorkspacesList" ItemsSource="{Binding PausedWorkspaces}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
@@ -287,6 +294,7 @@
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
+            </StackPanel>
           </Flyout>
         </Button.Flyout>
       </Button>
@@ -305,6 +313,9 @@
       <Style Selector="Button.notes-open">
         <Setter Property="Background" Value="{DynamicResource AppAccentSoftBrush}" />
         <Setter Property="BorderBrush" Value="{DynamicResource AppAccentBrush}" />
+      </Style>
+      <Style Selector="Border.project-row">
+        <Setter Property="Background" Value="{DynamicResource AppStepBackgroundBrush}" />
       </Style>
       <Style Selector="Border.current">
         <Setter Property="Background" Value="{DynamicResource AppAccentSoftBrush}" />
@@ -341,7 +352,7 @@
     </TreeView.Styles>
     <TreeView.DataTemplates>
       <TreeDataTemplate DataType="vm:WorkspaceViewModel" ItemsSource="{Binding TreeItems}">
-        <Border x:Name="ProjectRow" CornerRadius="4" Classes.current="{Binding IsCurrentProject}">
+        <Border x:Name="ProjectRow" Classes="project-row" CornerRadius="4" Classes.current="{Binding IsCurrentProject}">
         <Grid Margin="2" RowDefinitions="Auto,Auto" HorizontalAlignment="Stretch">
           <StackPanel Grid.Row="0">
             <TextBlock FontWeight="SemiBold" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />

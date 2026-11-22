@@ -1,10 +1,12 @@
 using System.ComponentModel;
 using System.Globalization;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Data.Converters;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.VisualTree;
 using Pact.App.Avalonia.Lifecycle;
 using Pact.App.Avalonia.Views.Diff;
 using Pact.Core.Prompting;
@@ -19,9 +21,29 @@ internal sealed partial class RightActionsPanel : UserControl
 	public RightActionsPanel()
 	{
 		InitializeComponent();
+		RightPanelPinButton.Click += (_, _) => TogglePinRequested?.Invoke(this, EventArgs.Empty);
 		AttentionFeed.ItemRequested += (_, item) => AttentionItemRequested?.Invoke(this, item);
 		// The remark lists open over the diff, right up to this panel.
 		RemarksPanel.AlignTarget = this;
+	}
+
+	internal event EventHandler? TogglePinRequested;
+
+	internal void SetPanelPinned(bool pinned)
+	{
+		var label = pinned ? "Unpin actions panel" : "Pin actions panel";
+		RightPanelPinButton.Content = pinned ? "\uE77A" : "\uE718";
+		ToolTip.SetTip(RightPanelPinButton, label);
+		AutomationProperties.SetName(RightPanelPinButton, label);
+	}
+
+	internal void RevealAttentionFeed()
+	{
+		if (AttentionFeed.IsVisible)
+		{
+			AttentionFeed.BringIntoView();
+			AttentionFeed.GetVisualDescendants().OfType<Button>().FirstOrDefault()?.Focus();
+		}
 	}
 
 	/// <summary>Raised when the tree's selection moves to a node, folder or document.</summary>

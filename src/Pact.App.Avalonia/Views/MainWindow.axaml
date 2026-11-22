@@ -41,8 +41,9 @@
       <views:AgentFilePanel x:Name="AgentFile" />
     </Grid>
     <GridSplitter x:Name="RightColumnSplitter" Grid.Column="3" ResizeDirection="Columns" />
-    <Border Grid.Column="4" BorderBrush="{StaticResource AppPanelBorderBrush}" BorderThickness="1,0,0,0">
-      <Grid RowDefinitions="*,Auto">
+    <Border x:Name="RightPanelDock" Grid.Column="4"
+            BorderBrush="{StaticResource AppPanelBorderBrush}" BorderThickness="1,0,0,0">
+      <Grid x:Name="RightPanelBody" RowDefinitions="*,Auto" Background="{DynamicResource AppPaneBackgroundBrush}">
         <views:RightActionsPanel x:Name="RightActions" />
         <Border Grid.Row="1" Padding="8" BorderBrush="{StaticResource AppPanelBorderBrush}" BorderThickness="0,1,0,0">
           <StackPanel Spacing="6">
@@ -75,6 +76,24 @@
         </Border>
       </Grid>
     </Border>
+    <Button x:Name="RightPanelRail" Grid.Column="4" IsVisible="False" Padding="0"
+            HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+            HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+            AutomationProperties.Name="Open actions panel" ToolTip.Tip="Open actions panel"
+            PointerEntered="OnRightPanelRailEntered" Click="OnRightPanelRailClicked">
+      <StackPanel HorizontalAlignment="Center" Spacing="6">
+        <TextBlock HorizontalAlignment="Center" Text="‹" FontSize="18" />
+        <Border x:Name="RightPanelAttentionBadge" CornerRadius="8" MinWidth="14" Padding="2,0"
+                Background="{DynamicResource AppAccentBrush}"
+                IsVisible="{Binding Attention.HasItems, FallbackValue=False}">
+          <TextBlock HorizontalAlignment="Center" FontSize="10" FontWeight="Bold"
+                     Foreground="{DynamicResource AppPaneBackgroundBrush}" Text="{Binding Attention.Items.Count}" />
+        </Border>
+      </StackPanel>
+    </Button>
+    <Popup x:Name="RightPanelPopup" Grid.Column="4" PlacementTarget="{Binding #RightPanelRail}"
+           Placement="Left" ShouldUseOverlayLayer="False" IsLightDismissEnabled="False"
+           TakesFocusFromNativeControl="False" />
     <Border x:Name="BusyOverlay" Grid.ColumnSpan="5" ZIndex="100"
             Background="{StaticResource AppDimOverlayBrush}" Focusable="True" IsVisible="False">
       <Border Width="280" MinHeight="260" Padding="18" HorizontalAlignment="Center" VerticalAlignment="Center"

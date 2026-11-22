@@ -244,6 +244,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 				{
 					return;
 				}
+				RightPanelPopup.IsOpen = false;
 				if (item.IsOrchestrator)
 				{
 					await EngineProbeController.SelectOrchestratorAsync();
@@ -461,6 +462,12 @@ internal sealed partial class MainWindow : Window, IDisposable
 		await RunWorkspaceOperationWithBusyOverlayAsync(
 			"Pausing project...",
 			() => EngineProbeController.PauseWorkspaceAsync(workspace));
+		if (!_pausedProjectsHintShown && EngineProbeController.ViewModel.PausedWorkspaces.Contains(workspace))
+		{
+			ProjectTree.ShowPausedProjects();
+			_pausedProjectsHintShown = true;
+			await SaveWindowLayoutAsync();
+		}
 	}
 
 	internal async Task CloseWorkspaceWithConfirmationAsync(WorkspaceViewModel workspace)
@@ -1563,6 +1570,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 
 	private async Task ShowBusyOverlayAsync(string message, string? actionLabel)
 	{
+		RightPanelPopup.IsOpen = false;
 		BusyOverlayText.Text = message;
 		BusyOverlayActionButton.Content = actionLabel ?? string.Empty;
 		BusyOverlayActionButton.IsVisible = !string.IsNullOrWhiteSpace(actionLabel);

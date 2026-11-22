@@ -30,12 +30,31 @@ public sealed class WindowLayoutStoreTests
 			Height: 900,
 			WindowState: "maximized",
 			LeftColumnWidth: 310,
-			RightColumnWidth: 380);
+			RightColumnWidth: 380)
+		{ PausedProjectsHintShown = true, RightPanelPinned = false };
 
 		await store.SaveAsync(expected, CancellationToken.None);
 		var actual = store.Load();
 
 		actual.ShouldBe(expected);
+	}
+
+	[Test]
+	public void Load_pins_the_right_panel_for_layouts_saved_before_the_preference_existed()
+	{
+		using var temporaryDirectory = TemporaryDirectory.Create();
+		var path = Path.Combine(temporaryDirectory.Path, "window-layout.json");
+		File.WriteAllText(path, """
+			{
+			  "left": 120, "top": 80, "width": 1440, "height": 900,
+			  "windowState": "normal", "leftColumnWidth": 310, "rightColumnWidth": 380
+			}
+			""");
+
+		var layout = new WindowLayoutStore(path).Load().ShouldNotBeNull();
+
+		layout.RightPanelPinned.ShouldBeTrue();
+		layout.RightColumnWidth.ShouldBe(380);
 	}
 
 	[Test]

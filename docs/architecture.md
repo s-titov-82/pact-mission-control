@@ -237,7 +237,9 @@ rendering dependencies are pinned by the central package version and lock files.
 across running projects, ROOT and the enabled orchestrator. It observes current
 owner membership and detaches removed sources; it has no journal, storage or
 poller. `AttentionFeedView` is a separate, relocatable view currently hosted below
-Settings in the right panel. Navigation revalidates the captured owner/target,
+Settings in the right panel. In auto-hide mode the edge tab mirrors the same
+feed across sessions. Opening it leaves each entry pending until its ordinary
+acknowledgement. Navigation revalidates the captured owner/target,
 uses ordinary tab activation and then reveals its tree row without selecting it
 again. Existing tab visibility and review acknowledgement rules clear automatic
 attention. A separate `SessionRecord.IsMarkedForLater` bookmark (or the singular

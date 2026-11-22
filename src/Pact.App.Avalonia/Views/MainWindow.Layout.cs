@@ -1,5 +1,9 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Threading;
+using Pact.App.Avalonia.Controllers;
 
 namespace Pact.App.Avalonia.Views;
 
@@ -10,11 +14,15 @@ internal sealed partial class MainWindow
 	private PixelPoint? _lastNormalPosition;
 	private double _lastNormalWidth = double.NaN;
 	private double _lastNormalHeight = double.NaN;
+	private bool _pausedProjectsHintShown;
+	private bool _rightPanelPinned = true;
+	private double _expandedRightColumnWidth;
 
 	private void ApplyWindowLayout(AppWindowLayout? layout)
 	{
 		if (layout is not null)
 		{
+			_pausedProjectsHintShown = layout.PausedProjectsHintShown;
 			PixelPoint position = new((int)layout.Left, (int)layout.Top);
 			if (IsWithinAnyScreen(position))
 			{
@@ -32,6 +40,22 @@ internal sealed partial class MainWindow
 				WindowState = WindowState.Maximized;
 			}
 		}
+
+		SetRightPanelPinned(layout?.RightPanelPinned ?? true);
+		RightActions.TogglePinRequested += OnToggleRightPanelPin;
+		CenterPane.AddHandler(PointerPressedEvent, OnCenterPointerPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
+		CenterPane.SizeChanged += OnCenterSizeChanged;
+		TerminalPane.WebViewControl.Host.SelectionDismissed += OnNativeTerminalInput;
+		RightPanelBody.KeyDown += OnPanelKeyDown;
+		_eventDetachments.Add(() =>
+		{
+			RightPanelPopup.IsOpen = false;
+			RightActions.TogglePinRequested -= OnToggleRightPanelPin;
+			CenterPane.RemoveHandler(PointerPressedEvent, OnCenterPointerPressed);
+			CenterPane.SizeChanged -= OnCenterSizeChanged;
+			TerminalPane.WebViewControl.Host.SelectionDismissed -= OnNativeTerminalInput;
+			RightPanelBody.KeyDown -= OnPanelKeyDown;
+		});
 
 		// Maximizing rewrites Position/Width/Height with the maximized geometry,
 		// so the last normal-state geometry has to be tracked separately.
@@ -73,7 +97,96 @@ internal sealed partial class MainWindow
 			Height: double.IsNaN(height) ? Bounds.Height : height,
 			WindowState: maximized ? MaximizedWindowState : NormalWindowState,
 			LeftColumnWidth: CaptureColumnWidth(RootGrid.ColumnDefinitions[0]),
-			RightColumnWidth: CaptureColumnWidth(RootGrid.ColumnDefinitions[4]));
+			RightColumnWidth: _rightPanelPinned ? CaptureColumnWidth(RootGrid.ColumnDefinitions[4]) : _expandedRightColumnWidth)
+		{ PausedProjectsHintShown = _pausedProjectsHintShown, RightPanelPinned = _rightPanelPinned };
+	}
+
+	private void OnToggleRightPanelPin(object? sender, EventArgs args) => SetRightPanelPinned(!_rightPanelPinned);
+
+	private void SetRightPanelPinned(bool pinned)
+	{
+		var column = RootGrid.ColumnDefinitions[4];
+		if (_rightPanelPinned)
+		{
+			_expandedRightColumnWidth = Math.Max(100, CaptureColumnWidth(column));
+		}
+		RightPanelPopup.IsOpen = false;
+		if (pinned)
+		{
+			RightPanelPopup.Child = null;
+			RightPanelDock.Child = RightPanelBody;
+		}
+		else
+		{
+			RightPanelDock.Child = null;
+			RightPanelPopup.Child = RightPanelBody;
+		}
+		_rightPanelPinned = pinned;
+		column.MinWidth = pinned ? 100 : 0;
+		column.Width = new GridLength(pinned ? _expandedRightColumnWidth : 24);
+		RootGrid.ColumnDefinitions[3].Width = new GridLength(pinned ? 5 : 0);
+		RightPanelDock.IsVisible = RightColumnSplitter.IsVisible = pinned;
+		RightPanelRail.IsVisible = !pinned;
+		RightActions.SetPanelPinned(pinned);
+	}
+
+	private void OnRightPanelRailEntered(object? sender, PointerEventArgs args) => OpenRightPanel();
+
+	private void OnRightPanelRailClicked(object? sender, RoutedEventArgs args)
+	{
+		OpenRightPanel();
+		Dispatcher.UIThread.Post(() =>
+		{
+			if (RightPanelPopup.IsOpen)
+			{
+				RightActions.RevealAttentionFeed();
+			}
+		}, DispatcherPriority.Loaded);
+	}
+
+	private void OpenRightPanel()
+	{
+		if (!_rightPanelPinned && !BusyOverlay.IsVisible)
+		{
+			SizeRightPanelPopup();
+			RightPanelPopup.IsOpen = true;
+		}
+	}
+
+	private void OnCenterSizeChanged(object? sender, SizeChangedEventArgs args)
+	{
+		if (RightPanelPopup.IsOpen)
+		{
+			SizeRightPanelPopup();
+		}
+	}
+
+	private void SizeRightPanelPopup()
+	{
+		RightPanelPopup.Width = Math.Min(_expandedRightColumnWidth, RootGrid.Bounds.Width - RightPanelRail.Bounds.Width);
+		RightPanelPopup.Height = RootGrid.Bounds.Height;
+	}
+
+	private void OnCenterPointerPressed(object? sender, PointerPressedEventArgs args) => RightPanelPopup.IsOpen = false;
+
+	// Native WebView2 receives pointer input outside the Avalonia routed-event tree.
+	private void OnNativeTerminalInput(object? sender, string sessionId)
+	{
+		if (EngineProbeController.PresentedSurface is PresentedSurface.Terminal terminal
+			&& terminal.Session.Record.Id == sessionId)
+		{
+			RightPanelPopup.IsOpen = false;
+		}
+	}
+
+	private void OnPanelKeyDown(object? sender, KeyEventArgs args)
+	{
+		if (args.Key == Key.Escape && RightPanelPopup.IsOpen)
+		{
+			RightPanelPopup.IsOpen = false;
+			RightPanelRail.Focus();
+			args.Handled = true;
+		}
 	}
 
 	private static double CaptureColumnWidth(ColumnDefinition column) =>

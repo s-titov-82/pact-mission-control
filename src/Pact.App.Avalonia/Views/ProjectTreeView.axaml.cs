@@ -657,6 +657,8 @@ internal sealed partial class ProjectTreeView : UserControl
 		RefreshPausedProjectsButton();
 
 	private void RefreshPausedProjectsButton() => PausedProjectsButton.IsEnabled = _viewModel?.PausedWorkspaces.Count > 0;
+
+	internal void ShowPausedProjects() => PausedProjectsButton.Flyout?.ShowAt(PausedProjectsButton);
 }
 
 internal sealed record GitFlyoutRequest(WorkspaceViewModel Workspace, Control Anchor);

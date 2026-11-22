@@ -73,7 +73,7 @@ public sealed class MainWindowLayoutHeadlessTests
 	}
 
 	[AvaloniaTest]
-	public async Task CaptureWindowLayout_round_trips_the_applied_layout()
+	public async Task CaptureWindowLayout_preserves_the_unpinned_mode_and_docked_width()
 	{
 		using var temporaryDirectory = TemporaryDirectory.Create();
 		var root = temporaryDirectory.Path;
@@ -87,7 +87,8 @@ public sealed class MainWindowLayoutHeadlessTests
 				Height: 850,
 				WindowState: "normal",
 				LeftColumnWidth: 340,
-				RightColumnWidth: 320);
+				RightColumnWidth: 320)
+			{ RightPanelPinned = false };
 			await store.SaveAsync(expected, CancellationToken.None);
 			await using ControllerFixture fixture = new(root);
 			using MainWindow window = new(fixture.Controller, windowLayoutStore: store);
@@ -95,6 +96,7 @@ public sealed class MainWindowLayoutHeadlessTests
 			var captured = window.CaptureWindowLayout();
 
 			captured.ShouldBe(expected);
+			window.FindControl<Button>("RightPanelRail")!.IsVisible.ShouldBeTrue();
 		}
 		finally
 		{

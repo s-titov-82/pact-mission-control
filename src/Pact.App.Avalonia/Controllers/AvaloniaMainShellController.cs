@@ -1517,9 +1517,14 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 			throw new DirectoryNotFoundException($"Directory does not exist: {directory}");
 		}
 
-		var workspace = await ViewModel.EnsureWorkspaceForDirectoryAsync(directory, cancellationToken, selectWorkspace);
+		var workspace = await ViewModel.EnsureWorkspaceForDirectoryAsync(directory, cancellationToken, selectWorkspace: false);
 		if (selectWorkspace)
-		{ await SelectWorkspaceAsync(workspace); }
+		{
+			if (ViewModel.PausedWorkspaces.Contains(workspace))
+			{ await ResumeWorkspaceAsync(workspace, cancellationToken); }
+			else
+			{ await SelectWorkspaceAsync(workspace); }
+		}
 		await AddRecentWorkingDirectoryAsync(directory, cancellationToken);
 	}
 
