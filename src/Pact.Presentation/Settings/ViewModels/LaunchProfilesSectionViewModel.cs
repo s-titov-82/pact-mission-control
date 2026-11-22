@@ -44,6 +44,12 @@ public sealed class LaunchProfilesSectionViewModel : FileSectionViewModel<ShellP
 			{
 				return $"Launch profile '{profile.Id}' needs a default shell.";
 			}
+
+			if (!string.IsNullOrWhiteSpace(profile.NativeConfigDirectory)
+				&& !Path.IsPathFullyQualified(profile.NativeConfigDirectory.Trim()))
+			{
+				return $"Choose an absolute native configuration directory for '{profile.Id}'.";
+			}
 		}
 
 		var uniqueIdCount = profiles.Select(profile => profile.Id).Distinct(StringComparer.Ordinal).Count();

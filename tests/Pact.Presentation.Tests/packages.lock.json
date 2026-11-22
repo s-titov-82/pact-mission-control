@@ -153,7 +153,8 @@
       "pact.infrastructure": {
         "type": "Project",
         "dependencies": {
-          "Pact.Core": "[0.1.0, )",
+          "Pact.Core": "[0.1.16, )",
+          "Tomlyn": "[0.19.0, )",
           "YamlDotNet": "[16.3.0, )"
         }
       },
@@ -162,8 +163,8 @@
         "dependencies": {
           "CommunityToolkit.Mvvm": "[8.4.2, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.0, )",
-          "Pact.Core": "[0.1.0, )",
-          "Pact.Infrastructure": "[0.1.0, )"
+          "Pact.Core": "[0.1.16, )",
+          "Pact.Infrastructure": "[0.1.16, )"
         }
       },
       "CommunityToolkit.Mvvm": {
@@ -177,6 +178,12 @@
         "requested": "[10.0.0, )",
         "resolved": "10.0.0",
         "contentHash": "L3AdmZ1WOK4XXT5YFPEwyt0ep6l8lGIPs7F5OOBZc77Zqeo01Of7XXICy47628sdVl0v/owxYJTe86DTgFwKCA=="
+      },
+      "Tomlyn": {
+        "type": "CentralTransitive",
+        "requested": "[0.19.0, )",
+        "resolved": "0.19.0",
+        "contentHash": "GlI2o8R8jbZIaE+YX6uA/VoAOH7zIxYeqxDm7jHW2hqUhuB+q19oKold35FkMuv8IZDoCqsTMolaBv2eBLBmrQ=="
       },
       "YamlDotNet": {
         "type": "CentralTransitive",

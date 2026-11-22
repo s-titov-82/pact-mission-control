@@ -11,5 +11,11 @@ public interface IClaudeUsageCommandRunner
 	/// </summary>
 	Task<ClaudeUsageCommandResult> RunAsync(
 		string commandName,
+		CancellationToken cancellationToken) => RunAsync(commandName, null, cancellationToken);
+
+	/// <summary>Reads usage in the specified native configuration directory, or the inherited environment when omitted.</summary>
+	Task<ClaudeUsageCommandResult> RunAsync(
+		string commandName,
+		string? nativeConfigDirectory,
 		CancellationToken cancellationToken);
 }

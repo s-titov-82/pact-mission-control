@@ -12,6 +12,7 @@ using Pact.App.Avalonia.Views.Dialogs;
 using Pact.App.Avalonia.Views.Settings;
 using Pact.App.Avalonia.Web;
 using Pact.Core.Platform;
+using Pact.Core.Agents;
 using Pact.Core.Prompting;
 using Pact.Core.Updates;
 using Pact.Presentation.Services;
@@ -663,6 +664,16 @@ internal sealed partial class MainWindow : Window, IDisposable
 			"open-settings",
 			() => OpenSettingsAsync(SettingsSection.Projects, null, null));
 		ObserveEvent(
+			handler => RightActions.SkillCatalogRequested += handler,
+			handler => RightActions.SkillCatalogRequested -= handler,
+			"open-skill-catalog",
+			() => OpenSkillCatalogAsync(null));
+		ObserveEvent<WorkspaceViewModel>(
+			handler => ProjectScreen.SkillMappingRequested += handler,
+			handler => ProjectScreen.SkillMappingRequested -= handler,
+			"project-skill-mapping",
+			workspace => OpenSkillCatalogAsync(workspace.RootPath));
+		ObserveEvent(
 			handler => RightActions.RestartAndUpdateRequested += handler,
 			handler => RightActions.RestartAndUpdateRequested -= handler,
 			"restart-and-update",
@@ -834,6 +845,16 @@ internal sealed partial class MainWindow : Window, IDisposable
 
 		await workspace.SelectDocumentAsync(node, CancellationToken.None);
 		NotesPane.FocusEditor();
+	}
+
+	private async Task OpenSkillCatalogAsync(string? mappingProject)
+	{
+		var model = EngineProbeController.ViewModel;
+		var profiles = model.ShellProfiles.Where(p => p.Kind is AgentKind.Claude or AgentKind.Codex).ToArray();
+		var projects = model.Workspaces.Concat(model.PausedWorkspaces).Select(p => p.RootPath).ToArray();
+		using var catalog = new SkillCatalogWindow(EngineProbeController.Paths, profiles, projects,
+			mappingProject ?? model.SelectedWorkspace?.RootPath, openCatalog: mappingProject is null);
+		await catalog.ShowDialog(this);
 	}
 
 	private async Task OpenSettingsAsync(

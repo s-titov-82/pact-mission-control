@@ -20,9 +20,16 @@
       "pact.infrastructure": {
         "type": "Project",
         "dependencies": {
-          "Pact.Core": "[0.1.0, )",
+          "Pact.Core": "[0.1.16, )",
+          "Tomlyn": "[0.19.0, )",
           "YamlDotNet": "[16.3.0, )"
         }
+      },
+      "Tomlyn": {
+        "type": "CentralTransitive",
+        "requested": "[0.19.0, )",
+        "resolved": "0.19.0",
+        "contentHash": "GlI2o8R8jbZIaE+YX6uA/VoAOH7zIxYeqxDm7jHW2hqUhuB+q19oKold35FkMuv8IZDoCqsTMolaBv2eBLBmrQ=="
       },
       "YamlDotNet": {
         "type": "CentralTransitive",

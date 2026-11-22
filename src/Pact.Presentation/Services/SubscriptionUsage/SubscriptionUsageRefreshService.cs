@@ -34,16 +34,19 @@ public sealed class SubscriptionUsageRefreshService
 			.Where(profile => profile.Kind is AgentKind.Codex or AgentKind.Claude)
 			.ToArray();
 
-		var rowsByProfileId = rows.ToDictionary(
-			row => row.ProfileId,
-			StringComparer.Ordinal);
-
 		foreach (var profile in usageProfiles)
 		{
-			if (!rowsByProfileId.TryGetValue(profile.Id, out var row))
+			var row = rows.FirstOrDefault(item => item.ProfileId == profile.Id);
+			if (row is null)
 			{
 				row = new SubscriptionUsageRow(profile);
 				rows.Add(row);
+			}
+			else if (row.Profile != profile)
+			{
+				var index = rows.IndexOf(row);
+				row = new SubscriptionUsageRow(profile);
+				rows[index] = row;
 			}
 
 			// Readers walk agent data on disk and start helper processes synchronously before

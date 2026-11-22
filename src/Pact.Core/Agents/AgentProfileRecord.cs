@@ -19,4 +19,8 @@ public sealed record AgentProfileRecord(
 	string DisplayName,
 	string CommandTemplate,
 	string? ResumeCommandTemplate,
-	string DefaultShell);
+	string DefaultShell)
+{
+	/// <summary>Absolute CODEX_HOME or CLAUDE_CONFIG_DIR used by this profile; empty inherits the environment.</summary>
+	public string? NativeConfigDirectory { get; init; }
+}

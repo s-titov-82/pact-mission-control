@@ -12,7 +12,6 @@ namespace Pact.Presentation.ViewModels;
 /// </summary>
 public sealed class SessionViewModel : INotifyPropertyChanged
 {
-	private readonly string? _projectRootPath;
 
 	/// <summary>
 	/// Creates a view model over a saved session.
@@ -29,7 +28,7 @@ public sealed class SessionViewModel : INotifyPropertyChanged
 		bool isRootItem = false)
 	{
 		Record = record;
-		_projectRootPath = projectRootPath;
+		ProjectRootPath = projectRootPath;
 		IsRootItem = isRootItem;
 	}
 
@@ -39,11 +38,17 @@ public sealed class SessionViewModel : INotifyPropertyChanged
 	/// <summary>Persisted session state.</summary>
 	public SessionRecord Record { get; private set; }
 
+	/// <summary>Actual command mode of the last successful process start during this Pact run.</summary>
+	public TerminalStartMode? LastStartedMode { get; set; }
+
 	/// <summary>Durable manual attention bookmark, independent of screen classification.</summary>
 	public bool IsMarkedForLater => Record.IsMarkedForLater;
 
 	/// <summary>Whether the session belongs to the project-independent ROOT area.</summary>
 	public bool IsRootItem { get; }
+
+	/// <summary>Owning project directory, absent for a ROOT session.</summary>
+	public string? ProjectRootPath { get; }
 
 	/// <summary>Whether the user explicitly paused this ROOT session.</summary>
 	public bool IsManuallyPaused { get; private set; }
@@ -71,7 +76,7 @@ public sealed class SessionViewModel : INotifyPropertyChanged
 	/// <summary>
 	/// Whether the working directory differs from the project root and is therefore worth showing.
 	/// </summary>
-	public bool ShowWorkingDirectory => !PathsEqual(Record.WorkingDirectory, _projectRootPath);
+	public bool ShowWorkingDirectory => !PathsEqual(Record.WorkingDirectory, ProjectRootPath);
 
 	/// <summary>Secondary row text.</summary>
 	public string Subtitle => WorkingDirectoryText;

@@ -40,8 +40,13 @@ public sealed class PowerShellClaudeUsageCommandRunner : IClaudeUsageCommandRunn
 	}
 
 	/// <inheritdoc />
+	public Task<ClaudeUsageCommandResult> RunAsync(string commandName, CancellationToken cancellationToken) =>
+		RunAsync(commandName, null, cancellationToken);
+
+	/// <inheritdoc />
 	public async Task<ClaudeUsageCommandResult> RunAsync(
 		string commandName,
+		string? nativeConfigDirectory,
 		CancellationToken cancellationToken)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
@@ -63,9 +68,14 @@ public sealed class PowerShellClaudeUsageCommandRunner : IClaudeUsageCommandRunn
 				StandardErrorEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
 				UseShellExecute = false
 			};
+			if (nativeConfigDirectory is not null)
+			{
+				startInfo.Environment["CLAUDE_CONFIG_DIR"] = nativeConfigDirectory;
+			}
+
 			startInfo.ArgumentList.Add("-NoLogo");
 			startInfo.ArgumentList.Add("-Command");
-			startInfo.ArgumentList.Add($"{commandName} -p /usage");
+			startInfo.ArgumentList.Add($"& '{commandName.Replace("'", "''", StringComparison.Ordinal)}' -p /usage");
 
 			process = _processFactory.Start(startInfo);
 

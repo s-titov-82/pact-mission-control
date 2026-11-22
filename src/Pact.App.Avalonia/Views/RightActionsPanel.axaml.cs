@@ -32,6 +32,8 @@ internal sealed partial class RightActionsPanel : UserControl
 
 	public event EventHandler<PromptTemplateRecord>? QuickActionRequested;
 	public event EventHandler? SettingsRequested;
+	/// <summary>Opens the catalog directly from the main workspace.</summary>
+	public event EventHandler? SkillCatalogRequested;
 	/// <summary>Requests activation of a current global attention target.</summary>
 	public event EventHandler<AttentionItem>? AttentionItemRequested;
 	public event EventHandler? RestartAndUpdateRequested;
@@ -446,6 +448,9 @@ internal sealed partial class RightActionsPanel : UserControl
 
 	private void OnSettingsClicked(object? sender, RoutedEventArgs e) =>
 		SettingsRequested?.Invoke(this, EventArgs.Empty);
+
+	private void OnSkillCatalogClicked(object? sender, RoutedEventArgs e) =>
+		SkillCatalogRequested?.Invoke(this, EventArgs.Empty);
 
 	private void OnRestartAndUpdateClicked(object? sender, RoutedEventArgs e) =>
 		RestartAndUpdateRequested?.Invoke(this, EventArgs.Empty);

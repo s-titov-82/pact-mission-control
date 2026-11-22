@@ -1,6 +1,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $script:PactSupportedLicenseExpressions = @(
+	"BSD-2-Clause",
 	"BSD-3-Clause",
 	"MIT",
 	"MS-PL")

@@ -17,6 +17,7 @@ public sealed class SubscriptionUsageRow : INotifyPropertyChanged
 	{
 		ArgumentNullException.ThrowIfNull(profile);
 
+		Profile = profile;
 		ProfileId = profile.Id;
 		ProfileName = profile.DisplayName;
 		Kind = profile.Kind;
@@ -24,6 +25,8 @@ public sealed class SubscriptionUsageRow : INotifyPropertyChanged
 
 	/// <inheritdoc />
 	public event PropertyChangedEventHandler? PropertyChanged;
+
+	internal AgentProfileRecord Profile { get; }
 
 	/// <summary>Profile this row reports on.</summary>
 	public string ProfileId { get; }

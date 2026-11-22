@@ -1,0 +1,83 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Pact.App.Avalonia.Views.Settings.SkillCatalogWindow" x:CompileBindings="False"
+        Title="Skills" Width="1100" Height="740" MinWidth="780" MinHeight="560"
+        Icon="/Assets/AppIcon.ico" WindowStartupLocation="CenterOwner">
+  <Grid Margin="16" RowDefinitions="*,Auto" RowSpacing="8">
+    <TabControl x:Name="Details">
+      <TabItem Header="Catalog">
+        <Grid Margin="0,10,0,0" RowDefinitions="Auto,*" RowSpacing="10">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+            <Expander x:Name="SourceEditor" Header="Add a skill source" HorizontalAlignment="Stretch">
+              <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                <TextBox x:Name="SourceInput" PlaceholderText="Repository folder or GitHub URL" AutomationProperties.Name="New skill source"/>
+                <Button Grid.Column="1" Content="Choose folder…" Click="OnBrowse"/>
+                <Button Grid.Column="2" x:Name="AddSource" Content="Add source" Click="OnAddSource"/>
+              </Grid>
+            </Expander>
+            <Button Grid.Column="1" x:Name="FindDuplicates" Content="Find duplicates" VerticalAlignment="Top" Click="OnFindDuplicates"/>
+          </Grid>
+          <Grid Grid.Row="1" x:Name="Browser" ColumnDefinitions="300,*" ColumnSpacing="16">
+            <Grid RowDefinitions="Auto,*" RowSpacing="6">
+              <TextBlock Text="Sources" FontWeight="SemiBold" Margin="8,0,0,0"/>
+              <TreeView Grid.Row="1" x:Name="Skills" AutomationProperties.Name="Skills by source" SelectionChanged="OnSkillSelected"/>
+            </Grid>
+            <Grid Grid.Column="1" RowDefinitions="Auto,Auto,Auto,Auto,*,Auto" RowSpacing="8">
+              <TextBlock x:Name="SkillTitle" FontSize="20" TextWrapping="Wrap"/>
+              <ScrollViewer Grid.Row="1" MaxHeight="100"><SelectableTextBlock x:Name="Origin" TextWrapping="Wrap"/></ScrollViewer>
+              <StackPanel Grid.Row="2" x:Name="BindingEditor" IsVisible="False" Spacing="6">
+                <TextBlock Text="Update repository" FontWeight="SemiBold"/>
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                  <TextBox x:Name="BindingSource" PlaceholderText="Repository folder or GitHub URL" AutomationProperties.Name="Update repository"/>
+                  <Button Grid.Column="1" Content="Choose folder…" Click="OnBrowseBinding"/>
+                  <Button Grid.Column="2" x:Name="ReadBinding" Content="Find package" Click="OnReadBinding"/>
+                </Grid>
+                <ComboBox x:Name="BindingCandidates" HorizontalAlignment="Stretch" IsVisible="False"
+                          PlaceholderText="Choose matching package" SelectionChanged="OnBindingChosen"/>
+              </StackPanel>
+              <ComboBox Grid.Row="3" x:Name="Files" HorizontalAlignment="Stretch" AutomationProperties.Name="Package file" SelectionChanged="OnFileSelected"/>
+              <TextBox Grid.Row="4" x:Name="Contents" IsReadOnly="True" AcceptsReturn="True" AutomationProperties.Name="File contents"
+                       TextWrapping="Wrap" FontFamily="Cascadia Mono,Consolas"/>
+              <StackPanel Grid.Row="5" Spacing="6">
+                <ComboBox x:Name="MaintenanceLocations" HorizontalAlignment="Stretch" IsVisible="False"
+                          AutomationProperties.Name="Installation to manage" PlaceholderText="Choose an installation path"
+                          SelectionChanged="OnMaintenanceLocationChanged"/>
+                <WrapPanel>
+                  <Button x:Name="Install" Content="Review installation…" Click="OnInstall"/>
+                  <Button x:Name="LinkSource" Content="Link update source…" Click="OnLinkSource"/>
+                  <Button x:Name="Update" Content="Check for update" Click="OnUpdate"/>
+                  <Button x:Name="MakeShared" Content="Make shared…" Click="OnMakeShared"/>
+                  <Button x:Name="RenameFolder" Content="Rename folder…" Click="OnRenameFolder"/>
+                  <Button x:Name="DeletePackage" Content="Delete…" Click="OnDeletePackage"/>
+                </WrapPanel>
+                <Grid x:Name="RenameEditor" IsVisible="False" ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="6">
+                  <TextBlock Text="New folder name" VerticalAlignment="Center"/>
+                  <TextBox Grid.Column="1" x:Name="RenameInput" AutomationProperties.Name="New folder name"/>
+                  <Button Grid.Column="2" x:Name="ReviewRename" Content="Review rename…" Click="OnReviewRename"/>
+                  <Button Grid.Column="3" x:Name="CancelRename" Content="Cancel" Click="OnCancelPreview"/>
+                </Grid>
+              </StackPanel>
+            </Grid>
+          </Grid>
+          <Grid Grid.Row="1" x:Name="DuplicatePanel" IsVisible="False" RowDefinitions="Auto,*" RowSpacing="10">
+            <DockPanel><Button DockPanel.Dock="Right" Content="Back to catalog" Click="OnCloseDuplicates"/>
+              <TextBlock Text="Duplicate skills" FontSize="20"/></DockPanel>
+            <ScrollViewer Grid.Row="1">
+              <StackPanel Spacing="12">
+                <SelectableTextBlock x:Name="DuplicateReport" TextWrapping="Wrap"/>
+                <StackPanel x:Name="DuplicateLocations" Spacing="16"/>
+              </StackPanel>
+            </ScrollViewer>
+          </Grid>
+        </Grid>
+      </TabItem>
+      <TabItem x:Name="AvailabilityTab" Header="Skill → Agent mapping"><ContentControl x:Name="MatrixHost" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/></TabItem>
+    </TabControl>
+    <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+      <ScrollViewer MaxHeight="150"><SelectableTextBlock x:Name="Status" TextWrapping="Wrap"/></ScrollViewer>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Bottom">
+        <Button x:Name="CancelPreview" Content="Cancel" IsVisible="False" Click="OnCancelPreview"/>
+        <Button x:Name="Apply" Content="Apply" IsVisible="False" Click="OnApply"/>
+      </StackPanel>
+    </Grid>
+  </Grid>
+</Window>

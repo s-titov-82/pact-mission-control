@@ -18,6 +18,9 @@ internal sealed partial class ProjectScreenView
 	/// <summary>Requests the same project settings editor used by the project tree row.</summary>
 	public event EventHandler<WorkspaceViewModel>? EditProjectRequested;
 
+	/// <summary>Requests the skill mapping for the workspace currently displayed in the overview.</summary>
+	public event EventHandler<WorkspaceViewModel>? SkillMappingRequested;
+
 	internal void ConfigureOverview(AvaloniaMainShellController controller, IExternalLauncher? externalLauncher)
 	{
 		_controller = controller;
@@ -131,6 +134,14 @@ internal sealed partial class ProjectScreenView
 		if (_screen is { } screen)
 		{
 			RunOverviewAction(() => _externalLauncher?.OpenFileAsync(screen.RootPath) ?? Task.CompletedTask);
+		}
+	}
+
+	private void OnProjectSkillMappingClicked(object? sender, RoutedEventArgs e)
+	{
+		if (_screen is { } screen)
+		{
+			SkillMappingRequested?.Invoke(this, screen.Workspace);
 		}
 	}
 

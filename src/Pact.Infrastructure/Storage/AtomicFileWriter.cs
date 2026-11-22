@@ -30,11 +30,25 @@ public static class AtomicFileWriter
 	/// On failure the temporary file is removed and the original destination is left untouched;
 	/// the original exception propagates rather than any cleanup failure.
 	/// </remarks>
-	public static async Task WriteTextAsync(
+	public static Task WriteTextAsync(
 		string path,
 		string content,
 		string? stagingDirectory,
-		CancellationToken cancellationToken)
+		CancellationToken cancellationToken) =>
+		WriteTextAsync(path, content, stagingDirectory, Encoding.UTF8, cancellationToken);
+
+	internal static Task WriteTextAsync(
+		string path,
+		string content,
+		string? stagingDirectory,
+		Encoding encoding,
+		CancellationToken cancellationToken) => WriteAsync(path, stagingDirectory,
+			tempPath => File.WriteAllTextAsync(tempPath, content, encoding, cancellationToken));
+
+	internal static Task WriteBytesAsync(string path, byte[] content, CancellationToken cancellationToken) =>
+		WriteAsync(path, null, tempPath => File.WriteAllBytesAsync(tempPath, content, cancellationToken));
+
+	private static async Task WriteAsync(string path, string? stagingDirectory, Func<string, Task> write)
 	{
 		string? tempPath = null;
 		var completed = false;
@@ -51,7 +65,7 @@ public static class AtomicFileWriter
 			tempPath = Path.Combine(
 				tempDirectory,
 				$"{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
-			await File.WriteAllTextAsync(tempPath, content, Encoding.UTF8, cancellationToken);
+			await write(tempPath);
 
 			if (File.Exists(path))
 			{

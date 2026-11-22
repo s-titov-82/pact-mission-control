@@ -849,6 +849,19 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 	}
 
 	[AvaloniaTest]
+	public void MainWorkspaceExposesSkillCatalogWithoutOpeningSettings()
+	{
+		RightActionsPanel actions = new();
+		var requested = false;
+		actions.SkillCatalogRequested += (_, _) => requested = true;
+		var button = actions.FindControl<Button>("SkillCatalogButton").ShouldNotBeNull();
+		button.Content.ShouldBe("Skill catalog");
+		button.IsVisible.ShouldBeTrue();
+		button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+		requested.ShouldBeTrue();
+	}
+
+	[AvaloniaTest]
 	public void SettingsButtonIsEnabledAndRaisesSettingsRequested()
 	{
 		RightActionsPanel actions = new();

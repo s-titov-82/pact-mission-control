@@ -39,7 +39,8 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 	private static readonly TimeSpan NativeCopyWindow = TimeSpan.FromSeconds(1);
 	private static readonly TimeSpan NativeCopyPollInterval = TimeSpan.FromMilliseconds(50);
 	private readonly SettingsFileStore _settingsFileStore;
-	private readonly AppPaths _appPaths;
+
+	internal AppPaths Paths { get; }
 	private readonly IWebMonitorSnapshotReader _webMonitorSnapshotReader;
 	private readonly WebMonitorCoordinator _webMonitorCoordinator;
 	private readonly ITerminalWebViewHost _terminalHost;
@@ -122,8 +123,8 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 	{
 		ViewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
 		_settingsFileStore = settingsFileStore ?? throw new ArgumentNullException(nameof(settingsFileStore));
-		_appPaths = appPaths ?? throw new ArgumentNullException(nameof(appPaths));
-		_reviewProfileProvider = new ReviewProfileProvider(_appPaths.ReviewProfilesPath);
+		Paths = appPaths ?? throw new ArgumentNullException(nameof(appPaths));
+		_reviewProfileProvider = new ReviewProfileProvider(Paths.ReviewProfilesPath);
 		_terminalHost = terminalHost ?? throw new ArgumentNullException(nameof(terminalHost));
 		if (terminalHost is AvaloniaTerminalWebViewHost avaloniaTerminalHost)
 		{
@@ -164,7 +165,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 				effectiveProcessTreeSnapshotReader),
 			_timeProvider,
 			reportFailureAsync: exception => AppLog.AppendAsync(
-				_appPaths.RootDirectory,
+				Paths.RootDirectory,
 				"Web process metrics failed",
 				exception));
 		_webProcessMetricsMonitor.MetricsChanged += OnWebProcessMetricsChanged;
@@ -180,13 +181,13 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		_recentDirectoryStore =
 			recentDirectoryStore ?? throw new ArgumentNullException(nameof(recentDirectoryStore));
 		_agentControlTokens = new AgentControlTokenRegistry();
-		_orchestratorStore = new OrchestratorStore(_appPaths.OrchestratorPath);
+		_orchestratorStore = new OrchestratorStore(Paths.OrchestratorPath);
 		_launcher = new SessionLauncher(
 			_runtimeCoordinator,
 			_terminalHost,
 			ViewModel,
 			_agentControlTokens,
-			_appPaths,
+			Paths,
 			GetAgentControlAddress,
 			_settingsFileStore.ReadAgentControlEnabled(),
 			_resolveCommandAsync,
@@ -317,7 +318,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 				RestoreSelectionAsync,
 				id => string.Equals(id, OrchestratorSupervisor.SessionId, StringComparison.Ordinal),
 				_timeProvider);
-		_sessionRestorationStore = new SessionRestorationStore(_appPaths.SessionRestorationPath);
+		_sessionRestorationStore = new SessionRestorationStore(Paths.SessionRestorationPath);
 		SoftRestartSnapshotBuilder startupSnapshot = new(ViewModel,
 			_runtimeCoordinator.GetActiveSessionIds, ViewModel.TerminalTabStatuses.GetDiagnosticsSnapshot,
 			() => ViewModel.Workspaces.SelectMany(workspace => workspace.WebPages)
@@ -370,7 +371,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 	{
 		ArgumentNullException.ThrowIfNull(exception);
 		await AppLog.AppendAsync(
-			_appPaths.RootDirectory,
+			Paths.RootDirectory,
 			"Markdown autosave failed",
 			exception);
 		await ReportUiFailureAsync("Notes", exception);
@@ -449,7 +450,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		try
 		{
 			_launcher.SkillPublication =
-				await new PactSkillPublisher(_appPaths).PublishAsync(cancellationToken);
+				await new PactSkillPublisher(Paths).PublishAsync(cancellationToken);
 		}
 		catch (Exception exception)
 		{
@@ -1370,7 +1371,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		try
 		{
 			_gitHelperResolver = new ExternalGitHelperResolver(
-				_appPaths.GitHelpersPath,
+				Paths.GitHelpersPath,
 				_executableLocator);
 			_resolvedGitHelperActions = await _gitHelperResolver.ResolveAsync(cancellationToken);
 			_gitButtonCommands = await _gitHelperResolver.LoadCommandsAsync(cancellationToken);
@@ -1612,7 +1613,8 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 			launchCommand: profile.CommandTemplate,
 			resumeCommand: profile.ResumeCommandTemplate,
 			cancellationToken: cancellationToken,
-			workspaceId: workspace.Id);
+			workspaceId: workspace.Id,
+			launchProfile: profile);
 
 		await SelectSessionAsync(
 			session,
@@ -1648,7 +1650,8 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 			userHome,
 			profile.CommandTemplate,
 			profile.ResumeCommandTemplate,
-			cancellationToken);
+			cancellationToken,
+			profile);
 		await SelectSessionAsync(
 			session,
 			startIfNeeded: true,
@@ -2454,7 +2457,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 			catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
 			{
 				await AppLog.AppendAsync(
-					_appPaths.RootDirectory,
+					Paths.RootDirectory,
 					$"Abandoned review exchange cleanup failed for {projectRoot}",
 					exception);
 			}
@@ -2707,7 +2710,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 	private void AppendDiagnosticLog(string message) =>
 		_eventTasks.TryRun(
 			"diagnostic-log",
-			() => AppLog.AppendAsync(_appPaths.RootDirectory, message),
+			() => AppLog.AppendAsync(Paths.RootDirectory, message),
 			static _ => Task.CompletedTask);
 
 	private Task ReportStatusAsync(string message)

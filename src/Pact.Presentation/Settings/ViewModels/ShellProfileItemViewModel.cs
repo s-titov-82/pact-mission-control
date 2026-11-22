@@ -14,6 +14,7 @@ public sealed class ShellProfileItemViewModel : SettingsItemViewModelBase
 	private string _commandTemplate;
 	private string? _resumeCommandTemplate;
 	private string _defaultShell;
+	private string? _nativeConfigDirectory;
 
 	/// <summary>Creates an item over its JSON node.</summary>
 	public ShellProfileItemViewModel(JsonObject node)
@@ -26,6 +27,7 @@ public sealed class ShellProfileItemViewModel : SettingsItemViewModelBase
 		_commandTemplate = (string?)node["commandTemplate"] ?? string.Empty;
 		_resumeCommandTemplate = (string?)node["resumeCommandTemplate"];
 		_defaultShell = (string?)node["defaultShell"] ?? string.Empty;
+		_nativeConfigDirectory = (string?)node["nativeConfigDirectory"];
 	}
 
 	/// <inheritdoc />
@@ -33,6 +35,26 @@ public sealed class ShellProfileItemViewModel : SettingsItemViewModelBase
 
 	/// <summary>Options for the "Agent kind" combo box; same list for every instance.</summary>
 	public IReadOnlyList<AgentKind> KindOptions { get; } = Enum.GetValues<AgentKind>();
+
+	/// <summary>Optional native agent configuration root shared by launches and the skill editor.</summary>
+	public string? NativeConfigDirectory
+	{
+		get => _nativeConfigDirectory;
+		set
+		{
+			if (SetField(ref _nativeConfigDirectory, value))
+			{
+				RaiseChanged();
+			}
+		}
+	}
+
+	/// <summary>Snapshots the editable profile for an explicit diagnostic or skill operation.</summary>
+	public AgentProfileRecord ToProfile() =>
+		new(Id, Kind, DisplayName, CommandTemplate, ResumeCommandTemplate, DefaultShell)
+		{
+			NativeConfigDirectory = string.IsNullOrWhiteSpace(NativeConfigDirectory) ? null : NativeConfigDirectory.Trim()
+		};
 
 	/// <summary>Stable key referenced by sessions; must survive profile edits.</summary>
 	public string Id
@@ -144,6 +166,14 @@ public sealed class ShellProfileItemViewModel : SettingsItemViewModelBase
 		}
 
 		_node["defaultShell"] = DefaultShell;
+		if (string.IsNullOrWhiteSpace(NativeConfigDirectory))
+		{
+			_node.Remove("nativeConfigDirectory");
+		}
+		else
+		{
+			_node["nativeConfigDirectory"] = NativeConfigDirectory.Trim();
+		}
 		// The launch arguments that connect a session to Pact follow the agent kind, so a
 		// stale per-profile override must not survive here.
 		_node.Remove("agentControlArgumentTemplate");

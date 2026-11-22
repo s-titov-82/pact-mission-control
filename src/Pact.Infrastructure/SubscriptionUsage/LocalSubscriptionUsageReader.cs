@@ -27,6 +27,7 @@ public sealed partial class LocalSubscriptionUsageReader : ISubscriptionUsageRea
 	private readonly IClaudeUsageCommandRunner _claudeUsageCommandRunner;
 	private readonly ICodexUsageApiClient _codexUsageApiClient;
 	private readonly TimeProvider _timeProvider;
+	private bool UseInheritedHomes { get; init; }
 
 	/// <summary>
 	/// How old Codex session-file figures may be before Codex itself is asked for live limits.
@@ -88,8 +89,10 @@ public sealed partial class LocalSubscriptionUsageReader : ISubscriptionUsageRea
 		_timeProvider = timeProvider;
 	}
 
-	private sealed class CodexApiCacheEntry
+	private sealed class CodexApiCacheEntry(AgentProfileRecord profile)
 	{
+		public AgentProfileRecord Profile { get; } = profile;
+
 		public SubscriptionUsageSnapshot? Snapshot { get; set; }
 
 		public DateTimeOffset? AttemptedAt { get; set; }
@@ -110,7 +113,8 @@ public sealed partial class LocalSubscriptionUsageReader : ISubscriptionUsageRea
 		var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 		return new LocalSubscriptionUsageReader(
 			Path.Combine(userProfile, ".codex", "sessions"),
-			Path.Combine(userProfile, ".claude", "statusline-input.json"));
+			Path.Combine(userProfile, ".claude", "statusline-input.json"))
+		{ UseInheritedHomes = true };
 	}
 
 	/// <inheritdoc />
@@ -122,6 +126,18 @@ public sealed partial class LocalSubscriptionUsageReader : ISubscriptionUsageRea
 
 		try
 		{
+			var directory = profile.NativeConfigDirectory;
+			if (string.IsNullOrWhiteSpace(directory) && UseInheritedHomes && profile.Kind is AgentKind.Codex or AgentKind.Claude)
+			{
+				directory = Environment.GetEnvironmentVariable(profile.Kind == AgentKind.Codex ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR");
+			}
+
+			if (!string.IsNullOrWhiteSpace(directory) && !Path.IsPathFullyQualified(directory))
+			{
+				return CreateUnavailable(profile, "The native configuration directory must be absolute.");
+			}
+
+			profile = profile with { NativeConfigDirectory = string.IsNullOrWhiteSpace(directory) ? null : Path.GetFullPath(directory) };
 			return profile.Kind switch
 			{
 				AgentKind.Codex => await ReadCodexAsync(profile, cancellationToken).ConfigureAwait(false),
@@ -213,7 +229,7 @@ public sealed partial class LocalSubscriptionUsageReader : ISubscriptionUsageRea
 		string commandName,
 		CancellationToken cancellationToken)
 	{
-		var result = await _claudeUsageCommandRunner.RunAsync(commandName, cancellationToken)
+		var result = await _claudeUsageCommandRunner.RunAsync(commandName, profile.NativeConfigDirectory, cancellationToken)
 			.ConfigureAwait(false);
 		var rawResponse = BuildClaudeRawResponse(result.StandardOutput, result.StandardError);
 		if (!result.Succeeded)
@@ -341,6 +357,12 @@ public sealed partial class LocalSubscriptionUsageReader : ISubscriptionUsageRea
 
 	private string? ResolveClaudeStatuslineInputPath(AgentProfileRecord profile)
 	{
+		if (profile.NativeConfigDirectory is { } directory)
+		{
+			var path = Path.Combine(directory, "statusline-input.json");
+			return File.Exists(path) ? path : null;
+		}
+
 		var defaultCommandName = GetCommandName(profile.CommandTemplate);
 		var rootDirectory = Directory.GetParent(Path.GetDirectoryName(_claudeStatuslineInputPath) ?? string.Empty)
 			?.FullName;
@@ -384,9 +406,20 @@ public sealed partial class LocalSubscriptionUsageReader : ISubscriptionUsageRea
 	private static string GetCommandName(string commandTemplate)
 	{
 		var trimmed = commandTemplate.Trim();
+		if (trimmed.Length > 1 && trimmed[0] == '&' && char.IsWhiteSpace(trimmed[1]))
+		{
+			trimmed = trimmed[1..].TrimStart();
+		}
+
 		if (string.IsNullOrWhiteSpace(trimmed))
 		{
 			return string.Empty;
+		}
+
+		if (trimmed[0] is '"' or '\'')
+		{
+			var end = trimmed.IndexOf(trimmed[0], 1);
+			return end < 0 ? string.Empty : trimmed[1..end];
 		}
 
 		var separatorIndex = trimmed.IndexOfAny([' ', '\t']);
@@ -416,9 +449,10 @@ public sealed partial class LocalSubscriptionUsageReader : ISubscriptionUsageRea
 		SubscriptionUsageSnapshot? cached;
 		DateTimeOffset? attemptedAt;
 		string? failureMessage;
+		CodexApiCacheEntry entry;
 		lock (_codexApiGate)
 		{
-			var entry = GetCodexApiCacheEntryUnsafe(profile.Id);
+			entry = GetCodexApiCacheEntryUnsafe(profile);
 			cached = entry.Snapshot;
 			attemptedAt = entry.AttemptedAt;
 			failureMessage = entry.FailureMessage;
@@ -436,7 +470,6 @@ public sealed partial class LocalSubscriptionUsageReader : ISubscriptionUsageRea
 				.ConfigureAwait(false);
 			lock (_codexApiGate)
 			{
-				var entry = GetCodexApiCacheEntryUnsafe(profile.Id);
 				entry.AttemptedAt = now;
 				entry.FailureMessage = live.Snapshot is null ? live.FailureMessage : null;
 				if (live.Snapshot is not null)
@@ -459,12 +492,12 @@ public sealed partial class LocalSubscriptionUsageReader : ISubscriptionUsageRea
 		return WithLiveReadWarning(best ?? fromSessions, failureMessage);
 	}
 
-	private CodexApiCacheEntry GetCodexApiCacheEntryUnsafe(string profileId)
+	private CodexApiCacheEntry GetCodexApiCacheEntryUnsafe(AgentProfileRecord profile)
 	{
-		if (!_codexApiCache.TryGetValue(profileId, out var entry))
+		if (!_codexApiCache.TryGetValue(profile.Id, out var entry) || entry.Profile != profile)
 		{
-			entry = new CodexApiCacheEntry();
-			_codexApiCache[profileId] = entry;
+			entry = new CodexApiCacheEntry(profile);
+			_codexApiCache[profile.Id] = entry;
 		}
 
 		return entry;
@@ -524,7 +557,7 @@ public sealed partial class LocalSubscriptionUsageReader : ISubscriptionUsageRea
 		}
 
 		var result = await _codexUsageApiClient
-			.ReadRateLimitsAsync(commandName, cancellationToken)
+			.ReadRateLimitsAsync(commandName, profile.NativeConfigDirectory, cancellationToken)
 			.ConfigureAwait(false);
 		if (!result.Succeeded)
 		{
@@ -580,7 +613,10 @@ public sealed partial class LocalSubscriptionUsageReader : ISubscriptionUsageRea
 		AgentProfileRecord profile,
 		CancellationToken cancellationToken)
 	{
-		if (!Directory.Exists(_codexSessionsDirectory))
+		var directory = profile.NativeConfigDirectory is { } home ? Path.Combine(home, "sessions") : _codexSessionsDirectory;
+		// A command wrapper may select another account. Its own live response identifies its usage.
+		if (!string.Equals(Path.GetFileNameWithoutExtension(GetCommandName(profile.CommandTemplate)), "codex", StringComparison.OrdinalIgnoreCase)
+			|| !Directory.Exists(directory))
 		{
 			return CreateUnavailable(profile, "No Codex session data");
 		}
@@ -588,7 +624,7 @@ public sealed partial class LocalSubscriptionUsageReader : ISubscriptionUsageRea
 		// Resumed sessions append to their original dated file, so recency comes from write
 		// times. DirectoryInfo enumeration fills them from the directory listing itself instead
 		// of opening every session file.
-		var files = new DirectoryInfo(_codexSessionsDirectory)
+		var files = new DirectoryInfo(directory)
 			.EnumerateFiles("*.jsonl", SearchOption.AllDirectories)
 			.OrderByDescending(file => file.LastWriteTimeUtc)
 			.Take(CodexCandidateFileCount)

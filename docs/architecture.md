@@ -185,6 +185,28 @@ sessions. Project Markdown files remain in their repositories; Pact-owned
 notes live under `Settings/Notes`. Project boards live under `Settings/Boards`,
 one JSON per normalized `ProjectNoteFileKey`, outside the repository.
 
+`Settings/skill-sources.json` lists catalog inputs. `Settings/skill-installations.json`
+records the source, revision and file hashes for managed installations in the
+user skills directory. Local Git updates read a tracked upstream through a
+disposable repository under `Temp/SkillCatalog`. The original checkout and
+its tracking references remain under the user's control.
+
+`Settings/Skills` holds Pact's Codex project visibility rules and receipts for
+directory connections created by Pact. At terminal creation the launcher
+combines Codex project choices with the profile's current native rules.
+Claude project choices use the project's native local settings file.
+Source and individual availability policies live under `Settings/Skills/Policies`.
+The mapping editor previews affected profiles and files before applying the
+batch. Folder policies are stored separately from exact project policies,
+including when both scopes point at the same directory. On launch, Pact
+checks the project, ancestors of the terminal working directory from nearest
+to farthest, then profile defaults. At each scope an individual skill rule
+takes precedence over its source rule. Source rules cover newly discovered
+packages. Saving a folder policy leaves descendant repositories untouched.
+Shared native profiles
+are identified by configuration path. An explicit native configuration
+directory travels with the saved session for subsequent starts and resumes.
+
 ### Project Board
 
 `Pact.Core.Boards` owns immutable snapshots, commands, limits and transitions.

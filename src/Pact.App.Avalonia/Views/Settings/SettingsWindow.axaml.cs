@@ -9,6 +9,8 @@ using Avalonia.VisualTree;
 using Pact.App.Avalonia.Lifecycle;
 using Pact.App.Avalonia.Views.Dialogs;
 using Pact.Core.Platform;
+using Pact.Core.Agents;
+using Pact.Infrastructure.Storage;
 using Pact.Presentation.Settings;
 using Pact.Presentation.Settings.ViewModels;
 
@@ -96,6 +98,35 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 	public string? InitialItemId { get; set; }
 
 	public string? InitialSubItemId { get; set; }
+
+	private void OnOpenSkillsClicked(object? sender, RoutedEventArgs e) =>
+		RunEvent("settings-skills", OpenSkillsAsync);
+
+	private async Task OpenSkillsAsync()
+	{
+		if (!_initialized || _viewModel is null)
+		{
+			return;
+		}
+
+		var launch = _viewModel.Sections.OfType<LaunchProfilesSectionViewModel>().Single();
+		var projects = _viewModel.Sections.OfType<ProjectsSectionViewModel>().ToArray();
+		if (launch.IsDirty || projects.Any(section => section.IsDirty))
+		{
+			StatusText.Text = "Save or revert profile and project edits before opening Skills.";
+			return;
+		}
+
+		var profiles = launch.Items.OfType<ShellProfileItemViewModel>()
+			.Where(p => p.Kind is AgentKind.Claude or AgentKind.Codex)
+			.Select(p => p.ToProfile()).ToArray();
+		var root = Directory.GetParent(Path.GetDirectoryName(launch.FilePath)!)!.FullName;
+		var selected = (_viewModel.ActiveSection as ProjectsSectionViewModel)?.SelectedItem?.RootPath;
+		var selectedProfile = _viewModel.ActiveSection == launch ? (launch.SelectedItem as ShellProfileItemViewModel)?.Id : null;
+		using var catalog = new SkillCatalogWindow(new AppPaths(root), profiles,
+			projects.SelectMany(section => section.Items).Select(p => p.RootPath).ToArray(), selected, selectedProfileId: selectedProfile);
+		await catalog.ShowDialog(this);
+	}
 
 	public bool SavedAnyFile => _viewModel?.SavedAnyFile == true;
 

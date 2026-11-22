@@ -36,6 +36,13 @@ public sealed record SessionRecord(
 	DateTimeOffset CreatedAt,
 	DateTimeOffset LastActiveAt)
 {
+	/// <summary>The owning launch profile id. Empty identifies an explicitly ad hoc
+	/// command; null indicates an older record whose launch origin was not captured.</summary>
+	public string? LaunchProfileId { get; init; }
+
+	/// <summary>Explicit native configuration directory captured with the launch command.</summary>
+	public string? NativeConfigDirectory { get; init; }
+
 	/// <summary>Manual attention bookmark, cleared only by an explicit user toggle.</summary>
 	public bool IsMarkedForLater { get; init; }
 

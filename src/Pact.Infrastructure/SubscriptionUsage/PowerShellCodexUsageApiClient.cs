@@ -36,8 +36,13 @@ public sealed class PowerShellCodexUsageApiClient : ICodexUsageApiClient
 	}
 
 	/// <inheritdoc />
+	public Task<CodexUsageApiResult> ReadRateLimitsAsync(string commandName, CancellationToken cancellationToken) =>
+		ReadRateLimitsAsync(commandName, null, cancellationToken);
+
+	/// <inheritdoc />
 	public async Task<CodexUsageApiResult> ReadRateLimitsAsync(
 		string commandName,
+		string? nativeConfigDirectory,
 		CancellationToken cancellationToken)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
@@ -60,9 +65,14 @@ public sealed class PowerShellCodexUsageApiClient : ICodexUsageApiClient
 				StandardInputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
 				StandardOutputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)
 			};
+			if (nativeConfigDirectory is not null)
+			{
+				startInfo.Environment["CODEX_HOME"] = nativeConfigDirectory;
+			}
+
 			startInfo.ArgumentList.Add("-NoLogo");
 			startInfo.ArgumentList.Add("-Command");
-			startInfo.ArgumentList.Add($"{commandName} app-server --stdio");
+			startInfo.ArgumentList.Add($"& '{commandName.Replace("'", "''", StringComparison.Ordinal)}' app-server --stdio");
 
 			process = Process.Start(startInfo)
 				?? throw new InvalidOperationException("Unable to start pwsh.");

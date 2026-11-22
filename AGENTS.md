@@ -50,7 +50,11 @@ Do not persist terminal transcripts or scenario journals.
 - Requests do not show per-action confirmation prompts. They perform only
   actions already available in the UI and target visible terminal sessions.
 - Pact injects endpoint configuration into qualified launch profiles at
-  process start. It never writes to the user's global agent configuration.
+  process start. Session launch and catalog browsing must leave the user's
+  global agent configuration untouched.
+- The skills editor may update only the skill settings selected by the user
+  in global agent configuration. Before writing, show the affected files and
+  profiles and require the user to select Apply. Preserve unrelated settings.
 
 ## Orchestrator slot
 

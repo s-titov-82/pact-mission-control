@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using AvaloniaEdit;
 using Avalonia.Headless;
 using Avalonia.Headless.NUnit;
+using Avalonia.Interactivity;
 using Avalonia.LogicalTree;
 using Avalonia.Themes.Fluent;
 using Pact.App.Avalonia.Views;
@@ -17,6 +18,20 @@ namespace Pact.App.Avalonia.Tests.Views;
 
 public sealed class ProjectScreenViewHeadlessTests
 {
+	[AvaloniaTest]
+	public async Task Overview_skill_mapping_button_requests_the_displayed_workspace()
+	{
+		await WithScreenAsync(new FileDiff(null, []), (screen, view, _) =>
+		{
+			WorkspaceViewModel? requested = null;
+			view.SkillMappingRequested += (sender, workspace) => requested = workspace;
+			var button = view.FindControl<Button>("ProjectSkillMappingButton").ShouldNotBeNull();
+			button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+			requested.ShouldBeSameAs(screen.Workspace);
+			return Task.CompletedTask;
+		});
+	}
+
 	[AvaloniaTest]
 	public async Task Project_navigation_includes_docs_and_an_embedded_notes_editor()
 	{

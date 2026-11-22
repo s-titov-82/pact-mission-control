@@ -227,8 +227,8 @@
           <TextBlock Grid.Row="5" Grid.Column="0" Classes="SettingsFieldLabel" Text="Shell" />
           <TextBox Grid.Row="5" Grid.Column="1" Text="{Binding DefaultShell}" />
           <TextBlock Grid.Row="6" Grid.Column="0" Classes="SettingsFieldLabel"
-                     Text="Agent control arguments" />
-          <TextBox Grid.Row="6" Grid.Column="1" Text="{Binding AgentControlArgumentTemplate}" />
+                     Text="Native configuration directory" />
+          <TextBox Grid.Row="6" Grid.Column="1" Text="{Binding NativeConfigDirectory}" PlaceholderText="Agent default" />
         </Grid>
         <Button HorizontalAlignment="Right" Foreground="{DynamicResource AppDangerStrongBrush}"
                 Tag="Delete" Content="Delete profile" />

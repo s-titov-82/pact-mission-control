@@ -854,6 +854,43 @@ public sealed class SubscriptionUsageTests : IDisposable
 	private static readonly AgentProfileRecord CodexProfile =
 		new("codex", AgentKind.Codex, "Codex", "codex", "codex resume", "pwsh");
 
+	[Test]
+	public async Task Codex_usage_uses_the_selected_home_for_files_live_reads_and_cached_answers()
+	{
+		var root = CreateTempDirectory();
+		var clock = new FixedTimeProvider(DateTimeOffset.UtcNow);
+		await WriteCodexSessionFileAsync(root, 10, 10080, clock.GetUtcNow());
+		var custom = Path.Combine(root, "custom");
+		await WriteCodexSessionFileAsync(custom, 80, 10080, clock.GetUtcNow());
+		var firstHome = Path.Combine(custom, ".codex");
+		var secondHome = Path.Combine(root, "second");
+		StubCodexUsageApiClient api = new(SucceedingCodexApiResult(40, 10080), SucceedingCodexApiResult(70, 10080));
+		var reader = CreateCodexReader(root, api, clock);
+		var executable = Path.Combine(root, "installed CLI", "codex.exe");
+		var profile = CodexProfile with { CommandTemplate = $"\"{executable}\" --no-alt-screen", NativeConfigDirectory = firstHome };
+		(await reader.ReadAsync(profile, CancellationToken.None)).Weekly!.RemainingPercent.ShouldBe(20);
+		clock.Advance(TimeSpan.FromHours(1));
+		(await reader.ReadAsync(profile, CancellationToken.None)).Weekly!.RemainingPercent.ShouldBe(60);
+		(await reader.ReadAsync(profile with { NativeConfigDirectory = secondHome }, CancellationToken.None)).Weekly!.RemainingPercent.ShouldBe(30);
+		api.Directories.ShouldBe([firstHome, secondHome]);
+		api.Commands.ShouldBe([executable, executable]);
+	}
+
+	[Test]
+	public async Task Claude_usage_reads_the_selected_statusline_and_passes_that_home_to_the_live_command()
+	{
+		var root = CreateTempDirectory();
+		var fallback = await WriteClaudeStatuslineAsync(root, 10);
+		var selected = await WriteClaudeStatuslineAsync(Path.Combine(root, "selected"), 80);
+		var home = Path.GetDirectoryName(selected)!;
+		var runner = new StubClaudeUsageCommandRunner(new ClaudeUsageCommandResult(false, "", "", "offline", DateTimeOffset.UtcNow));
+		var reader = new LocalSubscriptionUsageReader(Path.Combine(root, "sessions"), fallback, runner);
+		AgentProfileRecord profile = new("work", AgentKind.Claude, "Work", " ", null, "pwsh") { NativeConfigDirectory = home };
+		(await reader.ReadAsync(profile, CancellationToken.None)).FiveHour!.RemainingPercent.ShouldBe(20);
+		await reader.ReadAsync(profile with { CommandTemplate = "claude" }, CancellationToken.None);
+		runner.Directories.ShouldBe([home]);
+	}
+
 	private static LocalSubscriptionUsageReader CreateCodexReader(
 		string root,
 		ICodexUsageApiClient codexUsageApiClient,
@@ -904,12 +941,16 @@ public sealed class SubscriptionUsageTests : IDisposable
 
 		public List<string> Commands { get; } = [];
 
+		public List<string?> Directories { get; } = [];
+
 		public Task<CodexUsageApiResult> ReadRateLimitsAsync(
 			string commandName,
+			string? nativeConfigDirectory,
 			CancellationToken cancellationToken)
 		{
 			Calls++;
 			Commands.Add(commandName);
+			Directories.Add(nativeConfigDirectory);
 			return Task.FromResult(_results.Dequeue());
 		}
 	}
@@ -965,11 +1006,15 @@ public sealed class SubscriptionUsageTests : IDisposable
 
 		public List<string> Commands { get; } = [];
 
+		public List<string?> Directories { get; } = [];
+
 		public Task<ClaudeUsageCommandResult> RunAsync(
 			string commandName,
+			string? nativeConfigDirectory,
 			CancellationToken cancellationToken)
 		{
 			Commands.Add(commandName);
+			Directories.Add(nativeConfigDirectory);
 			return Task.FromResult(_results.Dequeue());
 		}
 	}
@@ -985,6 +1030,7 @@ public sealed class SubscriptionUsageTests : IDisposable
 
 		public Task<ClaudeUsageCommandResult> RunAsync(
 			string commandName,
+			string? nativeConfigDirectory,
 			CancellationToken cancellationToken) => throw _exception;
 	}
 

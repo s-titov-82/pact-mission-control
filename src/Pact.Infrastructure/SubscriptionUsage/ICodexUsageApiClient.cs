@@ -19,5 +19,11 @@ public interface ICodexUsageApiClient
 	/// <param name="cancellationToken">Cancels the read.</param>
 	Task<CodexUsageApiResult> ReadRateLimitsAsync(
 		string commandName,
+		CancellationToken cancellationToken) => ReadRateLimitsAsync(commandName, null, cancellationToken);
+
+	/// <summary>Reads usage in the specified native configuration directory, or the inherited environment when omitted.</summary>
+	Task<CodexUsageApiResult> ReadRateLimitsAsync(
+		string commandName,
+		string? nativeConfigDirectory,
 		CancellationToken cancellationToken);
 }

@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Pact.Core\Pact.Core.csproj" />
     <PackageReference Include="YamlDotNet" />
+    <PackageReference Include="Tomlyn" />
     <InternalsVisibleTo Include="Pact.Presentation.Tests" />
     <InternalsVisibleTo Include="Pact.Infrastructure.Tests" />
   </ItemGroup>

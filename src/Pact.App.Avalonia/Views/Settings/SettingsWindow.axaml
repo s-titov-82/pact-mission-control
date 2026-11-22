@@ -24,17 +24,20 @@
             Background="{DynamicResource AppSurfaceBrush}"
             BorderBrush="{DynamicResource AppBorderBrush}"
             BorderThickness="1">
-      <Grid RowDefinitions="Auto,*,Auto,Auto">
+      <Grid RowDefinitions="Auto,Auto,*,Auto,Auto">
         <TextBlock FontWeight="SemiBold" Text="Sections" />
-        <ListBox x:Name="SectionList" Grid.Row="1" Margin="0,10,0,0"
+        <Button x:Name="SkillCatalogButton" Grid.Row="1" Margin="0,8,0,0"
+                HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                Content="Skill catalog" Click="OnOpenSkillsClicked" />
+        <ListBox x:Name="SectionList" Grid.Row="2" Margin="0,6,0,0"
                  SelectionChanged="OnSectionSelectionChanged">
           <ListBox.ItemTemplate>
             <DataTemplate><TextBlock Text="{Binding Label}" /></DataTemplate>
           </ListBox.ItemTemplate>
         </ListBox>
-        <Button x:Name="OpenRawJsonButton" Grid.Row="2" Height="30"
+        <Button x:Name="OpenRawJsonButton" Grid.Row="3" Height="30"
                 HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Content="Open raw JSON" Click="OnOpenRawJsonClicked" />
-        <Button x:Name="RevertButton" Grid.Row="3" Height="30" Margin="0,8,0,0"
+        <Button x:Name="RevertButton" Grid.Row="4" Height="30" Margin="0,8,0,0"
                 HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Content="Revert"
                 Click="OnRevertClicked"
                 ToolTip.Tip="Discard edits and re-read saved values (from disk; Projects — from the running app)" />

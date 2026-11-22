@@ -5,6 +5,7 @@ using Pact.Core.Presentation;
 using Pact.Core.Sessions;
 using Pact.Core.Terminal;
 using Pact.Infrastructure.AgentControl;
+using Pact.Infrastructure.Skills;
 using Pact.Infrastructure.Storage;
 using Pact.Presentation.Services;
 using Pact.Presentation.ViewModels;
@@ -77,6 +78,20 @@ internal sealed class SessionLauncher(
 		}
 
 		var injection = CreateAgentLaunchInjection(session.Record);
+		try
+		{
+			string? diagnostic = null;
+			injection = await ApplySkillSettingsAsync(session, startPlan.CommandLine, injection, message => diagnostic = message, cancellationToken);
+			if (diagnostic != null)
+			{
+				await _reportStatusAsync(diagnostic);
+			}
+		}
+		catch
+		{
+			_agentControlTokens.Revoke(session.Record.Id);
+			throw;
+		}
 		if (session.Record.Kind == AgentKind.Codex && (automaticStart || startPlan.Mode != TerminalStartMode.Normal))
 		{
 			// This override applies to the launched process and lets unattended starts reach readiness.
@@ -215,6 +230,33 @@ internal sealed class SessionLauncher(
 			_agentControlTokens.Revoke(session.Id);
 			throw;
 		}
+	}
+
+	private Task<LaunchInjection> ApplySkillSettingsAsync(SessionViewModel session, string commandLine, LaunchInjection injection,
+		Action<string> reportDiagnostic, CancellationToken cancellationToken)
+	{
+		var record = session.Record;
+		var id = record.LaunchProfileId;
+		if (id is { Length: 0 })
+		{
+			return Task.FromResult(injection);
+		}
+		if (id is null)
+		{
+			// Older records stored the command only. An ambiguous profile cannot own a project rule.
+			var matches = _viewModel.ShellProfiles.Where(candidate => candidate.Kind == record.Kind
+				&& candidate.CommandTemplate == record.LaunchCommand
+				&& string.IsNullOrWhiteSpace(candidate.NativeConfigDirectory)).Take(2).ToArray();
+			if (matches.Length != 1)
+			{
+				return Task.FromResult(injection);
+			}
+			id = matches[0].Id;
+		}
+		var saved = new AgentProfileRecord(id, record.Kind, record.Title, commandLine, record.ResumeCommand, string.Empty)
+		{ NativeConfigDirectory = record.NativeConfigDirectory };
+		var directory = session.IsRootItem ? null : session.ProjectRootPath ?? record.WorkingDirectory;
+		return Task.Run(() => new SkillActivationService(_appPaths).ComposeLaunch(saved, directory, injection, reportDiagnostic, record.WorkingDirectory), cancellationToken);
 	}
 
 	private void OnControllerExited(string sessionId, TerminalController controller) =>

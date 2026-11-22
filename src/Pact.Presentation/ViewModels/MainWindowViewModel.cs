@@ -661,7 +661,8 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 		string? resumeCommand,
 		CancellationToken cancellationToken,
 		string? workspaceId = null,
-		bool select = true)
+		bool select = true,
+		AgentProfileRecord? launchProfile = null)
 	{
 		var targetProjectId = string.IsNullOrWhiteSpace(workspaceId)
 			? projectId
@@ -676,7 +677,11 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 			resumeCommand,
 			SessionStatus.Stopped,
 			now,
-			now);
+			now)
+		{
+			LaunchProfileId = launchProfile?.Id ?? string.Empty,
+			NativeConfigDirectory = launchProfile?.NativeConfigDirectory
+		};
 
 		var updatedProject = await _structurePersistence.AddSessionAsync(
 			targetProjectId,
@@ -711,7 +716,8 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 		string workingDirectory,
 		string launchCommand,
 		string? resumeCommand,
-		CancellationToken cancellationToken)
+		CancellationToken cancellationToken,
+		AgentProfileRecord? launchProfile = null)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(workingDirectory);
 		ArgumentException.ThrowIfNullOrWhiteSpace(launchCommand);
@@ -725,7 +731,11 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 			resumeCommand,
 			SessionStatus.Stopped,
 			now,
-			now);
+			now)
+		{
+			LaunchProfileId = launchProfile?.Id ?? string.Empty,
+			NativeConfigDirectory = launchProfile?.NativeConfigDirectory
+		};
 
 		var record = await _rootPersistence.AddSessionAsync(session, cancellationToken);
 		RootTabs.UpdateRecord(record);

@@ -152,7 +152,50 @@ profile command and adds a short, session-scoped instruction pointing to
 Pact-owned guidance under `Temp/Retained/PactSkills`. The detailed guidance is
 read only when needed; it is not copied into every prompt. With agent control
 enabled, supported sessions also receive an ephemeral connection to Pact's
-loopback MCP server. Pact does not modify global Codex or Claude configuration.
+loopback MCP server. Session launch leaves global Codex and Claude configuration untouched.
+
+
+Open **Skill catalog** beside the settings gear in the main window or at the
+top of the Settings sidebar. The catalog reads `~/.agents/skills` and the native
+Codex and Claude skill directories, including links into a team checkout.
+On **Catalog**, expand a source to see its skills. Use **Add a skill source**
+to browse a repository folder or public GitHub URL. Select a package to read
+its files. An existing shared installation offers **Link update source…** for
+choosing its update repository. Review the matching package before binding it.
+**Check for update** shows the destination, changed files and available release
+notes before you apply the update. **Make shared** moves a profile's package
+into `~/.agents/skills` and leaves a directory link in its original location.
+When the shared folder already has an identical package, Pact reuses it.
+**Rename folder…** changes the installed directory name. The preview shows
+the old and new paths and the connections and settings that need updating.
+The package keeps the `name` declared in `SKILL.md`. When that differs from
+the folder name, Catalog and Skill → Agent mapping display both.
+**Find duplicates** lists the locations of independent copies and their
+differences. Use **Delete** on the specific location to preview its removal.
+For a directory link the removal applies only to that link.
+Pact flags locally modified managed packages before replacing their files.
+
+Open **Skill → Agent mapping** to edit defaults, a project or a folder and its
+descendants. **Skill mapping** beside the pencil on a project's Overview
+opens the table with that project selected. Each column is a launch profile.
+Select a project or a parent directory in the tree on the left. **Add directory**
+adds an unopened project or a folder whose mapping covers its descendants.
+A private installation has controls in its owning
+profile. Use **Make shared** in the catalog to configure it for other profiles.
+Set a source to **Off** to disable its skills for
+that profile and scope. Expand the source to give an individual skill an
+exception. Saved source rules also cover skills added later when launching
+through Pact. **Inherit** checks the source at the same scope, then the nearest
+configured parent folder and finally the profile default. Folder rules apply
+at launch based on the terminal's working directory, including future projects.
+The table shows affected profiles and files before you apply changes. Defaults written
+to native configuration work when starting the
+same native profile from a terminal. Claude project visibility also works
+there. Codex project visibility overrides take effect on the next launch
+through Pact. Codex discovers skills in project discovery folders directly.
+When a preview creates a directory connection inside a Git project, Git may
+stage the linked skill files. Exclude that project-relative path locally if
+the connection should stay on this machine.
 
 Saving Settings reloads the live scenario and review-profile catalogs. Existing
 connected agents receive an MCP tool-list change notification when the set of
