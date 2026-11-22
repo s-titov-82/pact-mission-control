@@ -143,12 +143,14 @@ public sealed class StyledAgentScreenProfileTests
 	[TestCase(true, "Quit", "enter continue and create sandbox · esc quit", AgentScreenProfileBase.TrustPromptDescription)]
 	[TestCase(true, "Quit", "enter continue · esc quit", AgentScreenProfileBase.TrustPromptDescription)]
 	[TestCase(false, "Quit", "enter continue · esc quit", "Folder access selection")]
-	[TestCase(true, "Keep current directory", "enter continue · esc cancel", "Folder access selection")]
+	[TestCase(true, "Keep current directory", "enter continue · esc cancel", AgentScreenProfileBase.TrustPromptDescription)]
+	[TestCase(true, "Back to Agent Command Center", "enter continue · esc back", AgentScreenProfileBase.TrustPromptDescription)]
+	[TestCase(false, "Back to Agent Command Center", "enter continue · esc back", "Folder access selection")]
 	public void Current_Codex_folder_access_menu_allows_Enter_only_on_selected_startup_trust(
 		bool trustSelected, string cancelLabel, string footer, string expectedDescription)
 	{
 		var screen = TerminalScreenSnapshot.FromRows([
-			new("  Folder access", false, []),
+			new("  Note: You’re in a subdirectory of a Git project. Trusting will apply to the repository root:", false, []),
 			new("  D:\\work\\project", false, []),
 			new("", false, []),
 			new("  Trust this folder? Codex can read, edit, and run files here,", false, []),
@@ -173,6 +175,35 @@ public sealed class StyledAgentScreenProfileTests
 			new("• Working (3s • esc to interrupt)", false, [])));
 
 		verdict.State.ShouldBe(TerminalScreenVerdictState.Busy);
+	}
+
+	[TestCase("? 1 question", "shift+← to answer")]
+	[TestCase("? 2 questions · alt+↑ to answer", "")]
+	public void Codex_collapsed_questions_request_input_even_while_working(string count, string hint)
+	{
+		var screen = CodexStartScreen(
+			new("• Working (3s • esc to interrupt)", false, []),
+			new("• Queued follow-up inputs", false, []),
+			new("  " + count, false, []),
+			new("    " + hint, false, []));
+
+		var verdict = CodexScreenProfile.Instance.Classify(screen);
+		verdict.State.ShouldBe(TerminalScreenVerdictState.InputRequested);
+		verdict.Description.ShouldContain("question");
+	}
+
+	[Test]
+	public void Codex_transcript_question_and_editable_queue_do_not_request_an_answer()
+	{
+		var screen = CodexStartScreen(
+			new("? Где показать сигнал?", false, []),
+			new("  • На вкладке", false, []),
+			new("  • На панели", false, []),
+			new("• Queued follow-up inputs", false, []),
+			new("  ↳ next task", false, []),
+			new("    shift+← edit last queued message", false, []));
+
+		CodexScreenProfile.Instance.Classify(screen).State.ShouldBe(TerminalScreenVerdictState.Done);
 	}
 
 	internal static TerminalScreenSnapshot CodexStartScreen(params TerminalScreenRow[] transcript) =>

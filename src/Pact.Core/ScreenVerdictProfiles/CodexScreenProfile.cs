@@ -40,16 +40,16 @@ public sealed partial class CodexScreenProfile : AgentScreenProfileBase
 
 		// Codex also shows this menu when changing folders. Enter is safe for the
 		// startup readiness flow only with its affirmative option still selected.
-		return menu.Groups["trust"].Success && menu.Groups["exit"].Value == "Quit"
+		return menu.Groups["trust"].Success
 			? TrustPromptDescription
 			: "Folder access selection";
 	}
 
 	[GeneratedRegex(
-		@"^[ \t]*Folder access[ \t]*\r?$.*?^[ \t]*Trust this folder\?.*?^[ \t]*(?<trust>›)?[ \t]*1\. Trust and continue[ \t]*\r?\n"
-		+ @"[ \t]*›?[ \t]*2\. (?<exit>Quit|Keep current directory|Back to Agent Command Center)[ \t]*\r?\n"
-		+ @"\s*enter continue(?: and create sandbox)? · esc (?:quit|cancel|back)\s*\z",
-		RegexOptions.Multiline | RegexOptions.Singleline)]
+		@"^[ \t]*(?<trust>›)?[ \t]*1\. Trust and continue[ \t]*\r?\n"
+		+ @"[ \t]*›?[ \t]*2\. [^\r\n]+\r?\n"
+		+ @"\s*enter continue[^\r\n]*\s*\z",
+		RegexOptions.Multiline)]
 	private static partial Regex FolderAccessMenuRx();
 
 	/// <inheritdoc />
@@ -83,6 +83,12 @@ public sealed partial class CodexScreenProfile : AgentScreenProfileBase
 	protected override (int Index, string Description) FindInputRequest(string scope)
 	{
 		ArgumentNullException.ThrowIfNull(scope);
+		var queued = QueuedQuestionRx().Match(scope);
+		if (queued.Success)
+		{
+			return (queued.Index, queued.Groups["descr"].Value);
+		}
+
 		var (index, description) = LastMatchIndex(scope, InputRequestedRx());
 
 		// A structured question counts once any prompt glyph follows it. Checking the glyph
@@ -107,5 +113,11 @@ public sealed partial class CodexScreenProfile : AgentScreenProfileBase
 
 	[GeneratedRegex(@"Question\s+\d\/\d[^\r\n]*[\r\n]\s*(?<descr>[^\r\n]*)", RegexOptions.IgnoreCase)]
 	private static partial Regex QuestionHeaderRx();
+
+	// Async questions can remain collapsed above the composer while Codex is working.
+	// Match the live answer hint, since the question and its options also appear in history.
+	[GeneratedRegex(@"^[ \t]*\?[ \t]+(?<descr>[1-9]\d* questions?)\s*(?:·\s*)?\S+[ \t]+to answer[ \t)]*\s*(?:›\s*)?\z",
+		RegexOptions.IgnoreCase | RegexOptions.Multiline)]
+	private static partial Regex QueuedQuestionRx();
 
 }
