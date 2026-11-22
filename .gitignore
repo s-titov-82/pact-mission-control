@@ -21,6 +21,8 @@ node_modules/
 .vscode/
 .superpowers/
 .worktrees/
+.claude/
+.serena/
 *.user
 *.suo
 
