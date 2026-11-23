@@ -8,7 +8,7 @@ using Windows.UI.Notifications;
 namespace Pact.App.Avalonia.Platform;
 
 /// <summary>Owns one live Windows reminder and its route back to the originating Pact process.</summary>
-internal sealed partial class WindowsAttentionNotification : IDisposable
+internal sealed partial class WindowsAttentionNotification : IAttentionReminder
 {
 	private readonly Guid _id = Guid.NewGuid();
 	private readonly ToastNotifierCompat _notifier;
@@ -16,6 +16,7 @@ internal sealed partial class WindowsAttentionNotification : IDisposable
 	private readonly EventWaitHandle _clicked;
 	private readonly RegisteredWaitHandle _wait;
 	private readonly DispatcherTimer? _timer;
+	private volatile bool _bannerOpen = true;
 	private bool _disposed;
 
 	internal WindowsAttentionNotification(string group, string title, string description,
@@ -31,15 +32,22 @@ internal sealed partial class WindowsAttentionNotification : IDisposable
 		{
 			if (!_disposed)
 			{
+				_bannerOpen = false;
 				open();
 			}
 		}), null, Timeout.Infinite, executeOnlyOnce: true);
 		try
 		{
+			_toast.Dismissed += OnBannerClosed;
+			_toast.Failed += OnBannerClosed;
 			_notifier.Show(_toast);
 			if (_notifier.Setting == NotificationSetting.Enabled)
 			{
 				PlayCustomSound(preferences.NotificationSoundMode);
+			}
+			else
+			{
+				_bannerOpen = false;
 			}
 			if (preferences.NotificationMode == NotificationBannerMode.CustomTimeout)
 			{
@@ -61,6 +69,8 @@ internal sealed partial class WindowsAttentionNotification : IDisposable
 		}
 		catch
 		{
+			_toast.Dismissed -= OnBannerClosed;
+			_toast.Failed -= OnBannerClosed;
 			_wait.Unregister(null);
 			_clicked.Dispose();
 			throw;
@@ -113,6 +123,13 @@ internal sealed partial class WindowsAttentionNotification : IDisposable
 	[return: MarshalAs(UnmanagedType.Bool)]
 	private static partial bool PlaySoundW(string sound, IntPtr module, uint flags);
 
+	/// <inheritdoc />
+	public bool IsOpen => !_disposed && (_bannerOpen || ToastNotificationManagerCompat.History.GetHistory().Any(
+		toast => toast.Tag == _toast.Tag && toast.Group == _toast.Group));
+
+	private void OnBannerClosed(ToastNotification sender, object args) => _bannerOpen = false;
+
+	/// <inheritdoc />
 	public void Dispose()
 	{
 		if (_disposed)
@@ -121,9 +138,18 @@ internal sealed partial class WindowsAttentionNotification : IDisposable
 		}
 		_disposed = true;
 		_timer?.Stop();
+		_toast.Dismissed -= OnBannerClosed;
+		_toast.Failed -= OnBannerClosed;
 		_wait.Unregister(null);
 		_clicked.Dispose();
-		ToastNotificationManagerCompat.History.Remove(_toast.Tag, _toast.Group);
+		try
+		{
+			_notifier.Hide(_toast);
+		}
+		finally
+		{
+			ToastNotificationManagerCompat.History.Remove(_toast.Tag, _toast.Group);
+		}
 	}
 }
 

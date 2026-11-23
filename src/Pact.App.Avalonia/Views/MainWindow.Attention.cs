@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Pact.App.Avalonia.Controllers;
 using Pact.App.Avalonia.Platform;
 using Pact.Presentation.Services;
 using Pact.Core.Sessions;
@@ -46,24 +47,39 @@ internal sealed partial class MainWindow
 					await OpenAttentionTargetAsync(item);
 				}), Report);
 		}, Report);
-		void Refresh(object? sender, EventArgs args)
+		void AppearanceChanged(object? sender, EventArgs args)
 		{
-			_notifications.Update(feed.Items, App.CurrentAppearance);
+			RefreshWindowsNotifications();
 		}
+
 		void FeedChanged(object? sender, PropertyChangedEventArgs args)
 		{
 			if (args.PropertyName == nameof(feed.Items))
 			{
-				Refresh(sender, args);
+				RefreshWindowsNotifications();
 			}
 		}
 		feed.PropertyChanged += FeedChanged;
-		App.AppearanceChanged += Refresh;
+		App.AppearanceChanged += AppearanceChanged;
 		_eventDetachments.Add(() =>
 		{
 			feed.PropertyChanged -= FeedChanged;
-			App.AppearanceChanged -= Refresh;
+			App.AppearanceChanged -= AppearanceChanged;
 		});
+	}
+
+	private void RefreshWindowsNotifications()
+	{
+		if (_eventProducersDetached || _notifications is not { } notifications)
+		{
+			return;
+		}
+
+		var viewedSession = EngineProbeController.PresentedSurface is PresentedSurface.Terminal { Loading: false } terminal
+			&& IsTerminalWindowVisible(IsVisible, WindowState) && WindowForegroundProbe.IsWindowForeground(this)
+			? terminal.Session
+			: null;
+		notifications.Update(EngineProbeController.ViewModel.Attention.Items, App.CurrentAppearance, viewedSession);
 	}
 
 	private async Task OpenAttentionTargetAsync(AttentionItem item)
@@ -89,6 +105,7 @@ internal sealed partial class MainWindow
 		{
 			PublishTerminalWindowFacts();
 			UpdateTerminalPresentationVisibility();
+			RefreshWindowsNotifications();
 			_hasTaskbarCompletionAttention = false;
 			UpdateTaskbarAttention();
 			// Coming back to the window is a good moment to re-read the change list.
@@ -108,6 +125,7 @@ internal sealed partial class MainWindow
 			{
 				PublishTerminalWindowFacts();
 				UpdateTerminalPresentationVisibility();
+				RefreshWindowsNotifications();
 			}
 		}
 

@@ -1513,6 +1513,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 		BrowserPane.IsVisible = visibility.Browser;
 		EmptyPane.IsVisible = visibility.Empty;
 		UpdateTerminalPresentationVisibility();
+		RefreshWindowsNotifications();
 	}
 
 	private void UpdateTerminalPresentationVisibility() =>

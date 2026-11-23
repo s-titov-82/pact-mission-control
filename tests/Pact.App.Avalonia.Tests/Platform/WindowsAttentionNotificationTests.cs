@@ -1,4 +1,5 @@
 using Pact.App.Avalonia.Platform;
+using Pact.Core.Agents;
 using Pact.Core.Sessions;
 using Pact.Presentation.ViewModels;
 
@@ -25,12 +26,63 @@ public sealed class WindowsAttentionNotificationTests
 		shown.ShouldBeEmpty();
 		notifications.Update([question], enabled);
 		notifications.Update([question with { Title = "Renamed" }, second], enabled);
+		var failure = question with { Indicator = TerminalTabIndicator.Failed };
+		notifications.Update([failure, second], enabled);
 		shown.Count.ShouldBe(2);
-		notifications.Update([second], enabled);
+		shown[0].Closed.ShouldBeFalse();
+
+		shown[0].IsOpen = false;
+		notifications.Update([failure, second], enabled);
+		shown.Count.ShouldBe(2);
+		notifications.Update([question, second], enabled);
+		shown.Count.ShouldBe(3);
 		shown[0].Closed.ShouldBeTrue();
+
+		notifications.Update([second], enabled);
+		shown[2].Closed.ShouldBeTrue();
 		shown[1].Closed.ShouldBeFalse();
 		notifications.Update([second], disabled);
 		shown[1].Closed.ShouldBeTrue();
+	}
+
+	[Test]
+	public void Viewing_a_terminal_withdraws_only_its_reminder_and_does_not_replay_it_on_leave()
+	{
+		Dictionary<object, List<Reminder>> shown = [];
+		using var notifications = new AttentionNotificationList((item, _) =>
+		{
+			if (!shown.TryGetValue(item.Target, out var reminders))
+			{
+				shown[item.Target] = reminders = [];
+			}
+			Reminder reminder = new();
+			reminders.Add(reminder);
+			return reminder;
+		}, ex => Assert.Fail(ex.Message));
+		var now = DateTimeOffset.UtcNow;
+		SessionViewModel session = new(new SessionRecord(
+			"first", AgentKind.Codex, "Agent", @"C:\repo", "codex", null, SessionStatus.Stopped, now, now));
+		var preferences = new AppearancePreferences(AppearanceMode.System) { ShowNotifications = true };
+		AttentionItem unread = new(session, null, false, "ROOT", "Agent", TerminalTabIndicator.Unread, "Unread");
+		var other = unread with { Target = new object() };
+
+		notifications.Update([unread, other], preferences);
+		notifications.Update([unread, other], preferences, viewedSession: session);
+
+		shown[session].Single().Closed.ShouldBeTrue();
+		shown[other.Target].Single().Closed.ShouldBeFalse();
+		notifications.Update([unread, other], preferences);
+		shown[session].Count.ShouldBe(1);
+
+		var question = unread with { Indicator = TerminalTabIndicator.InputRequested };
+		notifications.Update([question, other], preferences, viewedSession: session);
+		notifications.Update([question, other], preferences);
+		shown[session].Count.ShouldBe(1);
+
+		notifications.Update([other], preferences);
+		notifications.Update([unread, other], preferences);
+		shown[session].Count.ShouldBe(2);
+		shown[session][1].Closed.ShouldBeFalse();
 	}
 
 	[TestCase(NotificationBannerMode.WindowsDefault, NotificationSoundMode.Silent)]
@@ -87,9 +139,10 @@ public sealed class WindowsAttentionNotificationTests
 		signal.WaitOne(0).ShouldBeTrue();
 	}
 
-	private sealed class Reminder : IDisposable
+	private sealed class Reminder : IAttentionReminder
 	{
 		public bool Closed { get; private set; }
+		public bool IsOpen { get; set; } = true;
 		public void Dispose() => Closed = true;
 	}
 }

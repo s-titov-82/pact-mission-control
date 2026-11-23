@@ -3,19 +3,26 @@ using Pact.Presentation.ViewModels;
 
 namespace Pact.App.Avalonia.Platform;
 
-/// <summary>Mirrors actionable feed entries without replaying a reminder when a title or tooltip changes.</summary>
-internal sealed class AttentionNotificationList(Func<AttentionItem, AppearancePreferences, IDisposable> show,
+/// <summary>A Windows reminder that can outlive its on-screen banner in Notification Center.</summary>
+internal interface IAttentionReminder : IDisposable
+{
+	/// <summary>Whether the banner is still open or Windows retains it in Notification Center.</summary>
+	bool IsOpen { get; }
+}
+
+/// <summary>Keeps one outstanding reminder per target and acknowledges a terminal when it is viewed.</summary>
+internal sealed class AttentionNotificationList(Func<AttentionItem, AppearancePreferences, IAttentionReminder> show,
 	Action<Exception> reportFailure) : IDisposable
 {
-	private readonly Dictionary<object, (TerminalTabIndicator Reason, IDisposable? Reminder)> _current = [];
+	private readonly Dictionary<object, (TerminalTabIndicator Reason, IAttentionReminder? Reminder)> _current = [];
 
-	internal void Update(IReadOnlyList<AttentionItem> items, AppearancePreferences preferences)
+	internal void Update(IReadOnlyList<AttentionItem> items, AppearancePreferences preferences, SessionViewModel? viewedSession = null)
 	{
 		var pending = items.Where(item => item.Indicator is TerminalTabIndicator.InputRequested
 			or TerminalTabIndicator.Unread or TerminalTabIndicator.Failed).ToDictionary(item => item.Target);
-		foreach (var (target, entry) in _current.ToArray())
+		foreach (var target in _current.Keys.ToArray())
 		{
-			if (!preferences.ShowNotifications || !pending.TryGetValue(target, out var item) || item.Indicator != entry.Reason)
+			if (!preferences.ShowNotifications || !pending.ContainsKey(target))
 			{
 				Remove(target);
 			}
@@ -26,17 +33,53 @@ internal sealed class AttentionNotificationList(Func<AttentionItem, AppearancePr
 		}
 		foreach (var item in pending.Values)
 		{
-			if (_current.TryAdd(item.Target, (item.Indicator, null)))
+			var target = item.Target;
+			var tracked = _current.TryGetValue(target, out var entry);
+			if (ReferenceEquals(target, viewedSession))
 			{
-				try
+				if (entry.Reminder is not null)
 				{
-					_current[item.Target] = (item.Indicator, show(item, preferences));
+					Remove(target);
 				}
-				catch (Exception ex)
-				{
-					reportFailure(ex);
-				}
+				_current[target] = (item.Indicator, null);
+				continue;
 			}
+			if (tracked && entry.Reason == item.Indicator)
+			{
+				continue;
+			}
+			if (entry.Reminder is { } reminder)
+			{
+				if (IsStillOpen(reminder))
+				{
+					_current[target] = (item.Indicator, reminder);
+					continue;
+				}
+				Remove(target);
+			}
+
+			_current[target] = (item.Indicator, null);
+			try
+			{
+				_current[target] = (item.Indicator, show(item, preferences));
+			}
+			catch (Exception ex)
+			{
+				reportFailure(ex);
+			}
+		}
+	}
+
+	private bool IsStillOpen(IAttentionReminder reminder)
+	{
+		try
+		{
+			return reminder.IsOpen;
+		}
+		catch (Exception ex)
+		{
+			reportFailure(ex);
+			return true;
 		}
 	}
 
