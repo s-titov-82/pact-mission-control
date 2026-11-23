@@ -14,14 +14,22 @@ namespace Pact.App.Avalonia.Tests.Web;
 public sealed class AvaloniaWebPageHostContractTests
 {
 	[AvaloniaTest]
-	public async Task Empty_http_error_shows_status_and_retry_instead_of_a_blank_native_view()
+	public async Task Http_error_shows_status_body_and_retry_instead_of_a_blank_native_view()
+	{
+		await AssertErrorSurfaceAsync(null);
+		await AssertErrorSurfaceAsync("Access denied");
+		await AssertErrorSurfaceAsync("{\n  \"error\": \"forbidden\"\n}");
+	}
+
+	private static async Task AssertErrorSurfaceAsync(string? body)
 	{
 		ObservedTaskGroup tasks = new(static (_, _) => Task.CompletedTask);
 		Grid container = new();
 		NativeWebView view = new();
 		container.Children.Add(view);
 		AvaloniaWebPageHost host = new("page", view, container,
-			eventTasks: tasks, scriptInvoker: (_, _) => Task.FromResult<string?>("""{"status":503,"hasContent":false}"""));
+			eventTasks: tasks, scriptInvoker: (_, _) => Task.FromResult<string?>(
+				System.Text.Json.JsonSerializer.Serialize(new { status = 503, hasContent = false, body })));
 		string? failure = null;
 		host.NavigationFailed += (_, value) => failure = value;
 		host.GetType().GetMethod("OnNavigationCompleted", BindingFlags.Instance | BindingFlags.NonPublic)!
@@ -37,6 +45,9 @@ public sealed class AvaloniaWebPageHostContractTests
 		message.GetVisualDescendants().OfType<TextBlock>().Select(block => block.Text)
 			.ShouldContain(text => text != null && text.Contains("503", StringComparison.Ordinal));
 		message.GetVisualDescendants().OfType<Button>().ShouldHaveSingleItem();
+		message.GetVisualDescendants().OfType<Image>().Single().Source.ShouldNotBeNull();
+		var detail = message.GetVisualDescendants().OfType<ScrollViewer>().Single().Content.ShouldBeOfType<TextBlock>();
+		detail.Text.ShouldBe(body ?? "Сервер не вернул текст ошибки.");
 		await host.HideAsync(CancellationToken.None);
 		message.IsVisible.ShouldBeFalse();
 		await host.ShowAsync(CancellationToken.None);

@@ -3993,6 +3993,49 @@ public sealed class AvaloniaMainShellControllerTests
 		fixture.Controller.GetWebPageHostForDiagnostics("web-1").ShouldNotBeNull();
 	}
 
+	[TestCase(false)]
+	[TestCase(true)]
+	public async Task Startup_resumes_retained_activity_in_background_and_marks_a_completed_job_unread(bool hasCheckpoint)
+	{
+		await using ControllerFixture fixture = new(seedCheckpoint: false);
+		var token = TestContext.CurrentContext.CancellationToken;
+		var rule = MonitorRule();
+		await SaveMonitorRulesAsync(fixture, rule);
+		await fixture.SnapshotStore.SaveAsync(Snapshot("web-1", unread: false, activity: true,
+			ruleFingerprint: WebMonitorRuleCompiler.Compile(rule).Fingerprint), token);
+		if (hasCheckpoint)
+		{
+			SessionRestorationStore store = new(fixture.Paths.SessionRestorationPath);
+			await store.SaveAsync(new([], ["web-1"], [], new(null, null, IsDashboard: true), false), token);
+		}
+		FakeWebPageHostFactory factory = new()
+		{
+			ConfigureHost = host =>
+			{
+				host.RaiseNavigationEventsOnNavigate = true;
+				host.EvaluationResults.Enqueue(Task.FromResult(
+					Evaluation("https://example.test", activity: false, revision: "1")));
+			}
+		};
+		fixture.Controller.WebPageHostFactory = factory;
+		TaskCompletionSource completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		fixture.MonitorCoordinator.StatusChanged += (_, change) =>
+		{
+			if (change.WebPageId == "web-1" && change.Status == WebMonitorStatus.Unread)
+			{
+				completion.TrySetResult();
+			}
+		};
+
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), token);
+
+		factory.Hosts.ShouldContainKey("web-1");
+		await completion.Task.WaitAsync(TimeSpan.FromSeconds(5), token);
+		fixture.Controller.IsDashboardVisible.ShouldBeTrue();
+		factory.Hosts["web-1"].Calls.ShouldNotContain("focus");
+		(await fixture.SnapshotStore.LoadAsync("web-1", token)).ShouldNotBeNull().Unread.ShouldBeTrue();
+	}
+
 	[Test]
 	public async Task Ordinary_shutdown_keeps_the_live_set_before_processes_and_selection_are_stopped()
 	{

@@ -687,8 +687,12 @@ the visibility override before loading the page. A matched hidden page keeps
 updating because it is told it is visible (see
 `WebAssets/backgroundVisibility.js` in [Architecture](architecture.md)); do not
 remove it, or pages that pause while hidden never change for the monitor. A
-loaded page uses the first matching enabled rule in file order, rebaselines after navigation
-or a rule-fingerprint change, and projects `Activity -> Unread -> Paused ->
+loaded page uses the first matching enabled rule in file order. On restart, its
+first observation is compared with the retained state for the same URL and rule,
+so activity that finished while Pact was closed can become unread. If the startup
+checkpoint is unavailable, an eligible tab with matching retained activity can
+resume in the background. Later navigations and rule-fingerprint changes establish
+a fresh baseline. The monitor projects `Activity -> Unread -> Paused ->
 None` (the existing loading glyph temporarily hides that projection). The two
 seeded TeamCity and GitLab examples are disabled and contain `CHANGE-ME-`
 hostname markers; a rule with an unreplaced marker cannot be enabled. Use

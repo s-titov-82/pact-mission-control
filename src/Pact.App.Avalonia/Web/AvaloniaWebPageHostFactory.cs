@@ -46,6 +46,7 @@ internal sealed class AvaloniaWebPageHostFactory(Panel container) : IWebPageHost
 		{
 			webView = new NativeWebView
 			{
+				Background = global::Avalonia.Media.Brushes.White,
 				Focusable = true,
 				IsVisible = false
 			};

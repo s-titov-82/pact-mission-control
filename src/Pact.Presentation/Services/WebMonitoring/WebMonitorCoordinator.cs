@@ -378,8 +378,8 @@ public sealed class WebMonitorCoordinator : IAsyncDisposable
 	}
 
 	/// <summary>
-	/// Suspends one registration during main-frame navigation and requires the first successful
-	/// post-completion observation, after DOM settle, to establish a fresh baseline.
+	/// Suspends polling during main-frame navigation. An empty host's initial navigation uses its
+	/// compatible retained baseline. Subsequent navigations establish a fresh baseline.
 	/// </summary>
 	public void SetNavigationState(string webPageId, bool navigating)
 	{
@@ -396,11 +396,10 @@ public sealed class WebMonitorCoordinator : IAsyncDisposable
 				return;
 			}
 
-			registration.Navigating = navigating;
 			if (navigating)
 			{
 				registration.NavigationGeneration++;
-				registration.NeedsFreshBaseline = true;
+				registration.NeedsFreshBaseline |= !registration.Navigating;
 				registration.AwaitingPostNavigationConfirmation = true;
 				registration.PendingCandidate = null;
 			}
@@ -414,6 +413,7 @@ public sealed class WebMonitorCoordinator : IAsyncDisposable
 
 				registration.NextAttemptAt = _timeProvider.GetUtcNow() + DomSettleDelay;
 			}
+			registration.Navigating = navigating;
 		}
 
 		Pulse(registration);
@@ -1704,6 +1704,21 @@ public sealed class WebMonitorCoordinator : IAsyncDisposable
 		{
 			return _compiledRules;
 		}
+	}
+
+	/// <summary>
+	/// Indicates whether a saved page has an active observation for its resume address and
+	/// the currently applicable monitoring rule, allowing recovery without a startup checkpoint.
+	/// </summary>
+	public bool CanResumeRetainedActivity(WebMonitorSnapshot snapshot, Uri resumeUrl)
+	{
+		ArgumentNullException.ThrowIfNull(snapshot);
+		ArgumentNullException.ThrowIfNull(resumeUrl);
+		var identity = TryNormalize(resumeUrl);
+		return snapshot.Activity == true && identity is not null
+			&& string.Equals(identity.AbsoluteUri, snapshot.Url, StringComparison.Ordinal)
+			&& FindFirstMatch(GetCompiledRules(), identity) is { } rule
+			&& rule.Source.Id == snapshot.RuleId && rule.Fingerprint == snapshot.RuleFingerprint;
 	}
 
 	private static WebMonitorCompiledRule? FindFirstMatch(

@@ -65,7 +65,7 @@ internal static class WindowsWebView2BackgroundVisibility
 		await webView.InvokeScript(active ? script : DeactivateScript);
 	}
 
-	private static CoreWebView2? TryGetCore(NativeWebView webView)
+	internal static CoreWebView2? TryGetCore(NativeWebView webView)
 	{
 		if (webView.TryGetPlatformHandle() is not IWindowsWebView2PlatformHandle platformHandle)
 		{

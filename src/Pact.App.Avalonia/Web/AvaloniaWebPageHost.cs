@@ -5,6 +5,9 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Avalonia.Media;
 using Avalonia.Layout;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
+using Microsoft.Web.WebView2.Core;
 using Pact.App.Avalonia.Diagnostics;
 using Pact.App.Avalonia.Lifecycle;
 using Pact.App.Avalonia.Platform;
@@ -36,6 +39,9 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 	private bool _isNavigationLoading;
 	private bool _isNativelyVisible;
 	private Border? _failureSurface;
+	private CoreWebView2? _browser;
+	private ulong _browserNavigationId;
+	private (Uri Url, int Status, Task<(string Type, string? Body)> Content)? _httpError;
 	private long _navigationGeneration;
 	private int _disposed;
 	private int _eventProducersAttached = 1;
@@ -78,6 +84,7 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 		_webView.KeyDown += OnKeyDown;
 		if (_webView.TryGetPlatformHandle() is not null)
 		{
+			AttachBrowser();
 			_adapterReady.TrySetResult();
 		}
 		RecordDiagnostic("host-created");
@@ -298,6 +305,7 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 		}
 
 		_webView.AdapterCreated -= OnAdapterCreated;
+		DetachBrowser();
 		_webView.AdapterDestroyed -= OnAdapterDestroyed;
 		_webView.NavigationStarted -= OnNavigationStarted;
 		_webView.NavigationCompleted -= OnNavigationCompleted;
@@ -310,6 +318,7 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 		RunOnUiThreadInOrder(() =>
 		{
 			_navigationGeneration++;
+			_httpError = null;
 			ClearFailureSurface();
 			_isNavigationLoading = true;
 			ApplyNativeVisibility();
@@ -320,6 +329,10 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 
 	private void OnNavigationCompleted(object? sender, WebViewNavigationCompletedEventArgs args)
 	{
+		if (_browser is not null)
+		{
+			return;
+		}
 		RunOnUiThreadInOrder(() =>
 		{
 			var url = args.Request?.AbsoluteUri ?? Source?.AbsoluteUri ?? string.Empty;
@@ -330,28 +343,122 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 		});
 	}
 
-	private async Task CompleteNavigationAsync(string url, bool isSuccess, long generation)
+	private void AttachBrowser()
 	{
-		var status = 0;
-		var hasContent = isSuccess;
+		DetachBrowser();
+		_browser = WindowsWebView2BackgroundVisibility.TryGetCore(_webView);
+		_browser?.NavigationStarting += OnBrowserNavigationStarting;
+		_browser?.NavigationCompleted += OnBrowserNavigationCompleted;
+		_browser?.WebResourceResponseReceived += OnResponseReceived;
+	}
+
+	private void DetachBrowser()
+	{
+		_browser?.NavigationStarting -= OnBrowserNavigationStarting;
+		_browser?.NavigationCompleted -= OnBrowserNavigationCompleted;
+		_browser?.WebResourceResponseReceived -= OnResponseReceived;
+		_httpError = null;
+		_browser = null;
+		_browserNavigationId = 0;
+	}
+
+	private void OnBrowserNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs args) =>
+		_browserNavigationId = args.NavigationId;
+
+	private void OnResponseReceived(object? sender, CoreWebView2WebResourceResponseReceivedEventArgs args)
+	{
+		if (args.Response.StatusCode >= 400 && args.Request.Headers.Contains("Sec-Fetch-Dest") &&
+			args.Request.Headers.GetHeader("Sec-Fetch-Dest") == "document" &&
+			Uri.TryCreate(args.Request.Uri, UriKind.Absolute, out var url))
+		{
+			_httpError = (url, args.Response.StatusCode, ReadErrorContentAsync(args.Response));
+		}
+	}
+
+	private void OnBrowserNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs args)
+	{
+		var url = _browser?.Source ?? Source?.AbsoluteUri ?? string.Empty;
+		var generation = _navigationGeneration;
+		var status = args.HttpStatusCode;
+		var success = args.IsSuccess;
+		if (_browserNavigationId != 0 && args.NavigationId != _browserNavigationId)
+		{
+			return;
+		}
+		RecordDiagnostic("navigation-completed", $"source={url};success={success};status={status}");
+		if (success && status is > 0 and < 400)
+		{
+			OnNavigated(url, string.Empty);
+			return;
+		}
+		var response = _httpError is { } error && error.Status == status
+			&& Uri.TryCreate(url, UriKind.Absolute, out var target) && error.Url.Equals(target) ? error.Content : null;
+		_httpError = null;
+		_eventTasks.TryRun("browser-navigation-result", () => CompleteNavigationAsync(url, success, generation, status, response));
+	}
+
+	private async Task CompleteNavigationAsync(string url, bool isSuccess, long generation, int status = 0,
+		Task<(string Type, string? Body)>? response = null)
+	{
+		var hasContent = false;
+		string? body = null;
 		try
 		{
 			var result = await _scriptInvoker(_webView, """
-				(() => ({
-				    status: performance.getEntriesByType('navigation')[0]?.responseStatus ?? 0,
-				    hasContent: !!(document.body?.innerText?.trim() ||
-				        document.body?.querySelector('img,svg,canvas,video,audio,iframe,object,embed,input,button,textarea,select'))
-				}))()
+				(() => {
+				    const type = document.contentType.toLowerCase();
+				    const html = type === 'text/html' || type === 'application/xhtml+xml';
+				    const body = document.body;
+				    const media = 'img,svg,canvas,video,audio,iframe,object,embed,input:not([type=hidden]),button,textarea,select';
+				    const visible = element => element.checkVisibility({ opacityProperty: true, visibilityProperty: true }) &&
+				        element.getClientRects().length > 0;
+				    let text = null;
+				    if (!html && (type.startsWith('text/') || type.includes('json'))) {
+				        text = (body?.querySelector('pre')?.textContent ?? body?.textContent ?? '').slice(0, 65536);
+				        if (type.includes('json')) {
+				            try { text = JSON.stringify(JSON.parse(text), null, 2); } catch {}
+				        }
+				    }
+				    return JSON.stringify({
+				        status: performance.getEntriesByType('navigation')[0]?.responseStatus ?? 0,
+				        hasContent: html && /^https?:/i.test(document.documentURI) &&
+				            performance.getEntriesByType('navigation')[0]?.responseStatus >= 400 &&
+				            !!body && visible(body) && (!!body.innerText.trim() || [...body.querySelectorAll(media)].some(visible)),
+				        body: text
+				    });
+				})()
 				""");
 			using var outer = JsonDocument.Parse(result ?? "null");
 			using var document = JsonDocument.Parse(outer.RootElement.ValueKind == JsonValueKind.String
 				? outer.RootElement.GetString() ?? "null" : outer.RootElement.GetRawText());
-			status = document.RootElement.GetProperty("status").GetInt32();
+			if (status == 0)
+			{
+				status = document.RootElement.GetProperty("status").GetInt32();
+			}
 			hasContent = document.RootElement.GetProperty("hasContent").GetBoolean();
+			if (document.RootElement.TryGetProperty("body", out var responseBody))
+			{
+				body = responseBody.GetString();
+			}
 		}
 		catch (Exception exception) when (exception is not OperationCanceledException)
 		{
 			RecordDiagnostic("navigation-document-unavailable", exception.GetType().Name);
+		}
+
+		if (response is not null)
+		{
+			var (type, text) = await response;
+			if (type.Equals("text/html", StringComparison.OrdinalIgnoreCase) ||
+				type.Equals("application/xhtml+xml", StringComparison.OrdinalIgnoreCase))
+			{
+				hasContent &= text is null || !string.IsNullOrWhiteSpace(text);
+			}
+			else if (type.Length > 0)
+			{
+				hasContent = false;
+				body = text ?? body;
+			}
 		}
 
 		await Dispatcher.UIThread.InvokeAsync(() =>
@@ -365,8 +472,9 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 			{
 				if (!hasContent)
 				{
-					ShowFailureSurface(url, status);
+					ShowFailureSurface(url, status, body);
 				}
+				RecordDiagnostic("navigation-error-presented", $"status={status};surface={(hasContent ? "html" : "message")}");
 				OnLoadFailed(url, status > 0 ? status : -1, string.Empty);
 			}
 			else
@@ -376,10 +484,56 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 		});
 	}
 
-	private void ShowFailureSurface(string url, int status)
+	private static readonly JsonSerializerOptions IndentedJson = new() { WriteIndented = true };
+
+	private async Task<(string Type, string? Body)> ReadErrorContentAsync(CoreWebView2WebResourceResponseView response)
+	{
+		var type = string.Empty;
+		string? body = null;
+		try
+		{
+			type = response.Headers.GetHeader("Content-Type").Split(';')[0].Trim();
+			if (type.StartsWith("text/", StringComparison.OrdinalIgnoreCase) || type.Contains("json", StringComparison.OrdinalIgnoreCase))
+			{
+				using var stream = await response.GetContentAsync();
+				if (stream is not null)
+				{
+					// WebView2 supplies an apartment-bound COM stream. Read it on its owning UI thread.
+					using var reader = new StreamReader(stream);
+					var buffer = new char[65536];
+					body = new string(buffer, 0, reader.ReadBlock(buffer, 0, buffer.Length));
+					if (type.Contains("json", StringComparison.OrdinalIgnoreCase))
+					{
+						using var json = JsonDocument.Parse(body);
+						body = JsonSerializer.Serialize(json.RootElement, IndentedJson);
+					}
+				}
+			}
+		}
+		catch (Exception exception)
+		{
+			RecordDiagnostic("navigation-response-unavailable", $"{exception.GetType().Name} ({exception.HResult:X8})");
+		}
+		return (type, body);
+	}
+	private static readonly Lazy<Bitmap> ErrorLogo = new(() =>
+	{
+		using var stream = AssetLoader.Open(new Uri("avares://Pact.App.Avalonia/Assets/AppIcon.png"));
+		return new Bitmap(stream);
+	});
+
+	private void ShowFailureSurface(string url, int status, string? body)
 	{
 		ClearFailureSurface();
 		Button reload = new() { Content = "Reload", HorizontalAlignment = HorizontalAlignment.Left };
+		var detail = new TextBlock
+		{
+			Text = !string.IsNullOrWhiteSpace(body) ? body : status > 0
+				? "Сервер не вернул текст ошибки." : "Проверьте адрес и подключение к сети.",
+			FontSize = 16,
+			Foreground = Brushes.White,
+			TextWrapping = TextWrapping.Wrap
+		};
 		reload.Click += (_, _) => _eventTasks.TryRun("browser-retry", () => ReloadAsync(CancellationToken.None));
 		_failureSurface = new Border
 		{
@@ -393,10 +547,10 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 				Spacing = 16,
 				Children =
 				{
-					new TextBlock { Text = status > 0 ? $"Page could not be loaded (HTTP {status})" : "Page could not be loaded",
-						FontSize = 20, Foreground = Brushes.White, TextWrapping = TextWrapping.Wrap },
-					new TextBlock { Text = status > 0 ? "The server returned no visible content." : "Check the address and your network connection.",
-						Foreground = Brushes.White, TextWrapping = TextWrapping.Wrap },
+					new Image { Source = ErrorLogo.Value, Width = 64, Height = 64 },
+					new TextBlock { Text = status > 0 ? $"Ошибка загрузки: {status}" : "Ошибка загрузки",
+						FontSize = 18, Foreground = Brushes.White, TextWrapping = TextWrapping.Wrap },
+					new ScrollViewer { MaxHeight = 320, Content = detail },
 					new TextBlock { Text = url, Foreground = Brushes.LightGray, TextWrapping = TextWrapping.Wrap },
 					reload
 				}
@@ -504,6 +658,7 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 
 	private void OnAdapterCreated(object? sender, EventArgs args)
 	{
+		AttachBrowser();
 		_visibilityController = _visibilityControllerFactory(_webView);
 		if (_profileHousekeeping is not null)
 		{
@@ -537,6 +692,7 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 
 	private void OnAdapterDestroyed(object? sender, EventArgs args)
 	{
+		DetachBrowser();
 		_adapterReady.TrySetCanceled();
 		_adapterReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
 		_backgroundVisibilityScriptId = null;

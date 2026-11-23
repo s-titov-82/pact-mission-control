@@ -465,7 +465,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		}
 
 		await ViewModel.LoadAsync(cancellationToken);
-		await RestoreRetainedWebMonitorStateAsync(cancellationToken);
+		var retainedActivity = await RestoreRetainedWebMonitorStateAsync(cancellationToken);
 		await CleanupAbandonedReviewExchangesAsync(cancellationToken);
 		await ReloadExternalSettingsAsync(cancellationToken);
 		await _terminalHost.InitializeAsync(terminalPage, cancellationToken);
@@ -473,6 +473,16 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		if (!await TryRestoreSoftRestartAsync(cancellationToken)
 			&& !await TryRestoreStartupStateAsync(cancellationToken))
 		{
+			var activePages = retainedActivity.Where(snapshot =>
+				FindRestorableWebPage(snapshot.WebPageId) is { } page
+				&& Uri.TryCreate(page.Record.ResumeUrl, UriKind.Absolute, out var url)
+				&& _webMonitorCoordinator.CanResumeRetainedActivity(snapshot, url))
+				.Select(snapshot => snapshot.WebPageId).ToArray();
+			if (activePages.Length > 0)
+			{
+				LastRestorationSummary = await _softRestartRestorer.RestoreAsync(
+					new SessionRestorationState([], activePages, [], null, false), cancellationToken);
+			}
 			if (_orchestrator.Record.Enabled
 				&& _orchestrator.Record.IsProvisioned
 				&& !IsOrchestratorRunning)
@@ -487,7 +497,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		_startupCheckpoint.Start();
 	}
 
-	private async Task RestoreRetainedWebMonitorStateAsync(
+	private async Task<IReadOnlyList<WebMonitorSnapshot>> RestoreRetainedWebMonitorStateAsync(
 		CancellationToken cancellationToken)
 	{
 		var pages = ViewModel.Workspaces
@@ -511,6 +521,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 				$"category={WebMonitorSnapshotFailureCategory(exception)}");
 		}
 
+		List<WebMonitorSnapshot> retainedActivity = [];
 		foreach (var page in pages)
 		{
 			cancellationToken.ThrowIfCancellationRequested();
@@ -530,7 +541,12 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 			}
 
 			page.SetMonitorUnread(snapshot?.Unread == true);
+			if (snapshot is { Activity: true })
+			{
+				retainedActivity.Add(snapshot);
+			}
 		}
+		return retainedActivity;
 	}
 
 	private async Task<bool> TryRestoreSoftRestartAsync(CancellationToken cancellationToken)

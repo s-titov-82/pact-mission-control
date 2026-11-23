@@ -1,4 +1,9 @@
 using System.Globalization;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+using Avalonia.Controls;
+using Avalonia.VisualTree;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Avalonia.Threading;
@@ -257,6 +262,7 @@ internal sealed class EngineProbeRunner
 			var browserHost = await WaitForBrowserDocumentAsync(controller, probePage);
 			webProcessAttribution = await browserHost.ReadProcessAttributionAsync(
 				CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(10));
+			await CheckHttpErrorsAsync(window, browserHost);
 			await controller.SelectSessionAsync(
 				session,
 				startIfNeeded: true,
@@ -377,6 +383,117 @@ internal sealed class EngineProbeRunner
 			resumeCommand: null,
 			cancellationToken: CancellationToken.None,
 			workspaceId: workspace.Id);
+	}
+
+	private static async Task CheckHttpErrorsAsync(MainWindow window, AvaloniaWebPageHost host)
+	{
+		const string unstyled = "<html><body><h1>403 Forbidden</h1>\nRequest forbidden by administrative rules.\n</body></html>";
+		foreach (var (status, type, body) in new[] { (200, "text/html", unstyled), (403, "text/html", unstyled),
+			(403, "text/html", ""), (403, "application/json", "{\"error\":\"denied\"}"),
+			(403, "text/plain", "Access denied"), (403, "text/html", "<body style='background:black'><input type='hidden'></body>"),
+			(403, "text/html", "<html><body style='background:black;color:black'><p id='denied'>Access denied</p></body></html>") })
+		{
+			using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+			using var listener = new TcpListener(IPAddress.Loopback, 0);
+			listener.Start();
+			var url = new Uri($"http://127.0.0.1:{((IPEndPoint)listener.LocalEndpoint).Port}/denied");
+			var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+			void Failed(object? sender, string message)
+			{
+				completed.TrySetResult();
+			}
+			host.NavigationFailed += Failed;
+			void Navigated(object? sender, EventArgs args)
+			{
+				completed.TrySetResult();
+			}
+			if (status == 200)
+			{
+				host.NavigationCompleted += Navigated;
+			}
+			try
+			{
+				await host.HideAsync(timeout.Token);
+				await host.NavigateAsync(url, timeout.Token);
+				using var client = await listener.AcceptTcpClientAsync(timeout.Token);
+				using var stream = client.GetStream();
+				using var reader = new StreamReader(stream);
+				while (await reader.ReadLineAsync(timeout.Token) is { Length: > 0 })
+				{
+					// Consume the request through the empty line ending its headers.
+				}
+				var bytes = Encoding.UTF8.GetBytes(body);
+				var reason = status == 200 ? "OK" : "Forbidden";
+				var headers = Encoding.ASCII.GetBytes($"HTTP/1.1 {status} {reason}\r\nContent-Type: {type}\r\nContent-Length: {bytes.Length}\r\nConnection: close\r\n\r\n");
+				await stream.WriteAsync(headers, timeout.Token);
+				await stream.WriteAsync(bytes, timeout.Token);
+				client.Client.Shutdown(SocketShutdown.Send);
+				await completed.Task.WaitAsync(timeout.Token);
+				await host.ShowAsync(timeout.Token);
+				window.UpdateLayout();
+				var pane = window.GetVisualDescendants().OfType<BrowserPaneView>().Single();
+				var visibleBrowser = pane.GetVisualDescendants().OfType<NativeWebView>().SingleOrDefault(view => view.IsEffectivelyVisible);
+				var heading = pane.GetVisualDescendants().OfType<TextBlock>().SingleOrDefault(label =>
+					label.IsEffectivelyVisible && label.Text == "Ошибка загрузки: 403");
+				if (body == unstyled)
+				{
+					if (visibleBrowser is null || heading is not null || await EvaluateRevisionAsync(host, new("h1", WebMonitorValueSource.Text, null, null, null)) != "403 Forbidden")
+					{
+						throw new InvalidOperationException($"Unstyled HTTP {status} document missing.");
+					}
+					await CheckDocumentColorsAsync(visibleBrowser, status);
+					continue;
+				}
+				if (body.StartsWith("<html>", StringComparison.Ordinal))
+				{
+					if (visibleBrowser is null || heading is not null ||
+						await EvaluateRevisionAsync(host, new("#denied", WebMonitorValueSource.Text, null, null, null)) != "Access denied")
+					{
+						throw new InvalidOperationException("HTTP 403 server HTML missing.");
+					}
+					continue;
+				}
+				var labels = window.GetVisualDescendants().OfType<TextBlock>().Where(label => label.IsEffectivelyVisible)
+					.Select(label => label.Text?.ReplaceLineEndings("\n")).ToArray();
+				if (visibleBrowser is not null || heading is null || (type != "text/html" &&
+					!labels.Contains(type == "application/json" ? "{\n  \"error\": \"denied\"\n}" : body)))
+				{
+					var diagnostics = string.Join(", ", host.DiagnosticSnapshot.TakeLast(8).Select(entry => $"{entry.Phase} {entry.Detail}"));
+					throw new InvalidOperationException($"HTTP 403 error surface missing for {type} ({bytes.Length} bytes). {diagnostics}");
+				}
+			}
+			finally
+			{
+				host.NavigationFailed -= Failed;
+				host.NavigationCompleted -= Navigated;
+			}
+		}
+	}
+
+	private static async Task CheckDocumentColorsAsync(NativeWebView view, int status)
+	{
+		var browser = WindowsWebView2BackgroundVisibility.TryGetCore(view)!;
+		using MemoryStream image = new();
+		await browser.CapturePreviewAsync(Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat.Png, image);
+		image.Position = 0;
+		using var bitmap = SkiaSharp.SKBitmap.Decode(image);
+		var paper = bitmap.GetPixel(bitmap.Width / 2, bitmap.Height / 2);
+		var darkPixels = 0;
+		for (var y = 0; y < Math.Min(160, bitmap.Height); y++)
+		{
+			for (var x = 0; x < Math.Min(480, bitmap.Width); x++)
+			{
+				var pixel = bitmap.GetPixel(x, y);
+				if (pixel is { Alpha: 255, Red: < 50, Green: < 50, Blue: < 50 })
+				{
+					darkPixels++;
+				}
+			}
+		}
+		if (paper is not { Alpha: 255, Red: > 230, Green: > 230, Blue: > 230 } || darkPixels < 20)
+		{
+			throw new InvalidOperationException($"Unstyled HTTP {status}: canvas={paper}, dark pixels={darkPixels}.");
+		}
 	}
 
 	private static async Task<AvaloniaWebPageHost> WaitForBrowserDocumentAsync(
