@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using Pact.Core.Agents;
 using Pact.Core.RootTabs;
 
 namespace Pact.Presentation.ViewModels;
@@ -69,7 +70,7 @@ public sealed class RootTabsViewModel
 	{
 		var existingById = Sessions.ToDictionary(item => item.Record.Id, StringComparer.Ordinal);
 		Sessions.Clear();
-		foreach (var record in Record.Sessions)
+		foreach (var record in Record.Sessions.Where(session => session.Kind != AgentKind.Hermes))
 		{
 			if (!existingById.TryGetValue(record.Id, out var viewModel))
 			{

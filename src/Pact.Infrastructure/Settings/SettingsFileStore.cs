@@ -207,7 +207,8 @@ public sealed class SettingsFileStore
 	{
 		var json = await ReadAsync("shell-profiles.json", cancellationToken).ConfigureAwait(false);
 		var profiles = JsonSerializer.Deserialize<AgentProfileRecord[]>(json, JsonOptions);
-		return profiles?.Select(NormalizeLegacyResumeCommandTemplate).ToArray() ?? [];
+		return profiles?.Where(profile => profile.Kind != AgentKind.Hermes)
+			.Select(NormalizeLegacyResumeCommandTemplate).ToArray() ?? [];
 	}
 
 	/// <summary>
@@ -242,7 +243,7 @@ public sealed class SettingsFileStore
 
 	/// <summary>
 	/// Loads the scenario definitions through <see cref="ScenarioDefinitionStore"/>, which
-	/// completes missing prompt templates from the shipped defaults.
+	/// reads legacy review criteria alongside current definitions.
 	/// </summary>
 	public Task<IReadOnlyList<ScenarioDefinition>> LoadScenarioDefinitionsAsync(CancellationToken cancellationToken)
 	{
@@ -418,8 +419,7 @@ public sealed class SettingsFileStore
 				"Claude session",
 				"claude",
 				"claude --resume",
-				"pwsh"),
-			new AgentProfileRecord("hermes", AgentKind.Hermes, "Hermes session", "hermes", null, "pwsh")
+				"pwsh")
 		];
 
 	/// <summary>Builds the built-in reviewer profiles used to seed <c>review-profiles.json</c>.</summary>

@@ -315,12 +315,13 @@ the turn rules: the reviewer goes first; a reviewer answer either approves
 starts the next iteration or, at the limit, ends the review as
 MaxIterationsReached. Each turn has an id; a retried submit of an accepted turn
 returns its stored result and relays nothing, even after the end. Agents pull
-their turn with `pact_get_review_turn`, which returns the message rendered from
-the review template, the other side's last answer verbatim as `previousTurn`,
-and the `turnId`; they hand it back with `pact_submit_review_turn`. Review
-templates are the `scenarios.json` definitions; `ReviewMessageRenderer`
-renders them and appends Pact's protocol paragraph, and the old response-file
-placeholders render as a pointer to `previousTurn`.
+their turn with `pact_get_review_turn`, which returns Pact's turn instructions,
+the other side's last answer verbatim as `previousTurn`, and the `turnId`.
+They hand it back with `pact_submit_review_turn`. `Settings/scenarios.json`
+defines each review's opening criteria and default strictness.
+`ReviewMessageRenderer` includes those criteria in the reviewer's first turn.
+The request may override the mode with `strict` and the limit with `maxIterations`.
+New review types default to strict approval and five iterations.
 
 The side whose turn it is gets a trigger typed into its terminal through
 `DeliverPromptAsync`. Before either side reads MCP instructions, that trigger

@@ -334,6 +334,24 @@ public sealed class ProjectsSectionViewModelTests : IDisposable
 		return path;
 	}
 
+	[Test]
+	public async Task WebTabEditorSavesOnlyTheSelectedPage()
+	{
+		var owner = CreateWorkspace("project", "Project", Path.Combine(_tempRoot, "missing-root"));
+		var now = DateTimeOffset.UtcNow;
+		owner.WebPages.Add(new(new("web", "Browser", "https://example.com", "https://example.com", now, now)));
+		owner.Sessions.Add(CreateSession("session", "", "", ""));
+		FakeProjectSettingsEditor editor = new();
+		var section = CreateSection(() => [owner], editor);
+		section.LoadObject(owner.Id, "web");
+		var page = section.SelectedItem!.SelectedTab.ShouldBeOfType<RootWebPageSettingsItemViewModel>();
+		page.Title = "News";
+		page.Url = "https://example.com/news";
+		(await section.SaveAsync(CancellationToken.None)).ShouldBeTrue();
+		editor.PageUpdates.ShouldBe([("web", new RootWebPageSettingsEdit("News", "https://example.com/news"))]);
+		page.IsItemDirty.ShouldBeFalse();
+	}
+
 	private static ProjectsSectionViewModel CreateSection(
 		Func<IReadOnlyList<WorkspaceViewModel>> workspacesProvider,
 		IProjectSettingsEditor editor,
@@ -381,6 +399,13 @@ public sealed class ProjectsSectionViewModelTests : IDisposable
 
 	private sealed class FakeProjectSettingsEditor : IProjectSettingsEditor
 	{
+		public List<(string, RootWebPageSettingsEdit)> PageUpdates { get; } = [];
+		public Task UpdateWebPageSettingsAsync(string id, RootWebPageSettingsEdit edit, CancellationToken ct)
+		{
+			PageUpdates.Add((id, edit));
+			return Task.CompletedTask;
+		}
+
 		public List<(string ProjectId, ProjectSettingsEdit Edit)> ProjectUpdates { get; } = [];
 		public List<(string SessionId, SessionSettingsEdit Edit)> SessionUpdates { get; } = [];
 		public string? CreatedDirectory { get; private set; }

@@ -323,8 +323,8 @@ public sealed class SettingsFileStoreTests
 
 		var scenariosJson = await store.ReadAsync("scenarios.json", CancellationToken.None);
 		scenariosJson.ShouldContain("\"kind\": \"reviewLoop\"");
-		scenariosJson.ShouldContain("\"startPromptTemplate\"");
-		scenariosJson.ShouldContain("\"reviewerInstructions\"");
+		scenariosJson.ShouldContain("\"reviewRules\"");
+		scenariosJson.ShouldContain("\"defaultStrict\"");
 		scenariosJson.Contains("requiredRoles", StringComparison.OrdinalIgnoreCase).ShouldBeFalse();
 	}
 

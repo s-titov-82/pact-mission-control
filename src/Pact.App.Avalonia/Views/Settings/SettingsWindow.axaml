@@ -19,41 +19,51 @@
     </ResourceDictionary>
   </Window.Resources>
   <Grid Margin="16" ColumnDefinitions="240,*">
-    <Border Grid.Column="0"
+    <Border x:Name="SettingsNavigation" Grid.Column="0"
             Padding="12"
             Background="{DynamicResource AppSurfaceBrush}"
             BorderBrush="{DynamicResource AppBorderBrush}"
             BorderThickness="1">
-      <Grid RowDefinitions="Auto,Auto,*,Auto,Auto">
-        <TextBlock FontWeight="SemiBold" Text="Sections" />
-        <Button x:Name="SkillCatalogButton" Grid.Row="1" Margin="0,8,0,0"
-                HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
-                Content="Skill catalog" Click="OnOpenSkillsClicked" />
-        <ListBox x:Name="SectionList" Grid.Row="2" Margin="0,6,0,0"
-                 SelectionChanged="OnSectionSelectionChanged">
-          <ListBox.ItemTemplate>
-            <DataTemplate><TextBlock Text="{Binding Label}" /></DataTemplate>
-          </ListBox.ItemTemplate>
-        </ListBox>
-        <Button x:Name="OpenRawJsonButton" Grid.Row="3" Height="30"
-                HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Content="Open raw JSON" Click="OnOpenRawJsonClicked" />
-        <Button x:Name="RevertButton" Grid.Row="4" Height="30" Margin="0,8,0,0"
-                HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Content="Revert"
-                Click="OnRevertClicked"
-                ToolTip.Tip="Discard edits and re-read saved values (from disk; Projects — from the running app)" />
-      </Grid>
+      <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+        <StackPanel x:Name="SectionList" AutomationProperties.Name="Settings sections">
+          <StackPanel.Styles>
+            <Style Selector="Button">
+              <Setter Property="HorizontalAlignment" Value="Stretch" />
+              <Setter Property="Background" Value="Transparent" />
+              <Setter Property="BorderThickness" Value="0" />
+              <Setter Property="Padding" Value="10,5" />
+              <Setter Property="MinHeight" Value="30" />
+              <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            </Style>
+            <Style Selector="Button.current">
+              <Setter Property="Background" Value="{DynamicResource AppAccentSoftBrush}" />
+              <Setter Property="FontWeight" Value="SemiBold" />
+            </Style>
+            <Style Selector="TextBlock.group-heading">
+              <Setter Property="Margin" Value="10,10,0,2" />
+              <Setter Property="FontSize" Value="12" />
+              <Setter Property="FontWeight" Value="SemiBold" />
+              <Setter Property="Foreground" Value="{DynamicResource AppTextMutedBrush}" />
+            </Style>
+          </StackPanel.Styles>
+        </StackPanel>
+      </ScrollViewer>
     </Border>
-    <Grid Grid.Column="1" Margin="16,0,0,0" RowDefinitions="Auto,*,Auto">
+    <Grid x:Name="EditorPane" Grid.Column="1" Margin="16,0,0,0" RowDefinitions="Auto,*,Auto">
       <DockPanel Margin="0,0,0,10" LastChildFill="False">
-        <Button x:Name="SectionHelpButton" DockPanel.Dock="Right" Classes="compact-icon"
+        <Button x:Name="SectionHelpButton" DockPanel.Dock="Right" Classes="compact-icon" Height="32" Width="32" VerticalAlignment="Center"
                 FontWeight="SemiBold" ToolTip.Tip="Help" Click="OnSectionHelpClicked"><PathIcon Width="14" Height="14" Data="{StaticResource AppHelpIcon}" /></Button>
-        <TextBlock x:Name="SectionTitle" DockPanel.Dock="Left" FontSize="16"
+        <Button x:Name="OpenRawJsonButton" DockPanel.Dock="Right" Margin="0,0,8,0"
+                Height="32" VerticalAlignment="Center" VerticalContentAlignment="Center" Content="Open raw JSON" Click="OnOpenRawJsonClicked" />
+        <TextBlock x:Name="SectionTitle" DockPanel.Dock="Left" FontSize="16" VerticalAlignment="Center"
                    FontWeight="SemiBold" Foreground="{DynamicResource AppTextPrimaryBrush}" />
       </DockPanel>
       <ContentControl x:Name="SectionContent" Grid.Row="1" MinHeight="0" Margin="0,0,8,0" />
       <DockPanel Grid.Row="2" Margin="0,12,0,0">
         <Button x:Name="SaveButton" DockPanel.Dock="Right" Width="120" Height="34"
                 HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Content="Save section" Click="OnSaveClicked" />
+        <Button x:Name="RevertButton" DockPanel.Dock="Right" Height="34" Margin="0,0,8,0"
+                Content="Revert" Click="OnRevertClicked" ToolTip.Tip="Discard edits in this section" />
         <TextBlock x:Name="StatusText" VerticalAlignment="Center"
                    Foreground="{DynamicResource AppTextMutedBrush}" />
       </DockPanel>

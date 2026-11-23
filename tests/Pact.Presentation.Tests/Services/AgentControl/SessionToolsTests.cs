@@ -161,7 +161,8 @@ public sealed class SessionToolsTests
 	{
 		using var root = TemporaryDirectory.Create();
 		ReviewProfile profile = new("codex-high", "Codex high", AgentKind.Codex, "codex");
-		var tools = CreateTools(relay: CreateRelay(root.Path, [CreateDefinition("code-review")], [profile]));
+		var relay = CreateRelay(root.Path, [CreateDefinition("code-review")], [profile]);
+		var tools = CreateTools(relay: relay);
 
 		var started = await tools.InvokeAsync(
 			new AgentControlToolCall(
@@ -172,12 +173,16 @@ public sealed class SessionToolsTests
 				{
 					["scenarioId"] = "code-review",
 					["reviewProfileId"] = "codex-high",
-					["target"] = "main..HEAD"
+					["target"] = "main..HEAD",
+					["strict"] = false,
+					["maxIterations"] = 8
 				}),
 			CancellationToken.None);
 		var turn = await tools.InvokeAsync(
 			new AgentControlToolCall("reviewer-1", IsOrchestrator: false, "pact_get_review_turn", new JsonObject()),
 			CancellationToken.None);
+		relay.ListActive().Single().MaxIterations.ShouldBe(8);
+		((string?)JsonNode.Parse(turn.Text)!["message"]).ShouldNotBeNull().ShouldContain("remaining minor or nit findings");
 		var turnId = (string)JsonNode.Parse(turn.Text)!["turnId"]!;
 		var submitted = await tools.InvokeAsync(
 			new AgentControlToolCall(
@@ -271,12 +276,5 @@ public sealed class SessionToolsTests
 		id,
 		ScenarioKind.ReviewLoop,
 		"Code review",
-		MaxIterations: 3,
-		StopMarker: "DONE",
-		StartPromptTemplate: string.Empty,
-		FirstFeedbackTemplate: string.Empty,
-		AuthorReturnTemplate: string.Empty,
-		FeedbackTemplate: string.Empty,
-		ReviewerInstructions: [],
-		DefaultReviewerInstructionId: string.Empty);
+		ReviewRules: "Inspect changed behavior.");
 }

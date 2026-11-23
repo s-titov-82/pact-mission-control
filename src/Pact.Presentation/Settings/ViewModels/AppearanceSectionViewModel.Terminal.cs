@@ -64,7 +64,7 @@ public sealed partial class AppearanceSectionViewModel
 	/// <summary>Whether the profile picker has any entries to offer.</summary>
 	public bool HasProfiles => ProfileNames.Count != 0;
 	/// <summary>Selected profile within the imported file.</summary>
-	public int ProfileIndex { get; set => SetField(ref field, value); } = -1;
+	public int ProfileIndex { get; private set => SetField(ref field, value); } = -1;
 
 	/// <summary>Loads available profiles without applying one until selected.</summary>
 	public void LoadProfiles(string json)
@@ -75,9 +75,9 @@ public sealed partial class AppearanceSectionViewModel
 	private void SetProfiles(WindowsTerminalProfiles? profiles)
 	{
 		_profiles = profiles;
+		ProfileIndex = -1;
 		OnPropertyChanged(nameof(ProfileNames));
 		OnPropertyChanged(nameof(HasProfiles));
-		ProfileIndex = ProfileNames.Count > 0 ? 0 : -1;
 	}
 
 	private async Task LoadDefaultProfilesAsync(CancellationToken cancellationToken)
@@ -99,11 +99,21 @@ public sealed partial class AppearanceSectionViewModel
 	}
 
 	/// <summary>Copies the selected profile into the draft settings.</summary>
-	public void ImportProfile(bool dark)
+	public void SelectProfile(int index, bool systemDark)
 	{
-		if (_profiles is not null && ProfileIndex >= 0 && ProfileIndex < ProfileNames.Count)
+		if (_profiles is not null && index >= 0 && index < ProfileNames.Count && index != ProfileIndex)
 		{
-			SetTerminal(_profiles.Import(ProfileIndex, dark));
+			ProfileIndex = index;
+			try
+			{
+				SetTerminal(_profiles.Import(index, SelectedMode == AppearanceMode.Dark
+					|| (SelectedMode == AppearanceMode.System && systemDark)));
+				StatusText = null;
+			}
+			catch (Exception ex) when (ex is FormatException or InvalidOperationException or System.Text.Json.JsonException)
+			{
+				StatusText = $"Could not use this Windows Terminal profile. {ex.Message}";
+			}
 		}
 	}
 

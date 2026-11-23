@@ -12,7 +12,7 @@ one place.
 
 ## What it does
 
-- Runs visible Codex, Claude, Hermes, PowerShell, and custom terminal sessions
+- Runs visible Codex, Claude, PowerShell, and custom terminal sessions
   through the bundled Windows ConPTY and xterm.js.
 - Keeps live sessions running while you switch between terminals, project
   Markdown, notes, and native WebView2 browser tabs.
@@ -20,9 +20,7 @@ one place.
   actions without turning subscription TUI tools into a hidden API.
 - Lets agents inside a visible session ask Pact to start a review, read,
   append, or revision-safely replace project Notes, and open a browser tab.
-- Provides a pinned Hermes orchestrator that can report on every visible
-  agent, control active reviews, inspect running-project Notes and saved web
-  tabs, and relay status while the workstation is locked.
+
 - Persists projects and nested sessions under one selectable data root.
 - Provides a project **Board** with Backlog, Ready, In Progress, Verification and
   Done cards, comments, manual ordering and a Done archive. Ordinary project
@@ -70,7 +68,7 @@ an Internet connection is required only when a prerequisite must be downloaded.
 
 Coding-agent CLIs are not bundled. Install each CLI you intend to use and make
 its command available on `PATH`; the starter profiles call `codex`, `claude`,
-`hermes`, and `pwsh`. The built-in PowerShell profile therefore also requires
+and `pwsh`. The built-in PowerShell profile therefore also requires
 PowerShell 7.
 
 Contributors also need the .NET 10 SDK, Node.js 22 or newer, and PowerShell 7.
@@ -113,9 +111,7 @@ an extracted conversation id resumes that conversation directly; one with only a
 resume command template resumes into the agent's own conversation picker, which
 is also how a session survives an unexpected exit. Other terminals cold-start
 and are named in the restoration summary. Tabs that
-were paused stay paused. A diagnostic `Soft restart and restore active tabs`
-action is available under `Settings -> Updates -> Diagnostics` for exercising
-the same restoration path without installing an update.
+were paused stay paused.
 
 The ZIP remains available as a portable/manual alternative. It requires the
 two runtimes listed above to be installed first; extract it to a user-writable
@@ -132,7 +128,7 @@ for checksum, SPDX SBOM, and GitHub attestation checks.
 3. Add a terminal session from the project card, choose a launch profile, and
    start it.
 
-For a general Hermes session, dashboard, or shell that is not tied to a
+For an agent session, dashboard, or shell that is not tied to a
 repository, use the `+` or `@` action in the expanded `ROOT` section. New ROOT
 terminals start in the current Windows user's existing profile directory.
 
@@ -154,7 +150,7 @@ read only when needed; it is not copied into every prompt. With agent control
 enabled, supported sessions also receive an ephemeral connection to Pact's
 loopback MCP server. Session launch leaves global Codex and Claude configuration untouched.
 
-In **Settings → Terminal templates**, select a profile and check its CLI, version,
+In **Settings → Agents → Terminal profiles**, select a profile and check its CLI, version,
 runtime dependencies, and skill directories. Opening a test terminal gives Pact
 a visible session for observing startup and MCP initialization.
 

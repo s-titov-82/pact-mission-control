@@ -10,11 +10,13 @@ public sealed record AgentControlOwner(bool IsRoot, string? ProjectId);
 /// <param name="ReviewProfileId">Reviewer launch profile id.</param>
 /// <param name="Target">Path, branch reference, or pasted text under review.</param>
 /// <param name="MaxIterations">Optional positive pass-budget override.</param>
+/// <param name="Strict">Optional override of the scenario's approval policy.</param>
 public sealed record RequestReviewRequest(
 	string ScenarioId,
 	string ReviewProfileId,
 	string Target,
-	int? MaxIterations);
+	int? MaxIterations,
+	bool? Strict = null);
 
 /// <summary>A request to append text without replacing existing project notes.</summary>
 /// <param name="Text">Non-blank text to append.</param>

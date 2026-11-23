@@ -105,6 +105,11 @@ public static class SessionTools
 							"Reviewer profile.",
 							profiles().Select(value => value.Id)),
 						["target"] = AgentControlSchema.String("Path, branch, diff, or text under review."),
+						["strict"] = new JsonObject
+						{
+							["type"] = "boolean",
+							["description"] = "Override the scenario default. Strict requires every finding to be resolved or validly disputed. Non-strict permits remaining minor and nit findings."
+						},
 						["maxIterations"] = new JsonObject
 						{
 							["type"] = "integer",
@@ -119,14 +124,15 @@ public static class SessionTools
 					if (!TryGetRequiredString(call.Arguments, "scenarioId", out var scenarioId, out var error)
 						|| !TryGetRequiredString(call.Arguments, "reviewProfileId", out var reviewProfileId, out error)
 						|| !TryGetRequiredString(call.Arguments, "target", out var target, out error)
-						|| !TryGetOptionalInt32(call.Arguments, "maxIterations", out var maxIterations, out error))
+						|| !TryGetOptionalInt32(call.Arguments, "maxIterations", out var maxIterations, out error)
+						|| !TryGetOptionalBoolean(call.Arguments, "strict", out var strict, out error))
 					{
 						return error;
 					}
 
 					var result = await relay.RequestAsync(
 						call.SessionId ?? string.Empty,
-						new RequestReviewRequest(scenarioId, reviewProfileId, target, maxIterations),
+						new RequestReviewRequest(scenarioId, reviewProfileId, target, maxIterations, strict),
 						cancellationToken);
 					return await CompleteAsync(result, "Review started.", "Agent action: review requested");
 				}),

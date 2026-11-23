@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
@@ -162,10 +163,12 @@ public sealed class ProjectTreeHeaderHeadlessTests
 		var descendantButtons = window.GetVisualDescendants().OfType<Button>().ToArray();
 		(descendantButtons.Length > 0).ShouldBeTrue(
 			$"No buttons realized. Descendants: {string.Join(", ", window.GetVisualDescendants().Select(v => v.GetType().Name))}");
-		var itemButton = descendantButtons.Single(button => ReferenceEquals(button.DataContext, paused));
+		var itemButton = descendantButtons.Single(button => ReferenceEquals(button.DataContext, paused)
+			&& AutomationProperties.GetName(button) == "Resume project");
 		itemButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
 
 		received.ShouldBeSameAs(paused);
+		window.Close();
 	}
 
 	private sealed class EmptyProjectStore : IProjectStore

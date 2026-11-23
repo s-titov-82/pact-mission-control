@@ -140,7 +140,7 @@ internal sealed class ShellControllerTestBuilder : IAsyncDisposable
 		return this;
 	}
 
-	public AvaloniaMainShellController Build()
+	public AvaloniaMainShellController Build(bool includeOrchestrator = false)
 	{
 		var monitor = _webMonitorCoordinator ??=
 			_ownedWebMonitorCoordinator = new WebMonitorCoordinator(
@@ -166,7 +166,8 @@ internal sealed class ShellControllerTestBuilder : IAsyncDisposable
 			_timeProvider,
 			FreePort(),
 			_processTreeSnapshotReader,
-			_webProcessMetricsSnapshotReader);
+			_webProcessMetricsSnapshotReader,
+			includeOrchestrator: includeOrchestrator);
 		if (_webPageHostFactory is null)
 		{
 			controller.WebPageHostFactory = null;

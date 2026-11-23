@@ -14,7 +14,11 @@ public sealed class WebLinkTemplatesSectionViewModel : FileSectionViewModel<WebL
 			"Web link templates shown from projects and ROOT, supporting %gitLabRepoId% and %teamCityProjectId% placeholders.",
 			"web-link-templates.json")
 	{
+		Order = new(Items, this, () => SelectedItem, SwapItems, item => SelectedItem = item);
 	}
+
+	/// <summary>Changes the order used by the corresponding launch buttons.</summary>
+	public SettingsItemOrder<SettingsItemViewModelBase> Order { get; }
 
 	/// <inheritdoc />
 	protected override WebLinkTemplateItemViewModel? TryCreateItem(JsonObject node)

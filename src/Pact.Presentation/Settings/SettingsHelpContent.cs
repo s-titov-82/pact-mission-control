@@ -32,7 +32,13 @@ public static class SettingsHelpContent
 		_ => throw new ArgumentOutOfRangeException(nameof(section), section, "Unknown settings section.")
 	};
 
-	private const string AppearanceBody = "Choose System to follow Windows, or force the Light or Dark application theme. You can independently hide the selected-tab diagnostic facts shown below Quick actions and opt in to external process metrics. External process metrics sampling stays off while that option is disabled. Saved choices apply immediately.";
+	private const string AppearanceBody = """
+		In General, choose the application theme and the details shown for the selected tab. System follows Windows. Enable external process metrics to sample CPU and memory usage.
+
+		In Terminal theme, choose a Windows Terminal profile to preview its font and colors. You can edit both before saving.
+
+		In Notifications, choose whether Windows shows banners, which sound plays, and how long banners remain on screen. Test notification previews your choices. Save section applies your edits.
+		""";
 
 	private const string UpdatesBody = "Pact checks stable GitHub releases after startup and then once per hour. Check now runs the same discovery manually. Pact ignores prereleases and draft releases. Release notes open in the default browser. Downloading and installation always require the update actions shown by Pact; this section does not edit a settings file.";
 
@@ -53,7 +59,7 @@ public static class SettingsHelpContent
 
         The read-only summary line above the fields (id, status, created/active timestamps) reflects the project's current runtime state and cannot be edited here.
 
-        Every session that belongs to the project is listed under it. A session's title, working directory, launch command, and resume command are editable. The working directory field is hidden for agent sessions (Codex, Claude, Hermes), which always run in the project's own directory; it only applies to pwsh/custom shell sessions.
+        Every session that belongs to the project is listed under it. A session's title, working directory, launch command, and resume command are editable. The working directory field is hidden for agent sessions (Codex and Claude), which always run in the project's own directory; it only applies to pwsh/custom shell sessions.
 
         There is no delete button for a project in this section. Projects are created by opening a directory from the main window and removed by closing the project there — Settings only edits the projects that are currently open. A paused project is edited from the separate "Paused projects" section instead of here.
         """;
@@ -79,7 +85,7 @@ public static class SettingsHelpContent
 	private const string ReviewProfilesBody = """
         Each tab is a reviewer-only launch profile used when an agent asks Pact to start a review. These profiles do not appear in the normal project launch menu.
 
-        Command carries the model and effort flags for the reviewer. Pact tools are connected automatically for the Claude and Codex kinds, using the arguments each command-line interface accepts; no per-profile configuration is involved.
+        Choose a model and reasoning effort, or keep the agent defaults. Pact reads local model metadata and includes the profile's saved model. Use a custom launch command for wrappers and additional flags.
 
         Connected agents are notified to refresh their review profile ids and scenario ids whenever a Settings reload changes the live catalog, including when malformed scenario JSON activates the built-in defaults. External file edits take effect only at the Settings reload boundary or after the application restarts.
 
@@ -95,7 +101,7 @@ public static class SettingsHelpContent
         """;
 
 	private const string PromptTemplatesBody = """
-        This catalog has two groups: Prompt templates target agent sessions (Codex, Claude, Hermes); Shell command templates target Pwsh and Custom sessions. Type controls the compatible target kind only.
+        This catalog has two groups: Prompt templates target agent sessions (Codex and Claude); Shell command templates target Pwsh and Custom sessions. Type controls the compatible target kind only.
 
         A body containing the exact {selectedText} token is selection-aware regardless of Type. Static templates appear in Quick actions. Selection-aware templates appear in Send selection to, where the selected template filters the visible target sessions. Selected text is substituted verbatim; shell commands are not automatically quoted.
 

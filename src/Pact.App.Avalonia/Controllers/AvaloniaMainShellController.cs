@@ -61,6 +61,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 	private readonly AgentControlEndpoint _agentControlEndpoint;
 	private readonly SessionLauncher _launcher;
 	private readonly OrchestratorStore _orchestratorStore;
+	private readonly bool _includeOrchestrator;
 	private readonly OrchestratorDispatcher _orchestratorDispatcher;
 	private readonly OrchestratorSupervisor _orchestrator;
 	private readonly ReviewLogWriter _reviewLog = new();
@@ -120,7 +121,8 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		IWebProcessMetricsSnapshotReader? webProcessMetricsSnapshotReader = null,
 		AvaloniaUpdateController? updateController = null,
 		AppLaunchOptions? launchOptions = null,
-		ISoftRestartTicketStore? softRestartTicketStore = null)
+		ISoftRestartTicketStore? softRestartTicketStore = null,
+		bool includeOrchestrator = false)
 	{
 		ViewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
 		_settingsFileStore = settingsFileStore ?? throw new ArgumentNullException(nameof(settingsFileStore));
@@ -183,6 +185,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 			recentDirectoryStore ?? throw new ArgumentNullException(nameof(recentDirectoryStore));
 		_agentControlTokens = new AgentControlTokenRegistry();
 		_orchestratorStore = new OrchestratorStore(Paths.OrchestratorPath);
+		_includeOrchestrator = includeOrchestrator;
 		_launcher = new SessionLauncher(
 			_runtimeCoordinator,
 			_terminalHost,
@@ -1386,9 +1389,10 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 
 		try
 		{
-			await ApplyOrchestratorSettingsAsync(
-				await _orchestratorStore.LoadAsync(cancellationToken),
-				cancellationToken);
+			if (_includeOrchestrator)
+			{
+				await ApplyOrchestratorSettingsAsync(await _orchestratorStore.LoadAsync(cancellationToken), cancellationToken);
+			}
 		}
 		catch (Exception exception)
 		{
@@ -2719,15 +2723,21 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		}
 
 		Present(terminal with { FocusWhenLoaded = false }, preserveNavigation: true);
-		if (!string.Equals(
-				_runtimeCoordinator.ActiveSessionId,
-				terminal.Session.Record.Id,
-				StringComparison.Ordinal))
+		await FocusPresentedTerminalAsync(terminal.Session);
+	}
+
+	/// <summary>Returns keyboard focus only while the expected session is still live and presented.</summary>
+	internal Task FocusPresentedTerminalAsync(SessionViewModel expected)
+	{
+		if (!_disposed && !IsShutdownBegun()
+			&& PresentedSurface is PresentedSurface.Terminal { Loading: false } terminal
+			&& ReferenceEquals(terminal.Session, expected)
+			&& _runtimeCoordinator.ActiveSessionId == expected.Record.Id)
 		{
-			return;
+			return _terminalHost.FocusAsync();
 		}
 
-		await _terminalHost.FocusAsync();
+		return Task.CompletedTask;
 	}
 
 	private void AppendDiagnosticLog(string message) =>

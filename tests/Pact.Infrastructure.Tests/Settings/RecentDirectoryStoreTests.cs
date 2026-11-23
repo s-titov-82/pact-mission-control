@@ -3,6 +3,21 @@ namespace Pact.Infrastructure.Tests.Settings;
 public sealed class RecentDirectoryStoreTests
 {
 	[Test]
+	public async Task Forget_removes_only_the_history_entry_and_keeps_the_directory()
+	{
+		using var temp = TemporaryDirectory.Create();
+		var forgotten = Directory.CreateDirectory(Path.Combine(temp.Path, "forgotten")).FullName;
+		var store = new RecentDirectoryStore(Path.Combine(temp.Path, "history.json"));
+		await store.AddAsync(temp.Path, CancellationToken.None);
+		await store.AddAsync(forgotten, CancellationToken.None);
+
+		await store.RemoveAsync(forgotten.ToUpperInvariant(), CancellationToken.None);
+
+		(await store.LoadAsync(CancellationToken.None)).ShouldBe([temp.Path]);
+		Directory.Exists(forgotten).ShouldBeTrue();
+	}
+
+	[Test]
 	public async Task LoadAsync_returns_empty_list_when_file_is_missing()
 	{
 		using var temporaryDirectory = TemporaryDirectory.Create();

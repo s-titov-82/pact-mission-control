@@ -50,6 +50,20 @@ public abstract class FileSectionViewModel<TItem> : SettingsSectionViewModelBase
 	/// </summary>
 	public ObservableCollection<SettingsItemViewModelBase> Items { get; } = [];
 
+	/// <summary>Swaps visible items and their backing nodes, retaining any intervening entries.</summary>
+	private protected void SwapItems(SettingsItemViewModelBase first, SettingsItemViewModelBase second)
+	{
+		var from = Items.IndexOf(first);
+		var to = Items.IndexOf(second);
+		_array!.Swap(first.Node, second.Node);
+		Items.Move(from, to);
+		if (Math.Abs(from - to) > 1)
+		{
+			Items.Move(Items.IndexOf(second), from);
+		}
+		MarkDirty();
+	}
+
 	/// <summary>Item whose tab is shown, or <see langword="null"/> when none is selected.</summary>
 	public SettingsItemViewModelBase? SelectedItem
 	{
@@ -86,6 +100,11 @@ public abstract class FileSectionViewModel<TItem> : SettingsSectionViewModelBase
 		_array = array;
 		foreach (var node in array.Items)
 		{
+			if (Section is SettingsSection.LaunchProfiles or SettingsSection.ReviewProfiles
+				&& string.Equals(node["kind"]?.ToString(), "hermes", StringComparison.OrdinalIgnoreCase))
+			{
+				continue;
+			}
 			var itemVm = (SettingsItemViewModelBase?)TryCreateItem(node) ?? new UnrecognizedItemViewModel(node);
 			AttachItem(itemVm);
 			Items.Add(itemVm);

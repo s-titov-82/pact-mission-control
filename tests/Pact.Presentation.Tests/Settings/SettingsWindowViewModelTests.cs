@@ -386,6 +386,8 @@ public sealed class SettingsWindowViewModelTests : IDisposable
 
 	private sealed class FakeProjectSettingsEditor : IProjectSettingsEditor
 	{
+		public Task UpdateWebPageSettingsAsync(string id, RootWebPageSettingsEdit edit, CancellationToken ct) => throw new NotSupportedException();
+
 		public Task UpdateProjectSettingsAsync(string projectId, ProjectSettingsEdit edit, CancellationToken ct) => Task.CompletedTask;
 
 		public Task UpdateSessionSettingsAsync(string sessionId, SessionSettingsEdit edit, CancellationToken ct) => Task.CompletedTask;
@@ -395,6 +397,8 @@ public sealed class SettingsWindowViewModelTests : IDisposable
 
 	private sealed class RecordingProjectSettingsEditor : IProjectSettingsEditor
 	{
+		public Task UpdateWebPageSettingsAsync(string id, RootWebPageSettingsEdit edit, CancellationToken ct) => throw new NotSupportedException();
+
 		public string? LastUpdatedProjectId { get; private set; }
 
 		public Task UpdateProjectSettingsAsync(string projectId, ProjectSettingsEdit edit, CancellationToken ct)

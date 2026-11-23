@@ -180,7 +180,8 @@ public sealed class RootDashboardViewModel : INotifyPropertyChanged, IDisposable
 		PropertyChanged?.Invoke(this, new(nameof(IsPausedEmpty)));
 		PropertyChanged?.Invoke(this, new(nameof(IsEmpty)));
 	}
-	private async Task RefreshRecentDirectoriesAsync()
+	/// <summary>Refreshes the dashboard history after an explicit removal from the directory picker.</summary>
+	public async Task RefreshRecentDirectoriesAsync()
 	{
 		var version = ++_recentLoadVersion;
 		var token = _epoch.Token;

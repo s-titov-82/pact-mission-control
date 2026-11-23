@@ -33,10 +33,9 @@
             <TextBlock Classes="SettingsFieldLabel" Text="Windows Terminal profile" />
             <Button Content="Choose settings.json…" HorizontalAlignment="Left" Tag="LoadTerminalProfiles"
                     IsVisible="{Binding HasProfiles, Converter={StaticResource Not}}" />
-            <WrapPanel IsVisible="{Binding HasProfiles}">
-              <ComboBox MinWidth="144" Margin="0,0,6,0" ItemsSource="{Binding ProfileNames}" SelectedIndex="{Binding ProfileIndex}" />
-              <Button Content="Use profile" Tag="ImportTerminalProfile" />
-            </WrapPanel>
+            <ComboBox MinWidth="144" HorizontalAlignment="Left" IsVisible="{Binding HasProfiles}"
+                      PlaceholderText="Choose a profile" Tag="TerminalProfile"
+                      ItemsSource="{Binding ProfileNames}" SelectedIndex="{Binding ProfileIndex, Mode=OneWay}" />
             <TextBlock Text="Font family" />
             <TextBox Text="{Binding FontFamily}" />
             <WrapPanel>
@@ -79,14 +78,14 @@
             <CheckBox Content="Show Windows notifications" IsChecked="{Binding ShowNotifications}" />
             <StackPanel IsEnabled="{Binding ShowNotifications}" Spacing="4">
               <TextBlock Text="Sound" />
-              <ComboBox SelectedIndex="{Binding NotificationSoundIndex}">
+              <ComboBox Width="240" HorizontalAlignment="Left" SelectedIndex="{Binding NotificationSoundIndex}">
                 <ComboBoxItem Content="Silent"/>
                 <ComboBoxItem Content="Windows default"/>
                 <ComboBoxItem Content="ICQ (Аська)"/>
                 <ComboBoxItem Content="Station (Вокзал)"/>
               </ComboBox>
               <TextBlock Text="Banner duration" />
-              <ComboBox SelectedIndex="{Binding NotificationModeIndex}">
+              <ComboBox Width="240" HorizontalAlignment="Left" SelectedIndex="{Binding NotificationModeIndex}">
                 <ComboBoxItem Content="Use Windows settings"/>
                 <ComboBoxItem Content="Keep until dismissed"/>
                 <ComboBoxItem Content="Hide after a custom interval"/>
@@ -123,16 +122,6 @@
 					Tag="RestartAndUpdate" />
 			<TextBlock Foreground="{DynamicResource AppTextMutedBrush}" TextWrapping="Wrap"
 						 Text="Only stable GitHub releases are considered. Automatic checks run once per hour." />
-			<Expander Margin="0,12,0,0" Header="Diagnostics">
-				<StackPanel Margin="0,8,0,0" Spacing="8">
-					<Button HorizontalAlignment="Left"
-							Content="Soft restart and restore active tabs"
-							Tag="SoftRestart" />
-					<TextBlock Foreground="{DynamicResource AppTextMutedBrush}"
-							 TextWrapping="Wrap"
-							 Text="Tests the same handoff used by updates without installing anything." />
-				</StackPanel>
-			</Expander>
 		</StackPanel>
 	</DataTemplate>
 
@@ -259,30 +248,25 @@
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                  ScrollViewer.VerticalScrollBarVisibility="Auto"
                  Text="{Binding Notes}" />
-        <StackPanel IsVisible="{Binding HasSessions}">
-          <TextBlock Margin="0,14,0,6" FontWeight="SemiBold" Text="Sessions" />
+        <StackPanel IsVisible="{Binding HasTabs}">
+          <TextBlock Margin="0,14,0,6" FontWeight="SemiBold" Text="Project tabs" />
           <Grid ColumnDefinitions="180,*" VerticalAlignment="Top">
             <ListBox Grid.Column="0" Height="160" VerticalAlignment="Top"
-                     ItemsSource="{Binding Sessions}" SelectedItem="{Binding SelectedSession}">
+                     ItemsSource="{Binding Tabs}" SelectedItem="{Binding SelectedTab}">
               <ListBox.ItemTemplate>
                 <DataTemplate><TextBlock Text="{Binding Title}" /></DataTemplate>
               </ListBox.ItemTemplate>
             </ListBox>
-            <StackPanel Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Top"
-                        IsVisible="{Binding SelectedSession, Converter={StaticResource HasValue}}">
-              <TextBlock Classes="SettingsInfoLine" Text="{Binding SelectedSession.InfoLine}" />
-              <TextBlock Classes="SettingsFieldLabel" Text="Title" />
-              <TextBox x:Name="SessionTitleTextBox"
-                       Text="{Binding SelectedSession.Title}" />
-              <StackPanel IsVisible="{Binding SelectedSession.ShowWorkingDirectorySetting}">
-                <TextBlock Classes="SettingsFieldLabel" Text="Working directory" />
-                <TextBox Text="{Binding SelectedSession.WorkingDirectory}" />
-              </StackPanel>
-              <TextBlock Classes="SettingsFieldLabel" Text="Launch command" />
-              <TextBox Text="{Binding SelectedSession.LaunchCommand}" />
-              <TextBlock Classes="SettingsFieldLabel" Text="Resume command" />
-              <TextBox Text="{Binding SelectedSession.ResumeCommand}" />
-            </StackPanel>
+            <ContentControl Grid.Column="1" Margin="16,0,0,8" VerticalAlignment="Top" Content="{Binding SelectedTab}">
+              <ContentControl.DataTemplates>
+                <DataTemplate DataType="s:SessionSettingsItemViewModel">
+                  <ContentControl Content="{Binding}" ContentTemplate="{DynamicResource SessionEditorTemplate}" />
+                </DataTemplate>
+                <DataTemplate DataType="s:RootWebPageSettingsItemViewModel">
+                  <ContentControl Content="{Binding}" ContentTemplate="{DynamicResource WebPageEditorTemplate}" />
+                </DataTemplate>
+              </ContentControl.DataTemplates>
+            </ContentControl>
           </Grid>
         </StackPanel>
       </StackPanel>
@@ -292,14 +276,17 @@
   <DataTemplate x:Key="ShellProfileItemTemplate" DataType="s:ShellProfileItemViewModel">
     <ScrollViewer VerticalScrollBarVisibility="Auto">
       <StackPanel Margin="0,10,20,0" Spacing="6">
+        <TextBlock Classes="SettingsFieldLabel" Text="Display name" />
+        <TextBox Text="{Binding DisplayName}" />
+        <TextBlock Classes="SettingsFieldLabel" Text="Terminal type" />
+        <ComboBox ItemsSource="{Binding KindOptions}" SelectedValue="{Binding Kind}" SelectedValueBinding="{Binding}" />
+        <CheckBox IsVisible="{Binding HasPreset}" Content="{Binding PresetOptionLabel}"
+                  IsChecked="{Binding PresetOptionEnabled}" />
+        <Expander Header="Launch commands and advanced settings" HorizontalAlignment="Stretch"
+                  IsExpanded="{Binding HasPreset, Converter={StaticResource Not}, Mode=OneWay}">
         <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto">
           <TextBlock Grid.Row="0" Grid.Column="0" Classes="SettingsFieldLabel" Text="Id" />
           <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Id}" />
-          <TextBlock Grid.Row="1" Grid.Column="0" Classes="SettingsFieldLabel" Text="Agent kind" />
-          <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding KindOptions}"
-                    SelectedValue="{Binding Kind}" SelectedValueBinding="{Binding}" />
-          <TextBlock Grid.Row="2" Grid.Column="0" Classes="SettingsFieldLabel" Text="Display name" />
-          <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding DisplayName}" />
           <TextBlock Grid.Row="3" Grid.Column="0" Classes="SettingsFieldLabel" Text="Command" />
           <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding CommandTemplate}" />
           <TextBlock Grid.Row="4" Grid.Column="0" Classes="SettingsFieldLabel" Text="Resume command" />
@@ -310,6 +297,7 @@
                      Text="Native configuration directory" />
           <TextBox Grid.Row="6" Grid.Column="1" Text="{Binding NativeConfigDirectory}" PlaceholderText="Agent default" />
         </Grid>
+        </Expander>
         <StackPanel Orientation="Horizontal" Spacing="8" IsEnabled="{Binding CanCheck}">
           <Button Tag="CheckProfile" Content="Check profile" />
           <Button Tag="LaunchTestProfile" Content="Open test terminal in ROOT" />
@@ -324,20 +312,24 @@
   <DataTemplate x:Key="ReviewProfileItemTemplate" DataType="s:ReviewProfileItemViewModel">
     <ScrollViewer VerticalScrollBarVisibility="Auto">
       <StackPanel Margin="0,10,20,0" Spacing="6">
-        <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
-          <TextBlock Grid.Row="0" Grid.Column="0" Classes="SettingsFieldLabel" Text="Id" />
-          <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Id}" />
-          <TextBlock Grid.Row="1" Grid.Column="0" Classes="SettingsFieldLabel" Text="Agent kind" />
-          <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding KindOptions}"
-                    SelectedValue="{Binding Kind}" SelectedValueBinding="{Binding}" />
-          <TextBlock Grid.Row="2" Grid.Column="0" Classes="SettingsFieldLabel" Text="Display name" />
-          <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding DisplayName}" />
-          <TextBlock Grid.Row="3" Grid.Column="0" Classes="SettingsFieldLabel" Text="Command" />
-          <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding CommandTemplate}" />
-          <TextBlock Grid.Row="4" Grid.Column="0" Classes="SettingsFieldLabel"
-                     Text="Agent control arguments" />
-          <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding AgentControlArgumentTemplate}" />
-        </Grid>
+        <TextBlock Classes="SettingsFieldLabel" Text="Reviewer name" />
+        <TextBox Text="{Binding DisplayName}" />
+        <TextBlock Classes="SettingsFieldLabel" Text="Agent" />
+        <ComboBox ItemsSource="{Binding KindOptions}" SelectedValue="{Binding Kind}" SelectedValueBinding="{Binding}" />
+        <StackPanel IsVisible="{Binding ShowChoices}">
+          <TextBlock Classes="SettingsFieldLabel" Text="Model" />
+          <ComboBox ItemsSource="{Binding ModelOptions}" SelectedItem="{Binding SelectedModel}" />
+          <TextBlock Classes="SettingsFieldLabel" Text="Reasoning effort" />
+          <ComboBox ItemsSource="{Binding EffortOptions}" SelectedItem="{Binding SelectedEffort}" />
+        </StackPanel>
+        <CheckBox Content="Use a custom launch command" IsVisible="{Binding SupportsChoices}"
+                  IsChecked="{Binding UseCustomCommand}" />
+        <StackPanel IsVisible="{Binding UseCustomCommand}">
+          <TextBlock Classes="SettingsFieldLabel" Text="Command to launch this reviewer" />
+          <TextBox Text="{Binding CommandTemplate}" />
+        </StackPanel>
+        <TextBlock Classes="SettingsFieldLabel" Text="Reviewer ID" />
+        <TextBox x:Name="ReviewerIdTextBox" Text="{Binding Id}" />
         <Button HorizontalAlignment="Right" Foreground="{DynamicResource AppDangerStrongBrush}"
                 Tag="Delete" Content="Delete profile" />
       </StackPanel>
@@ -548,53 +540,14 @@
   <DataTemplate x:Key="ScenarioItemTemplate" DataType="s:ScenarioItemViewModel">
     <ScrollViewer VerticalScrollBarVisibility="Auto">
       <StackPanel Margin="0,10,20,0" Spacing="6">
-        <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto">
-          <TextBlock Grid.Row="0" Grid.Column="0" Classes="SettingsFieldLabel" Text="Id" />
-          <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Id}" />
-          <TextBlock Grid.Row="1" Grid.Column="0" Classes="SettingsFieldLabel" Text="Name" />
-          <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Name}" />
-          <TextBlock Grid.Row="2" Grid.Column="0" Classes="SettingsFieldLabel" Text="Kind" />
-          <TextBox Grid.Row="2" Grid.Column="1" IsReadOnly="True" IsEnabled="False" Text="{Binding KindDisplay}" />
-          <TextBlock Grid.Row="3" Grid.Column="0" Classes="SettingsFieldLabel" Text="Max iterations" />
-          <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding MaxIterationsText}" />
-          <TextBlock Grid.Row="4" Grid.Column="0" Classes="SettingsFieldLabel" Text="Stop marker" />
-          <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding StopMarker}" />
-          <TextBlock Grid.Row="5" Grid.Column="0" Classes="SettingsFieldLabel" Text="Start prompt template" />
-          <TextBox Grid.Row="5" Grid.Column="1" Classes="SettingsMultiline" Text="{Binding StartPromptTemplate}" />
-          <TextBlock Grid.Row="6" Grid.Column="0" Classes="SettingsFieldLabel" Text="First feedback template" />
-          <TextBox Grid.Row="6" Grid.Column="1" Classes="SettingsMultiline" Text="{Binding FirstFeedbackTemplate}" />
-          <TextBlock Grid.Row="7" Grid.Column="0" Classes="SettingsFieldLabel" Text="Author return template" />
-          <TextBox Grid.Row="7" Grid.Column="1" Classes="SettingsMultiline" Text="{Binding AuthorReturnTemplate}" />
-          <TextBlock Grid.Row="8" Grid.Column="0" Classes="SettingsFieldLabel" Text="Feedback template" />
-          <TextBox Grid.Row="8" Grid.Column="1" Classes="SettingsMultiline" Text="{Binding FeedbackTemplate}" />
-        </Grid>
-        <TextBlock Margin="0,14,0,6" FontWeight="SemiBold" Text="Reviewer instructions" />
-        <Grid ColumnDefinitions="180,*">
-          <StackPanel Grid.Column="0">
-            <ListBox Height="140" ItemsSource="{Binding ReviewerInstructions}"
-                     SelectedItem="{Binding SelectedInstruction}">
-              <ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Name}" /></DataTemplate></ListBox.ItemTemplate>
-            </ListBox>
-            <StackPanel Margin="0,6,0,0" Orientation="Horizontal" Spacing="6">
-              <Button Classes="compact-icon" Tag="AddReviewer"><PathIcon Width="14" Height="14" Data="{StaticResource AppAddIcon}" /></Button>
-              <Button Classes="compact-icon" Tag="RemoveReviewer" Content="−" />
-            </StackPanel>
-          </StackPanel>
-          <StackPanel Grid.Column="1" Margin="16,0,0,0"
-                      IsVisible="{Binding SelectedInstruction, Converter={StaticResource HasValue}}">
-            <TextBlock Classes="SettingsFieldLabel" Text="Id" />
-            <TextBox Text="{Binding SelectedInstruction.Id}" />
-            <TextBlock Classes="SettingsFieldLabel" Text="Name" />
-            <TextBox Text="{Binding SelectedInstruction.Name}" />
-            <TextBlock Classes="SettingsFieldLabel" Text="Text" />
-            <TextBox Classes="SettingsMultiline" Text="{Binding SelectedInstruction.Text}" />
-          </StackPanel>
-        </Grid>
-        <TextBlock Classes="SettingsFieldLabel" Text="Default reviewer instruction" />
-        <ComboBox ItemsSource="{Binding ReviewerInstructions}"
-                  SelectedItem="{Binding DefaultReviewerInstruction}">
-          <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
-        </ComboBox>
+        <TextBlock Classes="SettingsFieldLabel" Text="Review name" />
+        <TextBox Text="{Binding Name}" />
+        <TextBlock Classes="SettingsFieldLabel" Text="Review rules" />
+        <TextBox Classes="SettingsMultiline" Text="{Binding ReviewRules}" />
+        <CheckBox Content="Strict review by default" IsChecked="{Binding DefaultStrict}" />
+        <TextBlock TextWrapping="Wrap" Text="Strict reviews require every finding to be resolved or successfully disputed. Non-strict reviews may leave minor findings open." />
+        <TextBlock Classes="SettingsFieldLabel" Text="Scenario ID for MCP requests" />
+        <TextBox Text="{Binding Id}" />
         <Button HorizontalAlignment="Right" Foreground="{DynamicResource AppDangerStrongBrush}"
                 Tag="Delete" Content="Delete scenario" />
       </StackPanel>
@@ -667,6 +620,33 @@
         <Button HorizontalAlignment="Left" Tag="OpenGitDoc" Content="Open documentation ↗" />
         <Button HorizontalAlignment="Right" IsVisible="{Binding IsCustom}"
                 Foreground="{DynamicResource AppDangerStrongBrush}" Tag="Delete" Content="Delete command" />
+      </StackPanel>
+    </ScrollViewer>
+  </DataTemplate>
+
+  <DataTemplate x:Key="SessionEditorTemplate" DataType="s:SessionSettingsItemViewModel">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+      <StackPanel Margin="0,10,20,0" Spacing="6">
+        <TextBlock Classes="SettingsInfoLine" Text="{Binding InfoLine}" />
+        <TextBlock Classes="SettingsFieldLabel" Text="Title" />
+        <TextBox x:Name="SessionTitleTextBox" Text="{Binding Title}" />
+        <TextBlock Classes="SettingsFieldLabel" Text="Working directory" IsVisible="{Binding ShowWorkingDirectorySetting}" />
+        <TextBox Text="{Binding WorkingDirectory}" IsVisible="{Binding ShowWorkingDirectorySetting}" />
+        <TextBlock Classes="SettingsFieldLabel" Text="Launch command" />
+        <TextBox Text="{Binding LaunchCommand}" />
+        <TextBlock Classes="SettingsFieldLabel" Text="Resume command" />
+        <TextBox Text="{Binding ResumeCommand}" />
+      </StackPanel>
+    </ScrollViewer>
+  </DataTemplate>
+  <DataTemplate x:Key="WebPageEditorTemplate" DataType="s:RootWebPageSettingsItemViewModel">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+      <StackPanel Margin="0,10,20,0" Spacing="6">
+        <TextBlock Classes="SettingsInfoLine" Text="{Binding InfoLine}" />
+        <TextBlock Classes="SettingsFieldLabel" Text="Title" />
+        <TextBox Text="{Binding Title}" />
+        <TextBlock Classes="SettingsFieldLabel" Text="URL" />
+        <TextBox Text="{Binding Url}" />
       </StackPanel>
     </ScrollViewer>
   </DataTemplate>
@@ -758,11 +738,20 @@
                       Content="{Binding SelectedItem}" ContentTemplate="{StaticResource ProjectItemTemplate}" />
     </Grid>
   </DataTemplate>
+  <DataTemplate x:Key="SettingsOrderButtons">
+    <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,4,0">
+      <Button Width="30" Height="28" Content="◀" Command="{Binding MoveLeft}"
+              AutomationProperties.Name="Move left" ToolTip.Tip="Move selected item left" />
+      <Button Width="30" Height="28" Content="▶" Command="{Binding MoveRight}"
+              AutomationProperties.Name="Move right" ToolTip.Tip="Move selected item right" />
+    </StackPanel>
+  </DataTemplate>
   <DataTemplate x:Key="LaunchProfilesSectionTemplate" DataType="s:LaunchProfilesSectionViewModel">
     <Grid RowDefinitions="Auto,Auto,*">
       <TextBlock Text="{Binding Description}" TextWrapping="Wrap" />
       <DockPanel Grid.Row="1" Margin="0,10,0,10">
         <Button DockPanel.Dock="Right" Classes="compact-icon" Tag="AddItem"><PathIcon Width="14" Height="14" Data="{StaticResource AppAddIcon}" /></Button>
+        <ContentControl DockPanel.Dock="Right" Content="{Binding Order}" ContentTemplate="{StaticResource SettingsOrderButtons}" />
         <ListBox Background="Transparent" BorderThickness="0"
                  ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Disabled"
                  ItemContainerTheme="{StaticResource SettingsTabItemTheme}"
@@ -796,8 +785,11 @@
         </ListBox>
       </DockPanel>
       <ContentControl Grid.Row="2" IsVisible="{Binding SelectedItem.IsRecognized}"
-                      Content="{Binding SelectedItem}"
-                      ContentTemplate="{StaticResource ReviewProfileItemTemplate}" />
+                      Content="{Binding SelectedItem}">
+        <ContentControl.ContentTemplate>
+          <local:ReviewerEditorTemplate Form="{StaticResource ReviewProfileItemTemplate}" />
+        </ContentControl.ContentTemplate>
+      </ContentControl>
       <ContentControl Grid.Row="2"
                       IsVisible="{Binding SelectedItem.IsRecognized, Converter={StaticResource Not}}"
                       Content="{Binding SelectedItem}"
@@ -809,6 +801,7 @@
       <TextBlock Text="{Binding Description}" TextWrapping="Wrap" />
       <DockPanel Grid.Row="1" Margin="0,10,0,10">
         <Button DockPanel.Dock="Right" Classes="compact-icon" Tag="AddItem"><PathIcon Width="14" Height="14" Data="{StaticResource AppAddIcon}" /></Button>
+        <ContentControl DockPanel.Dock="Right" Content="{Binding Order}" ContentTemplate="{StaticResource SettingsOrderButtons}" />
         <ListBox Background="Transparent" BorderThickness="0"
                  ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Disabled"
                  ItemContainerTheme="{StaticResource SettingsTabItemTheme}"
@@ -897,9 +890,11 @@
                   </DataTemplate>
                 </TabControl.ContentTemplate>
               </TabControl>
-              <Button Grid.Column="1" Classes="compact-icon" Margin="4,0,0,0"
-                      VerticalAlignment="Top" Tag="AddPrompt"
+              <StackPanel Grid.Column="1" Margin="4,0,0,0" VerticalAlignment="Top" Orientation="Horizontal">
+                <ContentControl Content="{Binding Order}" ContentTemplate="{StaticResource SettingsOrderButtons}" />
+                <Button Classes="compact-icon" Tag="AddPrompt"
                       ToolTip.Tip="Add template to this group"><PathIcon Width="14" Height="14" Data="{StaticResource AppAddIcon}" /></Button>
+              </StackPanel>
             </Grid>
           </DataTemplate>
         </TabControl.ContentTemplate>

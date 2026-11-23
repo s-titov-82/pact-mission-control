@@ -16,10 +16,10 @@ public sealed class RootTabsSectionViewModelTests
 		var now = DateTimeOffset.UtcNow;
 		var session = new SessionRecord(
 			"root-session",
-			AgentKind.Hermes,
-			"Hermes",
+			AgentKind.Claude,
+			"Claude",
 			Path.GetTempPath(),
-			"hermes",
+			"claude",
 			null,
 			SessionStatus.Stopped,
 			now,
@@ -34,7 +34,7 @@ public sealed class RootTabsSectionViewModelTests
 		RootTabsViewModel rootTabs = new(new RootTabsRecord(
 			1,
 			session.Id,
-			[session],
+			[session, session with { Id = "hidden-hermes", Kind = AgentKind.Hermes }],
 			[webPage],
 			[]));
 		RecordingRootTabsEditor editor = new();
@@ -47,13 +47,14 @@ public sealed class RootTabsSectionViewModelTests
 		var sessionItem = section.Items.OfType<SessionSettingsItemViewModel>().Single();
 		var webItem = section.Items.OfType<RootWebPageSettingsItemViewModel>().Single();
 		sessionItem.ShowWorkingDirectorySetting.ShouldBeTrue();
-		sessionItem.Title = "General Hermes";
+		rootTabs.Record.Sessions.ShouldContain(record => record.Id == "hidden-hermes");
+		sessionItem.Title = "General Claude";
 		webItem.Url = "https://jira.example.test/dashboard";
 
 		(await section.SaveAsync(CancellationToken.None)).ShouldBeTrue();
 
 		editor.SessionId.ShouldBe(session.Id);
-		editor.SessionEdit?.Title.ShouldBe("General Hermes");
+		editor.SessionEdit?.Title.ShouldBe("General Claude");
 		editor.WebPageId.ShouldBe(webPage.Id);
 		editor.WebPageEdit?.Url.ShouldBe("https://jira.example.test/dashboard");
 		section.IsDirty.ShouldBeFalse();

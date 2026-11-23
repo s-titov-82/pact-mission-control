@@ -150,7 +150,8 @@ public sealed class ReviewRelay
 				template,
 				profile,
 				request.Target,
-				request.MaxIterations ?? template.MaxIterations);
+				request.MaxIterations ?? 5,
+				request.Strict ?? template.DefaultStrict);
 			_active.Add(review);
 		}
 
@@ -285,7 +286,7 @@ public sealed class ReviewRelay
 					conversation.State.ToString(),
 					turn.Iteration,
 					yourTurn,
-					yourTurn ? review.Renderer.Render(role, turn.Iteration, previousTurn) : null,
+					yourTurn ? review.Renderer.Render(role, turn.Iteration) : null,
 					previousTurn,
 					yourTurn ? turn.TurnId : null,
 					EndReason: null,
@@ -969,7 +970,8 @@ public sealed class ReviewRelay
 		ScenarioDefinition template,
 		ReviewProfile profile,
 		string target,
-		int maxIterations)
+		int maxIterations,
+		bool strict)
 	{
 		public string Id { get; } = id;
 		public ReviewProject Project { get; } = project;
@@ -979,14 +981,7 @@ public sealed class ReviewRelay
 		public ReviewProfile Profile { get; } = profile;
 		public string Target { get; } = target;
 		public int MaxIterations { get; } = maxIterations;
-		public ReviewMessageRenderer Renderer { get; } = new(
-			template,
-			template.ReviewerInstructions
-				.FirstOrDefault(instruction => string.Equals(instruction.Id, template.DefaultReviewerInstructionId, StringComparison.Ordinal))
-				?.Text
-				?? template.ReviewerInstructions.FirstOrDefault()?.Text
-				?? string.Empty,
-			target);
+		public ReviewMessageRenderer Renderer { get; } = new(template.ReviewRules, strict, target);
 
 		// Never disposed: a start may still observe it after the review has ended.
 		public CancellationTokenSource StartCancellation { get; } = new();

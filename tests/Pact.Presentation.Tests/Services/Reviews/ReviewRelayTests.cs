@@ -51,6 +51,7 @@ public sealed class ReviewRelayTests : IDisposable
 		host.Deliveries.Select(delivery => delivery.SessionId).ShouldBe([Reviewer]);
 		host.Deliveries[0].Text.ShouldBe(ReviewRelay.TriggerText);
 		relay.Find(result.Payload!)!.Turn.ShouldBe(ReviewRole.Reviewer);
+		relay.Find(result.Payload!)!.MaxIterations.ShouldBe(5);
 	}
 
 	[Test]
@@ -796,14 +797,7 @@ public sealed class ReviewRelayTests : IDisposable
 		"code-review",
 		ScenarioKind.ReviewLoop,
 		"Code review loop",
-		MaxIterations: 3,
-		StopMarker: "AGENT_TERMINAL_DONE",
-		StartPromptTemplate: "Review {target}.",
-		FirstFeedbackTemplate: "Findings: {reviewerOutput}",
-		AuthorReturnTemplate: "Answer: {authorOutput}",
-		FeedbackTemplate: "More: {reviewerOutput}",
-		ReviewerInstructions: [new("strict", "Strict", "Approve only when all is resolved.")],
-		DefaultReviewerInstructionId: "strict");
+		ReviewRules: "Inspect changed behavior.");
 
 	internal sealed class FakeReviewRelayHost(string root) : IReviewRelayHost
 	{

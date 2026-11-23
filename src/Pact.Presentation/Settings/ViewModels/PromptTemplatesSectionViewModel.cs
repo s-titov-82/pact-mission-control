@@ -16,12 +16,17 @@ public sealed class PromptTemplatesSectionViewModel : FileSectionViewModel<Promp
 	public PromptTemplatesSectionViewModel(SettingsFileStore store)
 		: base(store, SettingsSection.PromptTemplates, "Prompt/Shell templates",
 			"Prompt and shell-command templates shown in the right panel. Either type may use {selectedText}.", "prompt-templates.json")
-	{ Groups = [Prompts, ShellCommands]; _selectedGroup = Prompts; }
+	{
+		Prompts = new(PromptActionType.Prompt, "Prompts", SwapItems);
+		ShellCommands = new(PromptActionType.TerminalCommand, "Shell commands", SwapItems);
+		Groups = [Prompts, ShellCommands];
+		_selectedGroup = Prompts;
+	}
 	/// <summary>Templates delivered into an agent's composer.</summary>
-	public PromptTemplateGroupViewModel Prompts { get; } = new(PromptActionType.Prompt, "Prompts");
+	public PromptTemplateGroupViewModel Prompts { get; }
 
 	/// <summary>Templates delivered as shell command lines.</summary>
-	public PromptTemplateGroupViewModel ShellCommands { get; } = new(PromptActionType.TerminalCommand, "Shell commands");
+	public PromptTemplateGroupViewModel ShellCommands { get; }
 
 	/// <summary>Both groups, for binding the group selector.</summary>
 	public ObservableCollection<PromptTemplateGroupViewModel> Groups { get; }

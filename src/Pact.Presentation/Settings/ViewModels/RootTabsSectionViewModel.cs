@@ -44,10 +44,17 @@ public sealed class RootTabsSectionViewModel : SettingsSectionViewModelBase
 	/// <inheritdoc />
 	public override Task LoadAsync(CancellationToken cancellationToken)
 	{
+		LoadObject(null);
+		return Task.CompletedTask;
+	}
+
+	/// <summary>Loads only the ROOT tab opened in an object editor, or every tab for section settings.</summary>
+	public void LoadObject(string? tabId)
+	{
 		DetachItems();
 		Items.Clear();
 		var rootTabs = _rootTabsProvider();
-		foreach (var session in rootTabs.Sessions)
+		foreach (var session in rootTabs.Sessions.Where(session => tabId is null || session.Record.Id == tabId))
 		{
 			SessionSettingsItemViewModel item = new(
 				session,
@@ -56,7 +63,7 @@ public sealed class RootTabsSectionViewModel : SettingsSectionViewModelBase
 			Items.Add(item);
 		}
 
-		foreach (var webPage in rootTabs.WebPages)
+		foreach (var webPage in rootTabs.WebPages.Where(page => tabId is null || page.Record.Id == tabId))
 		{
 			RootWebPageSettingsItemViewModel item = new(webPage);
 			item.Changed += OnItemChanged;
@@ -67,7 +74,6 @@ public sealed class RootTabsSectionViewModel : SettingsSectionViewModelBase
 		StatusText = null;
 		ClearDirty();
 		OnPropertyChanged(nameof(IsEmpty));
-		return Task.CompletedTask;
 	}
 
 	/// <inheritdoc />
@@ -241,13 +247,13 @@ public sealed class RootWebPageSettingsItemViewModel : SettingsObservableObject
 	{
 		if (string.IsNullOrWhiteSpace(Title))
 		{
-			return "Every ROOT web page needs a non-empty title.";
+			return "Every web tab needs a non-empty title.";
 		}
 
 		if (!Uri.TryCreate(Url.Trim(), UriKind.Absolute, out var uri)
 			|| uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
 		{
-			return $"ROOT web page '{Title}' needs an absolute HTTP or HTTPS URL.";
+			return $"Web tab '{Title}' needs an absolute HTTP or HTTPS URL.";
 		}
 
 		return null;

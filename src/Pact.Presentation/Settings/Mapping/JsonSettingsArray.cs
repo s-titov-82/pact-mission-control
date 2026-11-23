@@ -105,6 +105,16 @@ public sealed class JsonSettingsArray
 	/// <summary>Removes <paramref name="item"/> from the array.</summary>
 	public void Remove(JsonObject item) => _array.Remove(item);
 
+	/// <summary>Exchanges two visible entries while preserving the slots of hidden and unknown entries.</summary>
+	public void Swap(JsonObject first, JsonObject second)
+	{
+		var left = _array.IndexOf(first);
+		var right = _array.IndexOf(second);
+		_array[left] = null;
+		_array[right] = first;
+		_array[left] = second;
+	}
+
 	/// <summary>
 	/// Moves <paramref name="item"/> by <paramref name="delta"/> raw array slots (e.g. -1 to swap
 	/// with its predecessor, +1 with its successor). A no-op when the item is not found or the

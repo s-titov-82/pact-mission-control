@@ -8,7 +8,7 @@ and the [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/micros
 and offers to install a missing runtime before PACT.
 Install the command-line agents you plan to use separately and make their
 commands available on `PATH`. The starter profiles expect `codex`, `claude`,
-`hermes`, and `pwsh`; PowerShell sessions therefore need PowerShell 7.
+and `pwsh`; PowerShell sessions therefore need PowerShell 7.
 
 ## Install
 

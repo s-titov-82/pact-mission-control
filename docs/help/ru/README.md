@@ -11,7 +11,6 @@
 - [Приостановленные проекты](settings-paused-projects.md)
 - [Шаблоны терминалов](settings-launch-profiles.md)
 - [Профили ревью](settings-review-profiles.md)
-- [Оркестратор](settings-orchestrator.md)
 - [Шаблоны веб-ссылок](settings-web-link-templates.md)
 - [Правила веб-мониторинга](settings-web-monitoring-rules.md)
 - [Шаблоны промптов и shell-команд](settings-prompt-templates.md)

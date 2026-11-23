@@ -70,7 +70,6 @@ internal sealed partial class MainWindow : Window, IDisposable
 	internal Func<UpdateRelease, Task<UpdateAvailableDialogResult>>? ShowUpdateAvailableDialogAsyncOverride { get; set; }
 	internal Func<string, Task>? ShowUpdateInformationAsyncOverride { get; set; }
 	internal Action? StartGracefulShutdownOverride { get; set; }
-	internal Func<CancellationToken, Task<SoftRestartRequestResult>>? RequestSoftRestartAsyncOverride { get; set; }
 	internal Func<CancellationToken, Task<SoftRestartRequestResult>>? RequestUpdateRestartAsyncOverride { get; set; }
 	public MainWindow()
 	{
@@ -227,6 +226,12 @@ internal sealed partial class MainWindow : Window, IDisposable
 			"dashboard-resume-project", owner => EngineProbeController.ViewModel.PausedWorkspaces.Contains(owner)
 				? RunWorkspaceOperationWithBusyOverlayAsync("Restoring project...", () => EngineProbeController.ResumeWorkspaceAsync(owner))
 				: Task.CompletedTask);
+		ObserveEvent<WorkspaceViewModel>(h => RootDashboard.EditArchivedRequested += h, h => RootDashboard.EditArchivedRequested -= h,
+			"edit-archived-project", project => OpenSettingsAsync(SettingsSection.PausedProjects, project.Id, null));
+		ObserveEvent<WorkspaceViewModel>(h => RootDashboard.RemoveArchivedRequested += h, h => RootDashboard.RemoveArchivedRequested -= h,
+			"remove-archived-project", CloseWorkspaceWithConfirmationAsync);
+		ObserveEvent<string>(h => RootDashboard.ForgetRecentRequested += h, h => RootDashboard.ForgetRecentRequested -= h,
+			"forget-recent-directory", EngineProbeController.RemoveRecentDirectoryAsync);
 		ObserveEvent<string>(h => RootDashboard.RecentDirectoryRequested += h, h => RootDashboard.RecentDirectoryRequested -= h,
 			"dashboard-recent-project", directory => RunWorkspaceOperationWithBusyOverlayAsync("Opening project...",
 				() => EngineProbeController.OpenRecentProjectAsync(directory)));
@@ -393,7 +398,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 			handler => ProjectTree.EditProjectRequested -= handler,
 			"edit-project",
 			workspace => OpenSettingsAsync(
-				SettingsSection.Projects,
+				EngineProbeController.ViewModel.PausedWorkspaces.Contains(workspace) ? SettingsSection.PausedProjects : SettingsSection.Projects,
 				workspace.Id,
 				null));
 		ObserveEvent<WorkspaceViewModel>(
@@ -426,9 +431,8 @@ internal sealed partial class MainWindow : Window, IDisposable
 			handler => ProjectTree.EditWebPageRequested += handler,
 			handler => ProjectTree.EditWebPageRequested -= handler,
 			"edit-web-page",
-			webPage => webPage.IsRootItem
-				? OpenSettingsAsync(SettingsSection.RootTabs, webPage.Record.Id, null)
-				: Task.CompletedTask);
+			webPage => OpenTabSettingsAsync(webPage.IsRootItem, webPage.Record.Id,
+				workspace => workspace.WebPages.Contains(webPage)));
 		ObserveEvent<TreeItemDropRequest>(
 			handler => ProjectTree.TreeItemDropRequested += handler,
 			handler => ProjectTree.TreeItemDropRequested -= handler,
@@ -527,15 +531,18 @@ internal sealed partial class MainWindow : Window, IDisposable
 	}
 
 	private Task OpenSessionSettingsAsync(SessionViewModel session)
+		=> OpenTabSettingsAsync(session.IsRootItem, session.Record.Id, workspace => workspace.Sessions.Contains(session));
+
+	private Task OpenTabSettingsAsync(bool isRoot, string tabId, Func<WorkspaceViewModel, bool> ownsTab)
 	{
-		if (session.IsRootItem)
+		if (isRoot)
 		{
-			return OpenSettingsAsync(SettingsSection.RootTabs, session.Record.Id, null);
+			return OpenSettingsAsync(SettingsSection.RootTabs, tabId, null);
 		}
 
 		var owner = EngineProbeController.ViewModel.Workspaces
 			.Concat(EngineProbeController.ViewModel.PausedWorkspaces)
-			.FirstOrDefault(workspace => workspace.Sessions.Contains(session));
+			.FirstOrDefault(ownsTab);
 		if (owner is null)
 		{
 			return Task.CompletedTask;
@@ -544,7 +551,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 		var section = EngineProbeController.ViewModel.PausedWorkspaces.Contains(owner)
 			? SettingsSection.PausedProjects
 			: SettingsSection.Projects;
-		return OpenSettingsAsync(section, owner.Id, session.Record.Id);
+		return OpenSettingsAsync(section, owner.Id, tabId);
 	}
 
 	private void ObserveEvent<TEventArgs>(
@@ -630,7 +637,8 @@ internal sealed partial class MainWindow : Window, IDisposable
 			viewModel,
 			_folderPicker,
 			_eventTasks,
-			exception => EngineProbeController.ReportUiFailureAsync("Directory picker", exception));
+			exception => EngineProbeController.ReportUiFailureAsync("Directory picker", exception),
+			EngineProbeController.RemoveRecentDirectoryAsync);
 		var result =
 			await dialog.ShowDialog<DirectorySelectionResult?>(this);
 		if (result is not null)
@@ -659,7 +667,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 			handler => RightActions.SettingsRequested += handler,
 			handler => RightActions.SettingsRequested -= handler,
 			"open-settings",
-			() => OpenSettingsAsync(SettingsSection.Projects, null, null));
+			() => OpenSettingsAsync(SettingsSection.Appearance, null, null));
 		ObserveEvent(
 			handler => RightActions.SkillCatalogRequested += handler,
 			handler => RightActions.SkillCatalogRequested -= handler,
@@ -896,7 +904,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 					cancellationToken),
 			rootTabsProvider: () => EngineProbeController.ViewModel.RootTabs,
 			rootTabsEditor: _projectSettingsEditor as IRootTabsSettingsEditor,
-			orchestratorSection: EngineProbeController.CreateOrchestratorSectionViewModel(),
+
 			updatesSection: updatesSection);
 		using SettingsWindow dialog = new(
 			viewModel,
@@ -914,16 +922,17 @@ internal sealed partial class MainWindow : Window, IDisposable
 			openUpdateContainingFolderAsync: _updateController is null
 				? null
 				: _updateController.OpenContainingFolderAsync,
-			softRestartAsync: RequestDiagnosticSoftRestartAsync,
 			restartAndUpdateAsync: RequestRestartAndUpdateAsync)
 		{
 			InitialSection = section,
+			IsObjectEditor = itemId is not null,
 			CheckProfileAsync = EngineProbeController.CheckProfileAsync,
 			LaunchTestProfileAsync = EngineProbeController.AddRootSessionAsync,
 			InitialItemId = itemId,
 			InitialSubItemId = subItemId
 		};
 
+		var priorTerminal = (EngineProbeController.PresentedSurface as PresentedSurface.Terminal)?.Session;
 		if (ShowSettingsWindowAsyncOverride is { } showOverride)
 		{
 			await showOverride(dialog);
@@ -933,59 +942,15 @@ internal sealed partial class MainWindow : Window, IDisposable
 			await dialog.ShowDialog(this);
 		}
 
+		if (priorTerminal is not null)
+		{
+			await EngineProbeController.FocusPresentedTerminalAsync(priorTerminal);
+		}
 		var loaded = await EngineProbeController.ReloadExternalSettingsAsync(
 			CancellationToken.None);
 		if (dialog.SavedAnyFile && loaded)
 		{
 			await RefreshSubscriptionUsageOnceAsync(CancellationToken.None);
-		}
-	}
-
-	internal async Task RequestDiagnosticSoftRestartAsync(CancellationToken cancellationToken)
-	{
-		var coordinator = EngineProbeController.SoftRestartCoordinator;
-		if (coordinator is null && RequestSoftRestartAsyncOverride is null)
-		{
-			return;
-		}
-
-		var request = new MessageDialogRequest(
-			"Soft restart",
-			"Restart Pact and restore the terminal and browser tabs that are currently live?",
-			MessageDialogButtons.YesNo,
-			MessageDialogResult.No);
-		var confirmation = ShowMessageDialogAsyncOverride is { } showOverride
-			? await showOverride(request)
-			: await MessageDialogWindow.ShowOwnedAsync(this, request);
-		if (confirmation != MessageDialogResult.Yes)
-		{
-			return;
-		}
-
-		var result = RequestSoftRestartAsyncOverride is { } requestOverride
-			? await requestOverride(cancellationToken)
-			: await coordinator!.RequestRestartOnlyAsync(cancellationToken);
-		if (result.Started)
-		{
-			StartConfirmedSoftRestart();
-			return;
-		}
-
-		var message = result.Blockers.Count > 0
-			? string.Join(Environment.NewLine, result.Blockers.Select(blocker => blocker.Description))
-			: "Pact could not start the soft restart helper.";
-		var information = new MessageDialogRequest(
-			"Soft restart unavailable",
-			message,
-			MessageDialogButtons.Ok,
-			MessageDialogResult.Ok);
-		if (ShowMessageDialogAsyncOverride is { } showInformation)
-		{
-			await showInformation(information);
-		}
-		else
-		{
-			await MessageDialogWindow.ShowOwnedAsync(this, information);
 		}
 	}
 

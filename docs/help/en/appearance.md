@@ -6,7 +6,10 @@ diagnostic facts shown below Quick actions and opt in to external process
 metrics. External process metrics sampling stays off while that option is
 disabled. Saved choices apply immediately.
 
-Under **Attention notifications**, enable **Show Windows notifications** to
+In **Terminal theme**, choose a Windows Terminal profile to preview its font
+and colors. You can edit both before choosing **Save section**.
+
+Under **Notifications**, enable **Show Windows notifications** to
 receive a banner for a new question, failure, or unread update. Click the
 banner to open its tab. **Sound** offers silence, the Windows default, a short
 ICQ-style chirp, or a three-note station chime.

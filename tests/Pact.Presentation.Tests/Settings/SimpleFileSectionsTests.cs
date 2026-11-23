@@ -21,6 +21,79 @@ public sealed class SimpleFileSectionsTests : IDisposable
 	private LaunchProfilesSectionViewModel CreateProfilesSection() => new(Store); // ctor shape: (SettingsFileStore)
 
 	[Test]
+	public async Task Reordering_prompts_preserves_selection_and_interleaved_entries_after_save()
+	{
+		await Store.EnsureDefaultFilesAsync(CancellationToken.None);
+		await File.WriteAllTextAsync(Paths.PromptTemplatesPath, """
+			[{"id":"a","name":"A","body":"first","extra":42},
+			 {"id":"cmd","name":"Command","body":"pwd","type":"terminalCommand"},
+			 {"future":true},
+			 {"id":"b","name":"B","body":"second"}]
+			""");
+		var section = new PromptTemplatesSectionViewModel(Store);
+		await section.LoadAsync(CancellationToken.None);
+		var group = section.Prompts;
+		group.Order.MoveLeft.CanExecute(null).ShouldBeFalse();
+		group.Order.MoveRight.Execute(null);
+		group.SelectedItem!.Id.ShouldBe("a");
+		group.Order.MoveRight.CanExecute(null).ShouldBeFalse();
+		section.IsDirty.ShouldBeTrue();
+		(await section.SaveAsync(CancellationToken.None)).ShouldBeTrue();
+		var saved = JsonNode.Parse(await File.ReadAllTextAsync(Paths.PromptTemplatesPath))!.AsArray();
+		saved.Select(node => (string?)node!["id"]).ShouldBe(["b", "cmd", null, "a"]);
+		((bool?)saved[2]!["future"]).ShouldBe(true);
+		((int?)saved[3]!["extra"]).ShouldBe(42);
+		await section.LoadAsync(CancellationToken.None);
+		group.Items.Select(item => item.Id).ShouldBe(["b", "a"]);
+		group.SelectedItem = group.Items[1];
+		group.Order.MoveLeft.Execute(null);
+		group.Items.Select(item => item.Id).ShouldBe(["a", "b"]);
+	}
+
+	[Test]
+	public async Task Hidden_Hermes_profile_stays_on_disk_when_visible_profiles_are_saved()
+	{
+		await Store.EnsureDefaultFilesAsync(CancellationToken.None);
+		var path = Paths.ShellProfilesPath;
+		var profiles = JsonNode.Parse(await File.ReadAllTextAsync(path))!.AsArray();
+		var hidden = JsonNode.Parse("""{"id":"legacy","kind":"hermes","commandTemplate":"hermes","extra":42}""");
+		profiles.Insert(0, hidden);
+		await File.WriteAllTextAsync(path, profiles.ToJsonString());
+		var section = CreateProfilesSection();
+		await section.LoadAsync(CancellationToken.None);
+		section.Items.OfType<ShellProfileItemViewModel>().ShouldNotContain(item => item.Id == "legacy");
+		section.Items[0].ShouldBeOfType<ShellProfileItemViewModel>().DisplayName = "Work";
+		(await section.SaveAsync(CancellationToken.None)).ShouldBeTrue();
+		JsonNode.DeepEquals(JsonNode.Parse(await File.ReadAllTextAsync(path))![0], hidden).ShouldBeTrue();
+		(await Store.LoadShellProfilesAsync(CancellationToken.None)).ShouldNotContain(item => item.Id == "legacy");
+	}
+
+	[TestCase("codex", "codex --approve-for-me")]
+	[TestCase("claude", "claude --permission-mode auto")]
+	[TestCase("pwsh", "pwsh -NoProfile")]
+	public async Task Preset_switch_round_trips_launch_option_and_preserves_resume_command(string id, string expected)
+	{
+		await Store.EnsureDefaultFilesAsync(CancellationToken.None);
+		var section = CreateProfilesSection();
+		await section.LoadAsync(CancellationToken.None);
+		var profile = section.Items.OfType<ShellProfileItemViewModel>().Single(item => item.Id == id);
+		var resume = profile.ResumeCommandTemplate;
+		profile.PresetOptionEnabled = true;
+		(await section.SaveAsync(CancellationToken.None)).ShouldBeTrue();
+		await section.LoadAsync(CancellationToken.None);
+		profile = section.Items.OfType<ShellProfileItemViewModel>().Single(item => item.Id == id);
+		profile.CommandTemplate.ShouldBe(expected);
+		profile.ResumeCommandTemplate.ShouldBe(resume);
+		profile.PresetOptionEnabled.ShouldBeTrue();
+		profile.PresetOptionEnabled = false;
+		profile.CommandTemplate.ShouldBe(id);
+		profile.CommandTemplate = "my-wrapper --keep-this";
+		profile.HasPreset.ShouldBeFalse();
+		profile.PresetOptionEnabled = true;
+		profile.CommandTemplate.ShouldBe("my-wrapper --keep-this");
+	}
+
+	[Test]
 	public async Task Load_maps_default_profiles_and_save_round_trips_unknown_fields()
 	{
 		await Store.EnsureDefaultFilesAsync(CancellationToken.None);

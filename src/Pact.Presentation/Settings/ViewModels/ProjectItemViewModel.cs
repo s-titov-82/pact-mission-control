@@ -24,10 +24,9 @@ public sealed class ProjectItemViewModel : SettingsObservableObject
 	private string? _baselineGitLabRepoId;
 	private string _teamCityProjectId;
 	private string? _baselineTeamCityProjectId;
-	private SessionSettingsItemViewModel? _selectedSession;
 
 	/// <summary>Creates a tab over the loaded project, capturing its values as the baseline.</summary>
-	public ProjectItemViewModel(WorkspaceViewModel workspace)
+	public ProjectItemViewModel(WorkspaceViewModel workspace, string? tabId = null)
 	{
 		ArgumentNullException.ThrowIfNull(workspace);
 
@@ -49,12 +48,20 @@ public sealed class ProjectItemViewModel : SettingsObservableObject
 		_baselineTeamCityProjectId = record.TeamCityProjectId;
 
 		Sessions = [];
-		foreach (var session in workspace.Sessions)
+		foreach (var session in workspace.Sessions.Where(session => tabId is null || session.Record.Id == tabId))
 		{
 			AttachSession(new SessionSettingsItemViewModel(session));
 		}
 
-		_selectedSession = Sessions.Count > 0 ? Sessions[0] : null;
+		WebPages = workspace.WebPages.Where(page => tabId is null || page.Record.Id == tabId)
+			.Select(page => new RootWebPageSettingsItemViewModel(page)).ToArray();
+		foreach (var page in WebPages)
+		{
+			page.Changed += OnSessionChanged;
+		}
+
+		Tabs = [.. Sessions, .. WebPages];
+		SelectedTab = Tabs.Count > 0 ? Tabs[0] : null;
 	}
 
 	/// <summary>Raised whenever an editable field on this project or one of its sessions changes.</summary>
@@ -143,11 +150,33 @@ public sealed class ProjectItemViewModel : SettingsObservableObject
 	/// <summary>Session tabs nested under this project.</summary>
 	public ObservableCollection<SessionSettingsItemViewModel> Sessions { get; }
 
+	/// <summary>Editable browser pages owned by this project.</summary>
+	public IReadOnlyList<RootWebPageSettingsItemViewModel> WebPages { get; }
+
+	/// <summary>Terminal and browser tabs available in the project editor.</summary>
+	public IReadOnlyList<object> Tabs { get; }
+
+	/// <summary>Whether the project has a terminal or browser tab to display.</summary>
+	public bool HasTabs => Tabs.Count > 0;
+
+	/// <summary>The terminal or browser page currently displayed in the project editor.</summary>
+	public object? SelectedTab
+	{
+		get;
+		set
+		{
+			if (SetField(ref field, value))
+			{
+				OnPropertyChanged(nameof(SelectedSession));
+			}
+		}
+	}
+
 	/// <summary>Selected session tab, or <see langword="null"/> when none is selected.</summary>
 	public SessionSettingsItemViewModel? SelectedSession
 	{
-		get => _selectedSession;
-		set => SetField(ref _selectedSession, value);
+		get => SelectedTab as SessionSettingsItemViewModel;
+		set => SelectedTab = value;
 	}
 
 	/// <summary>True when this project's own fields differ from their baseline, or any session is dirty.</summary>
@@ -157,7 +186,7 @@ public sealed class ProjectItemViewModel : SettingsObservableObject
 		!ProjectFieldDiff.TrimEquals(Notes, _baselineNotes) ||
 		!ProjectFieldDiff.TrimEquals(GitLabRepoId, _baselineGitLabRepoId) ||
 		!ProjectFieldDiff.TrimEquals(TeamCityProjectId, _baselineTeamCityProjectId) ||
-		Sessions.Any(session => session.IsItemDirty);
+		Sessions.Any(session => session.IsItemDirty) || WebPages.Any(page => page.IsItemDirty);
 
 	/// <summary>Tab caption, marked with a bullet while dirty.</summary>
 	public string TabHeader

@@ -1,6 +1,8 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Headless;
 using Avalonia.Headless.NUnit;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
@@ -47,6 +49,33 @@ public sealed class RootDashboardViewHeadlessTests
 			buttons.Single(button => button.Classes.Contains("dashboard-open-recent"))
 				.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
 			recent.ShouldBe("C:/recent folder");
+			WorkspaceViewModel? removed = null;
+			string? forgotten = null;
+			view.RemoveArchivedRequested += (_, project) => removed = project;
+			view.ForgetRecentRequested += (_, path) => forgotten = path;
+			var archiveDelete = buttons.OfType<InlineDeleteButton>().Single(button => button.DataContext == paused);
+			var recentDelete = buttons.OfType<InlineDeleteButton>().Single(button => button.DataContext is string);
+			void Activate(Button button)
+			{
+				button.Focus();
+				window.KeyPress(Key.Space, RawInputModifiers.None, PhysicalKey.Space, null);
+				window.KeyRelease(Key.Space, RawInputModifiers.None, PhysicalKey.Space, null);
+			}
+			Activate(archiveDelete);
+			archiveDelete.Content.ShouldBe("Confirm delete");
+			removed.ShouldBeNull();
+			Activate(recentDelete);
+			archiveDelete.Content.ShouldBeOfType<PathIcon>();
+			forgotten.ShouldBeNull();
+			window.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
+			window.KeyRelease(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
+			recentDelete.Content.ShouldBeOfType<PathIcon>();
+			Activate(recentDelete);
+			Activate(recentDelete);
+			forgotten.ShouldBe("C:/recent folder");
+			Activate(archiveDelete);
+			Activate(archiveDelete);
+			removed.ShouldBeSameAs(paused);
 			var lists = view.FindControl<Grid>("ProjectLists")!;
 			lists.Bounds.Top.ShouldBeGreaterThanOrEqualTo(view.FindControl<ItemsControl>("ProjectCards")!.Bounds.Bottom);
 			view.FindControl<Border>("PausedProjectsPanel")!.Bounds.Left

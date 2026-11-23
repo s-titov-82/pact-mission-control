@@ -34,11 +34,15 @@ public sealed class ProjectSettingsEditor : IProjectSettingsEditor, IRootTabsSet
 		_mainWindowViewModel.UpdateSessionSettingsAsync(sessionId, edit, cancellationToken);
 
 	/// <inheritdoc />
+	public Task UpdateWebPageSettingsAsync(string webPageId, RootWebPageSettingsEdit edit, CancellationToken cancellationToken)
+		=> _mainWindowViewModel.UpdateWebPageSettingsAsync(webPageId, edit, cancellationToken);
+
+	/// <inheritdoc />
 	public Task UpdateRootWebPageSettingsAsync(
 		string webPageId,
 		RootWebPageSettingsEdit edit,
 		CancellationToken cancellationToken) =>
-		_mainWindowViewModel.UpdateRootWebPageSettingsAsync(webPageId, edit, cancellationToken);
+		UpdateWebPageSettingsAsync(webPageId, edit, cancellationToken);
 
 	/// <summary>Ensures a workspace exists for <paramref name="directory"/> and returns its id.</summary>
 	public async Task<string?> CreateProjectForDirectoryAsync(string directory, CancellationToken ct)

@@ -7,7 +7,7 @@ PACT:> Mission Control работает в Windows 11 x64. Установщик
 и [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)
 и предлагает доставить недостающую среду перед установкой PACT.
 Нужные CLI агентов устанавливаются отдельно, а их команды должны быть доступны
-через `PATH`. Стартовые профили ожидают `codex`, `claude`, `hermes` и `pwsh`,
+через `PATH`. Стартовые профили ожидают `codex`, `claude` и `pwsh`,
 поэтому для сессий PowerShell также нужен PowerShell 7.
 
 ## Установка

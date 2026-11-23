@@ -1,6 +1,6 @@
 # Prompt/Shell templates
 
-Templates are grouped as Prompts and Shell commands. Prompt templates target agent sessions: Codex, Claude, and Hermes. Shell commands target Pwsh and Custom sessions.
+Templates are grouped as Prompts and Shell commands. Prompt templates target agent sessions: Codex and Claude. Shell commands target Pwsh and Custom sessions.
 
 The exact {selectedText} token makes a template selection-aware regardless of its Type. Static templates appear in Quick actions. Selection-aware templates appear in Send selection to. Selected text is substituted verbatim; shell commands are not automatically quoted.
 

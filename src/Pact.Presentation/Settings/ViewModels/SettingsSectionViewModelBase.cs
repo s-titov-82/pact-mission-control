@@ -29,6 +29,30 @@ public abstract class SettingsSectionViewModelBase : SettingsObservableObject
 	/// <summary>Navigation label.</summary>
 	public string Label { get; }
 
+	/// <summary>Task-oriented name displayed in the settings navigation.</summary>
+	public string NavigationLabel => Section switch
+	{
+		SettingsSection.LaunchProfiles => "Terminal profiles",
+		SettingsSection.ReviewProfiles => "Reviewers",
+		SettingsSection.Scenarios => "Review types",
+		SettingsSection.WebLinkTemplates => "Saved links",
+		SettingsSection.WebMonitoringRules => "Monitored sites",
+		SettingsSection.PromptTemplates => "Saved prompts",
+		SettingsSection.GitHelpers => "Git actions",
+		_ => Label
+	};
+
+	/// <summary>Heading at the start of each settings navigation group.</summary>
+	public string? GroupHeading => Section switch
+	{
+		SettingsSection.Appearance => "Application",
+		SettingsSection.LaunchProfiles => "Agents",
+		SettingsSection.PromptTemplates => "Commands and templates",
+		SettingsSection.Scenarios => "Reviews",
+		SettingsSection.WebLinkTemplates => "Web pages",
+		_ => null
+	};
+
 	/// <summary>Short explanation shown in the section header.</summary>
 	public string Description { get; }
 

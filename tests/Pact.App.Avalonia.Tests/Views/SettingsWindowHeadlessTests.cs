@@ -21,7 +21,7 @@ public sealed class SettingsWindowHeadlessTests
 		using SettingsWindow window = new();
 
 		window.RequestedThemeVariant.ShouldBe(ThemeVariant.Default);
-		window.FindControl<ListBox>("SectionList").ShouldNotBeNull();
+		window.FindControl<StackPanel>("SectionList").ShouldNotBeNull();
 		window.FindControl<ContentControl>("SectionContent").ShouldNotBeNull();
 		window.FindControl<Button>("SectionHelpButton").ShouldNotBeNull();
 		window.FindControl<Button>("OpenRawJsonButton").ShouldNotBeNull();

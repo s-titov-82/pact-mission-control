@@ -1,6 +1,7 @@
 using System.Collections.Specialized;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
@@ -25,6 +26,7 @@ internal sealed partial class ProjectTreeView : UserControl
 	public ProjectTreeView()
 	{
 		InitializeComponent();
+		((PopupFlyoutBase)PausedProjectsButton.Flyout!).Opening += (_, _) => FitArchivedProjects();
 		_busySpinnerTimer = new DispatcherTimer { Interval = BusySpinner.Interval };
 		_busySpinnerTimer.Tick += (_, _) => AdvanceBusySpinnerFrame();
 		AttachedToVisualTree += (_, _) => _busySpinnerTimer.Start();
@@ -659,6 +661,21 @@ internal sealed partial class ProjectTreeView : UserControl
 	private void RefreshPausedProjectsButton() => PausedProjectsButton.IsEnabled = _viewModel?.PausedWorkspaces.Count > 0;
 
 	internal void ShowPausedProjects() => PausedProjectsButton.Flyout?.ShowAt(PausedProjectsButton);
+
+	private void FitArchivedProjects()
+	{
+		if (TopLevel.GetTopLevel(this) is not { } window ||
+			PausedProjectsButton.TranslatePoint(default, window) is not { } anchor)
+		{
+			return;
+		}
+
+		// Leave room for the flyout presenter's padding on either side of the anchor.
+		const double inset = 40;
+		ArchivedProjectsPanel.MaxWidth = Math.Max(0, window.ClientSize.Width - inset);
+		ArchivedProjectsPanel.MaxHeight = Math.Max(0, Math.Max(anchor.Y,
+			window.ClientSize.Height - anchor.Y - PausedProjectsButton.Bounds.Height) - inset);
+	}
 }
 
 internal sealed record GitFlyoutRequest(WorkspaceViewModel Workspace, Control Anchor);

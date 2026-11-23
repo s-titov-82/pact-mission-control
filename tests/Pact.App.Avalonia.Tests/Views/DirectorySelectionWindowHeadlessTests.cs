@@ -4,8 +4,11 @@ using Avalonia.Headless;
 using Avalonia.Headless.NUnit;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Pact.App.Avalonia.Lifecycle;
+using Pact.App.Avalonia.Views;
 using Pact.App.Avalonia.Views.Dialogs;
 using Pact.Core.Platform;
 using Pact.Presentation.ViewModels;
@@ -87,6 +90,47 @@ public sealed class DirectorySelectionWindowHeadlessTests
 			{
 				Directory.Delete(directory, recursive: true);
 			}
+		}
+	}
+
+	[AvaloniaTest]
+	public async Task Forget_directory_requires_confirmation_on_the_same_history_entry()
+	{
+		string? forgotten = null;
+		ObservedTaskGroup tasks = new(static (_, _) => Task.CompletedTask);
+		DirectorySelectionViewModel model = new(["C:/first", "C:/second"], string.Empty);
+		FluentTheme theme = new();
+		Application.Current!.Styles.Add(theme);
+		DirectorySelectionWindow window = new(model, new FakeFolderPicker(), tasks,
+			forgetDirectoryAsync: path =>
+			{
+				forgotten = path;
+				return Task.CompletedTask;
+			});
+		window.Show();
+		try
+		{
+			Dispatcher.UIThread.RunJobs();
+			var list = window.FindControl<ListBox>("RecentDirectoryList")!;
+			list.ScrollIntoView("C:/second");
+			window.UpdateLayout();
+			var row = list.ContainerFromItem("C:/second").ShouldBeOfType<ListBoxItem>();
+			var button = row.GetVisualDescendants().OfType<InlineDeleteButton>().ShouldHaveSingleItem();
+			button.Focus().ShouldBeTrue();
+			window.KeyPress(Key.Space, RawInputModifiers.None, PhysicalKey.Space, null);
+			window.KeyRelease(Key.Space, RawInputModifiers.None, PhysicalKey.Space, null);
+			button.Content.ShouldBe("Confirm delete");
+			forgotten.ShouldBeNull();
+			window.KeyPress(Key.Space, RawInputModifiers.None, PhysicalKey.Space, null);
+			window.KeyRelease(Key.Space, RawInputModifiers.None, PhysicalKey.Space, null);
+			await tasks.CompleteAndDrainAsync();
+			forgotten.ShouldBe("C:/second");
+			model.RecentDirectories.ShouldBe(["C:/first"]);
+		}
+		finally
+		{
+			window.Close();
+			Application.Current.Styles.Remove(theme);
 		}
 	}
 

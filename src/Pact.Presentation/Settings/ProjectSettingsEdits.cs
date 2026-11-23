@@ -154,6 +154,9 @@ public interface IRootTabsSettingsEditor
 /// </summary>
 public interface IProjectSettingsEditor
 {
+	/// <summary>Applies title and address changes to a saved project browser tab.</summary>
+	Task UpdateWebPageSettingsAsync(string webPageId, RootWebPageSettingsEdit edit, CancellationToken cancellationToken);
+
 	/// <summary>
 	/// Applies a project edit. Unknown project ids are ignored rather than throwing, since the
 	/// project may have been removed while the form was open.

@@ -15,6 +15,10 @@ changes first, keep unknown properties intact, and return to the Settings save
 boundary or restart Pact before expecting an external edit to affect live
 behavior. Do not share `agent-control.json` or `orchestrator.json`.
 
+Use the pencil beside a project, terminal or web tab to edit its properties. Project properties also list the project's terminal and web tabs. To remove an archived project or forget a recent directory, click × and then **Confirm delete** on that row. Files stay on disk. Press Esc or move focus to another row to cancel.
+
+Under **Agents → Terminal profiles**, the standard Codex and Claude commands offer an automatic approval mode for new sessions. PowerShell can start without loading its profile. Expand the command settings to edit launch and resume commands directly. Under **Reviews**, choose **Review types** to edit review instructions and **Reviewers** to configure the agents that run them.
+
 ## Data root
 
 The default data root is `%APPDATA%\Pact`. It has four top-level directories:

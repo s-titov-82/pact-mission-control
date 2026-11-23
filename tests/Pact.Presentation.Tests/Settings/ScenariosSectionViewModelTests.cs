@@ -27,8 +27,8 @@ public sealed class ScenariosSectionViewModelTests : IDisposable
 		await section.LoadAsync(CancellationToken.None);
 		(await File.ReadAllTextAsync(path)).ShouldBe(malformed); // regression guard vs ScenarioDefinitionStore reseed
 		var item = section.Items[0].ShouldBeOfType<ScenarioItemViewModel>();
-		item.StartPromptTemplate.ShouldBe("");
-		(await section.SaveAsync(CancellationToken.None)).ShouldBeFalse(); // validation blocks incomplete scenario
+		item.ReviewRules.ShouldBe("");
+		item.DefaultStrict.ShouldBeTrue();
 	}
 
 	[Test]
@@ -40,56 +40,28 @@ public sealed class ScenariosSectionViewModelTests : IDisposable
 		var section = new ScenariosSectionViewModel(Store);
 		await section.LoadAsync(CancellationToken.None);
 		section.Items[0].ShouldBeOfType<UnrecognizedItemViewModel>();
-		section.AddNewItem(); // make a valid one so save has something to validate
-		FillValidScenario((ScenarioItemViewModel)section.Items[^1]);
+		section.AddNewItem();
+		var review = section.SelectedItem.ShouldBeOfType<ScenarioItemViewModel>();
+		review.Name = "Database migrations";
+		review.ReviewRules = "Check backwards compatibility.";
 		(await section.SaveAsync(CancellationToken.None)).ShouldBeTrue();
 		var saved = JsonNode.Parse(await File.ReadAllTextAsync(path))!.AsArray();
 		saved.ShouldContain(n => (string?)n!["kind"] == "futureKind" && (int?)n["payload"] == 123);
 	}
 
 	[Test]
-	public async Task Removing_default_instruction_repoints_default_and_last_instruction_is_protected()
-	{
-		var section = await LoadDefaultSeededSectionAsync(); // EnsureDefaultFilesAsync seeds real defaults
-		var item = section.Items.OfType<ScenarioItemViewModel>().First();
-		var defaultId = item.DefaultReviewerInstructionId;
-		var defaultVm = item.ReviewerInstructions.First(i => i.Id == defaultId);
-		if (item.ReviewerInstructions.Count == 1)
-		{ item.AddInstruction(); item.ReviewerInstructions[^1].Id = "extra"; item.ReviewerInstructions[^1].Name = "n"; item.ReviewerInstructions[^1].Text = "t"; }
-		item.RemoveInstruction(defaultVm);
-		item.DefaultReviewerInstructionId.ShouldNotBe(defaultId);
-		item.DefaultReviewerInstructionId.ShouldBe(item.ReviewerInstructions[0].Id);
-		while (item.ReviewerInstructions.Count > 1)
-		{
-			item.RemoveInstruction(item.ReviewerInstructions[^1]);
-		}
-
-		(await section.SaveAsync(CancellationToken.None) && item.ReviewerInstructions.Count == 0).ShouldBeFalse(); // ≥1 enforced
-	}
-
-	[Test]
-	public async Task MaxIterations_below_1_blocks_save()
+	public async Task Review_rules_and_default_mode_round_trip()
 	{
 		var section = await LoadDefaultSeededSectionAsync();
-		((ScenarioItemViewModel)section.Items[0]).MaxIterationsText = "0";
-		(await section.SaveAsync(CancellationToken.None)).ShouldBeFalse();
-	}
+		var item = section.Items.OfType<ScenarioItemViewModel>().First();
+		item.DefaultStrict = false;
+		item.ReviewRules = "Check backwards compatibility.";
 
-	private static void FillValidScenario(ScenarioItemViewModel item)
-	{
-		item.Id = "new-scenario";
-		item.Name = "New scenario";
-		item.MaxIterationsText = "3";
-		item.StopMarker = "DONE";
-		item.StartPromptTemplate = "start {target}";
-		item.FirstFeedbackTemplate = "first {reviewerOutput}";
-		item.AuthorReturnTemplate = "author {authorOutput}";
-		item.FeedbackTemplate = "feedback {reviewerOutput}";
-		item.AddInstruction();
-		item.ReviewerInstructions[0].Id = "strict";
-		item.ReviewerInstructions[0].Name = "Strict";
-		item.ReviewerInstructions[0].Text = "Be strict.";
-		item.DefaultReviewerInstructionId = "strict";
+		(await section.SaveAsync(CancellationToken.None)).ShouldBeTrue();
+		await section.LoadAsync(CancellationToken.None);
+		var saved = section.Items.OfType<ScenarioItemViewModel>().First();
+		saved.ReviewRules.ShouldBe("Check backwards compatibility.");
+		saved.DefaultStrict.ShouldBeFalse();
 	}
 
 	private async Task<ScenariosSectionViewModel> LoadDefaultSeededSectionAsync()

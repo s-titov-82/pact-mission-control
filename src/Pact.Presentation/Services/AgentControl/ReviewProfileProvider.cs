@@ -26,6 +26,6 @@ public sealed class ReviewProfileProvider
 	{
 		var profiles = await ReviewProfileReader.ReadAsync(_path, cancellationToken)
 			.ConfigureAwait(false);
-		Interlocked.Exchange(ref _current, profiles);
+		Interlocked.Exchange(ref _current, profiles.Where(profile => profile.Kind != Pact.Core.Agents.AgentKind.Hermes).ToArray());
 	}
 }

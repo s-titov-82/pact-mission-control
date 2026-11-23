@@ -1169,6 +1169,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 					LastActiveAt = now
 				};
 			},
+			updateWorkspace: false,
 			cancellationToken);
 	}
 
@@ -1190,11 +1191,12 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 				Title = normalizedTitle,
 				LastActiveAt = DateTimeOffset.UtcNow
 			},
+			updateWorkspace: false,
 			cancellationToken);
 	}
 
-	/// <summary>Applies editable title and URL fields to a ROOT browser page.</summary>
-	public async Task UpdateRootWebPageSettingsAsync(
+	/// <summary>Applies editable title and URL fields to a saved ROOT or project browser page.</summary>
+	public async Task UpdateWebPageSettingsAsync(
 		string webPageId,
 		RootWebPageSettingsEdit edit,
 		CancellationToken cancellationToken)
@@ -1206,21 +1208,23 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 			webPage =>
 			{
 				var title = edit.Title is null ? webPage.Title : edit.Title.Trim();
-				var url = edit.Url is null ? webPage.ResumeUrl : edit.Url.Trim();
+				var url = edit.Url?.Trim();
 				return webPage with
 				{
 					Title = title,
-					StartUrl = url,
-					ResumeUrl = url,
+					StartUrl = url ?? webPage.StartUrl,
+					ResumeUrl = url ?? webPage.ResumeUrl,
 					LastActiveAt = DateTimeOffset.UtcNow
 				};
 			},
+			updateWorkspace: true,
 			cancellationToken);
 	}
 
 	private async Task<WebPageRecord?> UpdateWebPageAsync(
 		string webPageId,
 		Func<WebPageRecord, WebPageRecord> mutate,
+		bool updateWorkspace,
 		CancellationToken cancellationToken)
 	{
 		if (RootTabs.WebPages.Any(webPage =>
@@ -1248,6 +1252,10 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 			return null;
 		}
 
+		if (updateWorkspace)
+		{
+			FindWorkspaceViewModel(result.Project.Id)?.UpdateRecord(result.Project);
+		}
 		FindWebPageViewModel(webPageId)?.UpdateRecord(result.WebPage);
 		return result.WebPage;
 	}
@@ -2618,7 +2626,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 		IEnumerable<SessionRecord> sessionRecords)
 	{
 		workspace.Sessions.Clear();
-		foreach (var session in sessionRecords)
+		foreach (var session in sessionRecords.Where(record => record.Kind != AgentKind.Hermes))
 		{
 			workspace.Sessions.Add(new SessionViewModel(session, workspace.RootPath));
 		}

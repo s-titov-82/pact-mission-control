@@ -10,6 +10,12 @@
     <local:TerminalTabIndicatorEqualsConverter x:Key="TerminalTabIndicatorEqualsConverter" />
   </UserControl.Resources>
   <UserControl.Styles>
+    <Style Selector="FlyoutPresenter.archived-projects">
+      <Setter Property="MaxWidth" Value="Infinity" />
+      <Setter Property="MaxHeight" Value="Infinity" />
+      <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+      <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Disabled" />
+    </Style>
     <Style Selector="Border.orchestrator-tier">
       <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}" />
       <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
@@ -22,7 +28,7 @@
     </Style>
   </UserControl.Styles>
   <DockPanel>
-    <Border x:Name="OrchestratorTier" Classes="orchestrator-tier" DockPanel.Dock="Top"
+    <Border x:Name="OrchestratorTier" Classes="orchestrator-tier" DockPanel.Dock="Top" IsVisible="False"
             Classes.current="{Binding IsCurrent}"
             Margin="0,0,0,6" Padding="8,6"
             DataContext="{Binding OrchestratorSlot}"
@@ -278,23 +284,29 @@
           <TextBlock Text="{Binding PausedWorkspaces.Count}" VerticalAlignment="Center" />
         </StackPanel>
         <Button.Flyout>
-          <Flyout Placement="Bottom">
-            <StackPanel Spacing="6">
-            <TextBlock Text="Paused projects · Select a project to resume it." />
-            <ItemsControl x:Name="PausedWorkspacesList" ItemsSource="{Binding PausedWorkspaces}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                  <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
-                          Background="Transparent" Click="OnPausedProjectClicked">
-                    <StackPanel MinWidth="180">
-                      <TextBlock FontWeight="SemiBold" Text="{Binding Name}" />
-                      <TextBlock FontSize="11" Foreground="{StaticResource AppTextMutedBrush}" Text="{Binding RootPath}" />
-                    </StackPanel>
-                  </Button>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-            </StackPanel>
+          <Flyout Placement="BottomEdgeAlignedLeft" FlyoutPresenterClasses="archived-projects">
+            <Grid x:Name="ArchivedProjectsPanel" RowDefinitions="Auto,*" RowSpacing="6">
+              <TextBlock Text="Archived projects" FontWeight="SemiBold" />
+              <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                <ItemsControl x:Name="PausedWorkspacesList" ItemsSource="{Binding PausedWorkspaces}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Border Padding="0,6" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1">
+                        <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="4">
+                          <StackPanel Margin="0,0,12,0">
+                            <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding RootPath}" Foreground="{DynamicResource AppTextMutedBrush}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding RootPath}" />
+                          </StackPanel>
+                          <Button Grid.Column="1" Classes="compact-icon" ToolTip.Tip="Edit project" AutomationProperties.Name="Edit project" Click="OnEditProjectClicked"><PathIcon Width="12" Height="12" Data="{StaticResource AppEditIcon}" /></Button>
+                          <Button Grid.Column="2" Classes="compact-icon" ToolTip.Tip="Resume project" AutomationProperties.Name="Resume project" Click="OnPausedProjectClicked"><PathIcon Width="12" Height="12" Data="{StaticResource AppPlayIcon}" /></Button>
+                          <local:InlineDeleteButton Grid.Column="3" Classes="compact-icon" ToolTip.Tip="Remove project and saved tabs from Pact" AutomationProperties.Name="Remove from Pact" Click="OnCloseProjectClicked"><PathIcon Width="12" Height="12" Data="{StaticResource AppCloseIcon}" /></local:InlineDeleteButton>
+                        </Grid>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
+            </Grid>
           </Flyout>
         </Button.Flyout>
       </Button>

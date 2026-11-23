@@ -116,11 +116,9 @@ is selected in a visible active window, regardless of which fact changed last.
 `HasUnreadCompletions`, taskbar attention, and the tree glyph are consumers of
 that projection, never separate status owners.
 
-Each review-loop step atomically writes its complete immutable prompt to
-`.pact-reviews/<shortRunId>/pass-NNN-<role>-task.md` before terminal submission.
-The terminal receives one short task-path trigger as one bracketed-paste backend
-write followed by a separate Enter; the full prompt is never pasted or typed
-into the composer. All other programmatic prompt bodies use the same mechanism.
+ReviewRelay notifies a participant with a short terminal trigger. The agent
+reads its turn over MCP and submits its answer using the returned turn ID.
+Pact sends the trigger through the same sender as other programmatic prompts.
 When the client captures the mouse (Codex and Claude in their fullscreen modes),
 the text goes through the clipboard instead: it is written there unless already
 present, and an SGR right click makes the client paste it itself, because Codex
@@ -148,36 +146,16 @@ confirms delivery only when a fresh capture shows an empty composer.
 If a capture still shows the text, Pact repeats Enter once; it never pastes
 twice. Sessions whose profile reads no composer end as submitted.
 
-The expected response observer starts before delivery and never stops for
-watchdog or Pause. Only a pending question stops a scenario's write. A delivery
-that wrote nothing is retried once the terminal is safe; once anything reached
-the terminal, an unconfirmed delivery pauses for attention, unlocks the affected
-terminal, and is never resent. The step watchdog also only pauses for attention
-and keeps observing the response. Manual Pause unlocks every involved terminal and
-forbids new automatic writes until Resume. A footer-complete expected response
-that appears during Manual Pause stops any further delivery of the trigger at
-once and is kept; the run advances with it after Resume. During an attention
-pause the response resumes the run by itself. The assigned agent writes the matching unique
-`pass-NNN-<role>-response.md` and ends its non-empty response with the exact
-transport footer specified in the task.
-Only that footer-complete file advances the step, and the footer is removed
-before content becomes a later prompt, final result, or completion-marker input.
-Tab indicators remain UI evidence and never establish scenario completion or
-advance a step. `Paused` retains the task and response files. The run state and
-journal exist only in memory while its pseudo-node can be shown; its journal and
-final result are read-only rendered Markdown views, and no durable
-scenario-state JSON is written alongside the exchange. Every terminal state —
-`Completed`, `MaxIterationsReached`, `Aborted`, and `Failed` — cleans the same
-exact Pact-owned run directory; startup removes abandoned `.pact-reviews`, while
-generic `.reviews` is not reserved or cleaned by Pact. Review-loop scenarios are
-fixed author/reviewer loops driven by `ReviewLoopScenarioProgram`;
-`Settings/scenarios.json` stores definitions, templates, stop marker, max
-iterations, and reviewer instruction presets. The completion marker remains the
-only machine-checked consensus signal.
-There is no scenario id allow-list; any `scenarios.json` entry with a known
-`kind` (currently `reviewLoop`) appears in the UI and runs. Custom ids survive
-a load; files that do not match the supported schema are reseeded from the
-bundled defaults.
+Review runs use the role and turn ID returned by `pact_get_review_turn`.
+An explicit `approved: true` on the reviewer's submission completes the run.
+An author reply at the round limit ends it as `MaxIterationsReached`.
+
+`Settings/scenarios.json` stores named review types with `reviewRules` and
+`defaultStrict`. Reviews use five rounds unless the request overrides the limit. The renderer puts rules in the first
+reviewer turn and supplies the exchange instructions for every turn.
+`pact_request_review` accepts optional `strict` and `maxIterations` overrides.
+Known `reviewLoop` entries retain their custom IDs. Loading existing settings
+reads recognized criteria from the legacy format and preserves the file.
 
 ## Runtime Data
 
@@ -454,9 +432,7 @@ Agent resume uses the configured resume command; an extracted conversation id
 resumes that conversation directly, and without one the agent opens its own
 conversation picker. When no usable resume command is configured, Pact
 cold-starts that terminal and names the fallback in the restoration summary
-instead of skipping it. The
-collapsed `Updates -> Diagnostics -> Soft restart and restore active tabs`
-button runs the same path without downloading or applying Setup.
+instead of skipping it.
 
 To exercise restoration independently of update installation, run the
 soft-restart native gate against an existing publish directory; the gate never
@@ -470,8 +446,7 @@ rtk proxy pwsh -NoProfile -File tools/Test-PactSoftRestart.ps1 `
 
 `DataRoot` must resolve to an absolute path that does not exist. The gate copies
 the publish into a unique disposable installation, creates only an isolated
-probe profile, and exercises the same `RestartOnly` handoff as the collapsed
-`Updates -> Diagnostics -> Soft restart and restore active tabs` action. PASS
+probe profile, and exercises the `RestartOnly` handoff. PASS
 requires exact restoration of one resumable agent terminal, one cold-started
 non-agent terminal, one background browser tab, selection, and unread state;
 one-time ticket consumption; natural exit of the exact Pact and terminal PIDs;

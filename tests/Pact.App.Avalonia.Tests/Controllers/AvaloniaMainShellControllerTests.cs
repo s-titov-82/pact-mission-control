@@ -4055,7 +4055,7 @@ public sealed class AvaloniaMainShellControllerTests
 	}
 
 	[Test]
-	public async Task A_stopped_orchestrator_bookmark_is_visible_and_clearable_after_startup_without_starting_it()
+	public async Task Hidden_orchestrator_keeps_its_saved_bookmark_without_adding_an_attention_item()
 	{
 		await using ControllerFixture fixture = new(firstResumeCommand: string.Empty);
 		OrchestratorStore store = new(fixture.Paths.OrchestratorPath);
@@ -4070,16 +4070,9 @@ public sealed class AvaloniaMainShellControllerTests
 		SessionRestorationStore checkpoint = new(fixture.Paths.SessionRestorationPath);
 		await checkpoint.SaveAsync(new(["session-1"], [], [], new("project-1", "session-1"), false), CancellationToken.None);
 		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
-		var session = fixture.ViewModel.OrchestratorSlot.Session.ShouldNotBeNull();
-		session.IsMarkedForLater.ShouldBeTrue();
+		fixture.ViewModel.OrchestratorSlot.Session.ShouldBeNull();
 		fixture.ViewModel.OrchestratorSlot.IsRunning.ShouldBeFalse();
-		fixture.ViewModel.Attention.Items.ShouldContain(item => ReferenceEquals(item.Target, session));
-		await fixture.Controller.SelectOrchestratorAsync();
-		fixture.ViewModel.SelectedSession.ShouldBeSameAs(session);
-		fixture.Controller.IsPausedItemVisible.ShouldBeTrue();
-		await fixture.Controller.ToggleReadLaterAsync(session);
-		session.IsMarkedForLater.ShouldBeFalse();
-		(await store.LoadAsync(CancellationToken.None)).IsMarkedForLater.ShouldBeFalse();
+		(await store.LoadAsync(CancellationToken.None)).IsMarkedForLater.ShouldBeTrue();
 		fixture.Backends.Count.ShouldBe(1);
 	}
 

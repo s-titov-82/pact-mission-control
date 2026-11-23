@@ -13,7 +13,20 @@ public sealed class PromptTemplateGroupViewModel : SettingsObservableObject
 	/// Creates a group for one delivery mode. The type is normalized, so legacy values collapse
 	/// into the group they actually behave as.
 	/// </summary>
-	public PromptTemplateGroupViewModel(PromptActionType type, string label) { Type = PromptActionPolicy.Normalize(type); Label = label; }
+	internal PromptTemplateGroupViewModel(PromptActionType type, string label,
+		Action<PromptTemplateItemViewModel, PromptTemplateItemViewModel> swapInFile)
+	{
+		Type = PromptActionPolicy.Normalize(type);
+		Label = label;
+		Order = new(Items, this, () => SelectedItem, (item, neighbor) =>
+		{
+			swapInFile(item, neighbor);
+			Items.Move(Items.IndexOf(item), Items.IndexOf(neighbor));
+		}, item => SelectedItem = item);
+	}
+
+	/// <summary>Changes the order within this delivery mode.</summary>
+	public SettingsItemOrder<PromptTemplateItemViewModel> Order { get; }
 
 	/// <summary>Normalized delivery mode this group holds.</summary>
 	public PromptActionType Type { get; }

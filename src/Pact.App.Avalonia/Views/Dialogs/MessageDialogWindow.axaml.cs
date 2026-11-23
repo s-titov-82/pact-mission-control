@@ -7,7 +7,8 @@ internal enum MessageDialogButtons
 {
 	Ok,
 	YesNo,
-	YesNoCancel
+	YesNoCancel,
+	SaveDiscardReturn
 }
 
 internal enum MessageDialogResult
@@ -43,7 +44,15 @@ internal sealed partial class MessageDialogWindow : Window
 		MessageText.Text = request.Message;
 		YesButton.Content = request.Buttons == MessageDialogButtons.Ok ? "OK" : "Yes";
 		NoButton.IsVisible = request.Buttons != MessageDialogButtons.Ok;
-		CancelButton.IsVisible = request.Buttons == MessageDialogButtons.YesNoCancel;
+		CancelButton.IsVisible = request.Buttons is MessageDialogButtons.YesNoCancel or MessageDialogButtons.SaveDiscardReturn;
+		if (request.Buttons == MessageDialogButtons.SaveDiscardReturn)
+		{
+			YesButton.Content = "Save changes";
+			NoButton.Content = "Discard changes";
+			CancelButton.Content = "Return to editing";
+			CancelButton.IsCancel = true;
+			Opened += (_, _) => CancelButton.Focus();
+		}
 	}
 
 	public static async Task<MessageDialogResult> ShowOwnedAsync(

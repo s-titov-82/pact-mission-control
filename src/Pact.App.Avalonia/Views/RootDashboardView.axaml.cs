@@ -27,6 +27,12 @@ public sealed partial class RootDashboardView : UserControl
 	public event EventHandler<WorkspaceViewModel>? ResumeProjectRequested;
 	/// <summary>Opens one recent directory through the existing project-creation flow.</summary>
 	public event EventHandler<string>? RecentDirectoryRequested;
+	/// <summary>Opens the archived project's properties.</summary>
+	public event EventHandler<WorkspaceViewModel>? EditArchivedRequested;
+	/// <summary>Removes a saved project after the user confirms in its row.</summary>
+	public event EventHandler<WorkspaceViewModel>? RemoveArchivedRequested;
+	/// <summary>Removes a directory from history.</summary>
+	public event EventHandler<string>? ForgetRecentRequested;
 
 	private void OnDashboardSizeChanged(object? sender, global::Avalonia.Controls.SizeChangedEventArgs args)
 	{
@@ -66,6 +72,24 @@ public sealed partial class RootDashboardView : UserControl
 		args.Handled = true;
 		if (sender is Control { DataContext: WorkspaceViewModel workspace })
 		{ ResumeProjectRequested?.Invoke(this, workspace); }
+	}
+	private void OnEditArchivedClicked(object? sender, RoutedEventArgs args)
+	{
+		args.Handled = true;
+		if (sender is Control { DataContext: WorkspaceViewModel item })
+		{ EditArchivedRequested?.Invoke(this, item); }
+	}
+	private void OnRemoveArchivedClicked(object? sender, RoutedEventArgs args)
+	{
+		args.Handled = true;
+		if (sender is Control { DataContext: WorkspaceViewModel item })
+		{ RemoveArchivedRequested?.Invoke(this, item); }
+	}
+	private void OnForgetRecentClicked(object? sender, RoutedEventArgs args)
+	{
+		args.Handled = true;
+		if (sender is Control { DataContext: string item })
+		{ ForgetRecentRequested?.Invoke(this, item); }
 	}
 	private void OnRecentDirectoryClicked(object? sender, RoutedEventArgs args)
 	{

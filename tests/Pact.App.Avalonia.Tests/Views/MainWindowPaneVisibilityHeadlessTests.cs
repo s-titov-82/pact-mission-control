@@ -373,78 +373,6 @@ public sealed class MainWindowPaneVisibilityHeadlessTests
 	}
 
 	[AvaloniaTest]
-	public async Task Diagnostic_soft_restart_defaults_to_no_and_confirmed_path_skips_close_prompt()
-	{
-		await using WindowFixture fixture = new(includeSession: true);
-		await fixture.Controller.InitializeAsync(
-			new Uri("file:///terminal.html"),
-			TestContext.CurrentContext.CancellationToken);
-		using MainWindow window = new(fixture.Controller);
-		var restartRequests = 0;
-		var shutdowns = 0;
-		var prompts = 0;
-		MessageDialogRequest? confirmation = null;
-		window.RequestSoftRestartAsyncOverride = _ =>
-		{
-			restartRequests++;
-			return Task.FromResult(new SoftRestartRequestResult(true, [], null));
-		};
-		window.StartGracefulShutdownOverride = () => shutdowns++;
-		window.ShowMessageDialogAsyncOverride = request =>
-		{
-			prompts++;
-			confirmation = request;
-			return Task.FromResult(request.DefaultResult);
-		};
-
-		await window.RequestDiagnosticSoftRestartAsync(CancellationToken.None);
-
-		confirmation.ShouldNotBeNull().DefaultResult.ShouldBe(MessageDialogResult.No);
-		restartRequests.ShouldBe(0);
-		shutdowns.ShouldBe(0);
-
-		window.ShowMessageDialogAsyncOverride = _ =>
-		{
-			prompts++;
-			return Task.FromResult(MessageDialogResult.Yes);
-		};
-		await window.RequestDiagnosticSoftRestartAsync(CancellationToken.None);
-
-		restartRequests.ShouldBe(1);
-		shutdowns.ShouldBe(1);
-		prompts.ShouldBe(2);
-	}
-
-	[AvaloniaTest]
-	public async Task Blocked_diagnostic_soft_restart_lists_blockers_without_shutdown()
-	{
-		await using WindowFixture fixture = new();
-		await fixture.Controller.InitializeAsync(
-			new Uri("file:///terminal.html"),
-			TestContext.CurrentContext.CancellationToken);
-		using MainWindow window = new(fixture.Controller);
-		var shutdowns = 0;
-		List<MessageDialogRequest> dialogs = [];
-		window.RequestSoftRestartAsyncOverride = _ => Task.FromResult(
-			new SoftRestartRequestResult(
-				false,
-				[new SoftRestartBlocker("busy", "Codex is still busy.")],
-				null));
-		window.StartGracefulShutdownOverride = () => shutdowns++;
-		window.ShowMessageDialogAsyncOverride = request =>
-		{
-			dialogs.Add(request);
-			return Task.FromResult(MessageDialogResult.Yes);
-		};
-
-		await window.RequestDiagnosticSoftRestartAsync(CancellationToken.None);
-
-		dialogs.Count.ShouldBe(2);
-		dialogs[1].Message.ShouldContain("Codex is still busy.");
-		shutdowns.ShouldBe(0);
-	}
-
-	[AvaloniaTest]
 	public async Task Update_restart_defaults_to_no_and_only_successful_final_handoff_shuts_down()
 	{
 		await using WindowFixture fixture = new();
@@ -551,6 +479,32 @@ public sealed class MainWindowPaneVisibilityHeadlessTests
 	}
 
 	[AvaloniaTest]
+	public async Task Closing_settings_returns_focus_only_to_the_terminal_that_was_presented()
+	{
+		await using WindowFixture fixture = new(includeSession: true);
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), CancellationToken.None);
+		using MainWindow window = new(fixture.Controller, fixture.SettingsFileStore,
+			new ProjectSettingsEditor(fixture.ViewModel), new FakeExternalLauncher(), new FakeFolderPicker());
+		fixture.Host.RaiseScreenSnapshotReceived("session-1", "ready", stable: true);
+		Dispatcher.UIThread.RunJobs();
+		await fixture.Controller.GetEventTasks().WaitForIdleAsync();
+		window.IsTerminalPaneVisible.ShouldBeTrue();
+		var settings = window.FindControl<RightActionsPanel>("RightActions")!.FindControl<Button>("SettingsButton")!;
+
+		window.ShowSettingsWindowAsyncOverride = _ => Task.CompletedTask;
+		var before = fixture.Host.FocusCallCount;
+		settings.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+		await fixture.Controller.GetEventTasks().WaitForIdleAsync();
+		fixture.Host.FocusCallCount.ShouldBe(before + 1);
+
+		window.ShowSettingsWindowAsyncOverride = _ => fixture.Controller.OpenDashboardAsync();
+		settings.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+		await fixture.Controller.GetEventTasks().WaitForIdleAsync();
+		fixture.Controller.PresentedSurface.ShouldBeOfType<PresentedSurface.Dashboard>();
+		fixture.Host.FocusCallCount.ShouldBe(before + 1);
+	}
+
+	[AvaloniaTest]
 	public async Task Settings_entry_points_forward_default_project_and_session_deep_links()
 	{
 		await using WindowFixture fixture = new(includeSession: true);
@@ -571,7 +525,8 @@ public sealed class MainWindowPaneVisibilityHeadlessTests
 		var actions = window.FindControl<RightActionsPanel>("RightActions").ShouldBeOfType<RightActionsPanel>();
 		actions.FindControl<Button>("SettingsButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
 		var defaultDialog = await shown.Task.WaitAsync(TimeSpan.FromSeconds(5));
-		defaultDialog.InitialSection.ShouldBe(SettingsSection.Projects);
+		defaultDialog.InitialSection.ShouldBe(SettingsSection.Appearance);
+		defaultDialog.IsObjectEditor.ShouldBeFalse();
 		defaultDialog.InitialItemId.ShouldBeNull();
 
 		shown = NewDialogSource();
@@ -581,6 +536,7 @@ public sealed class MainWindowPaneVisibilityHeadlessTests
 		FindButtonByToolTip(projectCard, "Edit project settings").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
 		var projectDialog = await shown.Task.WaitAsync(TimeSpan.FromSeconds(5));
 		projectDialog.InitialItemId.ShouldBe(workspace.Id);
+		projectDialog.IsObjectEditor.ShouldBeTrue();
 		projectDialog.InitialSubItemId.ShouldBeNull();
 
 		shown = NewDialogSource();
@@ -590,6 +546,7 @@ public sealed class MainWindowPaneVisibilityHeadlessTests
 		var sessionDialog = await shown.Task.WaitAsync(TimeSpan.FromSeconds(5));
 		sessionDialog.InitialItemId.ShouldBe(workspace.Id);
 		sessionDialog.InitialSubItemId.ShouldBe(session.Record.Id);
+		sessionDialog.IsObjectEditor.ShouldBeTrue();
 	}
 
 	[AvaloniaTest]

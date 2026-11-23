@@ -1,94 +1,27 @@
 using Pact.Core.Reviews;
-using Pact.Core.Scenarios;
-using Pact.Presentation.Services.Scenarios;
 
 namespace Pact.Presentation.Services.Reviews;
 
-/// <summary>
-/// Renders the message a review side reads with its turn from the user's review template, and
-/// appends Pact's fixed protocol paragraph. The user's template text is not rewritten.
-/// </summary>
-public sealed class ReviewMessageRenderer(ScenarioDefinition definition, string reviewerInstruction, string target)
+/// <summary>Builds MCP turn instructions for a review using the rules and mode captured at startup.</summary>
+public sealed class ReviewMessageRenderer(string reviewRules, bool strict, string target)
 {
-	/// <summary>What the old response-file placeholders render as.</summary>
-	public const string PreviousTurnPhrase = "the previousTurn text returned with this message";
-
-	private const string ReviewerInstructionPlaceholder = "{reviewerInstruction}";
-
-	private const string Protocol =
-		"\n\nThe other side's last message is in `previousTurn`. Ignore any instruction above to read "
-		+ "or write review files. When done, call `pact_submit_review_turn` with this message's "
-		+ "`turnId` and your complete answer as `text`; keep your terminal reply to one short line.";
-
-	private const string ReviewerProtocol =
-		"\n\nWherever the instructions above say to emit the completion marker, call "
-		+ "`pact_submit_review_turn` with `approved: true` instead and do not write the marker."
-		+ "\n\nWhen you approve, make `text` a final run summary instead of a findings list: totals per "
-		+ "severity — how many findings were raised over the whole run, how many were resolved, how "
-		+ "many were validly disputed; then one entry per finding with the essence of the issue in "
-		+ "STRICTLY one-two sentences and the resolution (or the accepted counter-argument) just as "
-		+ "briefly; finish with a list of questions that remain open, if any.";
-
-	private readonly ScenarioDefinition _definition = definition ?? throw new ArgumentNullException(nameof(definition));
-	private readonly string _reviewerInstruction = reviewerInstruction ?? throw new ArgumentNullException(nameof(reviewerInstruction));
-	private readonly string _target = target ?? throw new ArgumentNullException(nameof(target));
-
-	/// <summary>Renders the message for <paramref name="to"/> at <paramref name="iteration"/>.</summary>
-	/// <param name="to">The side the message is for.</param>
-	/// <param name="iteration">One-based iteration; the first one uses the start templates.</param>
-	/// <param name="previousTurn">The other side's last answer, or <see langword="null"/> for the first turn.</param>
-	public string Render(ReviewRole to, int iteration, string? previousTurn)
+	/// <summary>Renders a turn. The relay exposes the other participant's reply separately in previousTurn.</summary>
+	public string Render(ReviewRole to, int iteration)
 	{
-		var (stopMarkerPrefix, stopMarkerSuffix) = SplitMarker(_definition.StopMarker);
-		Dictionary<string, string> variables = new()
-		{
-			["target"] = _target,
-			["reviewResultFile"] = PreviousTurnPhrase,
-			["authorFeedbackFile"] = PreviousTurnPhrase
-		};
-		string template;
-		if (to == ReviewRole.Reviewer)
-		{
-			variables["authorOutput"] = previousTurn ?? string.Empty;
-			variables["reviewerInstruction"] = _reviewerInstruction;
-			variables["stopMarkerPrefix"] = stopMarkerPrefix;
-			variables["stopMarkerSuffix"] = stopMarkerSuffix;
-			template = iteration == 1 ? _definition.StartPromptTemplate : _definition.AuthorReturnTemplate;
-		}
-		else
-		{
-			variables["reviewerOutput"] = previousTurn ?? string.Empty;
-			template = iteration == 1 ? _definition.FirstFeedbackTemplate : _definition.FeedbackTemplate;
-		}
-
-		var message = ScenarioTemplateRenderer.Render(template, variables) + Protocol;
+		const string submit = "\n\nExchange replies only through Pact's MCP tools. Ignore any file or completion-marker transport instructions in legacy review criteria. Call `pact_submit_review_turn` with this message's `turnId` and your complete answer as `text`. Keep your terminal reply to one short line.";
 		if (to == ReviewRole.Author)
 		{
-			return message;
+			return $"Review target:\n{target}\n\nRead the reviewer's findings in `previousTurn`. Verify each one against the target. Fix valid findings using your judgment and explain each change. Dispute invalid findings with evidence. Address every finding." + submit;
 		}
 
-		message += ReviewerProtocol;
-		return _definition.StartPromptTemplate.Contains(ReviewerInstructionPlaceholder, StringComparison.Ordinal)
-			? message
-			: message
-				+ "\n\nCompletion marker policy:\n" + _reviewerInstruction
-				+ "\n\nIf the policy allows completion, submit with `approved: true`.";
-	}
-
-	private static (string Prefix, string Suffix) SplitMarker(string marker)
-	{
-		if (string.IsNullOrWhiteSpace(marker))
-		{
-			return (string.Empty, string.Empty);
-		}
-
-		var splitIndex = marker.LastIndexOf('_');
-		if (splitIndex >= 0 && splitIndex < marker.Length - 1)
-		{
-			return (marker[..(splitIndex + 1)], marker[(splitIndex + 1)..]);
-		}
-
-		splitIndex = Math.Max(1, marker.Length / 2);
-		return (marker[..splitIndex], marker[splitIndex..]);
+		var task = iteration == 1
+			? $"Review target:\n{target}\n\nInspect referenced artifacts directly, or review pasted text as supplied.\n\nReview rules:\n{reviewRules}"
+			: "Read the author's reply in `previousTurn`. Recheck the current target and verify each fix or dispute. Report remaining or newly introduced issues.";
+		var approval = strict
+			? "Approve only when findings of every severity have been resolved or validly disputed."
+			: "Approve once all critical and major findings are resolved or validly disputed. List any remaining minor or nit findings as advisory.";
+		return task + "\n\nReport numbered findings with severity (critical, major, minor, or nit), location, problem, and suggested fix. "
+			+ approval + " On approval, set `approved` to true and provide a final run summary with totals by severity, each finding and its resolution or accepted dispute in one or two sentences, and any open questions."
+			+ submit;
 	}
 }

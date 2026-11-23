@@ -22,14 +22,12 @@ public sealed class DirectorySelectionViewModel : SettingsObservableObject
 	{
 		ArgumentNullException.ThrowIfNull(recentDirectories);
 
-		RecentDirectories = recentDirectories
-			.Where(directory => !string.IsNullOrWhiteSpace(directory))
-			.ToArray();
+		RecentDirectories = new(recentDirectories.Where(directory => !string.IsNullOrWhiteSpace(directory)));
 		_directoryText = initialDirectory ?? string.Empty;
 	}
 
 	/// <summary>Recently used directories, newest first.</summary>
-	public IReadOnlyList<string> RecentDirectories { get; }
+	public System.Collections.ObjectModel.ObservableCollection<string> RecentDirectories { get; }
 
 	/// <summary>Directory path as typed; validated against the filesystem.</summary>
 	public string DirectoryText

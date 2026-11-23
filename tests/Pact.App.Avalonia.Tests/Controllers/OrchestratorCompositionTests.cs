@@ -549,7 +549,7 @@ public sealed class OrchestratorCompositionTests
 				.WithExecutableLocator(new InstalledAgentLocator())
 				.WithWebPageHostFactory(WebFactory)
 				.WithClipboard(Clipboard);
-			Controller = _builder.Build();
+			Controller = _builder.Build(includeOrchestrator: true);
 			Record = OrchestratorRecord.CreateDefault() with
 			{
 				Enabled = true,

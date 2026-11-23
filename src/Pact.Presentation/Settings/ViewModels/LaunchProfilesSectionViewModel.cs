@@ -14,14 +14,23 @@ public sealed class LaunchProfilesSectionViewModel : FileSectionViewModel<ShellP
 			"Shell launch profiles; each entry becomes one launch button.",
 			"shell-profiles.json")
 	{
+		Order = new(Items, this, () => SelectedItem, SwapItems, item => SelectedItem = item);
 	}
+
+	/// <summary>Changes the order used by the corresponding launch buttons.</summary>
+	public SettingsItemOrder<SettingsItemViewModelBase> Order { get; }
 
 	/// <inheritdoc />
 	protected override ShellProfileItemViewModel? TryCreateItem(JsonObject node)
 		=> node["id"] is null ? null : new ShellProfileItemViewModel(node);
 
 	/// <inheritdoc />
-	protected override ShellProfileItemViewModel CreateNewItem(JsonObject node) => new(node);
+	protected override ShellProfileItemViewModel CreateNewItem(JsonObject node)
+	{
+		node["id"] = $"terminal-{Guid.NewGuid():N}";
+		node["defaultShell"] = "pwsh";
+		return new(node);
+	}
 
 	/// <inheritdoc />
 	protected override string? Validate()

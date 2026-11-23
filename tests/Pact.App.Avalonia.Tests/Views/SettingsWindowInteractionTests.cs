@@ -2,12 +2,15 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
+using Avalonia.Headless;
 using Avalonia.Headless.NUnit;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Themes.Fluent;
 using Avalonia.VisualTree;
 using Pact.App.Avalonia.Lifecycle;
 using Pact.App.Avalonia.Views.Dialogs;
@@ -74,18 +77,12 @@ public sealed class SettingsWindowInteractionTests : IDisposable
 		using UpdatesSectionViewModel updates = new(coordinator);
 		(var vm, _) = await CreateViewModelAsync(updatesSection: updates);
 		var checks = 0;
-		var softRestarts = 0;
 		using SettingsWindow window = new(
 			vm,
 			new RecordingExternalLauncher(),
 			checkForUpdatesAsync: _ =>
 			{
 				checks++;
-				return Task.CompletedTask;
-			},
-			softRestartAsync: _ =>
-			{
-				softRestarts++;
 				return Task.CompletedTask;
 			});
 		window.InitialSection = SettingsSection.Updates;
@@ -100,16 +97,7 @@ public sealed class SettingsWindowInteractionTests : IDisposable
 			.Single(button => Equals(button.Tag, "CheckForUpdates"))
 			.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
 		await WaitUntilAsync(() => checks == 1);
-		var diagnostics = window.GetVisualDescendants().OfType<Expander>()
-			.Single(expander => Equals(expander.Header, "Diagnostics"));
-		diagnostics.IsExpanded.ShouldBeFalse();
-		diagnostics.IsExpanded = true;
-		await DrainUiTwiceAsync();
-		var softRestart = window.GetVisualDescendants().OfType<Button>()
-			.Single(button => Equals(button.Tag, "SoftRestart"));
-		softRestart.Content.ShouldBe("Soft restart and restore active tabs");
-		softRestart.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-		await WaitUntilAsync(() => softRestarts == 1);
+		window.GetVisualDescendants().OfType<Button>().Any(button => Equals(button.Tag, "SoftRestart")).ShouldBeFalse();
 		window.Close();
 	}
 
@@ -162,10 +150,47 @@ public sealed class SettingsWindowInteractionTests : IDisposable
 	}
 
 	[AvaloniaTest]
-	public async Task Initialize_materializes_all_sections_in_order_and_selects_session_deep_link()
+	public async Task Project_editor_lists_web_tabs_and_their_pencil_opens_a_shorter_form()
 	{
 		(var vm, var workspace) = await CreateViewModelAsync(includeSession: true);
-		using var window = CreateWindow(vm);
+		var now = DateTimeOffset.UtcNow;
+		workspace.WebPages.Add(new(new("web", "Docs", "https://example.com/docs", "https://example.com/docs", now, now)));
+		using var project = new SettingsWindow(vm, new RecordingExternalLauncher())
+		{
+			IsObjectEditor = true,
+			InitialItemId = workspace.Id
+		};
+		await project.InitializeAsync();
+		project.Show();
+		await DrainUiTwiceAsync();
+		var list = project.GetVisualDescendants().OfType<ListBox>()
+			.Single(control => control.Items.OfType<RootWebPageSettingsItemViewModel>().Any());
+		list.SelectedItem = list.Items.OfType<RootWebPageSettingsItemViewModel>().Single();
+		await DrainUiTwiceAsync();
+		project.GetVisualDescendants().OfType<TextBox>().Any(control => control.Text == "https://example.com/docs").ShouldBeTrue();
+		var projectHeight = project.Bounds.Height;
+		project.Close();
+
+		using var page = new SettingsWindow(vm, new RecordingExternalLauncher())
+		{
+			IsObjectEditor = true,
+			InitialItemId = workspace.Id,
+			InitialSubItemId = "web"
+		};
+		await page.InitializeAsync();
+		page.Show();
+		await DrainUiTwiceAsync();
+		page.Title.ShouldBe("Edit web page · Docs");
+		page.GetVisualDescendants().OfType<TextBox>().Any(control => control.Text == "https://example.com/docs").ShouldBeTrue();
+		page.Bounds.Height.ShouldBeLessThan(projectHeight);
+		page.Close();
+	}
+
+	[AvaloniaTest]
+	public async Task Session_pencil_opens_focused_editor_with_the_selected_title()
+	{
+		(var vm, var workspace) = await CreateViewModelAsync(includeSession: true);
+		using var window = new SettingsWindow(vm, new RecordingExternalLauncher()) { IsObjectEditor = true };
 		window.InitialItemId = workspace.Id;
 		window.InitialSubItemId = workspace.Sessions[0].Record.Id;
 
@@ -173,32 +198,8 @@ public sealed class SettingsWindowInteractionTests : IDisposable
 		window.Show();
 		await window.FocusSessionTitleWhenReadyAsync();
 
-		var sectionList = window.FindControl<ListBox>("SectionList").ShouldBeOfType<ListBox>();
-		sectionList.Items.Cast<SettingsSectionViewModelBase>().Select(section => section.Label).ShouldBe([
-				"Current projects", "Paused projects", "Terminal templates", "Review profiles",
-				"Web link templates", "Web monitoring rules", "Prompt/Shell templates", "Git popup",
-				"Scenarios", "Recent directories", "Appearance"
-			]);
-		foreach (var section in vm.Sections)
-		{
-			var key = section.Section switch
-			{
-				SettingsSection.Projects => "ProjectsSectionTemplate",
-				SettingsSection.PausedProjects => "PausedProjectsSectionTemplate",
-				SettingsSection.LaunchProfiles => "LaunchProfilesSectionTemplate",
-				SettingsSection.ReviewProfiles => "ReviewProfilesSectionTemplate",
-				SettingsSection.WebLinkTemplates => "WebLinkTemplatesSectionTemplate",
-				SettingsSection.WebMonitoringRules => "WebMonitoringRulesSectionTemplate",
-				SettingsSection.PromptTemplates => "PromptTemplatesSectionTemplate",
-				SettingsSection.GitHelpers => "GitHelpersSectionTemplate",
-				SettingsSection.Scenarios => "ScenariosSectionTemplate",
-				SettingsSection.RecentFolders => "RecentDirectoriesSectionTemplate",
-				SettingsSection.Appearance => "AppearanceSectionTemplate",
-				_ => throw new ArgumentOutOfRangeException()
-			};
-			window.TryGetResource(key, window.ActualThemeVariant, out var resource).ShouldBeTrue();
-			resource!.ShouldBeAssignableTo<IDataTemplate>()!.Build(section).ShouldNotBeNull();
-		}
+		window.FindControl<Border>("SettingsNavigation")!.IsVisible.ShouldBeFalse();
+		window.Title.ShouldStartWith("Edit session");
 
 		var projects = vm.ActiveSection.ShouldBeOfType<ProjectsSectionViewModel>();
 		(projects.SelectedItem?.Id).ShouldBe(workspace.Id);
@@ -211,6 +212,95 @@ public sealed class SettingsWindowInteractionTests : IDisposable
 		var editorScroll = title.GetVisualAncestors().OfType<ScrollViewer>().First().ShouldBeOfType<ScrollViewer>();
 		editorScroll.ShouldNotBeNull();
 		window.Close();
+	}
+
+	[AvaloniaTest]
+	public async Task Selecting_a_terminal_profile_previews_its_colors_before_saving()
+	{
+		(var vm, _) = await CreateViewModelAsync();
+		using var window = CreateWindow(vm);
+		FluentTheme theme = new();
+		Application.Current!.Styles.Add(theme);
+		try
+		{
+			window.InitialSection = SettingsSection.Appearance;
+			await window.InitializeAsync();
+			window.Show();
+			var appearance = vm.ActiveSection.ShouldBeOfType<AppearanceSectionViewModel>();
+			appearance.LoadProfiles("""{"profiles":{"list":[{"name":"Sample","background":"#123456"}]}}""");
+			window.GetVisualDescendants().OfType<TabControl>().Single().SelectedIndex = 1;
+			await DrainUiFourTimesAsync();
+			window.UpdateLayout();
+			var picker = window.GetVisualDescendants().OfType<ComboBox>().Single(box => Equals(box.Tag, "TerminalProfile"));
+			picker.SelectedIndex.ShouldBe(-1);
+			appearance.IsDirty.ShouldBeFalse();
+			picker.SelectedIndex = 0;
+			await DrainUiTwiceAsync();
+			appearance.PreviewBackground.ShouldBe("#123456");
+			appearance.IsDirty.ShouldBeTrue();
+			await appearance.ReloadAsync(CancellationToken.None);
+		}
+		finally
+		{
+			window.Close();
+			Application.Current.Styles.Remove(theme);
+		}
+	}
+
+	[AvaloniaTest]
+	public async Task General_settings_offer_application_level_sections()
+	{
+		var (vm, _) = await CreateViewModelAsync(includeSession: false);
+		using var window = CreateWindow(vm);
+		window.InitialSection = SettingsSection.Appearance;
+		await window.InitializeAsync();
+		var navigation = window.FindControl<StackPanel>("SectionList")!;
+		navigation.Children.OfType<TextBlock>().Select(heading => heading.Text).ShouldBe([
+			"Application", "Agents", "Commands and templates", "Reviews", "Web pages"]);
+		var buttons = navigation.Children.OfType<Button>().ToArray();
+		var catalog = buttons.Single(button => button.Tag is null);
+		buttons[Array.IndexOf(buttons, catalog) - 1].Content.ShouldBe("Terminal profiles");
+		var sections = buttons.Select(button => button.Tag).OfType<SettingsSectionViewModelBase>();
+		sections.Select(section => section.NavigationLabel).ShouldBe([
+			"Appearance", "Terminal profiles", "Saved prompts", "Git actions",
+			"Review types", "Reviewers", "Saved links", "Monitored sites"]);
+	}
+
+	[AvaloniaTest]
+	public async Task Order_arrows_move_the_selected_tab_and_save_its_new_position()
+	{
+		var (vm, _) = await CreateViewModelAsync();
+		FluentTheme theme = new();
+		Application.Current!.Styles.Add(theme);
+		using var window = CreateWindow(vm);
+		try
+		{
+			await window.InitializeAsync();
+			window.Show();
+			foreach (var id in new[] { SettingsSection.LaunchProfiles, SettingsSection.PromptTemplates, SettingsSection.WebLinkTemplates })
+			{
+				var section = vm.Sections.Single(item => item.Section == id);
+				window.SelectSection(section);
+				await DrainUiFourTimesAsync();
+				var tabs = window.GetVisualDescendants().OfType<SelectingItemsControl>()
+					.Single(control => control.IsEffectivelyVisible && control.SelectedItem is SettingsItemViewModelBase);
+				var first = tabs.SelectedItem;
+				var right = window.GetVisualDescendants().OfType<Button>().Single(button => Equals(button.Content, "▶"));
+				right.IsEffectivelyEnabled.ShouldBeTrue();
+				var point = right.TranslatePoint(new Point(right.Bounds.Width / 2, right.Bounds.Height / 2), window)!.Value;
+				window.MouseDown(point, MouseButton.Left);
+				window.MouseUp(point, MouseButton.Left);
+				await DrainUiFourTimesAsync();
+				tabs.SelectedItem.ShouldBeSameAs(first);
+				tabs.SelectedIndex.ShouldBe(1);
+				(await section.SaveAsync(CancellationToken.None)).ShouldBeTrue();
+			}
+			window.Close();
+		}
+		finally
+		{
+			Application.Current.Styles.Remove(theme);
+		}
 	}
 
 	[AvaloniaTest]
@@ -956,6 +1046,60 @@ public sealed class SettingsWindowInteractionTests : IDisposable
 	}
 
 	[AvaloniaTest]
+	public async Task Viewing_reviewer_ids_and_switching_between_agents_keeps_settings_clean()
+	{
+		var (vm, _) = await CreateViewModelAsync();
+		var store = new SettingsFileStore(_root);
+		var profiles = JsonNode.Parse(await store.ReadAsync("review-profiles.json", CancellationToken.None))!.AsArray();
+		profiles.Add(JsonNode.Parse("""{"id":"custom","kind":"codex","displayName":"Wrapper","commandTemplate":"company-cli --resume"}"""));
+		await store.SaveAsync("review-profiles.json", profiles.ToJsonString(), CancellationToken.None);
+		FluentTheme theme = new();
+		Application.Current!.Styles.Add(theme);
+		using var window = CreateWindow(vm);
+		try
+		{
+			window.InitialSection = SettingsSection.ReviewProfiles;
+			await window.InitializeAsync();
+			window.Show();
+			await DrainUiFourTimesAsync();
+			var section = vm.ActiveSection.ShouldBeOfType<ReviewProfilesSectionViewModel>();
+			var original = section.Items.Cast<ReviewProfileItemViewModel>()
+				.Select(item => (item.Id, item.Kind, item.CommandTemplate)).ToArray();
+			var changes = new List<string>();
+			foreach (var item in section.Items)
+			{
+				item.PropertyChanged += (_, args) => changes.Add($"{item.TabHeader}: {args.PropertyName}");
+			}
+			var tabs = window.GetVisualDescendants().OfType<ListBox>().Single(list => ReferenceEquals(list.ItemsSource, section.Items));
+			foreach (var profile in section.Items.Cast<ReviewProfileItemViewModel>().Append((ReviewProfileItemViewModel)section.Items[0]))
+			{
+				tabs.SelectedItem = profile;
+				await DrainUiFourTimesAsync();
+				var id = window.GetVisualDescendants().OfType<TextBox>()
+					.Single(box => box.Name == "ReviewerIdTextBox");
+				id.IsEffectivelyVisible.ShouldBeTrue();
+				id.Text.ShouldBe(profile.Id);
+				id.Focus();
+				section.IsDirty.ShouldBeFalse(string.Join(", ", changes));
+				vm.AnyDirty.ShouldBeFalse();
+			}
+			section.Items.Cast<ReviewProfileItemViewModel>()
+				.Select(item => (item.Id, item.Kind, item.CommandTemplate)).ShouldBe(original);
+			var idEditor = window.GetVisualDescendants().OfType<TextBox>().Single(box => box.Name == "ReviewerIdTextBox");
+			idEditor.Text = "edited-reviewer";
+			await DrainUiFourTimesAsync();
+			section.IsDirty.ShouldBeTrue();
+			section.SelectedItem.ShouldBeOfType<ReviewProfileItemViewModel>().Id.ShouldBe("edited-reviewer");
+			(await vm.SaveActiveSectionAsync(CancellationToken.None)).ShouldBeTrue();
+		}
+		finally
+		{
+			window.Close();
+			Application.Current.Styles.Remove(theme);
+		}
+	}
+
+	[AvaloniaTest]
 	public async Task Visiting_terminal_template_tabs_does_not_mark_profiles_dirty()
 	{
 		(var vm, _) = await CreateViewModelAsync();
@@ -1042,16 +1186,13 @@ public sealed class SettingsWindowInteractionTests : IDisposable
 
 		var scenario = scenarios.SelectedItem.ShouldBeOfType<ScenarioItemViewModel>();
 		var selector = window.GetVisualDescendants()
-			.OfType<ComboBox>()
-			.Where(combo => ReferenceEquals(combo.ItemsSource, scenario.ReviewerInstructions))
-			.ShouldHaveSingleItem();
-		selector.SelectedItem.ShouldBeSameAs(scenario.DefaultReviewerInstruction);
-
-		var replacement = scenario.ReviewerInstructions[^1];
-		selector.SelectedItem = replacement;
+			.OfType<CheckBox>()
+			.Single(box => Equals(box.Content, "Strict review by default"));
+		selector.IsChecked.ShouldBe(true);
+		selector.IsChecked = false;
 		await SettingsWindow.DrainUiQueueAsync();
 
-		scenario.DefaultReviewerInstructionId.ShouldBe(replacement.Id);
+		scenario.DefaultStrict.ShouldBeFalse();
 		(await scenarios.SaveAsync(CancellationToken.None)).ShouldBeTrue();
 		window.Close();
 	}
@@ -1075,10 +1216,49 @@ public sealed class SettingsWindowInteractionTests : IDisposable
 	}
 
 	[AvaloniaTest]
+	public async Task Leaving_dirty_appearance_tab_can_return_or_save_before_switching()
+	{
+		var (vm, _) = await CreateViewModelAsync();
+		Queue<MessageDialogResult> answers = new([MessageDialogResult.Cancel, MessageDialogResult.Yes]);
+		using var window = CreateWindow(vm, answers: answers);
+		FluentTheme theme = new();
+		Application.Current!.Styles.Add(theme);
+		try
+		{
+			window.InitialSection = SettingsSection.Appearance;
+			await window.InitializeAsync();
+			window.Show();
+			window.UpdateLayout();
+			var appearance = vm.ActiveSection.ShouldBeOfType<AppearanceSectionViewModel>();
+			appearance.FontFamily = "Consolas";
+			var tabs = window.GetVisualDescendants().OfType<TabControl>().Single();
+			var next = tabs.ContainerFromIndex(1).ShouldBeOfType<TabItem>();
+			var point = next.TranslatePoint(new Point(next.Bounds.Width / 2, next.Bounds.Height / 2), window)!.Value;
+
+			window.MouseDown(point, MouseButton.Left);
+			window.MouseUp(point, MouseButton.Left);
+			await DrainUiTwiceAsync();
+			tabs.SelectedIndex.ShouldBe(0);
+			appearance.IsDirty.ShouldBeTrue();
+
+			window.MouseDown(point, MouseButton.Left);
+			window.MouseUp(point, MouseButton.Left);
+			await WaitUntilAsync(() => vm.SavedAnyFile);
+			tabs.SelectedIndex.ShouldBe(1);
+			appearance.IsDirty.ShouldBeFalse();
+		}
+		finally
+		{
+			window.Close();
+			Application.Current.Styles.Remove(theme);
+		}
+	}
+
+	[AvaloniaTest]
 	public async Task Dirty_section_switch_can_cancel_or_discard_and_reload()
 	{
 		(var vm, _) = await CreateViewModelAsync();
-		Queue<MessageDialogResult> answers = new([MessageDialogResult.No, MessageDialogResult.Yes]);
+		Queue<MessageDialogResult> answers = new([MessageDialogResult.Cancel, MessageDialogResult.No]);
 		using var window = CreateWindow(vm, answers: answers);
 		await window.InitializeAsync();
 
@@ -1162,7 +1342,7 @@ public sealed class SettingsWindowInteractionTests : IDisposable
 	public async Task Escape_uses_the_close_discard_path()
 	{
 		(var vm, _) = await CreateViewModelAsync();
-		Queue<MessageDialogResult> answers = new([MessageDialogResult.No, MessageDialogResult.Yes]);
+		Queue<MessageDialogResult> answers = new([MessageDialogResult.Cancel, MessageDialogResult.No]);
 		using var window = CreateWindow(vm, answers: answers);
 		await window.InitializeAsync();
 		window.Show();
@@ -1345,6 +1525,8 @@ public sealed class SettingsWindowInteractionTests : IDisposable
 
 	private sealed class FakeProjectSettingsEditor : IProjectSettingsEditor
 	{
+		public Task UpdateWebPageSettingsAsync(string id, RootWebPageSettingsEdit edit, CancellationToken ct) => throw new NotSupportedException();
+
 		public Task UpdateProjectSettingsAsync(string projectId, ProjectSettingsEdit edit, CancellationToken ct) =>
 			Task.CompletedTask;
 

@@ -23,6 +23,7 @@ public sealed class ProjectsSectionViewModel : SettingsSectionViewModelBase
 	private readonly Func<IReadOnlyList<WorkspaceViewModel>> _workspacesProvider;
 	private readonly IProjectSettingsEditor _editor;
 	private readonly Func<Task<string?>> _pickDirectoryAsync;
+	private string? _scopedTabId;
 
 	/// <summary>
 	/// Creates a project list section. The same type serves both the active and paused lists,
@@ -78,21 +79,28 @@ public sealed class ProjectsSectionViewModel : SettingsSectionViewModelBase
 	/// <inheritdoc />
 	public override Task LoadAsync(CancellationToken cancellationToken)
 	{
+		LoadObject(null, null);
+		return Task.CompletedTask;
+	}
+
+	/// <summary>Loads only the project or individual tab an object editor can display and save.</summary>
+	public void LoadObject(string? projectId, string? tabId)
+	{
+		_scopedTabId = tabId;
 		DetachAllItems();
 		Items.Clear();
 		SelectedItem = null;
 		StatusText = null;
 
-		foreach (var workspace in _workspacesProvider())
+		foreach (var workspace in _workspacesProvider().Where(workspace => projectId is null || projectId == workspace.Id))
 		{
-			ProjectItemViewModel item = new(workspace);
+			ProjectItemViewModel item = new(workspace, tabId);
 			AttachItem(item);
 			Items.Add(item);
 		}
 
 		SelectedItem = Items.Count > 0 ? Items[0] : null;
 		ClearDirty();
-		return Task.CompletedTask;
 	}
 
 	/// <summary>
@@ -107,7 +115,7 @@ public sealed class ProjectsSectionViewModel : SettingsSectionViewModelBase
 	{
 		foreach (var project in Items)
 		{
-			var projectError = project.Validate();
+			var projectError = _scopedTabId is null ? project.Validate() : null;
 			if (projectError is not null)
 			{
 				StatusText = projectError;
@@ -123,6 +131,15 @@ public sealed class ProjectsSectionViewModel : SettingsSectionViewModelBase
 					return false;
 				}
 			}
+
+			foreach (var page in project.WebPages)
+			{
+				if (page.Validate() is { } error)
+				{
+					StatusText = error;
+					return false;
+				}
+			}
 		}
 
 		string? failure = null;
@@ -130,7 +147,7 @@ public sealed class ProjectsSectionViewModel : SettingsSectionViewModelBase
 		foreach (var project in Items)
 		{
 			var projectEdit = project.BuildProjectEdit();
-			if (projectEdit != EmptyProjectEdit)
+			if (_scopedTabId is null && projectEdit != EmptyProjectEdit)
 			{
 				try
 				{
@@ -162,6 +179,20 @@ public sealed class ProjectsSectionViewModel : SettingsSectionViewModelBase
 					{
 						failure ??= $"Failed to save session '{session.Title}': {ex.Message}";
 					}
+				}
+			}
+
+			foreach (var page in project.WebPages.Where(page => page.IsItemDirty))
+			{
+				try
+				{
+					await _editor.UpdateWebPageSettingsAsync(page.Id, page.BuildEdit(), cancellationToken);
+					page.Rebaseline();
+					appliedCount++;
+				}
+				catch (Exception ex)
+				{
+					failure ??= $"Failed to save web tab '{page.Title}': {ex.Message}";
 				}
 			}
 		}
@@ -229,6 +260,10 @@ public sealed class ProjectsSectionViewModel : SettingsSectionViewModelBase
 		if (session is not null)
 		{
 			project.SelectedSession = session;
+		}
+		else if (project.WebPages.FirstOrDefault(page => page.Id == subItemId) is { } page)
+		{
+			project.SelectedTab = page;
 		}
 	}
 

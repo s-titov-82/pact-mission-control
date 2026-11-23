@@ -32,6 +32,16 @@
       <Setter Property="HorizontalContentAlignment" Value="Center" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
+    <Style Selector="Button.confirm-delete">
+      <Setter Property="Height" Value="26" />
+      <Setter Property="Foreground" Value="{DynamicResource AppDangerStrongBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppDangerBrush}" />
+      <Setter Property="Padding" Value="8,0" />
+    </Style>
+    <Style Selector="Button.confirm-delete:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.confirm-delete:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Foreground" Value="{DynamicResource AppDangerStrongBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppDangerBrush}" />
+    </Style>
     <Style Selector="Button.scenario-command, ToggleButton.scenario-command">
       <Setter Property="Height" Value="34" />
       <Setter Property="Padding" Value="10,0" />

@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:Pact.Presentation.ViewModels"
+        xmlns:local="using:Pact.App.Avalonia.Views"
         x:Class="Pact.App.Avalonia.Views.Dialogs.DirectorySelectionWindow"
         Icon="/Assets/AppIcon.ico"
         x:DataType="vm:DirectorySelectionViewModel"
@@ -46,9 +47,23 @@
                    Text="Recent directories" />
         <ListBox x:Name="RecentDirectoryList"
                  Grid.Row="1"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                  ItemsSource="{Binding RecentDirectories}"
                  SelectedItem="{Binding SelectedRecentDirectory, Mode=TwoWay}"
-                 DoubleTapped="OnRecentDirectoryDoubleTapped" />
+                 DoubleTapped="OnRecentDirectoryDoubleTapped">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="x:String">
+              <Grid ColumnDefinitions="*,Auto" Margin="4,2">
+                <TextBlock Text="{Binding}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding}"
+                           VerticalAlignment="Center" />
+                <local:InlineDeleteButton Grid.Column="1" Classes="compact-icon" ToolTip.Tip="Forget directory"
+                        AutomationProperties.Name="Forget directory" Click="OnForgetClicked">
+                  <PathIcon Width="12" Height="12" Data="{StaticResource AppCloseIcon}" />
+                </local:InlineDeleteButton>
+              </Grid>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
       </Grid>
     </Border>
 

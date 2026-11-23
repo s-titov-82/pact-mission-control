@@ -99,16 +99,18 @@
             <TextBlock Text="Paused" FontSize="16" FontWeight="SemiBold" />
             <TextBlock Text="No paused projects" IsVisible="{Binding IsPausedEmpty}" TextWrapping="Wrap"
                        Foreground="{DynamicResource AppTextMutedBrush}" />
-            <ItemsControl ItemsSource="{Binding PausedProjects}">
+<ItemsControl ItemsSource="{Binding PausedProjects}">
               <ItemsControl.Template>
                 <ControlTemplate><ItemsPresenter Name="PART_ItemsPresenter" /></ControlTemplate>
               </ItemsControl.Template>
               <ItemsControl.ItemTemplate>
                 <DataTemplate DataType="vm:WorkspaceViewModel">
-                  <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,6">
+                  <Grid ColumnDefinitions="*,Auto,Auto,Auto" Margin="0,0,0,6">
                     <TextBlock Text="{Binding Name}" ToolTip.Tip="{Binding RootPath}" Margin="0,0,8,0"
                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                    <Button Grid.Column="1" Classes="dashboard-resume-project" Content="▶" Width="28" Height="28"
+                    <Button Grid.Column="1" Classes="compact-icon" ToolTip.Tip="Edit project" AutomationProperties.Name="Edit project" Click="OnEditArchivedClicked"><PathIcon Width="12" Height="12" Data="{StaticResource AppEditIcon}" /></Button>
+                    <local:InlineDeleteButton Grid.Column="3" Classes="compact-icon" ToolTip.Tip="Remove project and saved tabs from Pact" AutomationProperties.Name="Remove from Pact" Click="OnRemoveArchivedClicked"><PathIcon Width="12" Height="12" Data="{StaticResource AppCloseIcon}" /></local:InlineDeleteButton>
+                    <Button Grid.Column="2" Classes="dashboard-resume-project" Content="▶" Width="28" Height="28"
                             HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
                             Padding="0" ToolTip.Tip="Restore project" AutomationProperties.Name="Restore project"
                             Click="OnResumeProjectClicked" />
@@ -125,15 +127,16 @@
             <TextBlock Text="Recent" FontSize="16" FontWeight="SemiBold" />
             <TextBlock Text="{Binding RecentEmptyText}" IsVisible="{Binding IsRecentEmpty}" TextWrapping="Wrap"
                        Foreground="{DynamicResource AppTextMutedBrush}" />
-            <ItemsControl ItemsSource="{Binding RecentDirectories}">
+<ItemsControl ItemsSource="{Binding RecentDirectories}">
               <ItemsControl.Template>
                 <ControlTemplate><ItemsPresenter Name="PART_ItemsPresenter" /></ControlTemplate>
               </ItemsControl.Template>
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                  <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,6">
+                  <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,6">
                     <TextBlock Text="{Binding}" ToolTip.Tip="{Binding}" Margin="0,0,8,0"
                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                    <local:InlineDeleteButton Grid.Column="2" Classes="compact-icon" ToolTip.Tip="Forget directory" AutomationProperties.Name="Forget directory" Click="OnForgetRecentClicked"><PathIcon Width="12" Height="12" Data="{StaticResource AppCloseIcon}" /></local:InlineDeleteButton>
                     <Button Grid.Column="1" Classes="dashboard-open-recent" Content="▶" Width="28" Height="28"
                             HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
                             Padding="0" ToolTip.Tip="Open project" AutomationProperties.Name="Open project"

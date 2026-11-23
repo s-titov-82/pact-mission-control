@@ -36,7 +36,7 @@ public sealed class ShellProfileItemViewModel : SettingsItemViewModelBase
 	public override JsonObject Node => _node;
 
 	/// <summary>Options for the "Agent kind" combo box; same list for every instance.</summary>
-	public IReadOnlyList<AgentKind> KindOptions { get; } = Enum.GetValues<AgentKind>();
+	public IReadOnlyList<AgentKind> KindOptions { get; } = [AgentKind.Codex, AgentKind.Claude, AgentKind.Pwsh, AgentKind.Custom];
 
 	/// <summary>Optional native agent configuration root shared by launches and the skill editor.</summary>
 	public string? NativeConfigDirectory
@@ -100,9 +100,54 @@ public sealed class ShellProfileItemViewModel : SettingsItemViewModelBase
 			NativeConfigDirectory = string.IsNullOrWhiteSpace(NativeConfigDirectory) ? null : NativeConfigDirectory.Trim()
 		};
 
+	private string? PresetCommand => Kind switch
+	{
+		AgentKind.Codex => "codex",
+		AgentKind.Claude => "claude",
+		AgentKind.Pwsh => "pwsh",
+		_ => null
+	};
+
+	private string? PresetOption => Kind switch
+	{
+		AgentKind.Codex => "--approve-for-me",
+		AgentKind.Claude => "--permission-mode auto",
+		AgentKind.Pwsh => "-NoProfile",
+		_ => null
+	};
+
+	/// <summary>Shows a switch only for exact, supported launch commands.</summary>
+	public bool HasPreset => PresetCommand is not null &&
+		(CommandTemplate == PresetCommand || CommandTemplate == $"{PresetCommand} {PresetOption}");
+
+	/// <summary>Describes the effect on newly launched terminals.</summary>
+	public string PresetOptionLabel => Kind switch
+	{
+		AgentKind.Codex => "Use automatic approval review for new sessions",
+		AgentKind.Claude => "Use auto permission mode for new sessions",
+		AgentKind.Pwsh => "Start without loading the PowerShell profile",
+		_ => string.Empty
+	};
+
+	/// <summary>Applies or removes the preset's launch option without changing resume commands.</summary>
+	public bool PresetOptionEnabled
+	{
+		get => HasPreset && CommandTemplate != PresetCommand;
+		set
+		{
+			if (HasPreset && value != PresetOptionEnabled)
+			{
+				CommandTemplate = value ? $"{PresetCommand} {PresetOption}" : PresetCommand!;
+			}
+		}
+	}
+
 	private void ProfileChanged()
 	{
 		Diagnostics = Untested;
+		OnPropertyChanged(nameof(HasPreset));
+		OnPropertyChanged(nameof(PresetOptionEnabled));
+		OnPropertyChanged(nameof(PresetOptionLabel));
 		RaiseChanged();
 	}
 
@@ -128,8 +173,25 @@ public sealed class ShellProfileItemViewModel : SettingsItemViewModelBase
 		get => _kind;
 		set
 		{
+			var usePreset = HasPreset || string.IsNullOrWhiteSpace(CommandTemplate);
+			var useResumePreset = string.IsNullOrEmpty(ResumeCommandTemplate)
+				|| ResumeCommandTemplate == (Kind == AgentKind.Codex ? "codex resume" : "claude --resume");
 			if (SetField(ref _kind, value))
 			{
+				if (usePreset && PresetCommand is { } executable)
+				{
+					CommandTemplate = executable;
+					if (useResumePreset)
+					{
+						ResumeCommandTemplate = Kind switch
+						{
+							AgentKind.Codex => "codex resume",
+							AgentKind.Claude => "claude --resume",
+							_ => null
+						};
+					}
+					DefaultShell = string.IsNullOrWhiteSpace(DefaultShell) ? "pwsh" : DefaultShell;
+				}
 				ProfileChanged();
 			}
 		}

@@ -1,9 +1,12 @@
 using System.ComponentModel;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Layout;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using Avalonia.Threading;
@@ -36,12 +39,10 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 		static _ => Task.CompletedTask;
 	private readonly Func<CancellationToken, Task> _openUpdateContainingFolderAsync =
 		static _ => Task.CompletedTask;
-	private readonly Func<CancellationToken, Task> _softRestartAsync =
-		static _ => Task.CompletedTask;
 	private readonly Func<CancellationToken, Task> _restartAndUpdateAsync =
 		static _ => Task.CompletedTask;
 	private SettingsSectionViewModelBase? _previousSection;
-	private bool _suppressSectionSelection;
+	private SelectingItemsControl? _tabInput;
 	private bool _initialized;
 	private bool _closeApproved;
 	private bool _closePromptRunning;
@@ -51,6 +52,15 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 	public SettingsWindow()
 	{
 		InitializeComponent();
+		SectionContent.AddHandler(PointerPressedEvent, (_, e) => TrackTabInput(e.Source), RoutingStrategies.Tunnel);
+		SectionContent.AddHandler(KeyDownEvent, (_, e) =>
+		{
+			if (e.Key is Key.Left or Key.Right or Key.Home or Key.End or Key.Tab or Key.Up or Key.Down)
+			{
+				TrackTabInput(e.Source);
+			}
+		}, RoutingStrategies.Tunnel);
+		SectionContent.AddHandler(SelectingItemsControl.SelectionChangedEvent, OnEditorTabChanged);
 		Opened += OnOpened;
 		Closing += OnClosing;
 		Closed += OnClosed;
@@ -66,7 +76,6 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 		Func<CancellationToken, Task>? checkForUpdatesAsync = null,
 		Func<CancellationToken, Task>? openUpdateReleaseNotesAsync = null,
 		Func<CancellationToken, Task>? openUpdateContainingFolderAsync = null,
-		Func<CancellationToken, Task>? softRestartAsync = null,
 		Func<CancellationToken, Task>? restartAndUpdateAsync = null)
 		: this()
 	{
@@ -81,23 +90,49 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 			openUpdateReleaseNotesAsync ?? _openUpdateReleaseNotesAsync;
 		_openUpdateContainingFolderAsync =
 			openUpdateContainingFolderAsync ?? _openUpdateContainingFolderAsync;
-		_softRestartAsync = softRestartAsync ?? _softRestartAsync;
 		_restartAndUpdateAsync = restartAndUpdateAsync ?? _restartAndUpdateAsync;
 		DataContext = viewModel;
-		SectionList.ItemsSource = viewModel.Sections;
+		SettingsSection[] navigation = [SettingsSection.Appearance, SettingsSection.Updates, SettingsSection.LaunchProfiles,
+			SettingsSection.PromptTemplates, SettingsSection.GitHelpers, SettingsSection.Scenarios,
+			SettingsSection.ReviewProfiles, SettingsSection.WebLinkTemplates, SettingsSection.WebMonitoringRules];
+		foreach (var section in navigation.SelectMany(id => viewModel.Sections.Where(section => section.Section == id)))
+		{
+			if (section.GroupHeading is { } heading)
+			{
+				SectionList.Children.Add(new TextBlock { Text = heading, Classes = { "group-heading" } });
+			}
+			var button = new Button { Content = section.NavigationLabel, Tag = section };
+			button.Click += (_, _) => RunEvent("settings-section-selection", () => TrySelectSectionAsync(section));
+			SectionList.Children.Add(button);
+			if (section.Section == SettingsSection.LaunchProfiles)
+			{
+				var row = new DockPanel();
+				var indicator = new TextBlock { Text = "↗", HorizontalAlignment = HorizontalAlignment.Right };
+				DockPanel.SetDock(indicator, Dock.Right);
+				row.Children.Add(indicator);
+				row.Children.Add(new TextBlock { Text = "Skill catalog" });
+				var catalog = new Button { Content = row };
+				AutomationProperties.SetName(catalog, "Skill catalog");
+				ToolTip.SetTip(catalog, "Open skill catalog in a separate window");
+				catalog.Click += (_, _) => RunEvent("settings-skills", OpenSkillsAsync);
+				SectionList.Children.Add(catalog);
+			}
+		}
 		viewModel.PropertyChanged += OnWindowViewModelPropertyChanged;
 		AddHandler(Button.ClickEvent, OnTemplateButtonClicked, RoutingStrategies.Bubble);
+		AddHandler(ComboBox.SelectionChangedEvent, OnProfileSelectionChanged, RoutingStrategies.Bubble);
 		foreach (var updates in viewModel.Sections.OfType<UpdatesSectionViewModel>())
 		{
 			updates.CheckRequested += OnUpdateCheckRequested;
 			updates.OpenReleaseNotesRequested += OnUpdateReleaseNotesRequested;
 			updates.OpenContainingFolderRequested += OnUpdateContainingFolderRequested;
-			updates.SoftRestartRequested += OnSoftRestartRequested;
 			updates.RestartAndUpdateRequested += OnRestartAndUpdateRequested;
 		}
 	}
 
 	public SettingsSection InitialSection { get; set; } = SettingsSection.Projects;
+
+	internal bool IsObjectEditor { get; init; }
 
 	public string? InitialItemId { get; set; }
 
@@ -106,9 +141,6 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 	internal Func<AgentProfileRecord, CancellationToken, Task<string>>? CheckProfileAsync { get; init; }
 
 	internal Func<AgentProfileRecord, CancellationToken, Task>? LaunchTestProfileAsync { get; init; }
-
-	private void OnOpenSkillsClicked(object? sender, RoutedEventArgs e) =>
-		RunEvent("settings-skills", OpenSkillsAsync);
 
 	private async Task OpenSkillsAsync()
 	{
@@ -145,8 +177,37 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 			return;
 		}
 
-		await _viewModel.InitializeAsync(
-			InitialSection, InitialItemId, InitialSubItemId, CancellationToken.None);
+		if (IsObjectEditor)
+		{
+			var section = _viewModel.Sections.Single(candidate => candidate.Section == InitialSection);
+			if (section is ProjectsSectionViewModel projects)
+			{
+				projects.LoadObject(InitialItemId, InitialSubItemId);
+			}
+			else if (section is RootTabsSectionViewModel tabs)
+			{
+				tabs.LoadObject(InitialItemId);
+			}
+			else
+			{
+				await section.LoadAsync(CancellationToken.None);
+			}
+			section.SelectItem(InitialItemId, InitialSubItemId);
+			_viewModel.ActiveSection = section;
+			var screen = Screens.ScreenFromWindow(this) ?? Screens.Primary;
+			MinHeight = 0;
+			MinWidth = 380;
+			var preferredWidth = InitialSubItemId is not null || section is RootTabsSectionViewModel ? 560 : 760;
+			Width = screen is null ? preferredWidth : Math.Min(preferredWidth, screen.WorkingArea.Width / screen.Scaling - 32);
+			MaxHeight = screen is null ? 900 : Math.Max(240, screen.WorkingArea.Height / screen.Scaling - 64);
+			Height = double.NaN;
+			SizeToContent = SizeToContent.Height;
+		}
+		else
+		{
+			await _viewModel.InitializeAsync(
+				InitialSection, InitialItemId, InitialSubItemId, CancellationToken.None);
+		}
 		_initialized = true;
 		_previousSection = _viewModel.ActiveSection;
 		SelectSection(_viewModel.ActiveSection);
@@ -159,10 +220,11 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 			return;
 		}
 
-		_suppressSectionSelection = true;
 		_viewModel.ActiveSection = section;
-		SectionList.SelectedItem = section;
-		_suppressSectionSelection = false;
+		foreach (var button in SectionList.Children.OfType<Button>())
+		{
+			button.Classes.Set("current", section is not null && ReferenceEquals(button.Tag, section));
+		}
 		_previousSection = section;
 		RefreshActiveSection();
 	}
@@ -178,18 +240,11 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 		var leaving = _previousSection ?? _viewModel.ActiveSection;
 		if (leaving is not null && !ReferenceEquals(leaving, target) && leaving.IsDirty)
 		{
-			var result = await ShowMessageAsync(new MessageDialogRequest(
-				"Unsaved changes",
-				"Discard unsaved settings changes?",
-				MessageDialogButtons.YesNo,
-				MessageDialogResult.No));
-			if (result != MessageDialogResult.Yes)
+			SelectSection(leaving);
+			if (!await ResolveUnsavedChangesAsync(leaving, closing: false))
 			{
-				SelectSection(leaving);
 				return false;
 			}
-
-			await leaving.ReloadAsync(CancellationToken.None);
 		}
 
 		if (leaving is WebMonitoringRulesSectionViewModel monitoring
@@ -317,16 +372,52 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 		}
 	}
 
-	private void OnSectionSelectionChanged(object? sender, SelectionChangedEventArgs e)
+	private void TrackTabInput(object? source)
 	{
-		if (_suppressSectionSelection || SectionList.SelectedItem is not SettingsSectionViewModelBase target)
+		if (_viewModel?.ActiveSection?.IsDirty != true || source is not Control control)
 		{
 			return;
 		}
+		var selector = control.GetSelfAndVisualAncestors().OfType<SelectingItemsControl>().FirstOrDefault();
+		if (selector is not TabControl && !(selector is ListBox list
+			&& TryGetResource("SettingsTabItemTheme", ActualThemeVariant, out var tabTheme)
+			&& ReferenceEquals(list.ItemContainerTheme, tabTheme)))
+		{
+			return;
+		}
+		_tabInput = selector;
+		Dispatcher.UIThread.Post(() => _tabInput = null, DispatcherPriority.Background);
+	}
 
-		RunEvent(
-			"settings-section-selection",
-			() => TrySelectSectionAsync(target));
+	private void OnEditorTabChanged(object? sender, SelectionChangedEventArgs e)
+	{
+		if (_tabInput is not { } tabs || !ReferenceEquals(tabs, e.Source)
+			|| _viewModel?.ActiveSection is not { IsDirty: true } section
+			|| e.RemovedItems.Count != 1 || e.AddedItems.Count != 1)
+		{
+			return;
+		}
+		_tabInput = null;
+		var target = e.AddedItems[0];
+		var index = tabs.SelectedIndex;
+		tabs.SelectedItem = e.RemovedItems[0];
+		RunEvent("settings-change-tab", async () =>
+		{
+			if (!await ResolveUnsavedChangesAsync(section, closing: false))
+			{
+				return;
+			}
+			// Reloading a file after Discard creates fresh item VMs. Resolve the intended tab again.
+			if (target is SettingsItemViewModelBase item && item.Node["id"]?.ToString() is { } id)
+			{
+				tabs.SelectedItem = tabs.Items.OfType<SettingsItemViewModelBase>()
+					.FirstOrDefault(candidate => candidate.Node["id"]?.ToString() == id) ?? tabs.SelectedItem;
+			}
+			else if (index >= 0 && index < tabs.ItemCount)
+			{
+				tabs.SelectedIndex = index;
+			}
+		});
 	}
 
 	private void OnOpenRawJsonClicked(object? sender, RoutedEventArgs e) =>
@@ -349,11 +440,6 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 		RunEvent(
 			"settings-open-update-containing-folder",
 			() => _openUpdateContainingFolderAsync(_lifetimeCancellation.Token));
-
-	private void OnSoftRestartRequested(object? sender, EventArgs e) =>
-		RunEvent(
-			"settings-soft-restart",
-			() => _softRestartAsync(_lifetimeCancellation.Token));
 
 	private void OnRestartAndUpdateRequested(object? sender, EventArgs e) =>
 		RunEvent(
@@ -402,6 +488,14 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 	private void OnSaveClicked(object? sender, RoutedEventArgs e) =>
 		RunEvent("settings-save", SaveAsync);
 
+	private void OnProfileSelectionChanged(object? sender, SelectionChangedEventArgs e)
+	{
+		if (e.Source is ComboBox { Tag: "TerminalProfile", DataContext: AppearanceSectionViewModel appearance } picker)
+		{
+			appearance.SelectProfile(picker.SelectedIndex, ActualThemeVariant == ThemeVariant.Dark);
+		}
+	}
+
 	private void OnTemplateButtonClicked(object? sender, RoutedEventArgs e)
 	{
 		if (e.Source is not Button { Tag: string action } button || _viewModel is null)
@@ -444,9 +538,6 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 					using StreamReader reader = new(stream);
 					appearance.LoadProfiles(await reader.ReadToEndAsync(_lifetimeCancellation.Token));
 				}
-				break;
-			case "ImportTerminalProfile" when button.DataContext is AppearanceSectionViewModel terminal:
-				terminal.ImportProfile(ActualThemeVariant == ThemeVariant.Dark);
 				break;
 			case "CheckProfile" when button.DataContext is ShellProfileItemViewModel profile && CheckProfileAsync is { } check:
 				await profile.CheckAsync(check, _lifetimeCancellation.Token);
@@ -512,13 +603,6 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 			case "Delete" when button.DataContext is SettingsItemViewModelBase item:
 				await TryDeleteItemAsync(item);
 				break;
-			case "AddReviewer" when button.DataContext is ScenarioItemViewModel scenario:
-				scenario.AddInstruction();
-				break;
-			case "RemoveReviewer" when button.DataContext is ScenarioItemViewModel scenario
-									   && scenario.SelectedInstruction is not null:
-				scenario.RemoveInstruction(scenario.SelectedInstruction);
-				break;
 			case "AddGitCommand" when button.DataContext is GitHelpersSectionViewModel git:
 				git.AddNewCommand();
 				break;
@@ -554,9 +638,6 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 			case "OpenUpdateContainingFolder" when button.DataContext is UpdatesSectionViewModel updates:
 				updates.RequestOpenContainingFolder();
 				break;
-			case "SoftRestart" when button.DataContext is UpdatesSectionViewModel updates:
-				updates.RequestSoftRestart();
-				break;
 			case "RestartAndUpdate" when button.DataContext is UpdatesSectionViewModel updates:
 				updates.RequestRestartAndUpdate();
 				break;
@@ -573,7 +654,10 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 		SaveButton.IsEnabled = false;
 		try
 		{
-			await _viewModel.SaveActiveSectionAsync(CancellationToken.None);
+			if (await _viewModel.SaveActiveSectionAsync(CancellationToken.None) && IsObjectEditor)
+			{
+				Close();
+			}
 		}
 		finally
 		{
@@ -604,17 +688,38 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 
 	private async Task ConfirmCloseAsync()
 	{
+		try
+		{
+			if (_viewModel?.ActiveSection is { } section && await ResolveUnsavedChangesAsync(section, closing: true))
+			{
+				_closeApproved = true;
+				Close();
+			}
+		}
+		finally
+		{
+			_closePromptRunning = false;
+		}
+	}
+
+	private async Task<bool> ResolveUnsavedChangesAsync(SettingsSectionViewModelBase section, bool closing)
+	{
 		var result = await ShowMessageAsync(new MessageDialogRequest(
-			"Unsaved changes",
-			"Discard unsaved settings changes?",
-			MessageDialogButtons.YesNo,
-			MessageDialogResult.No));
-		_closePromptRunning = false;
+			"Unsaved changes", $"Save changes to {section.NavigationLabel}?",
+			MessageDialogButtons.SaveDiscardReturn, MessageDialogResult.Cancel));
 		if (result == MessageDialogResult.Yes)
 		{
-			_closeApproved = true;
-			Close();
+			return await _viewModel!.SaveActiveSectionAsync(CancellationToken.None);
 		}
+		if (result != MessageDialogResult.No)
+		{
+			return false;
+		}
+		if (!closing)
+		{
+			await section.ReloadAsync(CancellationToken.None);
+		}
+		return true;
 	}
 
 	private void OnClosed(object? sender, EventArgs e)
@@ -634,7 +739,6 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 			updates.CheckRequested -= OnUpdateCheckRequested;
 			updates.OpenReleaseNotesRequested -= OnUpdateReleaseNotesRequested;
 			updates.OpenContainingFolderRequested -= OnUpdateContainingFolderRequested;
-			updates.SoftRestartRequested -= OnSoftRestartRequested;
 			updates.RestartAndUpdateRequested -= OnRestartAndUpdateRequested;
 			updates.Dispose();
 		}
@@ -684,13 +788,45 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 		var active = _viewModel.ActiveSection;
 		active?.PropertyChanged += OnActiveSectionPropertyChanged;
 
-		SectionTitle.Text = active?.Label ?? string.Empty;
+		SectionTitle.Text = active?.NavigationLabel ?? string.Empty;
 		StatusText.Text = active?.StatusText ?? string.Empty;
 		var supportsFileOperations = active?.SupportsFileOperations == true;
 		OpenRawJsonButton.IsVisible = supportsFileOperations;
 		RevertButton.IsVisible = supportsFileOperations;
 		RevertButton.IsEnabled = supportsFileOperations && active?.IsDirty == true;
 		SaveButton.IsVisible = supportsFileOperations;
+		if (IsObjectEditor)
+		{
+			SettingsNavigation.IsVisible = false;
+			OpenRawJsonButton.IsVisible = false;
+			RevertButton.IsVisible = false;
+			Grid.SetColumn(EditorPane, 0);
+			Grid.SetColumnSpan(EditorPane, 2);
+			EditorPane.Margin = default;
+			SectionHelpButton.IsVisible = false;
+			object? item = active switch
+			{
+				ProjectsSectionViewModel { SelectedItem: { } project } when project.Id == InitialItemId =>
+					InitialSubItemId is null ? project : project.SelectedTab,
+				RootTabsSectionViewModel root => root.SelectedItem,
+				_ => null
+			};
+			var (title, key) = item switch
+			{
+				SessionSettingsItemViewModel session when session.Id == (InitialSubItemId ?? InitialItemId) =>
+					($"Edit session · {session.Title}", "SessionEditorTemplate"),
+				RootWebPageSettingsItemViewModel page when page.Id == (InitialSubItemId ?? InitialItemId) =>
+					($"Edit web page · {page.Title}", "WebPageEditorTemplate"),
+				ProjectItemViewModel project => ($"Edit project · {project.Name}", "ProjectItemTemplate"),
+				_ => ("Item unavailable", "")
+			};
+			Title = SectionTitle.Text = title;
+			SaveButton.Content = "Save changes";
+			SaveButton.IsEnabled = key.Length > 0;
+			SectionContent.ContentTemplate = TryGetResource(key, ActualThemeVariant, out var template) ? template as IDataTemplate : null;
+			SectionContent.Content = key.Length > 0 ? item : null;
+			return;
+		}
 		SectionContent.Content = active;
 		SectionContent.ContentTemplate = active is null ? null : ResolveSectionTemplate(active.Section);
 	}

@@ -65,9 +65,6 @@ public sealed class UpdatesSectionViewModel : SettingsSectionViewModelBase, IDis
 	/// <summary>Occurs when the user requests the verified package's containing folder.</summary>
 	public event EventHandler? OpenContainingFolderRequested;
 
-	/// <summary>Occurs when the user requests the diagnostic soft-restart path.</summary>
-	public event EventHandler? SoftRestartRequested;
-
 	/// <summary>Occurs when the user requests applying the prepared update.</summary>
 	public event EventHandler? RestartAndUpdateRequested;
 
@@ -97,9 +94,6 @@ public sealed class UpdatesSectionViewModel : SettingsSectionViewModelBase, IDis
 			OpenContainingFolderRequested?.Invoke(this, EventArgs.Empty);
 		}
 	}
-
-	/// <summary>Raises the diagnostic soft-restart action.</summary>
-	public void RequestSoftRestart() => SoftRestartRequested?.Invoke(this, EventArgs.Empty);
 
 	/// <summary>Raises update restart only while the verified package is safe.</summary>
 	public void RequestRestartAndUpdate()

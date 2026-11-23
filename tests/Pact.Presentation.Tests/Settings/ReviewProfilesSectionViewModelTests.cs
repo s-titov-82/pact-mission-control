@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Pact.Core.Agents;
 using Pact.Infrastructure.Storage;
 using Pact.Presentation.Services.AgentControl;
 using Pact.Presentation.Settings.ViewModels;
@@ -10,6 +11,38 @@ public sealed class ReviewProfilesSectionViewModelTests : IDisposable
 	private readonly TemporaryDirectory _directory = TemporaryDirectory.Create();
 
 	public void Dispose() => _directory.Dispose();
+
+	[Test]
+	public async Task ChangingReviewerAgentUsesItsExecutableAndSelectedOptions()
+	{
+		var section = await CreateLoadedSectionAsync(
+			"""[{"id":"r","kind":"codex","commandTemplate":"codex -c model_reasoning_effort=high"}]""");
+		var item = section.Items.Single().ShouldBeOfType<ReviewProfileItemViewModel>();
+		item.SelectedEffort.ShouldBe("high");
+		item.Kind = AgentKind.Claude;
+		item.SelectedModel = "opus";
+		item.SelectedEffort = "medium";
+		(await section.SaveAsync(CancellationToken.None)).ShouldBeTrue();
+		await section.LoadAsync(CancellationToken.None);
+		item = section.Items.Single().ShouldBeOfType<ReviewProfileItemViewModel>();
+		item.CommandTemplate.ShouldBe("claude --model opus --effort medium");
+		item.SelectedModel.ShouldBe("opus");
+		item.SelectedEffort.ShouldBe("medium");
+	}
+
+	[Test]
+	public async Task SavingCustomCommandPreservesItsArguments()
+	{
+		const string command = "my-wrapper --profile work --model internal";
+		var section = await CreateLoadedSectionAsync(
+			"""[{"id":"r","kind":"codex","commandTemplate":"my-wrapper --profile work --model internal"}]""");
+		var item = section.Items.Single().ShouldBeOfType<ReviewProfileItemViewModel>();
+		item.UseCustomCommand.ShouldBeTrue();
+		item.DisplayName = "Work";
+		(await section.SaveAsync(CancellationToken.None)).ShouldBeTrue();
+		await section.LoadAsync(CancellationToken.None);
+		section.Items.Single().ShouldBeOfType<ReviewProfileItemViewModel>().CommandTemplate.ShouldBe(command);
+	}
 
 	[Test]
 	public async Task SaveAsync_PreservesUnknownNodes()

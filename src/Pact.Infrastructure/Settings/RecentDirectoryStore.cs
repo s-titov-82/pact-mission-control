@@ -10,6 +10,7 @@ namespace Pact.Infrastructure.Settings;
 public sealed class RecentDirectoryStore
 {
 	private const int MaxRecentDirectories = 20;
+	private static readonly SemaphoreSlim WriteGate = new(1, 1);
 	private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 	private readonly string _path;
 	private readonly string? _stagingDirectory;
@@ -57,18 +58,28 @@ public sealed class RecentDirectoryStore
 	/// Moves <paramref name="directory"/> to the front of the list, dropping any earlier
 	/// occurrence and trimming the tail past the cap. The write is atomic.
 	/// </summary>
-	public async Task AddAsync(string directory, CancellationToken cancellationToken)
+	public Task AddAsync(string directory, CancellationToken cancellationToken) =>
+		UpdateAsync(directory, add: true, cancellationToken);
+
+	/// <summary>Forgets a directory in the recent list without touching its files.</summary>
+	public Task RemoveAsync(string directory, CancellationToken cancellationToken) =>
+		UpdateAsync(directory, add: false, cancellationToken);
+
+	private async Task UpdateAsync(string directory, bool add, CancellationToken cancellationToken)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(directory);
-
-		var existingDirectories = await LoadAsync(cancellationToken);
-		var directories = existingDirectories
-			.Where(existingDirectory => !string.Equals(existingDirectory, directory, StringComparison.OrdinalIgnoreCase))
-			.Prepend(directory)
-			.Take(MaxRecentDirectories)
-			.ToArray();
-
-		var json = JsonSerializer.Serialize(directories, JsonOptions);
-		await AtomicFileWriter.WriteTextAsync(_path, json, _stagingDirectory, cancellationToken);
+		await WriteGate.WaitAsync(cancellationToken);
+		try
+		{
+			var current = await LoadAsync(cancellationToken);
+			var remaining = current.Where(path => !string.Equals(path, directory, StringComparison.OrdinalIgnoreCase));
+			var next = add ? remaining.Prepend(directory).Take(MaxRecentDirectories) : remaining;
+			var json = JsonSerializer.Serialize(next.ToArray(), JsonOptions);
+			await AtomicFileWriter.WriteTextAsync(_path, json, _stagingDirectory, cancellationToken);
+		}
+		finally
+		{
+			WriteGate.Release();
+		}
 	}
 }

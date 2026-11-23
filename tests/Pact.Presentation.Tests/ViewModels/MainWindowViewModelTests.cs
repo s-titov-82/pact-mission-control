@@ -375,6 +375,30 @@ public sealed class MainWindowViewModelTests
 		store.Document.Projects.ShouldHaveSingleItem().ActiveItemId.ShouldBe("session-1");
 	}
 
+	[TestCase(WorkspaceStatus.Active)]
+	[TestCase(WorkspaceStatus.Paused)]
+	public async Task EditingAProjectWebTabUpdatesSavedAndDisplayedFields(WorkspaceStatus status)
+	{
+		var page = CreateWebPageRecord("web-1", DateTimeOffset.UtcNow) with { ResumeUrl = "https://example.com/next" };
+		var project = CreateProjectRecord("project-1", "Project") with { Status = status, WebPages = [page] };
+		InMemoryProjectStore store = new(ProjectsDocument.CreateDefault() with { Projects = [project] });
+		var model = MainWindowViewModelTestFactory.Create(store);
+		await model.LoadAsync(CancellationToken.None);
+		await model.UpdateWebPageSettingsAsync(page.Id, new(Title: "News"), CancellationToken.None);
+		var saved = store.Document.Projects.Single().WebPages.Single();
+		saved.StartUrl.ShouldBe(page.StartUrl);
+		saved.ResumeUrl.ShouldBe(page.ResumeUrl);
+		saved.Title.ShouldBe("News");
+
+		await model.UpdateWebPageSettingsAsync(page.Id, new(Url: "https://example.com/new"), CancellationToken.None);
+		var workspace = model.Workspaces.Concat(model.PausedWorkspaces).Single();
+		saved = store.Document.Projects.Single().WebPages.Single();
+		saved.StartUrl.ShouldBe("https://example.com/new");
+		saved.ResumeUrl.ShouldBe(saved.StartUrl);
+		workspace.Record.Status.ShouldBe(status);
+		workspace.WebPages.Single().Record.ShouldBe(saved);
+	}
+
 	[Test]
 	public async Task UpdateWebPageResumeUrlAsync_persists_url_title_and_last_active_time()
 	{
@@ -795,17 +819,7 @@ public sealed class MainWindowViewModelTests
 				"custom-review",
 				ScenarioKind.ReviewLoop,
 				"Custom Review",
-				MaxIterations: 3,
-				StopMarker: "DONE",
-				StartPromptTemplate: "review {target}",
-				FirstFeedbackTemplate: "feedback {reviewerOutput}",
-				AuthorReturnTemplate: "author return {authorOutput}",
-				FeedbackTemplate: "feedback {reviewerOutput}",
-				ReviewerInstructions:
-				[
-					new("strict", "Strict", "Strict tail")
-				],
-				DefaultReviewerInstructionId: "strict")
+				ReviewRules: "Inspect changed behavior.")
 		];
 
 		viewModel.ReplaceScenarioDefinitions(scenarioDefinitions);

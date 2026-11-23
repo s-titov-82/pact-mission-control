@@ -23,6 +23,15 @@ internal sealed partial class AvaloniaMainShellController
 		_uiTaskDispatcher.Post, _timeProvider, ViewModel.PausedWorkspaces, LoadRecentDirectoriesAsync);
 	public bool IsDashboardVisible => PresentedSurface is PresentedSurface.Dashboard;
 
+	internal async Task RemoveRecentDirectoryAsync(string directory)
+	{
+		await _recentDirectoryStore.RemoveAsync(directory, CancellationToken.None);
+		if (_dashboard is not null)
+		{
+			await _dashboard.RefreshRecentDirectoriesAsync();
+		}
+	}
+
 	public async Task OpenRecentProjectAsync(string directory, CancellationToken cancellationToken = default)
 	{
 		ObjectDisposedException.ThrowIf(_disposed, this);

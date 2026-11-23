@@ -108,12 +108,18 @@ public sealed class AppearanceSectionViewModelTests : IDisposable
 			{
 			  // Windows Terminal accepts comments and trailing commas.
 			  "profiles": { "defaults": { "font": { "face": "Consolas", "size": 11 } },
-			    "list": [{"name":"Shell"}, {"name":"PowerShell","font":{"size":12},"background":"#123",}] },
+			    "list": [{"name":"Shell","colorScheme":"missing"}, {"name":"PowerShell","font":{"size":12},"background":"#123",}] },
 			  "schemes": []
 			}
 			""");
-		editor.ProfileIndex = 1;
-		editor.ImportProfile(dark: true);
+		editor.ProfileIndex.ShouldBe(-1);
+		editor.IsDirty.ShouldBeFalse();
+		editor.SelectProfile(0, systemDark: true);
+		editor.StatusText.ShouldNotBeNull().ShouldContain("missing");
+		editor.IsDirty.ShouldBeFalse();
+		editor.SelectProfile(1, systemDark: true);
+		editor.StatusText.ShouldBeNull();
+		editor.IsDirty.ShouldBeTrue();
 		editor.FontFamily.ShouldBe("Consolas");
 		editor.FontSize.ShouldBe(16);
 		editor.PreviewBackground.ShouldBe("#112233");

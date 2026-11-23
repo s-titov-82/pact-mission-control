@@ -11,7 +11,6 @@ task-oriented introduction.
 - [Paused projects](settings-paused-projects.md)
 - [Terminal templates](settings-launch-profiles.md)
 - [Review profiles](settings-review-profiles.md)
-- [Orchestrator](settings-orchestrator.md)
 - [Web link templates](settings-web-link-templates.md)
 - [Web monitoring rules](settings-web-monitoring-rules.md)
 - [Prompt and shell templates](settings-prompt-templates.md)
