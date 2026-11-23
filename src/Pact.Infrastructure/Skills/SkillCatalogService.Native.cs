@@ -59,7 +59,7 @@ public sealed partial class SkillCatalogService
 			{
 				var defaultHome = Path.Combine(_userHome, kind == AgentKind.Codex ? ".codex" : ".claude");
 				Add(Path.Combine(defaultHome, "skills"), kind);
-				var inherited = Environment.GetEnvironmentVariable(kind == AgentKind.Codex ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR");
+				var inherited = SkillActivationService.InheritedHome(_userHome, kind);
 				if (!string.IsNullOrWhiteSpace(inherited) && Path.IsPathFullyQualified(inherited))
 				{
 					Add(Path.Combine(inherited, "skills"), kind);
@@ -92,11 +92,16 @@ public sealed partial class SkillCatalogService
 			}
 
 			var installations = new Dictionary<string, (CatalogSkill Package, List<NativeSkillConnection> Connections)>(StringComparer.OrdinalIgnoreCase);
+			foreach (var parent in roots.Keys.Select(Path.GetDirectoryName).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase))
+			{
+				cancellationToken.ThrowIfCancellationRequested();
+				SkillPackageReader.ReportStagedPackagesIn(parent, warnings);
+			}
 			foreach (var (root, ownership) in roots)
 			{
 				try
 				{
-					var packages = await _reader.ReadAsync(root, true, null, cancellationToken).ConfigureAwait(false);
+					var packages = await _reader.ReadAsync(root, true, null, cancellationToken, warnings).ConfigureAwait(false);
 					foreach (var package in packages)
 					{
 						var manifest = package.InstalledFilePath!;
@@ -121,7 +126,8 @@ public sealed partial class SkillCatalogService
 			}
 
 			Volatile.Write(ref _maintenanceRoots, roots.Keys.ToArray());
-			return new NativeSkillCatalog(installations.Select(pair => new NativeSkillInstallation(pair.Value.Package, pair.Key, pair.Value.Connections)).ToArray(), warnings);
+			return new NativeSkillCatalog(installations.Select(pair => new NativeSkillInstallation(pair.Value.Package, pair.Key, pair.Value.Connections)).ToArray(),
+				warnings.Distinct(StringComparer.OrdinalIgnoreCase).ToArray());
 		}, cancellationToken);
 	}
 

@@ -1,9 +1,11 @@
 using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Headless.NUnit;
 using Avalonia.Interactivity;
 using Avalonia.LogicalTree;
 using Pact.App.Avalonia.Views.Settings;
+using Pact.Core.Agents;
 using Pact.Infrastructure.Storage;
 
 namespace Pact.App.Avalonia.Tests.Views;
@@ -22,7 +24,10 @@ public sealed partial class SkillCatalogWindowTests
 		const string manifest = "---\nname: z-before\n---\n# Original";
 		await File.WriteAllTextAsync(Path.Combine(original, "SKILL.md"), manifest);
 		await File.WriteAllTextAsync(Path.Combine(occupied, "SKILL.md"), "# Other");
-		using var window = new SkillCatalogWindow(new AppPaths(Path.Combine(temp.Path, "pact")), [], [], null, shared);
+		var work = new AgentProfileRecord("work", AgentKind.Claude, "Work", "claude", null, "pwsh")
+		{ NativeConfigDirectory = Path.Combine(temp.Path, ".claude") };
+		var other = work with { Id = "other", DisplayName = "Other", NativeConfigDirectory = Path.Combine(temp.Path, "other") };
+		using var window = new SkillCatalogWindow(new AppPaths(Path.Combine(temp.Path, "pact")), [work, other], [], null, shared);
 		try
 		{
 			await AfterOperationAsync(window, window.Show);
@@ -40,6 +45,9 @@ public sealed partial class SkillCatalogWindowTests
 			var status = window.FindControl<SelectableTextBlock>("Status")!.Text.ShouldNotBeNull();
 			status.ShouldContain(original);
 			status.ShouldContain(renamed);
+			status.Split(Environment.NewLine).Single(line => line.StartsWith("Affected profiles: ", StringComparison.Ordinal))
+				.ShouldBe("Affected profiles: Work");
+			status.ShouldContain("Affected paths");
 			Directory.Exists(renamed).ShouldBeFalse();
 			input.Text = "different";
 			window.FindControl<Button>("Apply")!.IsVisible.ShouldBeFalse();
@@ -56,6 +64,63 @@ public sealed partial class SkillCatalogWindowTests
 			window.FindControl<TextBlock>("SkillTitle")!.Text.ShouldBe("z-after (z-before)");
 			(await File.ReadAllTextAsync(Path.Combine(occupied, "SKILL.md"))).ShouldBe("# Other");
 			window.FindControl<SelectableTextBlock>("Origin")!.Text.ShouldNotBeNull().ShouldContain(renamed);
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[AvaloniaTest]
+	public async Task Renaming_a_skill_removes_only_its_pending_mapping_edit()
+	{
+		using var temp = TemporaryDirectory.Create();
+		var native = Path.Combine(temp.Path, "claude");
+		foreach (var name in new[] { "before", "retained" })
+		{
+			var folder = Directory.CreateDirectory(Path.Combine(native, "skills", name));
+			await File.WriteAllTextAsync(Path.Combine(folder.FullName, "SKILL.md"), $"---\nname: {name}\n---\n# {name}");
+		}
+		var profile = new AgentProfileRecord("work", AgentKind.Claude, "Work", "claude", null, "pwsh") { NativeConfigDirectory = native };
+		using var window = new SkillCatalogWindow(new AppPaths(Path.Combine(temp.Path, "pact")),
+			[profile], [], null, Path.Combine(temp.Path, "shared"));
+		try
+		{
+			await AfterOperationAsync(window, window.Show);
+			var tabs = window.FindControl<TabControl>("Details")!;
+			var availability = window.FindControl<TabItem>("AvailabilityTab")!;
+			var host = window.FindControl<ContentControl>("MatrixHost")!;
+			ToggleButton Choice(string name)
+			{
+				return host.GetLogicalDescendants().OfType<ToggleButton>()
+					.Single(button => AutomationProperties.GetName(button) == name);
+			}
+			tabs.SelectedItem = availability;
+			await window.MatrixReady;
+			var expand = host.GetLogicalDescendants().OfType<Button>()
+				.Single(button => Equals(ToolTip.GetTip(button), Path.Combine(native, "skills")));
+			expand.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+			Choice("Off: before for work").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+			Choice("Off: retained for work").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+			tabs.SelectedIndex = 0;
+			var tree = window.FindControl<TreeView>("Skills")!;
+			tree.SelectedItem = tree.Items.OfType<TreeViewItem>().SelectMany(node => node.Items.OfType<TreeViewItem>())
+				.Single(item => Equals(item.Header, "before"));
+			await ClickAsync(window, "RenameFolder");
+			window.FindControl<TextBox>("RenameInput")!.Text = "after";
+			await ClickAsync(window, "ReviewRename");
+			await ClickAsync(window, "Apply");
+			tabs.SelectedItem = availability;
+			await window.MatrixReady;
+			await window.MatrixImpactReady;
+			Choice("Inherit: after (before) for work").IsChecked.ShouldBe(true);
+			Choice("Off: retained for work").IsChecked.ShouldBe(true);
+			var apply = host.GetLogicalDescendants().OfType<Button>().Single(button => button.Name == "MatrixApply");
+			apply.IsVisible.ShouldBeTrue();
+			var status = window.FindControl<SelectableTextBlock>("LoadStatus")!;
+			status.Text.ShouldNotBeNull().ShouldContain("Removed 1 pending mapping edit");
+			Choice("Inherit: retained for work").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+			status.Text.ShouldNotBeNull().ShouldNotContain("pending mapping edit");
 		}
 		finally
 		{
@@ -177,7 +242,10 @@ public sealed partial class SkillCatalogWindowTests
 			await AfterOperationAsync(window, window.Show);
 			await ClickAsync(window, "MakeShared");
 			var destination = Path.Combine(shared, "review");
-			window.FindControl<SelectableTextBlock>("Status")!.Text.ShouldNotBeNull().ShouldContain(destination);
+			var preview = window.FindControl<SelectableTextBlock>("Status")!.Text.ShouldNotBeNull();
+			preview.ShouldContain(destination);
+			preview.ShouldContain("Affected profiles");
+			preview.ShouldContain("Affected paths");
 			Directory.Exists(destination).ShouldBeFalse();
 			await ClickAsync(window, "Apply");
 			File.Exists(Path.Combine(destination, "SKILL.md")).ShouldBeTrue();

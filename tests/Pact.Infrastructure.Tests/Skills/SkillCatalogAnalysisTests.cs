@@ -89,6 +89,40 @@ public sealed class SkillCatalogAnalysisTests
 	}
 
 	[Test]
+	public void DuplicateAnalysisUsesFreshFileHashesForBothTheVerdictAndTheDifferingPaths()
+	{
+		using var temp = TemporaryDirectory.Create();
+		var shared = Path.Combine(temp.Path, "shared");
+		var service = new SkillCatalogService(Path.Combine(temp.Path, "Settings"), shared, temp.Path);
+		var first = Package(shared, "first", AgentKind.Codex, shared: true);
+		var other = Package(Path.Combine(temp.Path, "other"), "second", AgentKind.Claude);
+		var script = Path.Combine(Path.GetDirectoryName(other.ResolvedManifest)!, "scripts", "run.ps1");
+		File.WriteAllText(script, "edited after discovery");
+
+		var group = service.AnalyzeDuplicates([first, other], new Dictionary<string, SkillSourceBinding>()).Single();
+
+		group.Kind.ShouldBe(SkillDuplicateKind.Different);
+		group.DifferingFiles.ShouldBe(["scripts/run.ps1"]);
+	}
+
+	[Test]
+	public void DuplicateAnalysisIgnoresGitMetadataForAWorkingCopy()
+	{
+		using var temp = TemporaryDirectory.Create();
+		var shared = Path.Combine(temp.Path, "shared");
+		var service = new SkillCatalogService(Path.Combine(temp.Path, "Settings"), shared, temp.Path);
+		var first = Package(shared, "first", AgentKind.Codex, shared: true);
+		var checkout = Package(Path.Combine(temp.Path, "team"), "second", AgentKind.Claude);
+		var git = Directory.CreateDirectory(Path.Combine(Path.GetDirectoryName(checkout.ResolvedManifest)!, ".git"));
+		File.WriteAllText(Path.Combine(git.FullName, "config"), "checkout metadata");
+
+		var group = service.AnalyzeDuplicates([first, checkout], new Dictionary<string, SkillSourceBinding>()).Single();
+
+		group.Kind.ShouldBe(SkillDuplicateKind.Identical);
+		group.DifferingFiles.ShouldBeEmpty();
+	}
+
+	[Test]
 	public void Directory_aliases_already_share_one_package_and_have_no_consolidation_action()
 	{
 		using var temp = TemporaryDirectory.Create();
@@ -118,6 +152,12 @@ public sealed class SkillCatalogAnalysisTests
 		if (extra)
 		{
 			content["asset.bin"] = [0, 255];
+		}
+		foreach (var (path, bytes) in content)
+		{
+			var file = Path.Combine(physical ?? folder, path);
+			Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+			File.WriteAllBytes(file, bytes);
 		}
 		var package = new CatalogSkill(Path.GetFileName(folder), root, relative, null, null, null, content, manifest, warning);
 		return new NativeSkillInstallation(package, Path.Combine(physical ?? folder, "SKILL.md"),

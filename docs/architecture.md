@@ -162,7 +162,9 @@ and display text, commands, ordering, and unrelated settings do not change the
 tool catalog. The orchestrator uses a separate fixed catalog and receives no
 such notification.
 
-A single pinned Hermes orchestrator tier sits above ROOT. Its durable
+The current desktop composition hides Hermes sessions and leaves the
+orchestrator disabled. Existing settings and session records stay on disk.
+The retained implementation uses a single pinned tier above ROOT. Its durable
 credential exposes a separate cross-session MCP catalog for reading workspace,
 session, screen, usage, and active-review state (participants, iteration, whose
 turn, log file). It can submit prompts to already-live sessions.
@@ -318,7 +320,7 @@ returns its stored result and relays nothing, even after the end. Agents pull
 their turn with `pact_get_review_turn`, which returns Pact's turn instructions,
 the other side's last answer verbatim as `previousTurn`, and the `turnId`.
 They hand it back with `pact_submit_review_turn`. `Settings/scenarios.json`
-defines each review's opening criteria and default strictness.
+defines each review's opening criteria, default strictness, and any saved round limit.
 `ReviewMessageRenderer` includes those criteria in the reviewer's first turn.
 The request may override the mode with `strict` and the limit with `maxIterations`.
 New review types default to strict approval and five iterations.
@@ -361,9 +363,12 @@ owned by Pact.
 
 The trigger uses the same delivery as every other prompt. The paste is
 bracketed, or, for a client that captures the mouse, a clipboard paste the
-client makes itself on a right click, after a left click at the end of the
-composer draft that clears a history selection; Enter then waits until the output shows
-it. Only a pending question refuses a write; a busy agent queues the
+client makes itself on a right click. Pact excludes any temporary text from
+clipboard history and sync and restores the prior formats only while its
+offer is current. When the clipboard cannot safely be saved, Pact uses a
+bracketed paste. A left click at the end of the
+composer draft clears a history selection before the right click. Enter waits
+until the output shows the paste. Only a pending question refuses a write; a busy agent queues the
 trigger, and text already in the composer does not block it. Codex and Claude
 distinguish composer suggestions and drafts using captured Dim metadata and
 structural boundaries; text-only or incomplete observations remain unknown.

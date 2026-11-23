@@ -15,6 +15,6 @@
 - [Правила веб-мониторинга](settings-web-monitoring-rules.md)
 - [Шаблоны промптов и shell-команд](settings-prompt-templates.md)
 - [Git-попап](settings-git-helpers.md)
-- [Сценарии](settings-scenarios.md)
+- [Виды ревью](settings-scenarios.md)
 - [Недавние директории](settings-recent-directories.md)
 - [Внешний вид](appearance.md)

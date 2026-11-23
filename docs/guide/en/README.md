@@ -3,7 +3,7 @@
 [English](README.md) | [Русский](../ru/README.md)
 
 This guide follows the path from installing PACT:> Mission Control to using
-its terminals, browser tabs, reviews, and optional orchestrator. It describes
+its terminals, browser tabs, and reviews. It describes
 the supported Windows application rather than implementation details.
 
 1. [Getting started](getting-started.md)

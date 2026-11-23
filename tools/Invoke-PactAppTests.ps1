@@ -1,5 +1,8 @@
 [CmdletBinding()]
-param([string]$ResultsDirectory = 'artifacts/test-results/app')
+param(
+    [string]$ResultsDirectory = 'artifacts/test-results/app',
+    [switch]$NativeClipboardOnly
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -9,7 +12,21 @@ $project = 'tests/Pact.App.Avalonia.Tests/Pact.App.Avalonia.Tests.csproj'
 $arguments = @($project, '--no-build', '--no-restore', '-m:1', '-nr:false')
 Push-Location $repositoryRoot
 try {
-    $discovery = @(& dotnet test @arguments --list-tests -v q -- NUnit.NumberOfTestWorkers=2)
+    if ($NativeClipboardOnly) {
+        $name = 'native-clipboard.trx'
+        $reportPath = Join-Path $resultsRoot $name
+        if (Test-Path -LiteralPath $reportPath) { Remove-Item -LiteralPath $reportPath }
+        & dotnet test @arguments --filter 'FullyQualifiedName~WindowsClipboardPasteNativeTests' --logger "trx;LogFileName=$name" --results-directory $resultsRoot -- NUnit.NumberOfTestWorkers=2
+        if ($LASTEXITCODE -ne 0) { throw 'Windows clipboard integration test failed.' }
+        [xml]$report = [IO.File]::ReadAllText($reportPath)
+        $counters = $report.TestRun.ResultSummary.Counters
+        if ([int]$counters.total -ne 1 -or [int]$counters.passed -ne 1) {
+            throw 'The Windows clipboard gate requires one passing test in its own host.'
+        }
+        return
+    }
+
+    $discovery = @(& dotnet test @arguments --filter 'TestCategory!=NativeIntegration' --list-tests -v q -- NUnit.NumberOfTestWorkers=2)
     if ($LASTEXITCODE -ne 0) { throw 'Avalonia test discovery failed.' }
     $expected = @($discovery | Where-Object { $_ -match '^    \S' }).Count
     if ($expected -eq 0) { throw 'Avalonia test discovery returned no tests.' }
@@ -31,7 +48,7 @@ try {
     for ($index = 0; $index -lt $filters.Count; $index++) {
         $name = 'app-{0:D3}.trx' -f $index
         Write-Output "Avalonia batch $($index + 1)/$($filters.Count): $($filters[$index])"
-        & dotnet test @arguments --filter $filters[$index] --logger "trx;LogFileName=$name" --results-directory $resultsRoot -- NUnit.NumberOfTestWorkers=2
+        & dotnet test @arguments --filter "$($filters[$index])&TestCategory!=NativeIntegration" --logger "trx;LogFileName=$name" --results-directory $resultsRoot -- NUnit.NumberOfTestWorkers=2
         if ($LASTEXITCODE -ne 0) { throw "Avalonia test batch failed: $($filters[$index])" }
         [xml]$report = [IO.File]::ReadAllText((Join-Path $resultsRoot $name))
         $count = [int]$report.TestRun.ResultSummary.Counters.total

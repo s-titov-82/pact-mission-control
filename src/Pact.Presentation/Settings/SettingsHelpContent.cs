@@ -24,7 +24,7 @@ public static class SettingsHelpContent
 		SettingsSection.PromptTemplates => ("Prompt/Shell templates", PromptTemplatesBody),
 		SettingsSection.WebLinkTemplates => ("Web link templates", WebLinkTemplatesBody),
 		SettingsSection.WebMonitoringRules => ("Web monitoring rules", WebMonitoringRulesBody),
-		SettingsSection.Scenarios => ("Scenarios", ScenariosBody),
+		SettingsSection.Scenarios => ("Review types", ScenariosBody),
 		SettingsSection.GitHelpers => ("Git popup", GitHelpersBody),
 		SettingsSection.RecentFolders => ("Recent directories", RecentDirectoriesBody),
 		SettingsSection.Appearance => ("Appearance", AppearanceBody),
@@ -87,17 +87,13 @@ public static class SettingsHelpContent
 
         Choose a model and reasoning effort, or keep the agent defaults. Pact reads local model metadata and includes the profile's saved model. Use a custom launch command for wrappers and additional flags.
 
-        Connected agents are notified to refresh their review profile ids and scenario ids whenever a Settings reload changes the live catalog, including when malformed scenario JSON activates the built-in defaults. External file edits take effect only at the Settings reload boundary or after the application restarts.
+        Pact tells connected agents to refresh their review profile and review type IDs when reloading Settings changes the catalog. This includes switching to built-in defaults when scenarios.json is malformed. External file edits take effect when Settings reloads or Pact restarts.
 
         Id and Command must be non-empty, and ids must be unique. Unknown JSON fields are preserved when the section is saved.
         """;
 
 	private const string OrchestratorBody = """
-        The orchestrator is one dedicated Hermes session pinned above projects and ROOT. It can inspect session status, read retained agent messages, report subscription usage and active reviews, and send a prompt to another live session.
-
-        Initialize asks Hermes to create the Pact profile, installs the Pact MCP connection, SOUL and status-report skill, writes the endpoint and credential to the profile environment, and then saves the launch configuration. Every provisioning step is shown separately. Existing Hermes configuration is preserved semantically, and Pact backs up files before replacing content it does not recognize as its own.
-
-        Reissue credential invalidates the stored orchestrator credential only after the Hermes profile has been updated successfully. Save section persists the enabled switch, workstation lock detection switch, and both prompt texts. Lock detection remains separate from enabling the slot.
+        The Hermes orchestrator is unavailable in the current desktop app. Pact retains existing Hermes settings and saved sessions on disk.
         """;
 
 	private const string PromptTemplatesBody = """
@@ -133,20 +129,11 @@ public static class SettingsHelpContent
         """;
 
 	private const string ScenariosBody = """
-        A scenario here is a review template: the wording Pact uses when one agent asks another to review its work. An agent starts a review with its pact_request_review tool (the "Request review" Quick Action asks it to); Pact opens the reviewer as a new tab in the same project without switching to it, and the two agents then hand turns to each other through Pact: each side reads its turn with pact_get_review_turn and answers with pact_submit_review_turn. Pact types a short line into the terminal of the side whose turn it is.
+        A review type defines what the reviewer checks and whether strict approval is the default. Pact includes the review rules in the reviewer's first turn. The author supplies the target and review type ID through pact_request_review.
 
-        Four templates wrap the messages:
+        Each participant reads its turn with pact_get_review_turn and answers with pact_submit_review_turn. The other participant's answer is available in previousTurn. The reviewer can submit approved: true to finish the review.
 
-        - Start prompt template — the reviewer's first message; carries the review brief (target, criteria).
-        - First feedback template — the author's message carrying the reviewer's first findings.
-        - Author return template — the reviewer's message carrying the author's answer, for re-verification.
-        - Feedback template — the author's message carrying later findings.
-
-        The other side's answer always travels in its own previousTurn field, whatever the template says; placeholders that used to name response files render as a pointer to that field. Pact appends its own short protocol paragraph to every message.
-
-        The reviewer approves by submitting its turn with approved: true; the Stop marker is kept only so older reviewer instructions still read sensibly. When the author answers the last of Max iterations, the review ends without approval.
-
-        Reviewer instructions are free-form text presets; add or remove them with the +/− buttons next to the list, and edit each preset's Id, Name, and Text. Default reviewer instruction picks the preset appended to the reviewer's messages. The review target is always given by the agent that asks for the review.
+        Pact allows five rounds by default and honors a positive round limit saved with the review type. A request can override the round limit and strictness.
 
         Nothing is locked: you can type into either tab at any time. Every review is logged to .pact/reviews in the project (the folder ignores itself in Git), and the log opens in Docs when the review ends. The reviewer tab closes itself after approval or the last iteration and stays open when the review fails or is aborted.
         """;

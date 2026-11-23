@@ -11,6 +11,8 @@ public sealed class ScenarioItemViewModel : SettingsItemViewModelBase
 	private string _reviewRules;
 	private bool _defaultStrict;
 
+	internal bool IdChanged => Id != (_node["id"] is JsonValue value && value.TryGetValue<string>(out var id) ? id : string.Empty);
+
 	/// <summary>Reads current and legacy settings through the same mapping as the runtime.</summary>
 	public ScenarioItemViewModel(JsonObject node)
 	{
@@ -86,17 +88,29 @@ public sealed class ScenarioItemViewModel : SettingsItemViewModelBase
 		{
 			var name = !string.IsNullOrWhiteSpace(Name)
 				? Name
-				: !string.IsNullOrWhiteSpace(Id) ? Id : "(new scenario)";
+				: !string.IsNullOrWhiteSpace(Id) ? Id : "(unnamed review type)";
 			return IsItemDirty ? $"{name} •" : name;
 		}
 	}
 
 	internal override void WriteTo()
 	{
-		_node["id"] = Id;
-		_node["kind"] = "reviewLoop";
-		_node["name"] = Name;
-		_node["reviewRules"] = ReviewRules;
-		_node["defaultStrict"] = DefaultStrict;
+		var current = ScenarioDefinitionStore.ReadReview(_node);
+		if (Id != current.Id)
+		{
+			_node["id"] = Id;
+		}
+		if (Name != current.Name)
+		{
+			_node["name"] = Name;
+		}
+		if (ReviewRules != current.ReviewRules)
+		{
+			_node["reviewRules"] = ReviewRules;
+		}
+		if (DefaultStrict != current.DefaultStrict)
+		{
+			_node["defaultStrict"] = DefaultStrict;
+		}
 	}
 }

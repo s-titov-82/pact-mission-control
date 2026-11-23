@@ -15,6 +15,6 @@ task-oriented introduction.
 - [Web monitoring rules](settings-web-monitoring-rules.md)
 - [Prompt and shell templates](settings-prompt-templates.md)
 - [Git popup](settings-git-helpers.md)
-- [Scenarios](settings-scenarios.md)
+- [Review types](settings-scenarios.md)
 - [Recent directories](settings-recent-directories.md)
 - [Appearance](appearance.md)

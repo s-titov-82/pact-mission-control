@@ -453,7 +453,7 @@ public sealed partial class LocalSubscriptionUsageReader : ISubscriptionUsageRea
 		lock (_codexApiGate)
 		{
 			entry = GetCodexApiCacheEntryUnsafe(profile);
-			cached = entry.Snapshot;
+			cached = WithProfileName(entry.Snapshot, profile.DisplayName);
 			attemptedAt = entry.AttemptedAt;
 			failureMessage = entry.FailureMessage;
 		}
@@ -477,7 +477,7 @@ public sealed partial class LocalSubscriptionUsageReader : ISubscriptionUsageRea
 					entry.Snapshot = live.Snapshot;
 				}
 
-				cached = entry.Snapshot;
+				cached = WithProfileName(entry.Snapshot, profile.DisplayName);
 			}
 
 			if (live.Snapshot is not null)
@@ -494,7 +494,9 @@ public sealed partial class LocalSubscriptionUsageReader : ISubscriptionUsageRea
 
 	private CodexApiCacheEntry GetCodexApiCacheEntryUnsafe(AgentProfileRecord profile)
 	{
-		if (!_codexApiCache.TryGetValue(profile.Id, out var entry) || entry.Profile != profile)
+		if (!_codexApiCache.TryGetValue(profile.Id, out var entry)
+			|| entry.Profile.CommandTemplate != profile.CommandTemplate
+			|| !string.Equals(entry.Profile.NativeConfigDirectory, profile.NativeConfigDirectory, StringComparison.OrdinalIgnoreCase))
 		{
 			entry = new CodexApiCacheEntry(profile);
 			_codexApiCache[profile.Id] = entry;
@@ -502,6 +504,9 @@ public sealed partial class LocalSubscriptionUsageReader : ISubscriptionUsageRea
 
 		return entry;
 	}
+
+	private static SubscriptionUsageSnapshot? WithProfileName(SubscriptionUsageSnapshot? snapshot, string name) =>
+		snapshot is null || snapshot.ProfileName == name ? snapshot : snapshot with { ProfileName = name };
 
 	private static bool IsFresh(SubscriptionUsageSnapshot? snapshot, DateTimeOffset now) =>
 		snapshot is { State: SubscriptionUsageState.Ready }
@@ -613,10 +618,15 @@ public sealed partial class LocalSubscriptionUsageReader : ISubscriptionUsageRea
 		AgentProfileRecord profile,
 		CancellationToken cancellationToken)
 	{
+		// A wrapper can choose another account. Its live response identifies that account when no home was supplied.
+		if (profile.NativeConfigDirectory is null &&
+			!string.Equals(Path.GetFileNameWithoutExtension(GetCommandName(profile.CommandTemplate)), "codex", StringComparison.OrdinalIgnoreCase))
+		{
+			return CreateUnavailable(profile, "No Codex session data for this command");
+		}
+
 		var directory = profile.NativeConfigDirectory is { } home ? Path.Combine(home, "sessions") : _codexSessionsDirectory;
-		// A command wrapper may select another account. Its own live response identifies its usage.
-		if (!string.Equals(Path.GetFileNameWithoutExtension(GetCommandName(profile.CommandTemplate)), "codex", StringComparison.OrdinalIgnoreCase)
-			|| !Directory.Exists(directory))
+		if (!Directory.Exists(directory))
 		{
 			return CreateUnavailable(profile, "No Codex session data");
 		}

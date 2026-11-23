@@ -388,7 +388,7 @@ internal sealed class EngineProbeRunner
 	private static async Task CheckHttpErrorsAsync(MainWindow window, AvaloniaWebPageHost host)
 	{
 		const string unstyled = "<html><body><h1>403 Forbidden</h1>\nRequest forbidden by administrative rules.\n</body></html>";
-		foreach (var (status, type, body) in new[] { (200, "text/html", unstyled), (403, "text/html", unstyled),
+		foreach (var (status, type, body) in new[] { (200, "text/html", unstyled), (204, "text/html", ""), (403, "text/html", unstyled),
 			(403, "text/html", ""), (403, "application/json", "{\"error\":\"denied\"}"),
 			(403, "text/plain", "Access denied"), (403, "text/html", "<body style='background:black'><input type='hidden'></body>"),
 			(403, "text/html", "<html><body style='background:black;color:black'><p id='denied'>Access denied</p></body></html>") })
@@ -397,9 +397,12 @@ internal sealed class EngineProbeRunner
 			using var listener = new TcpListener(IPAddress.Loopback, 0);
 			listener.Start();
 			var url = new Uri($"http://127.0.0.1:{((IPEndPoint)listener.LocalEndpoint).Port}/denied");
+			var previousSource = host.Source;
 			var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+			string? failure = null;
 			void Failed(object? sender, string message)
 			{
+				failure = message;
 				completed.TrySetResult();
 			}
 			host.NavigationFailed += Failed;
@@ -407,14 +410,17 @@ internal sealed class EngineProbeRunner
 			{
 				completed.TrySetResult();
 			}
-			if (status == 200)
+			if (status < 400)
 			{
 				host.NavigationCompleted += Navigated;
 			}
 			try
 			{
 				await host.HideAsync(timeout.Token);
-				await host.NavigateAsync(url, timeout.Token);
+				var pane = window.GetVisualDescendants().OfType<BrowserPaneView>().Single();
+				// Navigate inside the native browser so the old document stays the current source until a commit.
+				var browser = WindowsWebView2BackgroundVisibility.TryGetCore(pane.GetVisualDescendants().OfType<NativeWebView>().Single())!;
+				browser.Navigate(url.AbsoluteUri);
 				using var client = await listener.AcceptTcpClientAsync(timeout.Token);
 				using var stream = client.GetStream();
 				using var reader = new StreamReader(stream);
@@ -423,7 +429,7 @@ internal sealed class EngineProbeRunner
 					// Consume the request through the empty line ending its headers.
 				}
 				var bytes = Encoding.UTF8.GetBytes(body);
-				var reason = status == 200 ? "OK" : "Forbidden";
+				var reason = status switch { 200 => "OK", 204 => "No Content", _ => "Forbidden" };
 				var headers = Encoding.ASCII.GetBytes($"HTTP/1.1 {status} {reason}\r\nContent-Type: {type}\r\nContent-Length: {bytes.Length}\r\nConnection: close\r\n\r\n");
 				await stream.WriteAsync(headers, timeout.Token);
 				await stream.WriteAsync(bytes, timeout.Token);
@@ -431,10 +437,18 @@ internal sealed class EngineProbeRunner
 				await completed.Task.WaitAsync(timeout.Token);
 				await host.ShowAsync(timeout.Token);
 				window.UpdateLayout();
-				var pane = window.GetVisualDescendants().OfType<BrowserPaneView>().Single();
 				var visibleBrowser = pane.GetVisualDescendants().OfType<NativeWebView>().SingleOrDefault(view => view.IsEffectivelyVisible);
 				var heading = pane.GetVisualDescendants().OfType<TextBlock>().SingleOrDefault(label =>
-					label.IsEffectivelyVisible && label.Text == "Ошибка загрузки: 403");
+					label.IsEffectivelyVisible && label.Text == "Page failed to load (HTTP 403)");
+				if (status == 204)
+				{
+					if (failure is not null || host.Source != previousSource || visibleBrowser is null ||
+						await EvaluateRevisionAsync(host, new("h1", WebMonitorValueSource.Text, null, null, null)) != "403 Forbidden")
+					{
+						throw new InvalidOperationException("HTTP 204 replaced the current browser document.");
+					}
+					continue;
+				}
 				if (body == unstyled)
 				{
 					if (visibleBrowser is null || heading is not null || await EvaluateRevisionAsync(host, new("h1", WebMonitorValueSource.Text, null, null, null)) != "403 Forbidden")
@@ -455,7 +469,7 @@ internal sealed class EngineProbeRunner
 				}
 				var labels = window.GetVisualDescendants().OfType<TextBlock>().Where(label => label.IsEffectivelyVisible)
 					.Select(label => label.Text?.ReplaceLineEndings("\n")).ToArray();
-				if (visibleBrowser is not null || heading is null || (type != "text/html" &&
+				if (visibleBrowser is not null || heading is null || !labels.Contains(url.AbsoluteUri) || (type != "text/html" &&
 					!labels.Contains(type == "application/json" ? "{\n  \"error\": \"denied\"\n}" : body)))
 				{
 					var diagnostics = string.Join(", ", host.DiagnosticSnapshot.TakeLast(8).Select(entry => $"{entry.Phase} {entry.Detail}"));

@@ -27,14 +27,14 @@ Use the `?` button in `Settings > Launch profiles` or read
 
 ## A session does not receive a prompt
 
-PACT:> deliberately refuses automatic input while a terminal is busy, asking a
-question, known to contain unsent input, or locked by a review scenario. Answer
-the question or wait for the session to become idle. Manual paste and prompt
-actions normally insert text without Enter unless `Auto-submit` is enabled.
+Pact stops automatic prompt delivery if the terminal is waiting for an
+answer. Answer the question and retry. Manual paste and prompt actions insert
+text without Enter by default. Enable
+`Auto-submit` on a template to submit its text.
 
-If an agent-control action is unavailable after changing scenarios or review
-profiles, save Settings to refresh the live catalogs. Direct JSON edits require
-that reload boundary or an application restart.
+If an agent-control action is unavailable after changing review types or
+reviewer profiles, save Settings to refresh the catalogs. After editing JSON
+directly, reload Settings or restart Pact.
 
 ## A browser page is not monitored
 
@@ -48,15 +48,15 @@ that reload boundary or an application restart.
 
 See [Web monitoring rules](../../help/en/settings-web-monitoring-rules.md).
 
-## A review is waiting or paused
+## A review is waiting for a turn
 
-Terminal activity alone does not complete a review step. The assigned agent
-must write the requested non-empty response file with the exact footer. Check
-the active review state and journal, answer any visible agent question, and use
-Resume only after a manual pause. A valid response can advance while paused.
+If Pact shows **Review needs attention**, hover over the warning to see which
+session owns the turn. Open that session, answer any pending question, and
+ask the agent to call `pact_get_review_turn`. The agent sends its answer with
+`pact_submit_review_turn`.
 
-Closing the project or application aborts the active review. Finished and
-aborted runs clean their own `.pact-reviews` directory.
+Pausing or closing the project, or closing Pact, aborts the review. Look for
+the review log in the project's Docs.
 
 ## Documents report a conflict
 

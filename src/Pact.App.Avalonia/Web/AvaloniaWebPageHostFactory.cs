@@ -16,6 +16,8 @@ internal sealed class AvaloniaWebPageHostFactory(Panel container) : IWebPageHost
 	private IUiTaskDispatcher? _uiTaskDispatcher;
 	private Action<WebViewDiagnosticEntry>? _diagnosticSink;
 
+	internal Action<string>? NativeInteraction { get; set; }
+
 	internal void ConfigureEnvironment(string userDataFolder, string? profileName)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(userDataFolder);
@@ -41,10 +43,9 @@ internal sealed class AvaloniaWebPageHostFactory(Panel container) : IWebPageHost
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(id);
 		cancellationToken.ThrowIfCancellationRequested();
-		NativeWebView? webView = null;
-		await Dispatcher.UIThread.InvokeAsync(() =>
+		return await Dispatcher.UIThread.InvokeAsync<IWebPageHost>(() =>
 		{
-			webView = new NativeWebView
+			NativeWebView webView = new()
 			{
 				Background = global::Avalonia.Media.Brushes.White,
 				Focusable = true,
@@ -55,14 +56,15 @@ internal sealed class AvaloniaWebPageHostFactory(Panel container) : IWebPageHost
 				AvaloniaWebViewEnvironment.Configure(webView, _userDataFolder, _profileName);
 			}
 			container.Children.Add(webView);
+			return new AvaloniaWebPageHost(
+				id,
+				webView,
+				container,
+				profileHousekeeping: _profileHousekeeping,
+				eventTasks: _eventTasks,
+				uiTaskDispatcher: _uiTaskDispatcher,
+				diagnosticSink: _diagnosticSink,
+				nativeInteraction: NativeInteraction is null ? null : () => NativeInteraction?.Invoke(id));
 		});
-		return new AvaloniaWebPageHost(
-			id,
-			webView!,
-			container,
-			profileHousekeeping: _profileHousekeeping,
-			eventTasks: _eventTasks,
-			uiTaskDispatcher: _uiTaskDispatcher,
-			diagnosticSink: _diagnosticSink);
 	}
 }

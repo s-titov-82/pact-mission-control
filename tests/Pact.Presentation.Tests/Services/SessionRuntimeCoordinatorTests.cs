@@ -155,7 +155,71 @@ public sealed partial class SessionRuntimeCoordinatorTests
 		await SendPromptAsync(coordinator, "review this\r\nplease", submit: true);
 
 		clipboard.Writes.ShouldBe(["review this\r\nplease"]);
+		(await clipboard.GetTextAsync()).ShouldBe("older text");
 		backend.InputWrites.ShouldBe([RightClick, PlainEnter]);
+	}
+
+	[Test]
+	public async Task A_clipboard_copy_during_the_paste_is_preserved_and_the_composer_is_not_submitted()
+	{
+		var (coordinator, backend, controller, clipboard) = await CreateClipboardPasteSessionAsync("older text");
+		await using var _ = controller;
+		var runtime = coordinator.GetOrCreateRuntime("session-1");
+		backend.InputWritten = input =>
+		{
+			if (input == RightClick)
+			{
+				clipboard.Copy("new copy");
+				runtime.AppendRecentOutput("\u001b[37;3H\u001b[38;5;6m[Pasted Content 1200 chars]\u001b[0m");
+			}
+		};
+
+		var result = await SendPromptAsync(coordinator, "review this", submit: true);
+
+		result.Outcome.ShouldBe(PromptDeliveryOutcome.PasteNotShown);
+		(await clipboard.GetTextAsync()).ShouldBe("new copy");
+		backend.InputWrites.ShouldBe([RightClick]);
+	}
+
+	[Test]
+	public async Task A_clipboard_paste_timeout_restores_the_prior_text_without_submitting()
+	{
+		var (coordinator, backend, controller, clipboard) = await CreateClipboardPasteSessionAsync("older text");
+		await using var _ = controller;
+
+		var result = await SendPromptAsync(coordinator, "review this", submit: true);
+
+		result.Outcome.ShouldBe(PromptDeliveryOutcome.PasteNotShown);
+		(await clipboard.GetTextAsync()).ShouldBe("older text");
+		backend.InputWrites.ShouldBe([RightClick]);
+	}
+
+	[Test]
+	public async Task A_repaint_without_a_clipboard_read_does_not_confirm_the_paste()
+	{
+		var (coordinator, backend, controller, clipboard) = await CreateClipboardPasteSessionAsync(
+			"older text", clickOutput: "\u001b[37;3H[Pasted Content 1200 chars]");
+		await using var _ = controller;
+		clipboard.TextRequested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously).Task;
+
+		var result = await SendPromptAsync(coordinator, "review this", submit: true);
+
+		result.Outcome.ShouldBe(PromptDeliveryOutcome.PasteNotShown);
+		backend.InputWrites.ShouldBe([RightClick]);
+		(await clipboard.GetTextAsync()).ShouldBe("older text");
+	}
+
+	[Test]
+	public async Task Whitespace_pastes_directly_instead_of_releasing_a_clipboard_offer_before_it_is_read()
+	{
+		var (coordinator, backend, controller, clipboard) = await CreateClipboardPasteSessionAsync("older text");
+		await using var _ = controller;
+
+		var result = await SendPromptAsync(coordinator, " \t", submit: false);
+
+		result.Outcome.ShouldBe(PromptDeliveryOutcome.Confirmed);
+		clipboard.Writes.ShouldBeEmpty();
+		backend.InputWrites.ShouldBe(["\u001b[200~ \t\u001b[201~"]);
 	}
 
 	[Test]
@@ -850,15 +914,51 @@ public sealed partial class SessionRuntimeCoordinatorTests
 
 		public List<string> Writes { get; } = [];
 
-		public uint ChangeSequence => (uint)Writes.Count;
+		public uint ChangeSequence { get; private set; }
+
+		internal Task TextRequested { get; set; } = Task.CompletedTask;
 
 		public Task<string> GetTextAsync() => Task.FromResult(_text);
 
 		public Task<bool> TrySetTextAsync(string text)
 		{
 			Writes.Add(text);
-			_text = text;
+			Copy(text);
 			return Task.FromResult(true);
+		}
+
+		public Task<IClipboardPasteLease?> TryOfferPasteTextAsync(string value)
+		{
+			var original = _text;
+			if (original.ReplaceLineEndings("\n") == value.ReplaceLineEndings("\n"))
+			{
+				return Task.FromResult<IClipboardPasteLease?>(new Offer(this, ChangeSequence, null));
+			}
+			Writes.Add(value);
+			Copy(value);
+			return Task.FromResult<IClipboardPasteLease?>(new Offer(this, ChangeSequence, original));
+		}
+
+		internal void Copy(string value)
+		{
+			_text = value;
+			ChangeSequence++;
+		}
+
+		private sealed class Offer(RecordingClipboard clipboard, uint sequence, string? original) : IClipboardPasteLease
+		{
+			public bool IsCurrent => clipboard.ChangeSequence == sequence;
+			public Task TextRequested => clipboard.TextRequested;
+			public void MarkPasteTriggered() { }
+
+			public ValueTask DisposeAsync()
+			{
+				if (original is not null && IsCurrent)
+				{
+					clipboard.Copy(original);
+				}
+				return ValueTask.CompletedTask;
+			}
 		}
 	}
 

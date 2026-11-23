@@ -29,4 +29,26 @@ public interface IClipboardService
 	/// process; callers must treat failure as expected rather than exceptional.
 	/// </returns>
 	Task<bool> TrySetTextAsync(string text);
+
+	/// <summary>
+	/// Offers text for a client-owned paste without leaving it on the clipboard or adding it to
+	/// history. Returns null when the existing clipboard cannot safely be replaced.
+	/// </summary>
+	Task<IClipboardPasteLease?> TryOfferPasteTextAsync(string text) => Task.FromResult<IClipboardPasteLease?>(null);
+
+	/// <summary>Restores a pending offer after the shell has stopped its terminal processes.</summary>
+	Task RestorePendingPasteAsync() => Task.CompletedTask;
+}
+
+/// <summary>Holds a paste's clipboard contents until the client has read them.</summary>
+public interface IClipboardPasteLease : IAsyncDisposable
+{
+	/// <summary>Whether the offered contents have stayed current since the offer.</summary>
+	bool IsCurrent { get; }
+
+	/// <summary>Completes when Windows requests the offered text, or immediately for reused text.</summary>
+	Task TextRequested { get; }
+
+	/// <summary>Protects unread temporary text once a client paste may have been queued.</summary>
+	void MarkPasteTriggered();
 }

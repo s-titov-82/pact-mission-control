@@ -65,6 +65,9 @@ namespace Pact.Core.ScreenVerdictProfiles
 		protected virtual (int Index, string Description) FindInputRequest(string scope) =>
 			LastMatchIndex(scope, InputRequestedRegex);
 
+		/// <summary>Recognizes an answer control anchored to the current end of the screen.</summary>
+		private protected virtual string? DescribeCurrentInputRequest(string screen) => null;
+
 		/// <summary>
 		/// Inspects the prompt tail without exposing its text. Profiles without a readable
 		/// composer return null.
@@ -116,7 +119,7 @@ namespace Pact.Core.ScreenVerdictProfiles
 					PromptEvidence = null
 				};
 			}
-			if (prompt >= 0)
+			if (prompt >= 0 && verdict.State != TerminalScreenVerdictState.InputRequested)
 			{
 				var status = prompt - 1;
 				if (status >= 0 && AgentComposerInspector.IsRule(screen.Rows[status].Text))
@@ -176,6 +179,11 @@ namespace Pact.Core.ScreenVerdictProfiles
 			if (!currentComposer && ResumeSessionMarkers.Length > 0 && ResumeSessionMarkers.Any(marker => screen.Contains(marker, StringComparison.Ordinal)))
 			{
 				return new(TerminalScreenVerdictState.InputRequested, "Resuming selector");
+			}
+
+			if (DescribeCurrentInputRequest(screen) is { } currentInputRequest)
+			{
+				return new(TerminalScreenVerdictState.InputRequested, currentInputRequest);
 			}
 
 			var window = screen.Length <= 3000 ? screen : screen[^3000..];

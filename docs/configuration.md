@@ -15,18 +15,17 @@ The default data root is `%APPDATA%/Pact`. Durable files live under its
 | Root tabs | `root-tabs.json` |
 | Launch profiles | `shell-profiles.json` |
 | Review profiles | `review-profiles.json` |
-| Orchestrator | `orchestrator.json` |
 | Prompt and shell templates | `prompt-templates.json` |
 | Web link templates | `web-link-templates.json` |
 | Web monitoring rules | `web-monitor-rules.json` |
-| Scenarios | `scenarios.json` |
+| Review types | `scenarios.json` |
 | Git helpers | `git-helpers.json` |
 | Recent directories | `recent-directories.json` |
 | Appearance | `appearance.json` |
 
-`agent-control.json` owns the fixed loopback MCP port and is not a normal
-form-edited section. The orchestrator's durable credential is stored in
-`orchestrator.json`; do not share either file.
+`agent-control.json` owns the fixed loopback MCP port. The current app retains
+`orchestrator.json` on disk while the Orchestrator is unavailable. Both files
+can contain private settings and should stay local.
 
 Window geometry is stored in `window-layout.json`; project notes are stored
 under `Settings/Notes`. Project and session edits apply to live runtime state.

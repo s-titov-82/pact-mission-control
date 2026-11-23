@@ -173,6 +173,83 @@ public sealed class SkillActivationServiceTests : IDisposable
 	}
 
 	[Test]
+	public async Task ClaudeChangesOneOverrideWithoutRewritingOtherSettingsOrBom()
+	{
+		var service = Service;
+		var profile = Profile(AgentKind.Claude);
+		var file = Install(profile.NativeConfigDirectory!);
+		var settings = Path.Combine(profile.NativeConfigDirectory!, "settings.json");
+		var utf8WithBom = new System.Text.UTF8Encoding(true);
+		const string original = "{\r\n\t\"language\" : \"Français <test> \\\"quoted\\\"\",\r\n\t\"skillOverrides\": {\"sample\" : \"on\", \"another\" : \"name-only\"}\r\n}\r\n";
+		File.WriteAllText(settings, original, utf8WithBom);
+
+		await service.ApplyAsync(service.Preview(profile, "sample", file, null, SkillMode.Disabled, [profile]), default);
+
+		var expected = original.Replace("\"on\"", "\"off\"", StringComparison.Ordinal);
+		File.ReadAllBytes(settings).ShouldBe(utf8WithBom.GetPreamble().Concat(utf8WithBom.GetBytes(expected)).ToArray());
+	}
+
+	[Test]
+	public async Task ClaudeAddsAndRemovesAnOverrideWithoutChangingUnrelatedBytes()
+	{
+		var service = Service;
+		var profile = Profile(AgentKind.Claude);
+		var file = Install(profile.NativeConfigDirectory!);
+		var settings = Path.Combine(profile.NativeConfigDirectory!, "settings.json");
+		var utf8 = new System.Text.UTF8Encoding(true);
+		const string original = "{\r\n\t\"language\" : \"Français\",\r\n\t\"skillOverrides\": {\"other\" : \"name-only\"}\r\n}\r\n";
+		File.WriteAllText(settings, original, utf8);
+		var bytes = File.ReadAllBytes(settings);
+
+		await service.ApplyAsync(service.Preview(profile, "sample", file, null, SkillMode.Disabled, [profile]), default);
+		var added = original.Replace("\"name-only\"", "\"name-only\", \"sample\": \"off\"", StringComparison.Ordinal);
+		File.ReadAllBytes(settings).ShouldBe(utf8.GetPreamble().Concat(utf8.GetBytes(added)).ToArray());
+
+		await service.ApplyAsync(service.Preview(profile, "sample", file, null, SkillMode.Inherit, [profile]), default);
+		File.ReadAllBytes(settings).ShouldBe(bytes);
+	}
+
+	[Test]
+	public async Task FailedSettingsWriteRollsBackNewConnectionAndReceipt()
+	{
+		var service = Service;
+		var profile = Profile(AgentKind.Claude);
+		var second = Profile(AgentKind.Claude, "two", "other");
+		var source = Install(Path.Combine(_directory.Path, "shared"));
+		var other = Install(second.NativeConfigDirectory!);
+		var twoConfig = Path.Combine(second.NativeConfigDirectory!, "settings.json");
+		Directory.CreateDirectory(twoConfig);
+		var batch = service.PreviewBatch([new(profile, "sample", source, Project, SkillMode.Enabled),
+			new(second, "sample", other, null, SkillMode.Disabled)], [profile, second]);
+		var link = batch.Changes[0].Link!;
+
+		await Should.ThrowAsync<IOException>(() => service.ApplyAsync(batch, default));
+
+		new DirectoryInfo(link.Path).LinkTarget.ShouldBeNull();
+		File.Exists(link.ReceiptPath).ShouldBeFalse();
+		File.Exists(batch.Changes[0].FilePath).ShouldBeFalse();
+		File.Exists(source).ShouldBeTrue();
+		Directory.Exists(twoConfig).ShouldBeTrue();
+	}
+
+	[Test]
+	public async Task EnableRecreatesAnExternallyRemovedPactConnection()
+	{
+		var service = Service;
+		var profile = Profile(AgentKind.Claude);
+		var file = Install(Path.Combine(_directory.Path, "shared"));
+		var first = service.Preview(profile, "sample", file, Project, SkillMode.Enabled, [profile]);
+		await service.ApplyAsync(first, default);
+		Directory.Delete(first.Link!.Path);
+
+		var recovery = service.Preview(profile, "sample", file, Project, SkillMode.Enabled, [profile]);
+		await service.ApplyAsync(recovery, default);
+
+		File.Exists(Path.Combine(first.Link.Path, "SKILL.md")).ShouldBeTrue();
+		File.ReadAllLines(first.Link.ReceiptPath).ShouldBe([Path.GetDirectoryName(file)!, first.Link.Path]);
+	}
+
+	[Test]
 	public async Task CodexLaunchPreservesOtherNativeRulesAndOverlaysOnlyOneProjectAndProfile()
 	{
 		var service = Service;

@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Net;
 using System.Text;
 using Pact.Infrastructure.Skills;
+using Pact.Infrastructure.Storage;
 
 namespace Pact.Infrastructure.Tests.Skills;
 
@@ -83,6 +84,96 @@ public sealed class SkillCatalogServiceTests
 		preview.ReleaseNotes.ShouldBe("Added binary asset");
 		service.Apply(preview);
 		File.ReadAllBytes(Path.Combine(installed, "demo", "pic.png")).ShouldBe(new byte[] { 255, 0, 127 });
+	}
+
+	[Test]
+	public async Task UnsafeArchivePackageDoesNotPreventBrowsingOrInstallingItsSafeSibling()
+	{
+		using var temp = TemporaryDirectory.Create();
+		using var buffer = new MemoryStream();
+		using (var archive = new ZipArchive(buffer, ZipArchiveMode.Create, leaveOpen: true))
+		{
+			archive.CreateEntry("repo-abc/safe/SKILL.md");
+			archive.CreateEntry("repo-abc/linked/SKILL.md");
+			archive.CreateEntry("repo-abc/linked/script.ps1").ExternalAttributes = 0xA000 << 16;
+			archive.CreateEntry("repo-abc/collision/SKILL.md");
+			archive.CreateEntry("repo-abc/collision/SCRIPT.ps1");
+			archive.CreateEntry("repo-abc/collision/script.ps1");
+			archive.CreateEntry("repo-abc/traversal/SKILL.md");
+			archive.CreateEntry("repo-abc/traversal/../escape.txt");
+			archive.CreateEntry("repo-abc/aux/SKILL.md");
+		}
+		using var handler = new ReleaseHandler(buffer.ToArray());
+		using var http = new HttpClient(handler);
+		var reader = new SkillPackageReader(temp.Path, http);
+		var packages = await reader.ReadAsync("https://github.com/team/repo/releases/latest", false, null, TestContext.CurrentContext.CancellationToken);
+		var installed = Path.Combine(temp.Path, "installed");
+		var service = new SkillCatalogService(Path.Combine(temp.Path, "Settings"), installed, temp.Path);
+		packages.Where(package => package.InspectionWarning is not null).Select(package => package.FolderName).Order()
+			.ShouldBe(new[] { "aux", "collision", "linked", "traversal" });
+		foreach (var invalid in packages.Where(package => package.InspectionWarning is not null))
+		{
+			Should.Throw<IOException>(() => service.Preview(invalid));
+		}
+		service.Apply(service.Preview(packages.Single(package => package.FolderName == "safe")));
+		Directory.EnumerateDirectories(installed).ShouldBe([Path.Combine(installed, "safe")]);
+		File.Exists(Path.Combine(temp.Path, "escape.txt")).ShouldBeFalse();
+	}
+
+	[Test]
+	public async Task PackageFileBudgetDoesNotCarryOverToASafeSibling()
+	{
+		using var temp = TemporaryDirectory.Create();
+		using var buffer = new MemoryStream();
+		using (var archive = new ZipArchive(buffer, ZipArchiveMode.Create, leaveOpen: true))
+		{
+			archive.CreateEntry("repo-abc/large/SKILL.md");
+			for (var index = 0; index < 32_768; index++)
+			{
+				archive.CreateEntry($"repo-abc/large/{index:D5}.txt");
+			}
+			archive.CreateEntry("repo-abc/small/SKILL.md");
+		}
+		using var handler = new ReleaseHandler(buffer.ToArray());
+		using var http = new HttpClient(handler);
+		var reader = new SkillPackageReader(temp.Path, http);
+
+		var packages = await reader.ReadAsync("https://github.com/team/repo/releases/latest", false, null, TestContext.CurrentContext.CancellationToken);
+
+		packages.Single(item => item.FolderName == "large").InspectionWarning.ShouldNotBeNull();
+		var safe = packages.Single(item => item.FolderName == "small");
+		safe.InspectionWarning.ShouldBeNull();
+		safe.Files.ShouldBe(["SKILL.md"]);
+	}
+
+	[TestCase("Example", "example")]
+	[TestCase("Example", "Example")]
+	public async Task DuplicateBindingKeysNameBothEntriesAndBlockRegistryReaders(string first, string second)
+	{
+		using var temp = TemporaryDirectory.Create();
+		var paths = new AppPaths(Path.Combine(temp.Path, "pact"));
+		Directory.CreateDirectory(paths.SettingsDirectory);
+		var registry = Path.Combine(paths.SettingsDirectory, "skill-installations.json");
+		var binding = new SkillSourceBinding("https://github.com/team/repo", "skills/example", "main", "abc");
+		var value = System.Text.Json.JsonSerializer.Serialize(binding);
+		var original = $$"""{"{{first}}":{{value}},"{{second}}":{{value}}}""";
+		File.WriteAllText(registry, original);
+		var installed = Path.Combine(temp.Path, ".agents", "skills");
+		var package = Directory.CreateDirectory(Path.Combine(installed, "Example"));
+		File.WriteAllText(Path.Combine(package.FullName, "SKILL.md"), "existing skill");
+		var catalog = new SkillCatalogService(paths.SettingsDirectory, installed, temp.Path);
+		var snapshot = await catalog.DiscoverInstalledAsync([], new SkillActivationService(paths, installed), TestContext.CurrentContext.CancellationToken);
+		var selected = snapshot.Installations.Single();
+		var connection = selected.Connections.Single();
+
+		var conflict = Should.Throw<IOException>(catalog.GetBindings).Message;
+
+		conflict.ShouldContain($"'{first}' and '{second}'");
+		conflict.ShouldContain(registry);
+		Should.Throw<IOException>(catalog.GetManagedNames).Message.ShouldBe(conflict);
+		catalog.PreviewDelete(selected, connection).Conflict.ShouldBe(conflict);
+		catalog.PreviewRename(selected, connection, "different").Conflict.ShouldBe(conflict);
+		File.ReadAllText(registry).ShouldBe(original);
 	}
 
 	[Test]

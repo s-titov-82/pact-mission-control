@@ -17,9 +17,9 @@ public sealed class SettingsHelpWindowHeadlessTests
 		var title = window.FindControl<TextBlock>("HelpTitleText")!;
 		var body = window.FindControl<TextBox>("HelpBodyTextBox")!;
 
-		window.Title.ShouldBe("PACT:> Mission Control — Scenarios");
-		title.Text.ShouldBe("Scenarios");
-		body.Text!.Contains("review template", StringComparison.OrdinalIgnoreCase).ShouldBeTrue();
+		window.Title.ShouldBe("PACT:> Mission Control — Review types");
+		title.Text.ShouldBe("Review types");
+		body.Text!.ShouldContain("pact_submit_review_turn");
 		body.IsReadOnly.ShouldBeTrue();
 		(body.TextWrapping == global::Avalonia.Media.TextWrapping.Wrap).ShouldBeTrue();
 	}

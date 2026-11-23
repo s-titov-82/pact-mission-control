@@ -2,8 +2,8 @@
 
 ## Purpose and prerequisites
 
-Verify the visible ConPTY/xterm contract for PowerShell, Codex, Claude, and
-Hermes against the exact release candidate. Use Windows x64 with the four
+Verify the visible ConPTY/xterm contract for PowerShell, Codex, and Claude
+against the exact release candidate. Use Windows x64 with the three
 commands resolvable on `PATH`. Close the normal Pact instance first.
 
 Create an empty absolute directory and launch:
@@ -16,7 +16,7 @@ Record the candidate SHA-256 and source commit in the result table.
 
 ## Actions and expected results
 
-1. Create PowerShell, Codex, Claude, and Hermes sessions in one sample project.
+1. Create PowerShell, Codex, and Claude sessions in one sample project.
    Each starts interactively without an unsupported-terminal warning.
 2. In every session, type input, paste multiple lines, interrupt a running
    command, resize repeatedly, switch away and back, and stop or exit. Input
@@ -36,19 +36,15 @@ Record the candidate SHA-256 and source commit in the result table.
    afterwards closes the popover even though xterm never held the selection. `Send selected text` must use the
    resulting clipboard text when xterm has no selection. Verify Shift/Ctrl+Enter
    multiline input.
-6. In Hermes, verify input, wheel, switching, and resize. Diagnostics must show
-   that Pact delivered the final requested ConPTY dimensions and requested a
-   redraw. Record Hermes' visible internal scaling separately; do not report
-   visual parity merely because Pact delivered the correct size.
-7. Start a long task, select another tab, and observe Busy then Unread. Selecting
+6. Start a long task, select another tab, and observe Busy then Unread. Selecting
    the completed tab in an active visible window clears Unread. When this is the
    final unread completion, taskbar attention clears too.
-8. Select near the right edge and confirm the popover mirrors to the left.
+7. Select near the right edge and confirm the popover mirrors to the left.
    Resize Pact to its minimum supported size and confirm the action list,
    divider, target list, and popup chrome remain inside the center pane.
-9. While any terminal selection popover is open, confirm the right-panel
+8. While any terminal selection popover is open, confirm the right-panel
    `Actions` block and `Usage limits` stay visible.
-10. Confirm the isolated data root contains no transcript or durable session
+9. Confirm the isolated data root contains no transcript or durable session
    output directory.
 
 ## Results
@@ -60,7 +56,6 @@ Record the candidate SHA-256 and source commit in the result table.
 | Claude OSC 52 anchored and fallback placement | NOT-RUN |  |  |
 | Right-edge mirroring and minimum window | NOT-RUN |  |  |
 | Right-panel continuity | NOT-RUN |  |  |
-| Hermes delivery and visible limitation | NOT-RUN |  |  |
 | Switching, status, and clean exit | NOT-RUN |  |  |
 
 ## Privacy cleanup

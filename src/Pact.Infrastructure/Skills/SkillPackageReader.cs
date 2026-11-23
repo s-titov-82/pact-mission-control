@@ -11,7 +11,8 @@ internal sealed class SkillPackageReader(string temporaryDirectory, HttpClient h
 	private const int MaxFiles = 32_768;
 	private readonly GitCliRunner _git = new();
 
-	internal async Task<IReadOnlyList<CatalogSkill>> ReadAsync(string source, bool native, string? reference, CancellationToken token)
+	internal async Task<IReadOnlyList<CatalogSkill>> ReadAsync(string source, bool native, string? reference, CancellationToken token,
+		List<string>? warnings = null)
 	{
 		if (!Path.IsPathFullyQualified(source))
 		{
@@ -36,7 +37,6 @@ internal sealed class SkillPackageReader(string temporaryDirectory, HttpClient h
 
 		var packages = new List<CatalogSkill>();
 		var pending = new Stack<string>();
-		var budget = new ReadBudget();
 		pending.Push(source);
 		while (pending.TryPop(out var directory))
 		{
@@ -47,12 +47,13 @@ internal sealed class SkillPackageReader(string temporaryDirectory, HttpClient h
 				string? warning = null;
 				try
 				{
+					ValidatePath(Path.GetFileName(directory));
 					var actualDirectory = native && IsLink(directory)
 						? Directory.ResolveLinkTarget(directory, returnFinalTarget: true)?.FullName ?? throw new IOException($"Broken skill link: {directory}")
 						: directory;
-					content = ReadDirectory(actualDirectory, budget, token, skipGitMetadata: native);
+					content = ReadDirectory(actualDirectory, new ReadBudget(), token, skipGitMetadata: native);
 				}
-				catch (Exception ex) when (native && ex is IOException or UnauthorizedAccessException)
+				catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
 				{
 					warning = ex.Message;
 					content = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
@@ -79,6 +80,14 @@ internal sealed class SkillPackageReader(string temporaryDirectory, HttpClient h
 			{
 				foreach (var child in Directory.EnumerateDirectories(directory))
 				{
+					if (IsStaging(child))
+					{
+						if (warnings is not null)
+						{
+							ReportStagedPackage(child, warnings);
+						}
+						continue;
+					}
 					if (!Ignored(child) && (!IsLink(child) || native && File.Exists(Path.Combine(child, "SKILL.md"))))
 					{
 						pending.Push(child);
@@ -94,8 +103,8 @@ internal sealed class SkillPackageReader(string temporaryDirectory, HttpClient h
 		return packages;
 	}
 
-	internal static Dictionary<string, byte[]> ReadDirectory(string directory, CancellationToken token) =>
-		ReadDirectory(directory, new ReadBudget(), token);
+	internal static Dictionary<string, byte[]> ReadDirectory(string directory, CancellationToken token, bool skipGitMetadata = false) =>
+		ReadDirectory(directory, new ReadBudget(), token, skipGitMetadata);
 
 	private static Dictionary<string, byte[]> ReadDirectory(string root, ReadBudget budget, CancellationToken token, bool skipGitMetadata = false)
 	{
@@ -113,12 +122,13 @@ internal sealed class SkillPackageReader(string temporaryDirectory, HttpClient h
 			foreach (var entry in Directory.EnumerateFileSystemEntries(directory))
 			{
 				var gitMetadata = Path.GetFileName(entry).Equals(".git", StringComparison.OrdinalIgnoreCase);
-				if (skipGitMetadata && gitMetadata)
+				var linked = IsLink(entry);
+				if (skipGitMetadata && gitMetadata && !linked)
 				{
 					continue;
 				}
 
-				if (IsLink(entry) || gitMetadata)
+				if (linked || gitMetadata)
 				{
 					throw new IOException($"Unsupported package path: {entry}");
 				}
@@ -135,7 +145,10 @@ internal sealed class SkillPackageReader(string temporaryDirectory, HttpClient h
 				budget.Charge(stream.Length);
 				var bytes = new byte[(int)stream.Length];
 				stream.ReadExactly(bytes);
-				content.Add(path, bytes);
+				if (!content.TryAdd(path, bytes))
+				{
+					throw new IOException($"Conflicting package paths: {path}");
+				}
 			}
 		}
 
@@ -185,8 +198,47 @@ internal sealed class SkillPackageReader(string temporaryDirectory, HttpClient h
 	}
 
 	private static bool Ignored(string path) =>
-		Path.GetFileName(path).Equals(".git", StringComparison.OrdinalIgnoreCase) ||
-		Path.GetFileName(path).StartsWith(".pact-skill-", StringComparison.OrdinalIgnoreCase);
+		Path.GetFileName(path).Equals(".git", StringComparison.OrdinalIgnoreCase) || IsStaging(path);
+
+	private static bool IsStaging(string path) => Path.GetFileName(path).StartsWith(".pact-skill-", StringComparison.OrdinalIgnoreCase);
+
+	internal static void ReportStagedPackagesIn(string directory, List<string> warnings)
+	{
+		try
+		{
+			foreach (var child in Directory.EnumerateDirectories(directory, ".pact-skill-*"))
+			{
+				ReportStagedPackage(child, warnings);
+			}
+		}
+		catch (DirectoryNotFoundException)
+		{
+			// An unused native home need not exist.
+		}
+		catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+		{
+			warnings.Add($"Could not check for staged skill packages in {directory}. {ex.Message}");
+		}
+	}
+
+	private static void ReportStagedPackage(string directory, List<string> warnings)
+	{
+		try
+		{
+			if (!IsLink(directory) && File.Exists(Path.Combine(directory, "SKILL.md")))
+			{
+				warnings.Add($"A skill package remains at the staging path {directory}. Review this folder before moving or removing it.");
+			}
+		}
+		catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+		{
+			// A completed operation can remove its staging entry after enumeration.
+		}
+		catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+		{
+			warnings.Add($"Could not inspect the skill staging path {directory}. {ex.Message}");
+		}
+	}
 
 	private async Task<IReadOnlyList<CatalogSkill>> ReadGitAsync(string source, string? reference, CancellationToken token)
 	{
@@ -374,10 +426,10 @@ internal sealed class SkillPackageReader(string temporaryDirectory, HttpClient h
 		string reference, string revision, string? releaseNotes, string prefix, string subdirectory, CancellationToken token)
 	{
 		var packages = new List<CatalogSkill>();
-		var budget = new ReadBudget();
 		var entries = archive.Entries.Where(e => e.FullName.StartsWith(prefix, StringComparison.Ordinal) && e.Name.Length != 0)
-			.ToDictionary(e => e.FullName[prefix.Length..], StringComparer.Ordinal);
-		foreach (var path in entries.Keys.Where(path => Path.GetFileName(path).Equals("SKILL.md", StringComparison.OrdinalIgnoreCase)))
+			.Select(e => (Path: e.FullName[prefix.Length..], Entry: e)).ToArray();
+		foreach (var path in entries.Select(item => item.Path).Distinct(StringComparer.Ordinal)
+			.Where(path => Path.GetFileName(path).Equals("SKILL.md", StringComparison.OrdinalIgnoreCase)))
 		{
 			token.ThrowIfCancellationRequested();
 			var directory = path[..^"SKILL.md".Length].TrimEnd('/');
@@ -388,26 +440,39 @@ internal sealed class SkillPackageReader(string temporaryDirectory, HttpClient h
 
 			var packagePrefix = directory.Length == 0 ? string.Empty : directory + "/";
 			var folder = directory.Length == 0 ? repository : directory.Split('/')[^1];
-			ValidatePath(folder);
 			var content = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
-			foreach (var (fullPath, entry) in entries.Where(pair => pair.Key.StartsWith(packagePrefix, StringComparison.Ordinal)))
+			string? warning = null;
+			try
 			{
-				var relative = fullPath[packagePrefix.Length..];
-				ValidatePath(relative);
-				if ((entry.ExternalAttributes >> 16 & 0xF000) == 0xA000)
+				ValidatePath(directory.Length == 0 ? folder : directory);
+				var budget = new ReadBudget();
+				foreach (var (fullPath, entry) in entries.Where(item => item.Path.StartsWith(packagePrefix, StringComparison.Ordinal)))
 				{
-					throw new IOException($"Linked package path: {fullPath}");
-				}
+					var relative = fullPath[packagePrefix.Length..];
+					ValidatePath(relative);
+					if ((entry.ExternalAttributes >> 16 & 0xF000) == 0xA000)
+					{
+						throw new IOException($"Linked package path: {fullPath}");
+					}
 
-				budget.Charge(entry.Length);
-				using var stream = entry.Open();
-				var bytes = new byte[(int)entry.Length];
-				stream.ReadExactly(bytes);
-				content.Add(relative, bytes);
+					budget.Charge(entry.Length);
+					using var stream = entry.Open();
+					var bytes = new byte[(int)entry.Length];
+					stream.ReadExactly(bytes);
+					if (!content.TryAdd(relative, bytes))
+					{
+						throw new IOException($"Conflicting package paths: {relative}");
+					}
+				}
+			}
+			catch (IOException ex)
+			{
+				warning = ex.Message;
+				content.Clear();
 			}
 
 			packages.Add(new CatalogSkill(folder, source, directory.Length == 0 ? "." : directory,
-				reference, revision, releaseNotes ?? Notes(content), content, null));
+				reference, revision, releaseNotes ?? Notes(content), content, null, warning));
 		}
 
 		return packages;
@@ -443,7 +508,7 @@ internal sealed class SkillPackageReader(string temporaryDirectory, HttpClient h
 		{
 			if (bytes > MaxBytes - _bytes || ++_files > MaxFiles)
 			{
-				throw new IOException("The catalog exceeds the 128 MiB or 32,768-file preview limit.");
+				throw new IOException("The package exceeds the 128 MiB or 32,768-file preview limit.");
 			}
 
 			_bytes += bytes;

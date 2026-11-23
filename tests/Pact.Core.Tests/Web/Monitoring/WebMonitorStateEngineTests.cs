@@ -91,6 +91,64 @@ public sealed class WebMonitorStateEngineTests
 	}
 
 	[Test]
+	public void Observe_restored_activity_only_rule_establishes_an_idle_baseline_without_a_completion()
+	{
+		var rule = CreateRule(hasRevisionExtractor: false);
+		var engine = CreateLoadedEngine();
+		engine.Restore(CreateSnapshot(rule, activity: true, revision: null, unread: false));
+
+		engine.Observe(Url, rule, new(null, null), T0.AddMinutes(1)).Status.ShouldBe(WebMonitorStatus.None);
+		var first = engine.Observe(Url, rule, new(false, null), T0.AddMinutes(2));
+		first.Status.ShouldBe(WebMonitorStatus.None);
+		first.Snapshot!.Activity.ShouldBe(false);
+		first.Snapshot.Unread.ShouldBeFalse();
+
+		engine.Observe(Url, rule, new(true, null), T0.AddMinutes(3));
+		engine.Observe(Url, rule, new(false, null), T0.AddMinutes(4)).Status.ShouldBe(WebMonitorStatus.Unread);
+	}
+
+	[Test]
+	public void Observe_restored_activity_awaits_evidence_of_the_application_but_live_completion_needs_no_revision()
+	{
+		var rule = CreateRule();
+		var engine = CreateLoadedEngine();
+		var retained = CreateSnapshot(rule, activity: true, revision: "1842", unread: false);
+		engine.Restore(retained);
+
+		foreach (var minute in new[] { 1, 2 })
+		{
+			var intermediate = engine.Observe(Url, rule, new(false, null), T0.AddMinutes(minute));
+			intermediate.Status.ShouldBe(WebMonitorStatus.None);
+			intermediate.Snapshot.ShouldBe(retained);
+			intermediate.SnapshotChanged.ShouldBeFalse();
+		}
+
+		engine.Observe(Url, rule, new(true, null), T0.AddMinutes(3)).Status.ShouldBe(WebMonitorStatus.Activity);
+		engine.Observe(Url, rule, new(false, null), T0.AddMinutes(4)).Status.ShouldBe(WebMonitorStatus.Unread);
+	}
+
+	[Test]
+	public void Observe_restored_activity_eventually_accepts_idle_without_a_revision_and_starts_a_new_revision_baseline()
+	{
+		var rule = CreateRule();
+		var engine = CreateLoadedEngine();
+		engine.Restore(CreateSnapshot(rule, activity: true, revision: "1842", unread: false));
+
+		engine.Observe(Url, rule, new(false, null), T0.AddMinutes(1));
+		engine.Observe(Url, rule, new(false, null), T0.AddMinutes(2));
+		var idle = engine.Observe(Url, rule, new(false, null), T0.AddMinutes(3));
+		idle.Status.ShouldBe(WebMonitorStatus.None);
+		idle.SnapshotChanged.ShouldBeTrue();
+		idle.Snapshot!.Activity.ShouldBe(false);
+		idle.Snapshot.Revision.ShouldBeNull();
+
+		var baseline = engine.Observe(Url, rule, new(false, "1843"), T0.AddMinutes(4));
+		baseline.Status.ShouldBe(WebMonitorStatus.None);
+		baseline.Snapshot!.Revision.ShouldBe("1843");
+		engine.Observe(Url, rule, new(false, "1844"), T0.AddMinutes(5)).Status.ShouldBe(WebMonitorStatus.Unread);
+	}
+
+	[Test]
 	public void Restore_projects_retained_unread_before_an_observation()
 	{
 		var rule = CreateRule();
@@ -671,7 +729,7 @@ public sealed class WebMonitorStateEngineTests
 			_ => throw new ArgumentOutOfRangeException(nameof(malformation))
 		};
 
-	private static WebMonitorCompiledRule CreateRule(bool hasActivityExtractor = true)
+	private static WebMonitorCompiledRule CreateRule(bool hasActivityExtractor = true, bool hasRevisionExtractor = true)
 	{
 		WebMonitorRule rule = new(
 			"build-monitor",
@@ -687,12 +745,12 @@ public sealed class WebMonitorStateEngineTests
 					MatchPattern: null,
 					CaptureGroup: null)
 				: null,
-			Revision: new WebMonitorExtractor(
+			Revision: hasRevisionExtractor ? new WebMonitorExtractor(
 				".revision",
 				WebMonitorValueSource.Text,
 				AttributeName: null,
 				MatchPattern: null,
-				CaptureGroup: null));
+				CaptureGroup: null) : null);
 		return WebMonitorRuleCompiler.Compile(rule);
 	}
 }

@@ -137,7 +137,26 @@ public sealed class ScenarioDefinitionStoreTests
 
 		var review = definitions.ShouldHaveSingleItem();
 		review.Id.ShouldBe("custom-review");
-		review.ReviewRules.ShouldBe("review {target}\n\nCheck migration order.");
+		review.ReviewRules.ShouldBe("review the review target\n\nCheck migration order.");
+		review.MaxIterations.ShouldBe(3);
+	}
+
+	[Test]
+	public async Task Malformed_fields_do_not_hide_valid_review_settings_or_other_entries()
+	{
+		using var temporaryDirectory = TemporaryDirectory.Create();
+		var path = Path.Combine(temporaryDirectory.Path, "scenarios.json");
+		await File.WriteAllTextAsync(path, """
+			[{"kind": 123}, {"id": "custom", "kind": "reviewLoop", "name": {}, "reviewRules": "Check migrations.",
+			 "defaultStrict": "incorrect", "defaultReviewerInstructionId": "allow-minors", "maxIterations": -1}]
+			""");
+
+		var review = (await new ScenarioDefinitionStore(path).LoadAsync(CancellationToken.None)).ShouldHaveSingleItem();
+
+		review.Id.ShouldBe("custom");
+		review.ReviewRules.ShouldBe("Check migrations.");
+		review.DefaultStrict.ShouldBeFalse();
+		review.MaxIterations.ShouldBeNull();
 	}
 
 	[Test]
@@ -145,7 +164,10 @@ public sealed class ScenarioDefinitionStoreTests
 	{
 		using var root = TemporaryDirectory.Create();
 		var store = new ScenarioDefinitionStore(Path.Combine(root.Path, "scenarios.json"));
-		var definition = new ScenarioDefinition("custom", ScenarioKind.ReviewLoop, "Custom", "Inspect migrations.", false);
+		var definition = new ScenarioDefinition("custom", ScenarioKind.ReviewLoop, "Custom", "Inspect migrations.", false)
+		{
+			MaxIterations = 2
+		};
 		await store.SaveAsync([definition], CancellationToken.None);
 		(await store.LoadAsync(CancellationToken.None)).ShouldHaveSingleItem().ShouldBe(definition);
 	}

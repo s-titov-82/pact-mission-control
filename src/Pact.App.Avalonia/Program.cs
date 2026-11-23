@@ -10,7 +10,8 @@ internal static partial class Program
 	[STAThread]
 	public static int Main(string[] args)
 	{
-		if (args is ["-ToastActivated"])
+		// COM appends -Embedding to the notification toolkit's registered launch command.
+		if (args.Contains("-ToastActivated", StringComparer.Ordinal))
 		{
 			return Task.Run(Platform.WindowsNotificationActivation.ForwardActivation).GetAwaiter().GetResult();
 		}

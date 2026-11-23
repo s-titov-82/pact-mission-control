@@ -88,37 +88,24 @@ public sealed class AppearanceSettingsStore
 	/// </summary>
 	public async Task<AppearancePreferences> LoadPreferencesAsync(CancellationToken cancellationToken)
 	{
-		if (!File.Exists(Path))
-		{
-			return new(AppearanceMode.System);
-		}
+		var settings = await LoadRootAsync(cancellationToken).ConfigureAwait(false);
+		var sound = ReadValue<NotificationSoundMode?>(settings["notificationSoundMode"], null);
+		var banner = ReadValue(settings["notificationMode"], NotificationBannerMode.WindowsDefault);
+		var terminal = ReadValue<TerminalAppearance?>(settings["terminal"], null);
 
-		try
+		return new(
+			Parse(ReadValue<string?>(settings["theme"], null)),
+			ReadValue(settings["showSelectedTabDetails"], true),
+			ReadValue(settings["showExternalProcessMetrics"], false))
 		{
-			await using var stream = File.OpenRead(Path);
-			var settings = await JsonSerializer.DeserializeAsync<AppearanceSettings>(
-				stream, SettingsFileStore.JsonOptions, cancellationToken).ConfigureAwait(false);
-			return new(
-				Parse(settings?.Theme),
-				settings?.ShowSelectedTabDetails ?? true,
-				settings?.ShowExternalProcessMetrics ?? false)
-			{
-				Terminal = settings?.Terminal is { IsValid: true } terminal ? terminal : null,
-				ShowNotifications = settings?.ShowNotifications ?? false,
-				NotificationSoundMode = settings?.NotificationSoundMode ??
-					(settings?.NotificationSound == true ? NotificationSoundMode.Windows : NotificationSoundMode.Silent),
-				NotificationMode = settings?.NotificationMode ?? NotificationBannerMode.WindowsDefault,
-				NotificationSeconds = Math.Clamp(settings?.NotificationSeconds ?? 10, 1, 3600)
-			};
-		}
-		catch (JsonException)
-		{
-			return new(AppearanceMode.System);
-		}
-		catch (IOException)
-		{
-			return new(AppearanceMode.System);
-		}
+			Terminal = terminal is { IsValid: true } ? terminal : null,
+			ShowNotifications = ReadValue(settings["showNotifications"], false),
+			NotificationSoundMode = sound is { } knownSound && Enum.IsDefined(knownSound)
+				? knownSound
+				: ReadValue(settings["notificationSound"], false) ? NotificationSoundMode.Windows : NotificationSoundMode.Silent,
+			NotificationMode = Enum.IsDefined(banner) ? banner : NotificationBannerMode.WindowsDefault,
+			NotificationSeconds = Math.Clamp(ReadValue(settings["notificationSeconds"], 10), 1, 3600)
+		};
 	}
 
 	/// <summary>Saves a normalized appearance preference atomically.</summary>
@@ -141,9 +128,9 @@ public sealed class AppearanceSettingsStore
 		root["showNotifications"] = preferences.ShowNotifications;
 		root.Remove("notificationSound");
 		root["notificationSoundMode"] = JsonSerializer.SerializeToNode(preferences.NotificationSoundMode, SettingsFileStore.JsonOptions);
-		root["notificationSeconds"] = preferences.NotificationSeconds;
+		root["notificationSeconds"] = Math.Clamp(preferences.NotificationSeconds, 1, 3600);
 		root["notificationMode"] = JsonSerializer.SerializeToNode(preferences.NotificationMode, SettingsFileStore.JsonOptions);
-		if (preferences.Terminal is not null || root["terminal"] is JsonObject)
+		if (preferences.Terminal is not null || ReadValue<TerminalAppearance?>(root["terminal"], null) is { IsValid: true })
 		{
 			var terminal = root["terminal"] as JsonObject ?? new JsonObject();
 			var appearance = preferences.Terminal ?? new TerminalAppearance();
@@ -193,14 +180,15 @@ public sealed class AppearanceSettingsStore
 		_ => AppearanceMode.System
 	};
 
-	private sealed record AppearanceSettings(
-		string Theme,
-		bool? ShowSelectedTabDetails,
-		bool? ShowExternalProcessMetrics,
-		TerminalAppearance? Terminal,
-		bool ShowNotifications,
-		bool NotificationSound,
-		NotificationSoundMode? NotificationSoundMode,
-		int? NotificationSeconds,
-		NotificationBannerMode? NotificationMode);
+	private static T ReadValue<T>(JsonNode? node, T fallback)
+	{
+		try
+		{
+			return node is null ? fallback : node.Deserialize<T>(SettingsFileStore.JsonOptions)!;
+		}
+		catch (JsonException)
+		{
+			return fallback;
+		}
+	}
 }

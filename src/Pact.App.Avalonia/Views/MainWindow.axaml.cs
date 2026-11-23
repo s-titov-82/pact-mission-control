@@ -643,7 +643,8 @@ internal sealed partial class MainWindow : Window, IDisposable
 			await dialog.ShowDialog<DirectorySelectionResult?>(this);
 		if (result is not null)
 		{
-			await EngineProbeController.AddProjectFromDirectoryAsync(result.Directory);
+			await RunWorkspaceOperationWithBusyOverlayAsync("Opening project...",
+				() => EngineProbeController.AddProjectFromDirectoryAsync(result.Directory));
 		}
 	}
 
@@ -1537,6 +1538,14 @@ internal sealed partial class MainWindow : Window, IDisposable
 
 	private async Task RunWorkspaceOperationWithBusyOverlayAsync(string message, Func<Task> operation)
 	{
+		if (BusyOverlay.IsVisible)
+		{
+			if (!_gracefulShutdownRunning)
+			{
+				await EngineProbeController.ReportStatusAsync("Another workspace operation is in progress. Try again when it finishes.");
+			}
+			return;
+		}
 		await ShowBusyOverlayAsync(message, actionLabel: null);
 		try
 		{

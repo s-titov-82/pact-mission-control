@@ -32,6 +32,9 @@ internal sealed partial class BrowserPaneView : Grid
 	internal void ConfigureDiagnosticSink(Action<WebViewDiagnosticEntry> diagnosticSink) =>
 		((AvaloniaWebPageHostFactory)Factory).ConfigureDiagnosticSink(diagnosticSink);
 
+	internal void ConfigureNativeInteraction(Action<string>? notify) =>
+		((AvaloniaWebPageHostFactory)Factory).NativeInteraction = notify;
+
 	internal void ConfigureProfileHousekeeping(WebViewProfileHousekeeping profileHousekeeping) =>
 		((AvaloniaWebPageHostFactory)Factory).ConfigureProfileHousekeeping(profileHousekeeping);
 

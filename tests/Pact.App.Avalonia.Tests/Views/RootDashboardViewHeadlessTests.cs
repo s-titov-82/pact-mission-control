@@ -21,6 +21,37 @@ namespace Pact.App.Avalonia.Tests.Views;
 public sealed class RootDashboardViewHeadlessTests
 {
 	[AvaloniaTest]
+	public void Double_click_arms_removal_without_confirming_it()
+	{
+		var theme = new FluentTheme();
+		Application.Current!.Styles.Add(theme);
+		InlineDeleteButton button = new() { Content = "Delete", Width = 160, Height = 48 };
+		ToolTip.SetTip(button, "Remove project and saved tabs from Pact");
+		Window window = new() { Content = button, Width = 300, Height = 200 };
+		try
+		{
+			window.Show();
+			window.UpdateLayout();
+			var clicked = 0;
+			button.Click += (_, _) => clicked++;
+			var point = button.TranslatePoint(new Point(30, 20), window)!.Value;
+			window.MouseDown(point, MouseButton.Left);
+			window.MouseUp(point, MouseButton.Left);
+			window.MouseDown(point, MouseButton.Left);
+			window.MouseUp(point, MouseButton.Left);
+
+			clicked.ShouldBe(0);
+			button.Content.ShouldBe("Confirm delete");
+			ToolTip.GetTip(button).ShouldBe("Confirm delete");
+		}
+		finally
+		{
+			window.Close();
+			Application.Current.Styles.Remove(theme);
+		}
+	}
+
+	[AvaloniaTest]
 	public async Task Paused_and_recent_linear_lists_are_below_cards_and_route_their_play_buttons()
 	{
 		WorkspaceViewModel paused = new(new ProjectRecord("paused", "Paused project", "C:/paused",

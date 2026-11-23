@@ -1522,13 +1522,23 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		CancellationToken cancellationToken = default) =>
 		_recentDirectoryStore.LoadAsync(cancellationToken);
 
-	public Task AddProjectFromDirectoryAsync(
+	public async Task AddProjectFromDirectoryAsync(
 		string workingDirectory,
-		CancellationToken cancellationToken = default) =>
-		AddProjectFromDirectoryCoreAsync(workingDirectory, selectWorkspace: true, cancellationToken);
+		CancellationToken cancellationToken = default)
+	{
+		var workspace = await AddProjectFromDirectoryCoreAsync(workingDirectory, cancellationToken);
+		if (ViewModel.PausedWorkspaces.Contains(workspace))
+		{
+			await ResumeWorkspaceAsync(workspace, cancellationToken);
+		}
+		else
+		{
+			await SelectWorkspaceAsync(workspace);
+		}
+	}
 
-	private async Task AddProjectFromDirectoryCoreAsync(
-		string workingDirectory, bool selectWorkspace, CancellationToken cancellationToken)
+	private async Task<WorkspaceViewModel> AddProjectFromDirectoryCoreAsync(
+		string workingDirectory, CancellationToken cancellationToken)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(workingDirectory);
 		var directory = Path.GetFullPath(workingDirectory.Trim());
@@ -1538,14 +1548,8 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		}
 
 		var workspace = await ViewModel.EnsureWorkspaceForDirectoryAsync(directory, cancellationToken, selectWorkspace: false);
-		if (selectWorkspace)
-		{
-			if (ViewModel.PausedWorkspaces.Contains(workspace))
-			{ await ResumeWorkspaceAsync(workspace, cancellationToken); }
-			else
-			{ await SelectWorkspaceAsync(workspace); }
-		}
 		await AddRecentWorkingDirectoryAsync(directory, cancellationToken);
+		return workspace;
 	}
 
 	public async Task ResumeWorkspaceAsync(WorkspaceViewModel workspace, CancellationToken cancellationToken = default)
@@ -1689,7 +1693,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 	{
 		var result = await new ProfileDiagnostics(Paths, new AvaloniaExecutableLocator()).CheckAsync(profile,
 			ViewModel.RootTabs.Sessions.Concat(ViewModel.Workspaces.SelectMany(workspace => workspace.Sessions)),
-			_agentControlTokens.HasInitialized, cancellationToken);
+			_agentControlTokens.HasInitialized, cancellationToken).ConfigureAwait(false);
 		try
 		{
 			var version = Microsoft.Web.WebView2.Core.CoreWebView2Environment.GetAvailableBrowserVersionString();
@@ -2221,6 +2225,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 			() => _runtimeCoordinator.StopAllAsync(
 				(id, status) => ViewModel.UpdateSessionStatusAsync(id, status, CancellationToken.None),
 				static () => { }), failures);
+		await RunCleanupStepAsync(Clipboard.RestorePendingPasteAsync, failures);
 		await RunCleanupStepAsync(
 			() => InvokeUiActionAsync(() =>
 			{
@@ -2762,7 +2767,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 			() => AppLog.AppendAsync(Paths.RootDirectory, message),
 			static _ => Task.CompletedTask);
 
-	private Task ReportStatusAsync(string message)
+	internal Task ReportStatusAsync(string message)
 	{
 		StatusText = message;
 		StatusMessage?.Invoke(this, message);

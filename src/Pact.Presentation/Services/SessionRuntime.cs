@@ -268,17 +268,23 @@ public sealed class SessionRuntime(string sessionId)
 	/// caller can start it, write the input that triggers the paste, and then await it.
 	/// </summary>
 	/// <exception cref="TimeoutException">The paste did not show within the timeout.</exception>
-	public async Task WaitForClientPasteAsync(
+	public Task WaitForClientPasteAsync(
 		string text,
+		TimeSpan timeout,
+		CancellationToken cancellationToken) =>
+		WaitForClientPasteAsync(new ClientPasteConfirmation(text), timeout, cancellationToken);
+
+	internal async Task WaitForClientPasteAsync(
+		ClientPasteConfirmation confirmation,
 		TimeSpan timeout,
 		CancellationToken cancellationToken)
 	{
-		PendingClientPaste pending = new(new ClientPasteConfirmation(text));
-		if (pending.Confirmation.IsTriviallyConfirmed)
+		if (confirmation.IsTriviallyConfirmed)
 		{
 			return;
 		}
 
+		PendingClientPaste pending = new(confirmation);
 		lock (_gate)
 		{
 			_pendingClientPastes.Add(pending);

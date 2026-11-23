@@ -72,4 +72,5 @@ public sealed class SkillActivationPreview
 	internal SkillLinkEdit? Link { get; }
 }
 
-internal sealed record SkillLinkEdit(string Path, string Target, string ReceiptPath, bool Create, string? ProjectionRoot = null);
+internal sealed record SkillLinkEdit(string Path, string Target, string ReceiptPath, bool Create, string? ProjectionRoot = null,
+	string? PreviousReceipt = null, string? ConnectionReceipt = null);

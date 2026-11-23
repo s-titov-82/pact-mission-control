@@ -14,6 +14,8 @@ internal sealed partial class AvaloniaClipboardService : IClipboardService
 	private readonly IUiTaskDispatcher _uiTaskDispatcher;
 	private readonly Func<Task<string>> _readTextAsync;
 	private readonly Func<string, Task> _setTextAsync;
+	private TopLevel? _pasteWindow;
+	private WindowsClipboardPaste? _renderingPaste;
 
 	public AvaloniaClipboardService(IUiTaskDispatcher uiTaskDispatcher)
 		: this(uiTaskDispatcher, ReadTextCoreAsync, SetTextCoreAsync)
@@ -75,6 +77,76 @@ internal sealed partial class AvaloniaClipboardService : IClipboardService
 			return false;
 		}
 	}
+
+	/// <inheritdoc />
+	public async Task<IClipboardPasteLease?> TryOfferPasteTextAsync(string text)
+	{
+		nint handle = 0;
+		await _uiTaskDispatcher.InvokeAsync(() =>
+		{
+			var topLevel = GetTopLevel();
+			if (topLevel?.TryGetPlatformHandle() is { HandleDescriptor: "HWND" } window)
+			{
+				handle = window.Handle;
+				if (!ReferenceEquals(_pasteWindow, topLevel))
+				{
+					if (_pasteWindow is not null)
+					{
+						Win32Properties.RemoveWndProcHookCallback(_pasteWindow, OnClipboardMessage);
+					}
+					Win32Properties.AddWndProcHookCallback(topLevel, OnClipboardMessage);
+					_pasteWindow = topLevel;
+				}
+			}
+			return Task.CompletedTask;
+		}).ConfigureAwait(false);
+		if (handle == 0)
+		{
+			return null;
+		}
+
+		for (var attempt = 0; attempt < 6; attempt++)
+		{
+			// A delayed format may call back into its original owner. Keep that wait off the UI thread.
+			var (paste, clipboardBusy) = await Task.Run(() =>
+			{
+				var offer = WindowsClipboardPaste.TryOffer(handle, text, _uiTaskDispatcher,
+					pending => Volatile.Write(ref _renderingPaste, pending), out var busy);
+				return (offer, busy);
+			}).ConfigureAwait(false);
+			if (!clipboardBusy)
+			{
+				return paste;
+			}
+			await Task.Delay(25).ConfigureAwait(false);
+		}
+		return null;
+	}
+
+	private nint OnClipboardMessage(nint window, uint message, nint format, nint lParam, ref bool handled)
+	{
+		const uint renderFormat = 0x0305;
+		const uint renderAllFormats = 0x0306;
+		if (message == renderFormat && Volatile.Read(ref _renderingPaste)?.TryRenderText(window, format) == true)
+		{
+			handled = true;
+		}
+		else if (message == renderAllFormats)
+		{
+			Volatile.Read(ref _renderingPaste)?.RestoreOnWindowClosing(window);
+		}
+		return 0;
+	}
+
+	/// <inheritdoc />
+	public Task RestorePendingPasteAsync() => _uiTaskDispatcher.InvokeAsync(() =>
+	{
+		if (_pasteWindow?.TryGetPlatformHandle() is { HandleDescriptor: "HWND" } owner)
+		{
+			Volatile.Read(ref _renderingPaste)?.RestoreOnWindowClosing(owner.Handle);
+		}
+		return Task.CompletedTask;
+	});
 
 	private static async Task<string> ReadTextCoreAsync()
 	{

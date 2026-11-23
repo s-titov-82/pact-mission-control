@@ -6,6 +6,8 @@ Root path applies to future session launches and to the git panel; a session tha
 
 The read-only summary line above the fields (id, status, created/active timestamps) reflects the project's current runtime state and cannot be edited here.
 
-Every session that belongs to the project is listed under it. A session's title, working directory, launch command, and resume command are editable — except while the session is locked by a running scenario, when a "Locked by a running scenario" hint appears and its fields become read-only until the run finishes. The working directory field is hidden for agent sessions (Codex, Claude, Hermes), which always run in the project's own directory; it only applies to pwsh/custom shell sessions.
+The project editor lists its visible sessions. You can edit a session's title,
+launch command, and resume command. PowerShell and custom shell sessions also
+have a working directory field. Codex and Claude run in the project's own directory.
 
 There is no delete button for a project in this section. Projects are created by opening a directory from the main window and removed by closing the project there — Settings only edits the projects that are currently open. A paused project is edited from the separate "Paused projects" section instead of here.

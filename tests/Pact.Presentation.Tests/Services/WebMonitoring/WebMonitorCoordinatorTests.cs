@@ -74,6 +74,27 @@ public sealed class WebMonitorCoordinatorTests
 	}
 
 	[Test]
+	public async Task Same_url_without_the_retained_revision_cannot_report_activity_complete()
+	{
+		await using CoordinatorContext context = new();
+		var rule = CreateRule();
+		var retained = CreateSnapshot(WebMonitorRuleCompiler.Compile(rule), MatchingUrl, activity: true, revision: "1");
+		await context.Store.SaveAsync(retained, CancellationToken.None);
+		FakeWebPageHost host = new("web-1", MatchingUrl);
+		host.Enqueue(MatchingUrl, activity: false, revision: null);
+		host.Enqueue(MatchingUrl, activity: false, revision: "2");
+		await context.Coordinator.SetRulesAsync([rule], CancellationToken.None);
+		await context.Coordinator.RegisterAsync("web-1", host, CancellationToken.None);
+		await CoordinatorContext.PumpAsync();
+
+		context.Statuses.ShouldNotContain(status => status.Status == WebMonitorStatus.Unread);
+		(await context.Store.LoadAsync("web-1", CancellationToken.None)).ShouldBe(retained);
+
+		await context.AdvanceAsync(TimeSpan.FromSeconds(5));
+		await context.WaitForSnapshotAsync("web-1", snapshot => snapshot.Revision == "2" && snapshot.Unread);
+	}
+
+	[Test]
 	public async Task A_tab_matching_a_rule_keeps_running_while_hidden_until_no_rule_matches()
 	{
 		await using CoordinatorContext context = new();

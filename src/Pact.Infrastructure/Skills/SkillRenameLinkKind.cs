@@ -12,7 +12,8 @@ internal static partial class SkillRenameLinkKind
 		{ return true; }
 		// Open the directory entry itself. Following it would report the target's attributes.
 		const uint openDirectoryReparsePoint = 0x02000000 | 0x00200000;
-		using var handle = OpenEntry(path, 0, FileShare.ReadWrite | FileShare.Delete, 0, FileMode.Open, openDirectoryReparsePoint, 0);
+		using var handle = OpenEntry(SkillDirectoryConnection.ExtendedPath(path), 0, FileShare.ReadWrite | FileShare.Delete,
+			0, FileMode.Open, openDirectoryReparsePoint, 0);
 		if (handle.IsInvalid || ReadTag(handle, 9, out var info, (uint)Marshal.SizeOf<AttributeTag>()) == 0)
 		{
 			throw new IOException($"Could not inspect the link at {path}.", new Win32Exception(Marshal.GetLastPInvokeError()));

@@ -31,8 +31,7 @@
         <ScrollViewer>
           <StackPanel Margin="0,10,20,0" Spacing="8">
             <TextBlock Classes="SettingsFieldLabel" Text="Windows Terminal profile" />
-            <Button Content="Choose settings.json…" HorizontalAlignment="Left" Tag="LoadTerminalProfiles"
-                    IsVisible="{Binding HasProfiles, Converter={StaticResource Not}}" />
+            <Button Content="Choose settings.json…" HorizontalAlignment="Left" Tag="LoadTerminalProfiles" />
             <ComboBox MinWidth="144" HorizontalAlignment="Left" IsVisible="{Binding HasProfiles}"
                       PlaceholderText="Choose a profile" Tag="TerminalProfile"
                       ItemsSource="{Binding ProfileNames}" SelectedIndex="{Binding ProfileIndex, Mode=OneWay}" />
@@ -546,10 +545,10 @@
         <TextBox Classes="SettingsMultiline" Text="{Binding ReviewRules}" />
         <CheckBox Content="Strict review by default" IsChecked="{Binding DefaultStrict}" />
         <TextBlock TextWrapping="Wrap" Text="Strict reviews require every finding to be resolved or successfully disputed. Non-strict reviews may leave minor findings open." />
-        <TextBlock Classes="SettingsFieldLabel" Text="Scenario ID for MCP requests" />
+        <TextBlock Classes="SettingsFieldLabel" Text="Review type ID for MCP requests" />
         <TextBox Text="{Binding Id}" />
         <Button HorizontalAlignment="Right" Foreground="{DynamicResource AppDangerStrongBrush}"
-                Tag="Delete" Content="Delete scenario" />
+                Tag="Delete" Content="Delete review type" />
       </StackPanel>
     </ScrollViewer>
   </DataTemplate>

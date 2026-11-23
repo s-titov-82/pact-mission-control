@@ -19,20 +19,19 @@ public sealed class SubscriptionUsageRow : INotifyPropertyChanged
 
 		Profile = profile;
 		ProfileId = profile.Id;
-		ProfileName = profile.DisplayName;
 		Kind = profile.Kind;
 	}
 
 	/// <inheritdoc />
 	public event PropertyChangedEventHandler? PropertyChanged;
 
-	internal AgentProfileRecord Profile { get; }
+	internal AgentProfileRecord Profile { get; private set; }
 
 	/// <summary>Profile this row reports on.</summary>
 	public string ProfileId { get; }
 
 	/// <summary>Profile display name.</summary>
-	public string ProfileName { get; }
+	public string ProfileName => Profile.DisplayName;
 
 	/// <summary>Agent the profile launches.</summary>
 	public AgentKind Kind { get; }
@@ -75,6 +74,15 @@ public sealed class SubscriptionUsageRow : INotifyPropertyChanged
 	/// refresh interval.
 	/// </summary>
 	public bool IsNearLimit { get; private set; }
+
+	internal void UpdateDisplayName(string name)
+	{
+		if (ProfileName != name)
+		{
+			Profile = Profile with { DisplayName = name };
+			OnPropertyChanged(nameof(ProfileName));
+		}
+	}
 
 	/// <summary>Applies a snapshot using the current time.</summary>
 	public SubscriptionUsageRow Apply(SubscriptionUsageSnapshot snapshot) => Apply(snapshot, DateTimeOffset.UtcNow);

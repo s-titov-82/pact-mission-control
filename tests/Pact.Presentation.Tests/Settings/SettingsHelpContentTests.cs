@@ -27,8 +27,8 @@ public sealed class SettingsHelpContentTests
 		(var title, var body) = SettingsHelpContent.Get(SettingsSection.Orchestrator);
 
 		title.ShouldBe("Orchestrator");
-		body.ShouldContain("Initialize");
-		body.ShouldContain("credential");
+		body.ShouldContain("unavailable");
+		body.ShouldContain("saved sessions on disk");
 	}
 
 	[TestCase(SettingsSection.Scenarios, "pact_submit_review_turn")]

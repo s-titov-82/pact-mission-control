@@ -20,9 +20,11 @@ public sealed partial class SkillActivationService
 	{
 		var target = ResolveDirectory(Path.GetDirectoryName(Path.GetFullPath(skillFile))!);
 		var scope = Hash(profile.Id + "|" + NormalizeFolder(folder).ToUpperInvariant())[..32];
-		var root = Path.Combine(_storage, "FolderDiscovery", scope, Hash(target.ToUpperInvariant())[..32]);
+		var root = Path.Combine(ResolveDirectory(_dataRoot), "Settings", "Skills", "FolderDiscovery", scope, Hash(target.ToUpperInvariant())[..32]);
 		var alias = Path.Combine(root, ".claude", "skills", Path.GetFileName(target));
-		return new(alias, target, ReceiptPath(alias), create, root);
+		var receipt = ReceiptPath(alias);
+		return new(alias, target, receipt, create, root, PreviousReceipt: create ? ReadFile(receipt) : null,
+			ConnectionReceipt: create ? null : ReadFile(receipt));
 	}
 
 	private SkillLinkEdit? FolderDiscoveryEdit(AgentProfileRecord profile, string folder, string skillFile, bool enabled)

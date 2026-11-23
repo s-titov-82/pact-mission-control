@@ -55,6 +55,18 @@ public sealed class ReviewRelayTests : IDisposable
 	}
 
 	[Test]
+	[TestCase(null, 2)]
+	[TestCase(7, 7)]
+	public async Task A_request_can_override_an_existing_review_type_round_limit(int? requestedLimit, int expected)
+	{
+		var (relay, _) = Create(templateLimit: 2);
+		var result = await relay.RequestAsync(Author, Request(requestedLimit), CancellationToken.None);
+
+		result.Succeeded.ShouldBeTrue();
+		relay.Find(result.Payload!)!.MaxIterations.ShouldBe(expected);
+	}
+
+	[Test]
 	public async Task Changed_is_raised_as_the_review_starts_moves_and_ends()
 	{
 		var (relay, _) = Create();
@@ -765,12 +777,12 @@ public sealed class ReviewRelayTests : IDisposable
 		_root.Dispose();
 	}
 
-	private (ReviewRelay Relay, FakeReviewRelayHost Host) Create()
+	private (ReviewRelay Relay, FakeReviewRelayHost Host) Create(int? templateLimit = null)
 	{
 		FakeReviewRelayHost host = new(_root.Path);
 		ReviewRelay relay = new(
 			host,
-			() => [Definition()],
+			() => [Definition() with { MaxIterations = templateLimit }],
 			() => [new ReviewProfile("codex-high", "Codex high", AgentKind.Codex, "codex")],
 			_log,
 			TimeProvider.System);

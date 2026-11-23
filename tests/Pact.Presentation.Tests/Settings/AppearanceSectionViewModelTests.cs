@@ -66,6 +66,32 @@ public sealed class AppearanceSectionViewModelTests : IDisposable
 	}
 
 	[Test]
+	public async Task Invalid_optional_fields_do_not_reset_other_preferences_or_overwrite_terminal_json()
+	{
+		var path = Path.Combine(_directory, "appearance.json");
+		await File.WriteAllTextAsync(path, """
+			{"theme":"dark","showNotifications":true,"showSelectedTabDetails":false,
+			 "notificationMode":"future-mode","notificationSeconds":"wrong-type",
+			 "terminal":{"fontSize":"future-value","extra":42}}
+			""");
+		AppearanceSettingsStore store = new(path);
+
+		var loaded = await store.LoadPreferencesAsync(CancellationToken.None);
+		loaded.Theme.ShouldBe(AppearanceMode.Dark);
+		loaded.ShowNotifications.ShouldBeTrue();
+		loaded.ShowSelectedTabDetails.ShouldBeFalse();
+		loaded.NotificationMode.ShouldBe(NotificationBannerMode.WindowsDefault);
+		loaded.NotificationSeconds.ShouldBe(10);
+		loaded.Terminal.ShouldBeNull();
+
+		await store.SaveAsync(loaded with { Theme = AppearanceMode.Light, NotificationSeconds = 0 }, CancellationToken.None);
+		var saved = JsonNode.Parse(await File.ReadAllTextAsync(path)).ShouldBeOfType<JsonObject>();
+		saved["terminal"]!["fontSize"]!.GetValue<string>().ShouldBe("future-value");
+		saved["terminal"]!["extra"]!.GetValue<int>().ShouldBe(42);
+		saved["notificationSeconds"]!.GetValue<int>().ShouldBe(1);
+	}
+
+	[Test]
 	public async Task Notification_options_default_to_off_and_round_trip_through_the_editor()
 	{
 		AppearanceSettingsStore store = new(Path.Combine(_directory, "appearance.json"));

@@ -57,7 +57,7 @@ tab leaves the process running.
 
 Use `ROOT` for a terminal or browser page that should not belong to a project.
 ROOT terminals start in the current Windows user's profile directory. ROOT has
-no project Notes, project documents, Git panel, or review scenarios.
+no project Notes, project documents, Git panel, or project reviews.
 
 ## Use an isolated data root
 

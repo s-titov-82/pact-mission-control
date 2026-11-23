@@ -7,11 +7,12 @@ namespace Pact.Infrastructure.Skills;
 
 internal sealed record CodexSkillRule(string Selector, string Value, bool Enabled)
 {
-	internal bool MatchesPath(string file) => Selector == "path" && Path.IsPathFullyQualified(Value)
+	internal bool MatchesPath(string file, Func<string, string>? resolve = null) => Selector == "path" && Path.IsPathFullyQualified(Value)
 		&& (string.Equals(Value, file, StringComparison.OrdinalIgnoreCase)
-			|| string.Equals(SkillCatalogService.ResolveManifest(Value), SkillCatalogService.ResolveManifest(file), StringComparison.OrdinalIgnoreCase));
+			|| string.Equals(resolve?.Invoke(Value) ?? SkillCatalogService.ResolveManifest(Value),
+				resolve?.Invoke(file) ?? SkillCatalogService.ResolveManifest(file), StringComparison.OrdinalIgnoreCase));
 
-	internal bool Matches(string name, string file) => MatchesPath(file) || Selector == "name" && Value == name;
+	internal bool Matches(string name, string file, Func<string, string>? resolve = null) => MatchesPath(file, resolve) || Selector == "name" && Value == name;
 
 	internal string Inline => $"{{ {Selector} = {new StringValueSyntax(Value)}, enabled = {Enabled.ToString().ToLowerInvariant()} }}";
 }
@@ -61,8 +62,8 @@ internal static class CodexSkillRules
 		return rules;
 	}
 
-	internal static bool IsEnabled(IEnumerable<CodexSkillRule> rules, string name, string file) =>
-		rules.LastOrDefault(rule => rule.Matches(name, file))?.Enabled ?? true;
+	internal static bool IsEnabled(IEnumerable<CodexSkillRule> rules, string name, string file, Func<string, string>? resolve = null) =>
+		rules.LastOrDefault(rule => rule.Matches(name, file, resolve))?.Enabled ?? true;
 
 	internal static string? Edit(string? original, string name, string file, SkillMode mode)
 	{

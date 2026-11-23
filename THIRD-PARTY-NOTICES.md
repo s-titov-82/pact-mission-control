@@ -55,3 +55,9 @@ package metadata uses a license file or legacy URL:
 
 This inventory and its license classifications are an engineering record, not
 legal advice.
+
+## Pact notification sounds
+
+The bundled `Icq.wav` and `Station.wav` files are original Pact cues synthesized
+from sine waves. The filenames preserve the existing sound preferences. The
+cues contain no third-party recordings or samples.

@@ -18,19 +18,19 @@ internal sealed partial class SkillCatalogWindow
 		await RunAsync(async () =>
 		{
 			ClearPreview();
-			var current = await _catalog.DiscoverInstalledAsync(_profiles, _activation, _lifetime.Token);
-			await RefreshDuplicateReportAsync(current.Installations);
+			var installations = await RefreshNativeRowsAsync();
+			RefreshList();
+			await RefreshDuplicateReportAsync(installations);
 			Browser.IsVisible = false;
 			DuplicatePanel.IsVisible = true;
 			FindDuplicates.IsEnabled = false;
 			SourceEditor.IsEnabled = false;
-			Status.Text = string.Join(Environment.NewLine, current.Warnings);
 		});
 	}
 
 	private async Task RefreshDuplicateReportAsync(IReadOnlyList<NativeSkillInstallation> installations)
 	{
-		_duplicateGroups = await Task.Run(() => _catalog.AnalyzeDuplicates(installations, _catalog.GetBindings()), _lifetime.Token);
+		_duplicateGroups = await Task.Run(() => _catalog.AnalyzeDuplicates(installations, _bindings), _lifetime.Token);
 		var independent = _duplicateGroups.OrderBy(group => group.Kind).ToArray();
 		DuplicateReport.Text = independent.Length == 0 ? "No independent duplicate packages found." : null;
 		DuplicateReport.IsVisible = independent.Length == 0;
@@ -95,6 +95,10 @@ internal sealed partial class SkillCatalogWindow
 
 	private void OnMaintenanceLocationChanged(object? sender, SelectionChangedEventArgs e)
 	{
+		if (_refreshingSkills)
+		{
+			return;
+		}
 		ClearPreview();
 		RefreshMaintenanceButtons();
 	}
@@ -176,7 +180,8 @@ internal sealed partial class SkillCatalogWindow
 				Status.Text = $"{preview.Conflict}\n{paths}";
 				return;
 			}
-			Status.Text = string.Join(Environment.NewLine, new[] { paths }.Concat(preview.Changes));
+			Status.Text = string.Join(Environment.NewLine, new[] { paths }.Concat(preview.Changes)
+				.Concat(MaintenanceImpact(preview.AffectedProfiles, preview.AffectedFiles)));
 			_pending = async () =>
 			{
 				await Task.Run(() => _catalog.Apply(preview), _lifetime.Token);
@@ -207,7 +212,7 @@ internal sealed partial class SkillCatalogWindow
 	{
 		ClearPreview();
 		var preview = await Task.Run(() => comparison is not null ? _catalog.PreviewDelete(installation, connection, comparison)
-			: delete ? _catalog.PreviewDelete(installation, connection) : _catalog.PreviewMakeShared(installation, connection), _lifetime.Token);
+			: delete ? _catalog.PreviewDelete(installation, connection) : _catalog.PreviewMakeShared(installation, connection, _profiles), _lifetime.Token);
 		if (preview.Conflict is not null)
 		{
 			Status.Text = $"{preview.Conflict}\nSelected directory: {preview.SourceDirectory}";
@@ -236,6 +241,10 @@ internal sealed partial class SkillCatalogWindow
 			}
 		}
 		lines.AddRange(preview.Changes);
+		if (!delete)
+		{
+			lines.AddRange(MaintenanceImpact(preview.AffectedProfiles, preview.AffectedFiles));
+		}
 		Status.Text = string.Join(Environment.NewLine, lines);
 		_pending = async () =>
 		{
@@ -247,12 +256,15 @@ internal sealed partial class SkillCatalogWindow
 		CancelPreview.IsVisible = true;
 	}
 
+	private static IEnumerable<string> MaintenanceImpact(IReadOnlyList<string> profiles, IReadOnlyList<string> files) =>
+		new[] { "Affected profiles: " + (profiles.Count > 0 ? string.Join(", ", profiles) : "none configured"), "Affected paths:" }.Concat(files);
+
 	private void OnCloseDuplicates(object? sender, RoutedEventArgs e)
 	{
 		DuplicatePanel.IsVisible = false;
 		Browser.IsVisible = true;
 		FindDuplicates.IsEnabled = true;
-		SourceEditor.IsEnabled = true;
+		SourceEditor.IsEnabled = _settings is not null;
 		RefreshSelection();
 	}
 
@@ -374,6 +386,6 @@ internal sealed partial class SkillCatalogWindow
 			return;
 		}
 		var preview = await Task.Run(() => _catalog.PreviewBinding(candidate, installed), _lifetime.Token);
-		ShowInstall(preview);
+		await ShowInstallAsync(preview);
 	}
 }

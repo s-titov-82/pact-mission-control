@@ -47,7 +47,7 @@ public sealed class AvaloniaWebPageHostContractTests
 		message.GetVisualDescendants().OfType<Button>().ShouldHaveSingleItem();
 		message.GetVisualDescendants().OfType<Image>().Single().Source.ShouldNotBeNull();
 		var detail = message.GetVisualDescendants().OfType<ScrollViewer>().Single().Content.ShouldBeOfType<TextBlock>();
-		detail.Text.ShouldBe(body ?? "Сервер не вернул текст ошибки.");
+		detail.Text.ShouldBe(body ?? "The server did not provide error details.");
 		await host.HideAsync(CancellationToken.None);
 		message.IsVisible.ShouldBeFalse();
 		await host.ShowAsync(CancellationToken.None);
@@ -99,6 +99,48 @@ public sealed class AvaloniaWebPageHostContractTests
 		await tasks.CompleteAndDrainAsync();
 		completions.ShouldBe(0);
 		container.Children.ShouldHaveSingleItem().ShouldBeSameAs(view);
+		await host.DisposeAsync();
+	}
+
+	[AvaloniaTest]
+	public async Task A_first_navigation_with_no_content_finishes_without_a_blank_or_error_view()
+	{
+		ObservedTaskGroup tasks = new(static (_, _) => Task.CompletedTask);
+		Grid container = new();
+		NativeWebView view = new();
+		container.Children.Add(view);
+		AvaloniaWebPageHost host = new("page", view, container, eventTasks: tasks,
+			scriptInvoker: (_, _) => Task.FromResult<string?>("""{"status":204,"hasContent":false}"""));
+		var events = new List<string>();
+		host.NavigationStarted += (_, _) => events.Add("started");
+		host.NavigationCompleted += (_, _) => events.Add("completed");
+		host.NavigationFailed += (_, _) => events.Add("failed");
+		RaiseNavigationStarted(host);
+		RaiseNavigationCompleted(host, "https://example.test/empty", isSuccess: false);
+		await tasks.CompleteAndDrainAsync();
+
+		events.ShouldBe(["started", "completed"]);
+		view.IsVisible.ShouldBeFalse();
+		container.GetVisualDescendants().OfType<TextBlock>().Select(label => label.Text).ShouldContain("No page content returned");
+		await host.DisposeAsync();
+	}
+
+	[AvaloniaTest]
+	public async Task A_recreated_adapter_is_not_waiting_on_its_predecessors_navigation()
+	{
+		var visibility = new RecordingNativeWebViewVisibilityController();
+		var host = CreateHost(visibility);
+		var events = new List<string>();
+		host.NavigationStarted += (_, _) => events.Add("started");
+		host.NavigationCompleted += (_, _) => events.Add("completed");
+		RaiseAdapterCreated(host);
+		RaiseNavigationStarted(host);
+		host.GetType().GetMethod("OnAdapterDestroyed", BindingFlags.Instance | BindingFlags.NonPublic)!
+			.Invoke(host, [null, EventArgs.Empty]);
+		RaiseAdapterCreated(host);
+
+		events.ShouldBe(["started", "completed"]);
+		visibility.States.ShouldBe([true, false, true]);
 		await host.DisposeAsync();
 	}
 
@@ -164,30 +206,27 @@ public sealed class AvaloniaWebPageHostContractTests
 	[AvaloniaTest]
 	public async Task MainFrameEventsPropagateSourceAndFailure()
 	{
-		Grid container = new();
-		var host = await new AvaloniaWebPageHostFactory(container).CreateAsync("page-1", CancellationToken.None);
-		Uri? changed = null;
-		Uri? popup = null;
+		var host = CreateHost(new RecordingNativeWebViewVisibilityController(), out var tasks);
+		List<Uri> changed = [];
+		List<Uri> popups = [];
 		var completed = false;
 		string? failure = null;
-		host.SourceChanged += (_, uri) => changed = uri;
+		host.SourceChanged += (_, uri) => changed.Add(uri);
 		host.NavigationCompleted += (_, _) => completed = true;
-		host.NewWindowRequested += (_, uri) => popup = uri;
+		host.NewWindowRequested += (_, uri) => popups.Add(uri);
 		host.NavigationFailed += (_, message) => failure = message;
 		var type = host.GetType();
 
-		type.GetMethod("OnNavigated", BindingFlags.Instance | BindingFlags.NonPublic)!
-			.Invoke(host, ["https://example.test/next", string.Empty]);
-		type.GetMethod("OnLoadFailed", BindingFlags.Instance | BindingFlags.NonPublic)!
-			.Invoke(host, ["https://example.test/bad", -7, string.Empty]);
+		await FinishNavigationAsync(host, "https://example.test/next", tasks);
+		RaiseNavigationCompleted(host, "https://example.test/bad", isSuccess: false);
 		type.GetMethod("OnPopupOpening", BindingFlags.Instance | BindingFlags.NonPublic)!
 			.Invoke(host, ["https://example.test/popup"]);
-		await Dispatcher.UIThread.InvokeAsync(static () => { });
+		await tasks.CompleteAndDrainAsync();
 
-		(changed?.AbsoluteUri.TrimEnd('/')).ShouldBe("https://example.test/next");
-		(popup?.AbsoluteUri.TrimEnd('/')).ShouldBe("https://example.test/popup");
+		changed.ShouldBe([new Uri("https://example.test/next")]);
+		popups.ShouldBe([new Uri("https://example.test/popup")]);
 		completed.ShouldBeTrue();
-		failure!.Contains("-7", StringComparison.Ordinal).ShouldBeTrue();
+		failure!.Contains("https://example.test/bad", StringComparison.Ordinal).ShouldBeTrue();
 		await host.DisposeAsync();
 	}
 
@@ -237,11 +276,11 @@ public sealed class AvaloniaWebPageHostContractTests
 	public async Task NativeSurfaceIsHiddenUntilNavigationCompletes()
 	{
 		RecordingNativeWebViewVisibilityController visibilityController = new();
-		var host = CreateHost(visibilityController);
+		var host = CreateHost(visibilityController, out var tasks);
 		RaiseAdapterCreated(host);
 
 		RaiseNavigationStarted(host);
-		RaiseNavigated(host, "https://example.test/ready");
+		await FinishNavigationAsync(host, "https://example.test/ready", tasks);
 
 		visibilityController.States.ShouldBe([true, false, true]);
 		await host.DisposeAsync();
@@ -250,13 +289,13 @@ public sealed class AvaloniaWebPageHostContractTests
 	[AvaloniaTest]
 	public async Task NavigationLifecycleNotificationsPreserveWebViewCallbackOrder()
 	{
-		var host = CreateHost(new RecordingNativeWebViewVisibilityController());
+		var host = CreateHost(new RecordingNativeWebViewVisibilityController(), out var tasks);
 		List<string> notifications = [];
 		host.NavigationStarted += (_, _) => notifications.Add("started");
 		host.NavigationCompleted += (_, _) => notifications.Add("completed");
 
 		RaiseNavigationStarted(host);
-		RaiseNavigated(host, "https://example.test/ready");
+		await FinishNavigationAsync(host, "https://example.test/ready", tasks);
 
 		notifications.ShouldBe(["started", "completed"]);
 		await host.DisposeAsync();
@@ -265,7 +304,7 @@ public sealed class AvaloniaWebPageHostContractTests
 	[AvaloniaTest]
 	public async Task NavigationLifecycleNotificationsAreMarshaledToTheUiThreadInOrder()
 	{
-		var host = CreateHost(new RecordingNativeWebViewVisibilityController());
+		var host = CreateHost(new RecordingNativeWebViewVisibilityController(), out var tasks);
 		List<(string Phase, bool IsUiThread)> notifications = [];
 		host.NavigationStarted += (_, _) =>
 			notifications.Add(("started", Dispatcher.UIThread.CheckAccess()));
@@ -275,8 +314,9 @@ public sealed class AvaloniaWebPageHostContractTests
 		await Task.Run(() =>
 		{
 			RaiseNavigationStarted(host);
-			RaiseNavigated(host, "https://example.test/ready");
+			RaiseNavigationCompleted(host, "https://example.test/ready", isSuccess: true);
 		});
+		await tasks.WaitForIdleAsync();
 
 		notifications.ShouldBe([("started", true), ("completed", true)]);
 		await host.DisposeAsync();
@@ -298,30 +338,31 @@ public sealed class AvaloniaWebPageHostContractTests
 			new Grid(),
 			_ => new RecordingNativeWebViewVisibilityController(),
 			eventTasks: group,
-			uiTaskDispatcher: new ImmediateUiTaskDispatcher());
+			uiTaskDispatcher: new ImmediateUiTaskDispatcher(),
+			scriptInvoker: InspectSuccessfulDocument);
 		List<string> notifications = [];
 		host.NavigationStarted += (_, _) => notifications.Add("started");
 		host.NavigationCompleted += (_, _) => notifications.Add("completed");
 
 		RaiseNavigationStarted(host);
-		RaiseNavigated(host, "https://example.test/ready");
-		await group.CompleteAndDrainAsync();
+		await FinishNavigationAsync(host, "https://example.test/ready", group);
 
 		notifications.ShouldBe(["started", "completed"]);
-		(await reported.Task).ShouldBeOfType<InvalidOperationException>();
+		(await reported.Task.WaitAsync(TestContext.CurrentContext.CancellationToken)).ShouldBeOfType<InvalidOperationException>();
+		await group.CompleteAndDrainAsync();
 		await host.DisposeAsync();
 	}
 
 	[AvaloniaTest]
 	public async Task NavigationCompletionEndsLoadingBeforeAnAbsoluteSourceIsAvailable()
 	{
-		var host = CreateHost(new RecordingNativeWebViewVisibilityController());
+		var host = CreateHost(new RecordingNativeWebViewVisibilityController(), out var tasks);
 		List<string> notifications = [];
 		host.NavigationStarted += (_, _) => notifications.Add("started");
 		host.NavigationCompleted += (_, _) => notifications.Add("completed");
 
 		RaiseNavigationStarted(host);
-		RaiseNavigated(host, string.Empty);
+		await FinishNavigationAsync(host, string.Empty, tasks);
 
 		notifications.ShouldBe(["started", "completed"]);
 		await host.DisposeAsync();
@@ -331,12 +372,12 @@ public sealed class AvaloniaWebPageHostContractTests
 	public async Task CompletingNavigationDoesNotRevealHiddenPage()
 	{
 		RecordingNativeWebViewVisibilityController visibilityController = new();
-		var host = CreateHost(visibilityController);
+		var host = CreateHost(visibilityController, out var tasks);
 		RaiseAdapterCreated(host);
 		RaiseNavigationStarted(host);
 		await host.HideAsync(CancellationToken.None);
 
-		RaiseNavigated(host, "https://example.test/ready");
+		await FinishNavigationAsync(host, "https://example.test/ready", tasks);
 
 		visibilityController.States[^1].ShouldBeFalse();
 		await host.DisposeAsync();
@@ -346,13 +387,13 @@ public sealed class AvaloniaWebPageHostContractTests
 	public async Task RevealingThePageAfterNavigationRequestsANativeRepaint()
 	{
 		RecordingNativeWebViewVisibilityController visibilityController = new();
-		var host = CreateHost(visibilityController);
+		var host = CreateHost(visibilityController, out var tasks);
 		RaiseAdapterCreated(host);
 		await host.ShowAsync(CancellationToken.None);
 		var repaintsBeforeNavigation = visibilityController.RepaintRequests;
 
 		RaiseNavigationStarted(host);
-		RaiseNavigated(host, "https://example.test/ready");
+		await FinishNavigationAsync(host, "https://example.test/ready", tasks);
 
 		visibilityController.States[^1].ShouldBeTrue();
 		visibilityController.RepaintRequests.ShouldBe(repaintsBeforeNavigation + 1);
@@ -363,13 +404,13 @@ public sealed class AvaloniaWebPageHostContractTests
 	public async Task StayingHiddenAfterNavigationRequestsNoNativeRepaint()
 	{
 		RecordingNativeWebViewVisibilityController visibilityController = new();
-		var host = CreateHost(visibilityController);
+		var host = CreateHost(visibilityController, out var tasks);
 		RaiseAdapterCreated(host);
 		await host.HideAsync(CancellationToken.None);
 		var repaintsBeforeNavigation = visibilityController.RepaintRequests;
 
 		RaiseNavigationStarted(host);
-		RaiseNavigated(host, "https://example.test/ready");
+		await FinishNavigationAsync(host, "https://example.test/ready", tasks);
 
 		visibilityController.RepaintRequests.ShouldBe(repaintsBeforeNavigation);
 		await host.DisposeAsync();
@@ -493,7 +534,18 @@ public sealed class AvaloniaWebPageHostContractTests
 
 	private static AvaloniaWebPageHost CreateHost(
 		RecordingNativeWebViewVisibilityController visibilityController) =>
-		new("page-1", new NativeWebView(), new Grid(), _ => visibilityController);
+		CreateHost(visibilityController, out _);
+
+	private static AvaloniaWebPageHost CreateHost(
+		RecordingNativeWebViewVisibilityController visibilityController, out ObservedTaskGroup tasks)
+	{
+		tasks = new(static (_, _) => Task.CompletedTask);
+		return new("page-1", new NativeWebView(), new Grid(), _ => visibilityController,
+			eventTasks: tasks, scriptInvoker: InspectSuccessfulDocument);
+	}
+
+	private static Task<string?> InspectSuccessfulDocument(NativeWebView view, string script) =>
+		Task.FromResult<string?>("""{"status":200,"hasContent":false}""");
 
 	private static void RaiseAdapterCreated(AvaloniaWebPageHost host) =>
 		host.GetType().GetMethod("OnAdapterCreated", BindingFlags.Instance | BindingFlags.NonPublic)!
@@ -503,9 +555,19 @@ public sealed class AvaloniaWebPageHostContractTests
 		host.GetType().GetMethod("OnNavigationStarted", BindingFlags.Instance | BindingFlags.NonPublic)!
 			.Invoke(host, [null, null]);
 
-	private static void RaiseNavigated(AvaloniaWebPageHost host, string url) =>
-		host.GetType().GetMethod("OnNavigated", BindingFlags.Instance | BindingFlags.NonPublic)!
-			.Invoke(host, [url, string.Empty]);
+	private static Task FinishNavigationAsync(AvaloniaWebPageHost host, string url, ObservedTaskGroup tasks)
+	{
+		RaiseNavigationCompleted(host, url, isSuccess: true);
+		return tasks.WaitForIdleAsync();
+	}
+
+	private static void RaiseNavigationCompleted(AvaloniaWebPageHost host, string url, bool isSuccess) =>
+		host.GetType().GetMethod("OnNavigationCompleted", BindingFlags.Instance | BindingFlags.NonPublic)!
+			.Invoke(host, [null, new WebViewNavigationCompletedEventArgs
+			{
+				Request = Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri : null,
+				IsSuccess = isSuccess
+			}]);
 
 	private sealed class RecordingNativeWebViewVisibilityController : INativeWebViewVisibilityController
 	{

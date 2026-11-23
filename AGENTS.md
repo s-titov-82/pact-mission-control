@@ -58,6 +58,9 @@ Do not persist terminal transcripts or scenario journals.
 
 ## Orchestrator slot
 
+- The current desktop composition leaves the orchestrator and Hermes launch
+  entries hidden. Retain existing Hermes settings and saved sessions on disk.
+  The contracts below apply to the retained implementation when enabled.
 - The pinned orchestrator is one singular Hermes session above ROOT. It may
   inspect every live session, submit prompts, inspect and control active
   reviews, edit Notes for running projects, and list active or paused web tabs
@@ -93,52 +96,32 @@ Use VS Code's xterm.js/ConPTY integration as the first behavioral reference for
 terminal-engine problems; Windows Terminal is useful for concepts but uses a
 different renderer.
 
-## Scenario invariants
+## Review and prompt delivery invariants
 
-- `ReviewLoopScenarioProgram` is the fixed author/reviewer flow. Definitions,
-  templates, marker, iteration limit, and reviewer text come from
-  `Settings/scenarios.json`.
-- Each step atomically publishes one immutable
-  `.pact-reviews/<run>/pass-NNN-<role>-task.md`. Terminal input from a scenario
-  step is only the short task-path instruction followed by a separate Enter.
-  A run writes into its session whenever no question is pending: a busy agent
-  queues the trigger, and text already in the composer does not block it. A
-  freshly launched session first reaches readiness through one bounded budget
-  covering its first output, a settle delay, and the folder-trust dialog —
-  answered with a single Enter, once per launched session. Every prompt Pact
-  sends, from any channel, goes through one sender that holds the session for
-  the whole delivery: the paste must show before Enter, a question seen just
-  before Enter stops it, and delivery is confirmed only by a fresh screen
-  capture showing an empty composer after Enter. Pact's own Enter is never
-  evidence. If the composer still holds the text, Enter alone is repeated once;
-  text is never pasted twice. Once anything reached the terminal, an
-  unconfirmed delivery pauses the run for attention, naming what happened, and
-  is never resent; only a delivery that wrote nothing is retried.
-  The single exception is one final completion notice, delivered when a run
-  reaches a terminal state: it carries no task, expects no response, and
-  advances nothing, so routing it through a task file would force the run
-  directory to outlive the run. Its delivery is best-effort and a rejected
-  submission is journaled as a delivery failure, never reported as delivered.
-- The matching response must be non-empty and end with the exact supplied
-  transport footer. Only a footer-complete file advances the run.
-- Terminal busy/idle is UI evidence and never scenario completion, and it
-  never blocks prompt delivery.
-- The response-file observer starts before prompt delivery and remains active
-  through delivery retries, watchdog attention, and manual pause. The step
-  watchdog (15 minutes without a response file) only pauses for attention and
-  keeps waiting; it never resends the trigger. Manual Pause
-  blocks all new automatic terminal writes until Resume. A valid response that
-  appears during Manual Pause is read and stops any further delivery of that
-  step's trigger at once, but the run advances only after Resume. A valid
-  response ends an attention pause by itself. The run state, pause kind
-  (manual or attention) and attention reason live in one Core state machine,
-  `ScenarioPauseMachine`.
-- Paused runs retain their exchange files and resume the same wait. Completed,
-  maximum-iteration, aborted, and failed runs remove only their own Pact-owned
-  directory; startup removes abandoned `.pact-reviews`, never generic
-  `.reviews`.
-- Involved sessions are input-locked but remain visible and scrollable. App or
-  project close aborts active runs before stopping sessions.
+- Reviews use the fixed author/reviewer turn protocol through `ReviewRelay`.
+  `Settings/scenarios.json` supplies the review criteria, default strictness,
+  and any saved per-type round limit. The default is five rounds, and the
+  request can override both strictness and the limit.
+- Participants read an assigned turn with `pact_get_review_turn` and answer it
+  with `pact_submit_review_turn` using the returned turn ID. A reviewer may
+  submit `approved: true`. The short terminal trigger only prompts the
+  participant to read the assigned turn. The turn protocol advances the
+  review. Both sessions remain visible and editable.
+- `SessionRuntimeCoordinator.DeliverPromptAsync` holds the session for the
+  whole delivery. A busy session queues the trigger, and an existing draft
+  does not block it. The startup readiness budget covers first output, settle
+  time and folder trust, answered at most once per process. Wait for the paste
+  to appear before Enter. A fresh question stops submission. Only a fresh
+  capture of the empty composer confirms submission. Repeat Enter once if the
+  composer still holds the sent text. A delivery that may have written input
+  is never repasted. Retry only when no input was written.
+- A failed or uncertain notification leaves the turn available and shows
+  attention. Its owning participant acknowledges the notification by reading
+  that turn. Ending a review cancels its trigger before relaying another turn.
+  Close or pause a participating project by ending its reviews first.
+- Accepted turns are logged in the project's `.pact/reviews/`. Completion
+  notices are best-effort. Startup may clean abandoned legacy
+  `.pact-reviews` directories.
 
 ## Settings and documents
 

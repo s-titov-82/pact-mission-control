@@ -49,7 +49,7 @@ close. Selecting a manually paused ROOT item does not resume it; use its
 explicit `Resume` action.
 
 ROOT terminals can receive manual prompt, paste, and selection actions. They
-cannot participate in project review scenarios and do not own project Notes,
+cannot participate in project reviews and do not own project Notes,
 Markdown, or Git state.
 
 Terminal and browser rows can be reordered by drag-and-drop within the same

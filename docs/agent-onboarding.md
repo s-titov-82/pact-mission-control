@@ -19,8 +19,8 @@ supplied with `--data-root <absolute-path>` for isolated tests; the app refuses
 to open a root already leased by another process.
 
 The Avalonia head owns the complete main shell, terminal/browser lifecycle,
-notes, prompt actions, settings, project/session creation, scenario setup and
-journal, Git popup, and commit/push/branch dialogs.
+notes, prompt actions, settings, project/session creation, review coordination
+and logs, Git popup, and commit/push/branch dialogs.
 
 Root-level agent instructions live in `AGENTS.md`. `CLAUDE.md` only redirects Claude users there.
 
@@ -33,10 +33,9 @@ human-triggered prompt actions.
 
 The app must not become a headless API proxy for subscription TUI tools. Raw
 selection and manual insertion actions do not submit. Prompt and shell template
-actions submit only when their Auto-submit option is enabled; scenario actions
-are the separate automated path. The scenario journal panel may temporarily
-hide the WebView for inspection, but scenario actions still target already-live
-TUI sessions through ConPTY.
+actions submit when their Auto-submit option is enabled. Pact delivers review
+turn notices through ConPTY to already-live TUI sessions. Participants exchange
+review text through MCP, and completed review logs open in Docs.
 
 ## Current Architecture
 
@@ -120,8 +119,8 @@ ReviewRelay notifies a participant with a short terminal trigger. The agent
 reads its turn over MCP and submits its answer using the returned turn ID.
 Pact sends the trigger through the same sender as other programmatic prompts.
 When the client captures the mouse (Codex and Claude in their fullscreen modes),
-the text goes through the clipboard instead: it is written there unless already
-present, and an SGR right click makes the client paste it itself, because Codex
+Pact reuses matching clipboard text or offers it temporarily, excluded from
+Windows clipboard history and sync. An SGR right click makes the client paste it itself, because Codex
 on Windows reads console key records and gets a bracketed paste one key at a
 time. The right click is preceded by a left click one cell after the composer's
 draft, found on a fresh capture: an agent with text selected in its history does
@@ -129,12 +128,19 @@ not paste on a right click, and the left click clears that selection and puts th
 cursor at the end of the draft, so successive pastes add to it. Without a
 recognized composer the click goes to the top-left cell. Enter follows only once the session output shows the paste (a `[Pasted`
 placeholder or the end of the text); a bracketed paste waits for the same echo.
-A paste that never shows is not submitted. Every channel (templates, selection
-actions, MCP `pact_send_message`, Pact's own notices, scenarios) uses the one
-sender, `SessionRuntimeCoordinator.DeliverPromptAsync`, which holds the session
-for the whole delivery and refuses only a pending question or, for anyone but
-the owning run, a scenario lock. A busy agent or text in the composer never
-refuses. Manual actions start a stopped session and wait for readiness; MCP
+For a temporary clipboard offer, Pact also waits until Windows requests the
+text. Pact restores the saved formats after the wait if a newer copy has not
+replaced the offer. If the right click was queued but no read came before the
+timeout, Pact keeps the temporary text available for that click and restores
+the snapshot after a read or on normal shutdown. It uses bracketed paste when it cannot safely save
+the clipboard. A clipboard change between the right click and paste
+confirmation prevents automatic submission.
+A paste that never shows is not submitted. Templates, selection actions,
+MCP `pact_send_message`, and Pact notices use
+`SessionRuntimeCoordinator.DeliverPromptAsync`. It holds the session for the
+whole delivery and refuses automatic submission when the agent is waiting for
+an answer. It can deliver while the agent is busy or the composer contains text.
+Manual actions start a stopped session and wait for readiness. MCP
 callers start one with `pact_start_session`. Pact checks stable startup screens
 on every launch, including manual starts. It sends at most one Enter per process
 when it recognizes the folder-trust dialog. For Codex's **Folder access** menu
@@ -151,7 +157,8 @@ An explicit `approved: true` on the reviewer's submission completes the run.
 An author reply at the round limit ends it as `MaxIterationsReached`.
 
 `Settings/scenarios.json` stores named review types with `reviewRules` and
-`defaultStrict`. Reviews use five rounds unless the request overrides the limit. The renderer puts rules in the first
+`defaultStrict`. Reviews use the saved positive `maxIterations` when present
+and otherwise allow five rounds. The request can override that limit. The renderer puts rules in the first
 reviewer turn and supplies the exchange instructions for every turn.
 `pact_request_review` accepts optional `strict` and `maxIterations` overrides.
 Known `reviewLoop` entries retain their custom IDs. Loading existing settings
@@ -164,11 +171,11 @@ It has four top-level directories with explicit ownership:
 
 - `Settings`: durable JSON (`projects.json`, `root-tabs.json`,
   `review-profiles.json`, `agent-control.json`, `orchestrator.json`,
-  launch/prompt/web/scenario/git/recent settings, window layout, and
-  appearance) plus `Settings/Notes/<key>.md`. Notes are keyed from the
+  launch, prompt, web, review type, Git, and recent-directory settings,
+  window layout, and appearance) plus `Settings/Notes/<key>.md`. Notes are keyed from the
   normalized project root and are never deleted by hiding the tab.
 - `WebView`: one shared WebView2 user-data folder. Browser pages use its default profile so cookies and login state survive. Terminal xterm uses the named `PactTerminal` profile. At startup browser cleanup removes only `DiskCache` older than 72 hours; cookies, Local Storage, IndexedDB, CacheStorage, Service Workers, passwords, autofill, and settings remain. The terminal profile is cleared completely.
-- `Logs`: disposable application logs, split by UTC day and 5 MiB segments; files older than 72 hours are removed by `LastWriteTimeUtc`. Browser-tab WebView lifecycle phases (`webview browser:<pageId> …`) are appended here so a tab that ends up in a bad native state stays diagnosable after its in-memory trace is gone. Scenario delivery also records metadata-only outcome changes and transport exceptions, including run, step, role, session, attempt, and write/submit flags. It never records prompt, response, status-line, or terminal-screen text, and consecutive identical delivery outcomes are coalesced. Every prompt delivery appends one metadata-only `delivery …` line naming the session, sender, start, admission, paste kind, stage timings, repair, keyboard interference, and outcome.
+- `Logs`: disposable application logs, split by UTC day and 5 MiB segments; files older than 72 hours are removed by `LastWriteTimeUtc`. Browser-tab WebView lifecycle phases (`webview browser:<pageId> …`) are appended here so a tab that ends up in a bad native state stays diagnosable after its in-memory trace is gone. Review notification delivery logs metadata about the run, turn, and delivery outcome. Every prompt delivery appends one metadata-only `delivery …` line naming the session, sender, start, admission, paste kind, stage timings, repair, keyboard interference, and outcome.
 - `Temp/Session`: disposable atomic-write staging and other run-local data; it
   is cleared best-effort at startup and shutdown.
 - `Temp/Retained`: disposable owner-managed caches and is not blanket-cleared.
@@ -183,10 +190,9 @@ It has four top-level directories with explicit ownership:
   there, but user-authored settings and notes never belong in this directory.
   The Markdown contains no bearer token, endpoint, or other credential.
 
-Pact does not persist terminal output or scenario journals. Terminal history after
-resume belongs to the external TUI, while the live xterm buffer supports the
-current process. There are no Pact `sessions`, transcript, or `scenario-runs`
-directories.
+Pact does not persist terminal output. Terminal history after resume belongs to
+the external TUI, and the live xterm buffer supports the current process.
+Review logs live in the project's `.pact/reviews` directory.
 
 ## Agent control connection
 
@@ -261,13 +267,13 @@ for that bearer, and a supplied id must validate against the same bearer before
 the request is routed. Claude may open its authenticated GET stream without the
 session header, matching its current client transport behavior.
 
-`ReloadExternalSettingsAsync` fingerprints only sorted scenario ids and review
-profile ids after both live snapshots have reached their success, retained, or
+`ReloadExternalSettingsAsync` fingerprints only sorted review type and profile
+IDs after both live snapshots have reached their success, retained, or
 fallback state. If that fingerprint changes, ordinary connected clients
 receive `notifications/tools/list_changed` and can re-run `tools/list` without
 restarting their terminal. A failed review-profile read retains the prior
 snapshot; malformed review-profile JSON follows the reader's empty-snapshot
-contract. A malformed scenario file installs built-in defaults, and notifies
+contract. A malformed review-types file installs built-in defaults and notifies
 only when those ids differ from the previous live set. Display names, commands,
 ordering, and unrelated settings do not notify. There is no external file
 watcher: hand edits take effect only at the Settings reload boundary or after
@@ -275,6 +281,10 @@ application restart. The orchestrator catalog is fixed separately and is not
 subscribed to these notifications.
 
 ## Orchestrator
+
+The current desktop composition leaves the orchestrator disabled and hides
+Hermes sessions in the tree. Its settings and saved sessions stay on disk.
+The following contracts describe the retained implementation.
 
 The pinned row above ROOT owns exactly one Hermes session. It has a selectable
 terminal and cross-session MCP rights, but no project ownership. It can inspect
@@ -308,9 +318,8 @@ credential from the endpoint without deleting either settings or its Hermes
 profile. Reissuing the credential rewrites the profile `.env` and invalidates
 the old credential in the running shell.
 
-Provisioning is explicit through the Settings `Orchestrator` section. It first
-requires the installed `hermes` CLI to create the named `pact` profile; Pact
-does not invent a parallel profile layout. `HermesHome.ResolveRoot` mirrors
+The retained provisioner uses the installed `hermes` CLI to create the
+named `pact` profile. `HermesHome.ResolveRoot` mirrors
 Hermes' root rules:
 
 - on Windows the native root is `%LOCALAPPDATA%\hermes`, not `~/.hermes`;
@@ -339,9 +348,8 @@ delivery becomes visible tier state rather than an exception.
 
 Stable screens, extracted agent messages, and their current/stale marker live
 only in the per-session status engine. Stopping or removing a session discards
-that state; never add it to `orchestrator.json`, logs, transcripts, or scenario
-journals. Scenario-locked sessions remain readable but reject orchestrator
-messages through the normal prompt lock.
+that state. Keep it out of `orchestrator.json`, logs, transcripts, and review
+logs.
 
 ## Project Board contracts
 
@@ -492,8 +500,7 @@ The pin preference is saved with the window layout.
   templates whose body contains `{selectedText}`. Its compact target tree shows
   only the source-owner ROOT or project group. `More targets…` expands to the
   complete eligible ROOT/project/session tree across unpaused ROOT tabs and
-  active projects; web pages, paused ROOT sessions, and scenario-locked
-  sessions are excluded.
+  active projects. Web pages and paused ROOT sessions are excluded.
 - Selection actions paste into a chosen visible terminal without pressing
   Enter, or append into eligible project Notes without overwriting existing
   text. A selection from Notes can target a terminal; a terminal selection can
@@ -505,8 +512,9 @@ The pin preference is saved with the window layout.
 - Below `Quick actions`, selected terminals show classifier verdict and
   description, derived indicator, composer/input-request state, content-free
   composer evidence, activity epoch, viewport, lifecycle, working directory,
-  scenario lock, and classification time. Selected web tabs show their full resume URL, browser state, monitor
-  status, matched rule, last observation/revision, unread state, poll schedule,
+  and classification time. Selected web tabs show their full resume URL,
+  browser state, monitor status, matched rule, last observation/revision,
+  unread state, poll schedule,
   navigation, and the last sanitized monitor error. Updates are event-driven;
   raw terminal-screen snapshots are not exposed or persisted.
 - `Appearance -> Show selected tab details` hides only that facts block.
@@ -650,32 +658,27 @@ an empty completion closes it.
 ## Settings UI
 
 The right-side gear opens `SettingsWindow`, a form-based editor
-(`src/Pact.App.Avalonia/Views/Settings/`) over left-navigation sections: Root
-tabs, Projects, Paused projects, Launch profiles, Review profiles,
-Orchestrator, Web link templates, Web monitoring rules, Prompt templates, Git
-helpers, Scenarios, Recent directories, and Appearance. Selecting a section
-shows a top tab strip and a per-type form below.
+(`src/Pact.App.Avalonia/Views/Settings/`) on Appearance. It also offers
+terminal profiles, reviewers, review types, saved links, monitored sites,
+saved prompts, and Git helpers. Project and ROOT tab editors open from the
+corresponding row actions. Restore or remove paused projects from the Projects
+menu. Recent directories appear in the directory picker.
 
-Editable files, one per section (excluding Projects, which edits live runtime state instead of a settings file):
+Files edited through global Settings:
 
-- `projects.json` (Projects section — see below)
-- `root-tabs.json` (Root tabs section — see below)
 - `shell-profiles.json` (Launch profiles)
 - `review-profiles.json` (Review profiles)
-- `orchestrator.json` (Orchestrator)
 - `prompt-templates.json` (Prompt templates)
 - `web-link-templates.json` (Web link templates)
 - `web-monitor-rules.json` (Web monitoring rules)
-- `scenarios.json` (Scenarios)
+- `scenarios.json` (Review types)
 - `git-helpers.json` (Git helpers)
-- `recent-directories.json` (Recent directories)
 - `appearance.json` (Appearance)
 
 For the file-backed sections, saves round-trip through a node-preserving JSON
 pipeline: unknown properties and array entries the form doesn't recognize
 survive a save untouched. Loading `scenarios.json` for the settings window
-never reseeds or rewrites the file, unlike
-`ScenarioDefinitionStore.LoadAsync`'s malformed-file reseed behavior. "Save
+never reseeds or rewrites the file. "Save
 section" writes only the active section's file and sets the status line to
 `Saved <label> (N items).`; each section validates its own fields before
 saving.
@@ -688,11 +691,13 @@ updating because it is told it is visible (see
 `WebAssets/backgroundVisibility.js` in [Architecture](architecture.md)); do not
 remove it, or pages that pause while hidden never change for the monitor. A
 loaded page uses the first matching enabled rule in file order. On restart, its
-first observation is compared with the retained state for the same URL and rule,
-so activity that finished while Pact was closed can become unread. If the startup
-checkpoint is unavailable, an eligible tab with matching retained activity can
-resume in the background. Later navigations and rule-fingerprint changes establish
-a fresh baseline. The monitor projects `Activity -> Unread -> Paused ->
+first observation is compared with the retained state for the same URL and rule.
+A rule with a revision extractor can mark work completed while Pact was closed
+as unread. An activity-only rule uses its first idle result as a new baseline.
+If the startup checkpoint is unavailable, an eligible tab with matching
+retained activity can resume in the background. Later navigations and
+rule-fingerprint changes establish a fresh baseline. The monitor projects
+`Activity -> Unread -> Paused ->
 None` (the existing loading glyph temporarily hides that projection). The two
 seeded TeamCity and GitLab examples are disabled and contain `CHANGE-ME-`
 hostname markers; a rule with an unreplaced marker cannot be enabled. Use
@@ -712,9 +717,12 @@ single immediate evaluation still reads the stale document, and the real change
 would otherwise be observed one rule interval later — after the user has left
 the tab, where it would be recorded as unread instead of seen.
 
-The Projects section doesn't read or write `projects.json` directly: edits go through diff-based `MainWindowViewModel.UpdateProjectSettingsAsync`/`UpdateSessionSettingsAsync`, which write only the fields that changed against live runtime state. Its "+" creates a new project via a directory picker. There is no project or session delete from settings. A session that is locked by a running scenario shows its fields read-only.
+The project row editor applies changes through diff-based
+`MainWindowViewModel.UpdateProjectSettingsAsync` and
+`UpdateSessionSettingsAsync`, which write changed fields against live runtime
+state. Add and remove projects and sessions from the main window.
 
-The Root tabs section uses the same live diff-based editing boundary for
+The ROOT row editors use the same live diff-based editing boundary for
 terminal title, working directory, launch command, and resume command, plus web
 page title and URL. Every ROOT terminal exposes its working directory,
 including agent kinds. The row edit button deep-links directly to that ROOT
@@ -723,14 +731,17 @@ item.
 The project tab and each session tab show a compact one-line read-only
 `InfoLine` (id, status, timestamps for a project; id, kind, status for a
 session) above the editable fields. A session's Working directory field is
-hidden for agent-kind sessions (`Codex`/`Claude`/`Hermes` —
+hidden for visible agent-kind sessions (`Codex`/`Claude` —
 `SessionSettingsItemViewModel.ShowWorkingDirectorySetting` is true only for
 `Pwsh`/`Custom`), since those always run in the project's own directory;
 validation skips the directory-exists check when the field is hidden. The
 project's Sessions block is hidden when the project has no sessions
 (`ProjectItemViewModel.HasSessions`).
 
-Prompt template's "Send by default" field is relabeled "Auto-submit" in the form (JSON property name is still `sendByDefault`); it controls whether the matching manual prompt action sends Enter after inserting the text. The prompt template Body editor (and every other multiline field) wraps text (`TextWrapping="Wrap"`, no horizontal scrollbar) instead of scrolling horizontally; the Body editor's grid row also uses a star height so it stretches to fill remaining vertical space instead of a fixed min-height box. The Recent directories section has an "Add directory" button that opens a folder picker and appends the picked path as a new line; save trims, deduplicates, and retains at most 20 entries.
+The prompt template form labels `sendByDefault` as "Auto-submit". It
+controls whether a manual prompt action sends Enter after inserting the text.
+Multiline editors wrap text. The prompt body also grows to fill the available
+height. The directory picker displays up to 20 deduplicated recent directories.
 
 Each settings section has a help topic in
 `Pact.Presentation.Settings.SettingsHelpContent`. A single "?" button in the
@@ -768,7 +779,7 @@ The UI still uses some workspace language internally and in services, but persis
   controller. Saved `Running`/`Starting` status alone is not confirmation
   evidence.
 - Restoring uses per-session `ResumeCommand` when available; otherwise it falls back through shell profile resume templates. New profile sessions store the profile `resumeCommandTemplate` immediately, and graceful shutdown later replaces it with a concrete resume id when capture succeeds. A template without an id still launches for Codex and Claude, leaving the agent showing its conversation picker, so a session whose id was never captured stays recoverable.
-- Web pages are project items restored from their saved resume/current URL. Prompt and scenario target lists remain terminal-session-only.
+- Web pages are project items restored from their saved resume/current URL. Prompt targets and review participants are terminal sessions.
 - Switching selected sessions does not stop the previous session.
 
 ## ROOT tabs
@@ -813,8 +824,8 @@ paused row only selects it; it never resumes it. Only the explicit Resume
 button restarts or reloads the item.
 
 ROOT terminals are valid manual quick-action, prompt, send-selection, and
-selection-action targets while unpaused. They are never scenario participants
-and have no Git, project Markdown, or notes ownership.
+selection-action targets while unpaused. Reviews, Git actions, Markdown, and
+Notes are scoped to a project.
 
 ## Git Helper Popup
 

@@ -16,12 +16,11 @@ public sealed class SubscriptionUsageRefreshService
 	}
 
 	/// <summary>
-	/// Reads usage for every profile that reports it and applies the results to the matching
-	/// rows in place, so the bound collection is not rebuilt.
+	/// Refreshes Codex and Claude usage, retaining the existing row on a display-name change.
 	/// </summary>
 	/// <remarks>
-	/// Profiles with no matching row are skipped, and each profile is read independently so one
-	/// failing agent does not prevent the others from updating.
+	/// Creates rows for new profiles, clears prior account data when the profile configuration
+	/// changes, and removes rows for profiles no longer present.
 	/// </remarks>
 	public async Task RefreshAsync(
 		IEnumerable<AgentProfileRecord> profiles,
@@ -42,11 +41,15 @@ public sealed class SubscriptionUsageRefreshService
 				row = new SubscriptionUsageRow(profile);
 				rows.Add(row);
 			}
-			else if (row.Profile != profile)
+			else if (row.Profile with { DisplayName = profile.DisplayName } != profile)
 			{
 				var index = rows.IndexOf(row);
 				row = new SubscriptionUsageRow(profile);
 				rows[index] = row;
+			}
+			else
+			{
+				row.UpdateDisplayName(profile.DisplayName);
 			}
 
 			// Readers walk agent data on disk and start helper processes synchronously before

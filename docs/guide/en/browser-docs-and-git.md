@@ -26,6 +26,7 @@ page, including a manually paused ROOT page, cannot.
 
 When a monitored page changes in the background, its tree indicator becomes
 unread. Viewing it in the active visible Pact window acknowledges the change.
+Rules that use only Activity report completions observed while Pact is open.
 See [Web monitoring rules](../../help/en/settings-web-monitoring-rules.md) for
 the rule fields and scheduling behavior.
 

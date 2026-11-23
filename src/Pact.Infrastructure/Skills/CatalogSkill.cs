@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Security.Cryptography;
 using System.Text;
 using YamlDotNet.Core;
@@ -23,7 +24,7 @@ public sealed class CatalogSkill
 		InspectionWarning = inspectionWarning;
 		if (content.TryGetValue("SKILL.md", out var bytes))
 		{
-			using var reader = new StringReader(Encoding.UTF8.GetString(bytes).TrimStart('\uFEFF'));
+			using var reader = new StreamReader(new MemoryStream(bytes, writable: false));
 			Name = ManifestName(reader, folderName);
 		}
 		else
@@ -34,13 +35,25 @@ public sealed class CatalogSkill
 
 	internal static string ManifestName(TextReader reader, string fallback)
 	{
-		if (reader.ReadLine()?.Trim() != "---")
+		const int limit = 65_536;
+		var buffer = ArrayPool<char>.Shared.Rent(limit);
+		string beginning;
+		try
+		{
+			beginning = new string(buffer, 0, reader.ReadBlock(buffer, 0, limit));
+		}
+		finally
+		{
+			ArrayPool<char>.Shared.Return(buffer);
+		}
+		using var prefix = new StringReader(beginning);
+		if (prefix.ReadLine()?.Trim() != "---")
 		{
 			return fallback;
 		}
 
 		var header = new StringBuilder();
-		while (header.Length < 65_536 && reader.ReadLine() is { } line)
+		while (prefix.ReadLine() is { } line)
 		{
 			if (line.TrimEnd() != "---")
 			{
@@ -75,7 +88,7 @@ public sealed class CatalogSkill
 	/// <summary>The existing manifest path for packages discovered under the native skills root.</summary>
 	public string? InstalledFilePath { get; }
 
-	/// <summary>Explains why only the manifest could be previewed for a preexisting native installation.</summary>
+	/// <summary>Explains why the complete package could not be previewed.</summary>
 	public string? InspectionWarning { get; }
 
 	/// <summary>The source directory or public repository URL.</summary>
@@ -143,4 +156,7 @@ public sealed class SkillInstallPreview
 
 	/// <summary>The revision recorded when the destination was last installed.</summary>
 	public string? InstalledRevision { get; }
+
+	/// <summary>Staging paths that could not be removed after the installation committed.</summary>
+	public string? CleanupWarning { get; internal set; }
 }

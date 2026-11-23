@@ -688,7 +688,14 @@ internal sealed partial class ProjectTreeView : UserControl
 	private void OnPausedWorkspacesChanged(object? sender, NotifyCollectionChangedEventArgs e) =>
 		RefreshPausedProjectsButton();
 
-	private void RefreshPausedProjectsButton() => PausedProjectsButton.IsEnabled = _viewModel?.PausedWorkspaces.Count > 0;
+	private void RefreshPausedProjectsButton()
+	{
+		PausedProjectsButton.IsEnabled = _viewModel?.PausedWorkspaces.Count > 0;
+		if (!PausedProjectsButton.IsEnabled)
+		{
+			PausedProjectsButton.Flyout?.Hide();
+		}
+	}
 
 	internal void ShowPausedProjects() => PausedProjectsButton.Flyout?.ShowAt(PausedProjectsButton);
 

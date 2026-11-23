@@ -3,13 +3,15 @@
 [English](reviews-and-orchestrator.md) | [Русский](../ru/reviews-and-orchestrator.md)
 
 Pact opens a reviewer in the author's project when an agent requests a review.
-An optional Hermes orchestrator can observe live sessions and active reviews.
+The current desktop app keeps Hermes settings on disk and hides its sessions.
 
-## Review scenarios
+## Review types
 
 Under **Settings → Reviews → Review types**, enter criteria for the reviewer's first turn
 and choose the default approval mode. New types start in strict mode.
-Each review allows five rounds unless the request specifies another limit. Under **Reviewers**, choose the agent that will perform the review.
+Each review allows five rounds by default. A saved `maxIterations` sets the
+limit for its review type. Under **Reviewers**, choose the agent that will
+perform the review.
 
 The author starts a run with `pact_request_review`. Each participant reads its turn
 with `pact_get_review_turn` and submits its answer with `pact_submit_review_turn`.
@@ -17,7 +19,7 @@ The reviewer can approve when every finding has been resolved or successfully
 disputed. In non-strict mode, minor and nit findings may remain open.
 The request can override the defaults with `strict` and `maxIterations`.
 
-See [Scenarios](../../help/en/settings-scenarios.md) and
+See [Review types](../../help/en/settings-scenarios.md) and
 [Review profiles](../../help/en/settings-review-profiles.md) for configuration.
 
 ## Agent control
@@ -42,8 +44,8 @@ clears when the owning agent retrieves the turn or the review ends.
 
 ## Hermes orchestrator
 
-The orchestrator is a single pinned Hermes session above ROOT. It is disabled
-by default and must be provisioned explicitly in Settings. When enabled, it can
+The orchestrator is unavailable in the current desktop app. Its retained
+implementation uses a single pinned Hermes session above ROOT that can
 inspect live projects, sessions, screens, usage, and active reviews; submit
 prompts to eligible live terminals; work with Notes of running projects; and
 inspect or resume their saved web pages.

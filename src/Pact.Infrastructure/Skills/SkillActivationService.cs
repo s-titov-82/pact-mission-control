@@ -11,15 +11,16 @@ using Tomlyn;
 namespace Pact.Infrastructure.Skills;
 
 /// <summary>Previews native skill visibility changes and composes project rules for visible terminal launches.</summary>
-public sealed partial class SkillActivationService(AppPaths paths, string? sharedSkillsDirectory = null)
+public sealed partial class SkillActivationService(AppPaths paths, string? sharedSkillsDirectory = null, string? userHome = null)
 {
 	internal static readonly SemaphoreSlim WriteGate = new(1);
 	private static readonly JsonSerializerOptions Indented = new() { WriteIndented = true };
 	private static readonly StringComparer PathsEqual = StringComparer.OrdinalIgnoreCase;
 	private readonly string _storage = Path.Combine((paths ?? throw new ArgumentNullException(nameof(paths))).SettingsDirectory, "Skills");
-	private readonly string _userHome = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+	private readonly string _dataRoot = paths.RootDirectory;
+	private readonly string _userHome = userHome ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 	private readonly string _sharedSkillsDirectory = Path.GetFullPath(sharedSkillsDirectory ??
-		Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agents", "skills"));
+		Path.Combine(userHome ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agents", "skills"));
 
 	/// <summary>Returns the native discovery directories relevant to a configured launch.</summary>
 	public IReadOnlyList<string> SkillDirectories(AgentProfileRecord profile, string? projectDirectory)
@@ -48,23 +49,25 @@ public sealed partial class SkillActivationService(AppPaths paths, string? share
 	public SkillActivationState InspectAfterInstallation(AgentProfileRecord profile, string skillName, string skillFile, string? projectDirectory) =>
 		InspectVisibility(profile, skillName, skillFile, projectDirectory, afterInstallation: true);
 
-	private SkillActivationState InspectVisibility(AgentProfileRecord profile, string skillName, string skillFile, string? projectDirectory, bool afterInstallation)
+	private SkillActivationState InspectVisibility(AgentProfileRecord profile, string skillName, string skillFile, string? projectDirectory,
+		bool afterInstallation, NativeInspection? inspection = null)
 	{
 		ArgumentNullException.ThrowIfNull(profile);
 		ArgumentException.ThrowIfNullOrWhiteSpace(skillFile);
 		ArgumentException.ThrowIfNullOrWhiteSpace(skillName);
+		inspection ??= new NativeInspection();
 		var global = NativeConfig(profile);
-		var globalFile = Discover(SkillDirectories(profile, null), skillFile, afterInstallation);
-		var localFile = projectDirectory == null ? null : Discover([ProjectSkills(profile.Kind, projectDirectory)], skillFile, afterInstallation);
+		var globalFile = Discover(SkillDirectories(profile, null), skillFile, afterInstallation, inspection);
+		var localFile = projectDirectory == null ? null : Discover([ProjectSkills(profile.Kind, projectDirectory)], skillFile, afterInstallation, inspection);
 		var selected = localFile ?? globalFile ?? Path.GetFullPath(skillFile);
 		var config = ConfigPath(profile, projectDirectory);
 		var codex = profile.Kind == AgentKind.Codex;
-		var rules = codex ? CodexSkillRules.Read(ReadFile(global)) : [];
+		var rules = codex ? inspection.CodexRules(global) : [];
 		var globalClaudeName = FolderName(globalFile ?? skillFile);
 		var selectedClaudeName = FolderName(selected);
-		var claudeSettings = codex ? null : ReadFile(global);
+		var claudeSettings = codex ? null : inspection.JsonConfig(global);
 		var globalSetting = codex
-			? CodexSkillRules.IsEnabled(rules, skillName, selected)
+			? CodexSkillRules.IsEnabled(rules, skillName, selected, inspection.Manifest)
 			: ClaudeMode(claudeSettings, globalClaudeName) != SkillMode.Disabled;
 		var defaultEnabled = globalFile != null && globalSetting;
 		var inherited = codex ? globalSetting : ClaudeMode(claudeSettings, selectedClaudeName) != SkillMode.Disabled;
@@ -73,20 +76,21 @@ public sealed partial class SkillActivationService(AppPaths paths, string? share
 		{
 			if (!codex)
 			{
-				var shared = ClaudeMode(ReadFile(Path.Combine(projectDirectory, ".claude", "settings.json")), selectedClaudeName);
+				var shared = ClaudeMode(inspection.JsonConfig(Path.Combine(projectDirectory, ".claude", "settings.json")), selectedClaudeName);
 				if (shared != SkillMode.Inherit)
 				{
 					inherited = shared == SkillMode.Enabled;
 				}
 			}
-			mode = codex ? ProjectMode(ReadFile(config), SkillCatalogService.ResolveManifest(selected)) : ClaudeMode(ReadFile(config), selectedClaudeName);
+			var document = inspection.JsonConfig(config);
+			mode = codex ? ProjectMode(document, inspection.Manifest(selected), inspection.Manifest) : ClaudeMode(document, selectedClaudeName);
 		}
 		var discovered = globalFile != null || localFile != null;
 		var effective = discovered && (mode == SkillMode.Inherit ? inherited : mode == SkillMode.Enabled);
 		var reason = !discovered ? "Outside this profile's skill directories."
 			: mode == SkillMode.Inherit ? "Inherited from native settings."
 			: codex ? "Project rule on launches through Pact." : "Project rule in Claude local settings.";
-		var defaultMode = codex ? rules.LastOrDefault(rule => rule.MatchesPath(globalFile ?? selected))?.Enabled switch
+		var defaultMode = codex ? rules.LastOrDefault(rule => rule.MatchesPath(globalFile ?? selected, inspection.Manifest))?.Enabled switch
 		{
 			true => SkillMode.Enabled,
 			false => SkillMode.Disabled,
@@ -152,13 +156,13 @@ public sealed partial class SkillActivationService(AppPaths paths, string? share
 				throw new InvalidOperationException($"Skill directory conflict between {target} and {linkPath}.");
 			}
 
-			link = new(linkPath, target, receipt, Create: true);
+			link = new(linkPath, target, receipt, Create: true, PreviousReceipt: ReadFile(receipt));
 			discovered = Path.Combine(linkPath, "SKILL.md");
 		}
 		else if ((mode == SkillMode.Inherit || projectDirectory == null && mode == SkillMode.Disabled)
 			&& OwnedTarget(linkPath, target) is { } ownedTarget)
 		{
-			link = new(linkPath, ownedTarget, receipt, Create: false);
+			link = new(linkPath, ownedTarget, receipt, Create: false, ConnectionReceipt: ReadFile(receipt));
 		}
 
 		var selected = discovered ?? Path.GetFullPath(skillFile);
@@ -166,30 +170,12 @@ public sealed partial class SkillActivationService(AppPaths paths, string? share
 		if (profile.Kind == AgentKind.Claude)
 		{
 			// Claude's override key is the discovered directory name, including junction aliases.
-			var commandName = FolderName(selected);
-			var doc = ParseObject(old);
-			if (mode == SkillMode.Inherit && !(doc["skillOverrides"]?.AsObject().ContainsKey(commandName) ?? false))
+			updated = ClaudeSkillRules.Edit(old, FolderName(selected), mode switch
 			{
-				updated = old;
-			}
-			else
-			{
-				doc["skillOverrides"] ??= new JsonObject();
-				var overrides = doc["skillOverrides"]!.AsObject();
-				if (mode == SkillMode.Inherit)
-				{
-					overrides.Remove(commandName);
-					if (overrides.Count == 0)
-					{
-						doc.Remove("skillOverrides");
-					}
-				}
-				else
-				{
-					overrides[commandName] = mode == SkillMode.Enabled ? "on" : "off";
-				}
-				updated = doc.ToJsonString(Indented);
-			}
+				SkillMode.Enabled => "on",
+				SkillMode.Disabled => "off",
+				_ => null
+			});
 		}
 		else
 		{
@@ -326,7 +312,8 @@ public sealed partial class SkillActivationService(AppPaths paths, string? share
 		}
 	}
 
-	private static LaunchInjection WithCodexOverrides(LaunchInjection native, string? config, IReadOnlyDictionary<string, bool> changes)
+	private static LaunchInjection WithCodexOverrides(LaunchInjection native, string? config, IReadOnlyDictionary<string, bool> changes,
+		IReadOnlyList<CodexSkillRule>? parsed = null, Func<string, string>? resolve = null)
 	{
 		var args = native.Arguments.ToList();
 		var index = -1;
@@ -343,10 +330,10 @@ public sealed partial class SkillActivationService(AppPaths paths, string? share
 				prefix = flag;
 			}
 		}
-		var rules = CodexSkillRules.Read(index < 0 ? config : args[index][prefix.Length..]);
+		var rules = index < 0 && parsed is not null ? parsed.ToList() : CodexSkillRules.Read(index < 0 ? config : args[index][prefix.Length..]);
 		foreach (var (file, enabled) in changes)
 		{
-			rules.RemoveAll(rule => rule.MatchesPath(file));
+			rules.RemoveAll(rule => rule.MatchesPath(file, resolve));
 			rules.Add(new("path", file, enabled));
 		}
 		var update = $"skills.config=[{string.Join(", ", rules.Select(rule => rule.Inline))}]";
@@ -381,7 +368,7 @@ public sealed partial class SkillActivationService(AppPaths paths, string? share
 		var directory = profile.NativeConfigDirectory;
 		if (string.IsNullOrWhiteSpace(directory))
 		{
-			directory = Environment.GetEnvironmentVariable(HomeVariable(profile.Kind));
+			directory = InheritedHome(_userHome, profile.Kind);
 		}
 
 		if (string.IsNullOrWhiteSpace(directory))
@@ -398,6 +385,9 @@ public sealed partial class SkillActivationService(AppPaths paths, string? share
 	}
 
 	private static string HomeVariable(AgentKind kind) => kind == AgentKind.Codex ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR";
+	internal static string? InheritedHome(string userHome, AgentKind kind) =>
+		PathsEqual.Equals(Path.GetFullPath(userHome), Environment.GetFolderPath(Environment.SpecialFolder.UserProfile))
+			? Environment.GetEnvironmentVariable(HomeVariable(kind)) : null;
 
 	[GeneratedRegex("^(\"[^\"]+\"|[^\\s]+)")]
 	private static partial Regex ExecutablePattern();
@@ -424,14 +414,14 @@ public sealed partial class SkillActivationService(AppPaths paths, string? share
 		catch (InvalidOperationException) { return false; }
 	}
 
-	private static string? Discover(IReadOnlyList<string> directories, string file, bool afterInstallation = false)
+	private static string? Discover(IReadOnlyList<string> directories, string file, bool afterInstallation = false, NativeInspection? inspection = null)
 	{
 		var absolute = Path.GetFullPath(file);
 		if (!PathsEqual.Equals(Path.GetFileName(absolute), "SKILL.md") || !afterInstallation && !File.Exists(absolute))
 		{
 			return null;
 		}
-		var physical = SkillCatalogService.ResolveManifest(absolute);
+		var physical = Resolve(absolute);
 		var folder = Directory.GetParent(absolute)!;
 		foreach (var directory in directories)
 		{
@@ -441,7 +431,7 @@ public sealed partial class SkillActivationService(AppPaths paths, string? share
 				return absolute;
 			}
 			var candidate = Path.Combine(root, folder.Name, "SKILL.md");
-			if (PathsEqual.Equals(SkillCatalogService.ResolveManifest(candidate), physical))
+			if (PathsEqual.Equals(Resolve(candidate), physical))
 			{
 				return candidate;
 			}
@@ -450,20 +440,22 @@ public sealed partial class SkillActivationService(AppPaths paths, string? share
 				continue;
 			}
 			// A native package directory can be a junction with a different name from its source.
-			foreach (var alias in new DirectoryInfo(root).EnumerateDirectories())
+			var aliases = inspection is null ? NativeInspection.ListAliases(root) : inspection.Aliases(root);
+			foreach (var alias in aliases)
 			{
-				if (alias.LinkTarget is null)
-				{
-					continue;
-				}
-				var manifest = Path.Combine(alias.FullName, "SKILL.md");
-				if (PathsEqual.Equals(SkillCatalogService.ResolveManifest(manifest), physical))
+				var manifest = Path.Combine(alias, "SKILL.md");
+				if (PathsEqual.Equals(Resolve(manifest), physical))
 				{
 					return manifest;
 				}
 			}
 		}
 		return null;
+
+		string Resolve(string path)
+		{
+			return inspection?.Manifest(path) ?? SkillCatalogService.ResolveManifest(path);
+		}
 	}
 
 	internal static string ResolveDirectory(string directory) =>
@@ -475,7 +467,7 @@ public sealed partial class SkillActivationService(AppPaths paths, string? share
 
 	private string? OwnedTarget(string link, string target)
 	{
-		var original = ReadFile(ReceiptPath(link));
+		var original = SkillDirectoryConnection.ReadTarget(ReadFile(ReceiptPath(link)), link);
 		return original != null && Directory.Exists(original) && new DirectoryInfo(link).LinkTarget != null
 			&& PathsEqual.Equals(ResolveDirectory(original), target) && PathsEqual.Equals(ResolveDirectory(link), target)
 			? original : null;
@@ -484,18 +476,39 @@ public sealed partial class SkillActivationService(AppPaths paths, string? share
 	private static string? ReadFile(string path) => File.Exists(path) ? File.ReadAllText(path) : null;
 	private static JsonObject ParseObject(string? content) => content is null ? new() : JsonNode.Parse(content) as JsonObject
 		?? throw new JsonException("Expected a settings object.");
-	private static string FindPath(JsonObject doc, string file) => doc.Select(entry => entry.Key)
-		.FirstOrDefault(key => PathsEqual.Equals(SkillCatalogService.ResolveManifest(key), file)) ?? file;
-	private static SkillMode ProjectMode(string? content, string file)
-	{
-		var doc = ParseObject(content);
-		return doc[FindPath(doc, file)]?.GetValue<bool>() switch { true => SkillMode.Enabled, false => SkillMode.Disabled, _ => SkillMode.Inherit };
-	}
-	private static SkillMode ClaudeMode(string? content, string name) => ParseObject(content)["skillOverrides"]?[name]?.GetValue<string>() switch
+	private static string FindPath(JsonObject doc, string file, Func<string, string>? resolve = null) => doc.Select(entry => entry.Key)
+		.FirstOrDefault(key => PathsEqual.Equals(resolve?.Invoke(key) ?? SkillCatalogService.ResolveManifest(key), file)) ?? file;
+	private static SkillMode ProjectMode(JsonObject doc, string file, Func<string, string> resolve) =>
+		doc[FindPath(doc, file, resolve)]?.GetValue<bool>() switch { true => SkillMode.Enabled, false => SkillMode.Disabled, _ => SkillMode.Inherit };
+	private static SkillMode ClaudeMode(JsonObject? doc, string name) => doc?["skillOverrides"]?[name]?.GetValue<string>() switch
 	{
 		null => SkillMode.Inherit,
 		"off" => SkillMode.Disabled,
 		"on" or "name-only" or "user-invocable-only" => SkillMode.Enabled,
 		_ => throw new InvalidOperationException("Unrecognized native Claude skill visibility.")
 	};
+
+	private sealed class NativeInspection
+	{
+		private readonly Dictionary<string, JsonObject> _json = new(PathsEqual);
+		private readonly Dictionary<string, List<CodexSkillRule>> _codex = new(PathsEqual);
+		private readonly Dictionary<string, string> _manifests = new(PathsEqual);
+		private readonly Dictionary<string, string[]> _aliases = new(PathsEqual);
+
+		internal JsonObject JsonConfig(string path) => Get(_json, path, path => ParseObject(ReadFile(path)));
+		internal List<CodexSkillRule> CodexRules(string path) => Get(_codex, path, path => CodexSkillRules.Read(ReadFile(path)));
+		internal string Manifest(string path) => Get(_manifests, path, SkillCatalogService.ResolveManifest);
+		internal string[] Aliases(string path) => Get(_aliases, path, ListAliases);
+		internal static string[] ListAliases(string path) => new DirectoryInfo(path).EnumerateDirectories()
+			.Where(alias => alias.LinkTarget is not null).Select(alias => alias.FullName).ToArray();
+
+		private static T Get<T>(Dictionary<string, T> cache, string path, Func<string, T> read)
+		{
+			if (!cache.TryGetValue(path, out var value))
+			{
+				cache.Add(path, value = read(path));
+			}
+			return value;
+		}
+	}
 }

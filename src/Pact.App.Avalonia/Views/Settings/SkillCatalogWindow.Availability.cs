@@ -5,10 +5,10 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using System.Text.Json.Nodes;
 using Pact.Core.Agents;
 using Pact.Infrastructure.Skills;
-using Pact.Infrastructure.Storage;
 
 namespace Pact.App.Avalonia.Views.Settings;
 
@@ -31,7 +31,7 @@ internal sealed partial class SkillCatalogWindow
 	private readonly StackPanel _matrixRows = new() { Spacing = 4 };
 	private readonly SelectableTextBlock _matrixSummary = new() { Name = "MatrixSummary", TextWrapping = TextWrapping.Wrap };
 	private readonly Button _matrixApply = new() { Name = "MatrixApply", Content = "Apply", IsVisible = false };
-	private readonly Expander _impactFiles = new() { Header = "All affected paths", IsVisible = false, HorizontalAlignment = HorizontalAlignment.Stretch };
+	private readonly Button _matrixPickFolder = new() { Name = "MatrixPickFolder", Content = "Add directory…" };
 	private readonly Dictionary<string, TreeViewItem> _folderNodes = new(StringComparer.OrdinalIgnoreCase);
 	private readonly Dictionary<string, TreeViewItem> _projectNodes = new(StringComparer.OrdinalIgnoreCase);
 	private readonly Button _matrixDiscard = new() { Name = "MatrixDiscard", Content = "Discard edits" };
@@ -43,6 +43,10 @@ internal sealed partial class SkillCatalogWindow
 	private CancellationTokenSource? _matrixRead;
 	private int _matrixRevision;
 	private int _impactRevision;
+	private bool _selectedProfileShown;
+	private string? _matrixNotice;
+	private string? _matrixPruneNotice;
+	private string? _matrixRefreshError;
 	internal Task MatrixImpactReady { get; private set; } = Task.CompletedTask;
 
 	// Refreshes may originate from catalog loading or navigation. Only the newest snapshot is presented.
@@ -80,7 +84,8 @@ internal sealed partial class SkillCatalogWindow
 			});
 			choices.Items.Add(option);
 		}
-		AddMatrixControl(scope, new Button { Name = "MatrixPickFolder", Content = "Add directory…", Flyout = choices }, 2);
+		_matrixPickFolder.Flyout = choices;
+		AddMatrixControl(scope, _matrixPickFolder, 2);
 		AddCell(layout, scope, 0);
 		AddCell(layout, new GridSplitter { ResizeDirection = GridResizeDirection.Columns, HorizontalAlignment = HorizontalAlignment.Stretch }, 1);
 		AddCell(layout, panel, 2);
@@ -90,10 +95,7 @@ internal sealed partial class SkillCatalogWindow
 			HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
 			VerticalScrollBarVisibility = ScrollBarVisibility.Auto
 		}, 0);
-		var impact = new StackPanel { Spacing = 2 };
-		impact.Children.Add(_matrixSummary);
-		impact.Children.Add(_impactFiles);
-		AddMatrixControl(panel, new ScrollViewer { Content = impact, MaxHeight = 145 }, 1);
+		AddMatrixControl(panel, new ScrollViewer { Content = _matrixSummary, MaxHeight = 145 }, 1);
 		var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
 		actions.Children.Add(_matrixApply);
 		actions.Children.Add(_matrixDiscard);
@@ -112,6 +114,7 @@ internal sealed partial class SkillCatalogWindow
 		{
 			_matrixDraft.Clear();
 			_sourceDraft.Clear();
+			ClearMatrixPruneNotice();
 			ClearMatrixReview();
 			RenderMatrixRows();
 		};
@@ -162,20 +165,19 @@ internal sealed partial class SkillCatalogWindow
 	internal async Task AddMappingDirectoryAsync(string directory, bool isFolder)
 	{
 		var path = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
-		var next = _settings.DeepClone().AsObject();
+		var next = (_settings ?? throw new InvalidOperationException($"Could not read {SourceSettings}.")).DeepClone().AsObject();
 		var key = isFolder ? "mappingFolders" : "mappingProjects";
 		var saved = next[key]?.AsArray() ?? new JsonArray();
 		if (!saved.Any(item => string.Equals(item?.GetValue<string>(), path, StringComparison.OrdinalIgnoreCase)))
 		{
 			saved.Add(path);
 			next[key] = saved;
-			await AtomicFileWriter.WriteTextAsync(SourceSettings, next.ToJsonString(), _paths.AtomicTempDirectory, _lifetime.Token);
-			_settings = next;
+			await SaveSourceSettingsAsync(next);
 		}
 		var node = EnsureScopeNode(path, isFolder);
 		if (!isFolder && !_projects.Contains(path, StringComparer.OrdinalIgnoreCase))
 		{
-			await LoadAsync();
+			_projects = _projectNodes.Keys.ToArray();
 		}
 		for (var parent = node.Parent as TreeViewItem; parent is not null; parent = parent.Parent as TreeViewItem)
 		{
@@ -194,7 +196,7 @@ internal sealed partial class SkillCatalogWindow
 		}
 		foreach (var isFolder in new[] { false, true })
 		{
-			foreach (var item in _settings[isFolder ? "mappingFolders" : "mappingProjects"]?.AsArray() ?? [])
+			foreach (var item in _settings?[isFolder ? "mappingFolders" : "mappingProjects"]?.AsArray() ?? [])
 			{
 				if (item?.GetValue<string>() is { } path && Path.IsPathFullyQualified(path))
 				{
@@ -211,7 +213,7 @@ internal sealed partial class SkillCatalogWindow
 		grid.Children.Add(control);
 	}
 
-	private void RefreshMatrix()
+	private void RefreshMatrix(bool keepRows = false)
 	{
 		var revision = ++_matrixRevision;
 		_matrixRead?.Cancel();
@@ -220,11 +222,19 @@ internal sealed partial class SkillCatalogWindow
 		{
 			return;
 		}
+		if (_matrixRefreshError is { } error)
+		{
+			_matrixSummary.Text = error;
+			return;
+		}
 		var scope = CurrentScope;
 		var rows = MatrixMembers();
-		_matrixCells = [];
-		_matrixRows.Children.Clear();
-		_matrixRows.Children.Add(new TextBlock { Text = "Reading availability…" });
+		if (!keepRows || _matrixCells.Count == 0)
+		{
+			_matrixCells = [];
+			_matrixRows.Children.Clear();
+			_matrixRows.Children.Add(new TextBlock { Text = "Reading availability…" });
+		}
 		_matrixRead = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
 		MatrixReady = ReadMatrixAsync(rows, scope, revision, _matrixRead);
 	}
@@ -232,6 +242,54 @@ internal sealed partial class SkillCatalogWindow
 	private (Row Row, SkillCatalogSource Source)[] MatrixMembers() =>
 		_visibleRows.GroupBy(r => r.SourceGroup.Location, StringComparer.OrdinalIgnoreCase)
 			.SelectMany(group => group.Select(r => (r, group.First().SourceGroup))).ToArray();
+
+	private void PruneMatrixDrafts(bool preserveNotice)
+	{
+		var originalCount = _matrixDraft.Count + _sourceDraft.Count;
+		if (originalCount == 0)
+		{
+			if (!preserveNotice)
+			{
+				ClearMatrixPruneNotice();
+			}
+			return;
+		}
+		var members = MatrixMembers();
+		foreach (var (key, edit) in _matrixDraft.ToArray())
+		{
+			if (!members.Any(member => member.Row.Installation is { } installation
+				&& string.Equals(installation.ManifestFor(edit.Profile), key.Manifest, StringComparison.OrdinalIgnoreCase)
+				&& string.Equals(member.Row.Skill.Name, edit.SkillName, StringComparison.OrdinalIgnoreCase)
+				&& string.Equals(member.Source.Location, edit.Source?.Location, StringComparison.OrdinalIgnoreCase)))
+			{
+				_matrixDraft.Remove(key);
+			}
+		}
+		var locations = members.Select(member => member.Source.Location).ToHashSet(StringComparer.OrdinalIgnoreCase);
+		foreach (var key in _sourceDraft.Keys.Where(key => !locations.Contains(key.Location)).ToArray())
+		{
+			_sourceDraft.Remove(key);
+		}
+		var removed = originalCount - _matrixDraft.Count - _sourceDraft.Count;
+		if (removed > 0)
+		{
+			_matrixPruneNotice = $"Removed {removed} pending mapping edit(s) because the skill or source changed. Review the current mapping before applying more changes.";
+			ShowLoadWarnings();
+		}
+		else if (!preserveNotice)
+		{
+			ClearMatrixPruneNotice();
+		}
+	}
+
+	private void ClearMatrixPruneNotice()
+	{
+		if (_matrixPruneNotice is not null)
+		{
+			_matrixPruneNotice = null;
+			ShowLoadWarnings();
+		}
+	}
 
 	private async Task ReadMatrixAsync((Row Row, SkillCatalogSource Source)[] rows, MappingScope scope, int revision, CancellationTokenSource read)
 	{
@@ -318,7 +376,23 @@ internal sealed partial class SkillCatalogWindow
 		for (var i = 0; i < _profiles.Length; i++)
 		{
 			var profile = _profiles[i];
-			AddCell(header, new TextBlock { Text = $"{profile.DisplayName} ({profile.Id})", TextWrapping = TextWrapping.Wrap }, i + 1);
+			var heading = new TextBlock { Text = $"{profile.DisplayName} ({profile.Id})", TextWrapping = TextWrapping.Wrap };
+			AddCell(header, heading, i + 1);
+			if (string.Equals(profile.Id, _selectedProfileId, StringComparison.OrdinalIgnoreCase))
+			{
+				heading.FontWeight = FontWeight.SemiBold;
+				if (!_selectedProfileShown)
+				{
+					Dispatcher.UIThread.Post(() =>
+					{
+						if (heading.IsLoaded)
+						{
+							heading.BringIntoView();
+							_selectedProfileShown = true;
+						}
+					}, DispatcherPriority.Loaded);
+				}
+			}
 		}
 		foreach (var source in _matrixCells.GroupBy(cell => cell.Source)
 			.OrderBy(group => group.Key.Label, StringComparer.OrdinalIgnoreCase)
@@ -472,6 +546,8 @@ internal sealed partial class SkillCatalogWindow
 			ToolTip.SetTip(button, group ? $"Set the source default for {cell.Profile.DisplayName}. Individual choices take precedence." : label);
 			button.Click += (_, _) =>
 			{
+				_matrixNotice = null;
+				ClearMatrixPruneNotice();
 				if (group)
 				{
 					if (mode == cell.SourceMode)
@@ -506,10 +582,8 @@ internal sealed partial class SkillCatalogWindow
 		var count = _matrixDraft.Count + _sourceDraft.Count;
 		_matrixDiscard.IsVisible = count > 0;
 		_matrixApply.IsVisible = false;
-		_impactFiles.IsVisible = false;
-		_impactFiles.IsExpanded = false;
-		_matrixSummary.Text = count == 0 ? "" : "Checking affected files…";
-		if (count > 0 && MatrixImpactReady.IsCompleted && ReferenceEquals(Details.SelectedItem, AvailabilityTab) && !_disposing)
+		_matrixSummary.Text = count == 0 ? _matrixNotice ?? "" : "Checking affected files…";
+		if (count > 0 && _matrixRefreshError is null && MatrixImpactReady.IsCompleted && ReferenceEquals(Details.SelectedItem, AvailabilityTab) && !_disposing)
 		{
 			MatrixImpactReady = UpdateMatrixImpactAsync();
 		}
@@ -535,13 +609,7 @@ internal sealed partial class SkillCatalogWindow
 				var files = preview.AffectedFiles.OrderBy(path => path.StartsWith(settings, StringComparison.OrdinalIgnoreCase)).ToArray();
 				var scopes = _matrixDraft.Keys.Select(key => key.Scope).Concat(_sourceDraft.Keys.Select(key => key.Scope)).Distinct();
 				_matrixSummary.Text = files.Length == 0 ? "No files need to change."
-					: $"{string.Join(", ", scopes)} · Profiles: {string.Join(", ", preview.AffectedProfiles)}\n{string.Join(Environment.NewLine, files.Take(2))}";
-				if (files.Length > 2)
-				{
-					_impactFiles.Header = $"All affected paths ({files.Length})";
-					_impactFiles.Content = new SelectableTextBlock { Text = string.Join(Environment.NewLine, files), TextWrapping = TextWrapping.Wrap };
-					_impactFiles.IsVisible = true;
-				}
+					: $"{string.Join(", ", scopes)} · Profiles: {string.Join(", ", preview.AffectedProfiles)}\n{string.Join(Environment.NewLine, files)}";
 				_matrixPreview = preview;
 				_matrixApply.IsVisible = files.Length > 0;
 			}
@@ -568,19 +636,35 @@ internal sealed partial class SkillCatalogWindow
 		_matrixApply.IsVisible = false;
 		try
 		{
-			await _activation.ApplyAsync(preview, _lifetime.Token);
-			_matrixDraft.Clear();
-			_sourceDraft.Clear();
-			var warnings = await RefreshNativeRowsAsync();
-			RefreshList();
-			await MatrixReady;
-			_matrixSummary.Text = string.Join(Environment.NewLine, new[] { "Changes applied. Restart affected sessions to use the new availability." }.Concat(warnings));
+			await Task.Run(() => _activation.ApplyAsync(preview, _lifetime.Token), _lifetime.Token);
 		}
 		catch (Exception ex) when (ex is not OperationCanceledException)
 		{
 			ClearMatrixReview();
 			await MatrixImpactReady;
 			_matrixSummary.Text = $"{ex.Message}{Environment.NewLine}{_matrixSummary.Text}";
+			return;
+		}
+
+		_matrixDraft.Clear();
+		_sourceDraft.Clear();
+		const string applied = "Changes applied. Restart affected sessions to use the new availability.";
+		try
+		{
+			await RefreshNativeRowsAsync();
+			RefreshList();
+			await MatrixReady;
+			_matrixSummary.Text = _matrixNotice = applied;
+		}
+		catch (Exception ex) when (ex is not OperationCanceledException)
+		{
+			_matrixRefreshError = $"{applied}{Environment.NewLine}Could not refresh availability. Reopen Skills to reload it. {ex.Message}";
+			_matrixRevision++;
+			_matrixRead?.Cancel();
+			_matrixCells = [];
+			_matrixRows.Children.Clear();
+			ClearMatrixReview();
+			_matrixSummary.Text = _matrixRefreshError;
 		}
 	}
 }

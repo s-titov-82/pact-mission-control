@@ -1,3 +1,6 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Pact.Core.Agents;
 using Pact.Infrastructure.Skills;
 using Pact.Infrastructure.Storage;
 
@@ -73,6 +76,158 @@ public sealed class SkillMaintenanceTests
 		Should.Throw<IOException>(() => service.Apply(remove));
 		File.ReadAllText(Path.Combine(native, "script.ps1")).ShouldBe("edit");
 		File.ReadAllText(Path.Combine(destination, "SKILL.md")).ShouldBe("other");
+	}
+
+	[Test]
+	public async Task ExternallyUnlinkedProjectConnectionDoesNotBlockDeletingTheTarget()
+	{
+		using var temp = TemporaryDirectory.Create();
+		var paths = new AppPaths(Path.Combine(temp.Path, "pact"));
+		var shared = Path.Combine(temp.Path, ".agents", "skills");
+		var target = CreatePackage(shared, "sample", "body");
+		var profile = new AgentProfileRecord("claude", AgentKind.Claude, "Claude", "claude", null, "pwsh")
+		{ NativeConfigDirectory = Path.Combine(temp.Path, "native") };
+		var activation = new SkillActivationService(paths, shared, temp.Path);
+		var connection = activation.Preview(profile, "sample", Path.Combine(target, "SKILL.md"), Path.Combine(temp.Path, "project"),
+			SkillMode.Enabled, [profile]);
+		await activation.ApplyAsync(connection, default);
+		var catalog = new SkillCatalogService(paths.SettingsDirectory, shared, temp.Path);
+		var item = await Find(catalog, paths, target);
+		catalog.PreviewDelete(item, item.Connections.Single()).Conflict.ShouldNotBeNull();
+		Directory.Delete(connection.CreatedConnectionPath!);
+		var removal = catalog.PreviewDelete(item, item.Connections.Single());
+		removal.Conflict.ShouldBeNull();
+		catalog.Apply(removal);
+		Directory.Exists(target).ShouldBeFalse();
+	}
+
+	[Test]
+	public async Task ReceiptOnUnavailableVolumeBlocksTargetDeletion()
+	{
+		using var temp = TemporaryDirectory.Create();
+		var absentDrive = Enumerable.Range('D', 'Z' - 'D' + 1).Select(letter => $"{(char)letter}:\\")
+			.FirstOrDefault(drive => !Directory.GetLogicalDrives().Contains(drive, StringComparer.OrdinalIgnoreCase));
+		if (!OperatingSystem.IsWindows() || absentDrive is null)
+		{
+			Assert.Ignore("An unavailable Windows drive is required.");
+		}
+		var paths = new AppPaths(Path.Combine(temp.Path, "pact"));
+		var shared = Path.Combine(temp.Path, ".agents", "skills");
+		var target = CreatePackage(shared, "sample", "body");
+		var alias = Path.Combine(absentDrive!, "project", ".claude", "skills", "sample");
+		var key = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(alias.ToUpperInvariant())));
+		var receipts = Directory.CreateDirectory(Path.Combine(paths.SettingsDirectory, "Skills", "Connections"));
+		var receipt = Path.Combine(receipts.FullName, key + ".txt");
+		File.WriteAllText(receipt, SkillDirectoryConnection.FormatReceipt(target, alias));
+		var catalog = new SkillCatalogService(paths.SettingsDirectory, shared, temp.Path);
+		var installation = await Find(catalog, paths, target);
+
+		var preview = catalog.PreviewDelete(installation, installation.Connections.Single());
+
+		preview.Conflict!.ShouldContain(receipt);
+		File.Exists(Path.Combine(target, "SKILL.md")).ShouldBeTrue();
+	}
+
+	[Test]
+	public async Task MalformedPolicyNamesItsFileAndBlocksDeletion()
+	{
+		using var temp = TemporaryDirectory.Create();
+		var paths = new AppPaths(Path.Combine(temp.Path, "pact"));
+		var shared = Path.Combine(temp.Path, ".agents", "skills");
+		var source = CreatePackage(shared, "sample", "body");
+		var policy = Path.Combine(Directory.CreateDirectory(Path.Combine(paths.SettingsDirectory, "Skills", "Policies")).FullName, "malformed.json");
+		const string malformed = "{\"children\":";
+		File.WriteAllText(policy, malformed);
+		var catalog = new SkillCatalogService(paths.SettingsDirectory, shared, temp.Path);
+		var selected = await Find(catalog, paths, source);
+
+		var preview = catalog.PreviewDelete(selected, selected.Connections.Single());
+
+		preview.Conflict!.ShouldContain(policy);
+		Should.Throw<IOException>(() => catalog.Apply(preview));
+		File.ReadAllText(policy).ShouldBe(malformed);
+		File.ReadAllText(Path.Combine(source, "SKILL.md")).ShouldBe("body");
+	}
+
+	[TestCase(false)]
+	[TestCase(true)]
+	public async Task RemovingMigratedAliasPreservesPactChoicesAndRejectsConflictingDestinationRules(bool conflicting)
+	{
+		using var temp = TemporaryDirectory.Create();
+		var paths = new AppPaths(Path.Combine(temp.Path, "pact"));
+		var shared = Path.Combine(temp.Path, ".agents", "skills");
+		var native = CreatePackage(Path.Combine(temp.Path, ".claude", "skills"), "sample", "body");
+		var target = Path.Combine(shared, "sample", "SKILL.md").ToUpperInvariant();
+		var alias = Path.Combine(native, "SKILL.md").ToUpperInvariant();
+		var children = new Dictionary<string, bool> { [alias] = false };
+		if (conflicting)
+		{
+			children.Add(target, true);
+		}
+		var policy = Path.Combine(Directory.CreateDirectory(Path.Combine(paths.SettingsDirectory, "Skills", "Policies")).FullName, "policy.json");
+		var original = JsonSerializer.Serialize(new { children, materialized = new Dictionary<string, bool> { [alias] = true }, unknown = "keep" });
+		File.WriteAllText(policy, original);
+		var catalog = new SkillCatalogService(paths.SettingsDirectory, shared, temp.Path);
+		var nativePackage = await Find(catalog, paths, native);
+		catalog.Apply(catalog.PreviewMakeShared(nativePackage, nativePackage.Connections.Single()));
+		var migrated = await Find(catalog, paths, native);
+		var connection = migrated.Connections.Single(item => !item.IsSharedUserDirectory);
+
+		var preview = catalog.PreviewDelete(migrated, connection);
+
+		if (conflicting)
+		{
+			preview.Conflict!.ShouldContain(policy);
+			File.ReadAllText(policy).ShouldBe(original);
+			File.Exists(connection.ManifestPath).ShouldBeTrue();
+			return;
+		}
+		preview.Conflict.ShouldBeNull();
+		preview.AffectedFiles.ShouldContain(policy);
+		catalog.Apply(preview);
+		var saved = JsonNode.Parse(File.ReadAllText(policy))!;
+		saved["children"]![alias].ShouldBeNull();
+		saved["children"]![target]!.GetValue<bool>().ShouldBeFalse();
+		saved["materialized"]![target]!.GetValue<bool>().ShouldBeTrue();
+		saved["unknown"]!.GetValue<string>().ShouldBe("keep");
+		File.Exists(connection.ManifestPath).ShouldBeFalse();
+		File.ReadAllText(migrated.ResolvedManifest).ShouldBe("body");
+	}
+
+	[Test]
+	public async Task DeletingAQualifiedPathRemovesItsPactRulesSoTheNameCanBeReused()
+	{
+		using var temp = TemporaryDirectory.Create();
+		var paths = new AppPaths(Path.Combine(temp.Path, "pact"));
+		var shared = Path.Combine(temp.Path, ".agents", "skills");
+		var deleted = CreatePackage(shared, "old", "old package");
+		var replacement = CreatePackage(shared, "replacement", "new package");
+		var key = Path.Combine(deleted, "SKILL.md");
+		var other = Path.Combine(shared, "other", "SKILL.md");
+		var directory = Path.Combine(paths.SettingsDirectory, "Skills");
+		var projectRules = Path.Combine(Directory.CreateDirectory(Path.Combine(directory, "ProjectRules")).FullName, "test.json");
+		var policy = Path.Combine(Directory.CreateDirectory(Path.Combine(directory, "Policies")).FullName, "test.json");
+		File.WriteAllText(projectRules, JsonSerializer.Serialize(new Dictionary<string, bool> { [key] = false, [other] = true }));
+		File.WriteAllText(policy, JsonSerializer.Serialize(new
+		{
+			children = new Dictionary<string, bool> { [key] = false, [other] = true },
+			materialized = new Dictionary<string, bool> { [key] = true },
+			unknown = "keep"
+		}));
+		var catalog = new SkillCatalogService(paths.SettingsDirectory, shared, temp.Path);
+		var selected = await Find(catalog, paths, deleted);
+		var preview = catalog.PreviewDelete(selected, selected.Connections.Single());
+		preview.AffectedFiles.ShouldContain(projectRules);
+		preview.AffectedFiles.ShouldContain(policy);
+		catalog.Apply(preview);
+		JsonNode.Parse(File.ReadAllText(projectRules))![key].ShouldBeNull();
+		JsonNode.Parse(File.ReadAllText(projectRules))![other]!.GetValue<bool>().ShouldBeTrue();
+		var remaining = JsonNode.Parse(File.ReadAllText(policy))!;
+		remaining["children"]![key].ShouldBeNull();
+		remaining["materialized"]![key].ShouldBeNull();
+		remaining["unknown"]!.GetValue<string>().ShouldBe("keep");
+		var next = await Find(catalog, paths, replacement);
+		catalog.PreviewRename(next, next.Connections.Single(), "old").Conflict.ShouldBeNull();
 	}
 
 	[Test]

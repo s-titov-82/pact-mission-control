@@ -132,7 +132,7 @@ public sealed partial class SkillActivationService
 				{
 					var bytes = File.Exists(file.Path) ? await File.ReadAllBytesAsync(file.Path, token) : null;
 					CheckRevision(file.Path, file.Original);
-					await AtomicFileWriter.WriteTextAsync(file.Path, file.Updated!, null, new UTF8Encoding(false), token);
+					await WriteSettingsAsync(file.Path, file.Updated!, bytes, token);
 					completedFiles.Push((file, bytes));
 				}
 			}
@@ -177,5 +177,17 @@ public sealed partial class SkillActivationService
 		{
 			throw new InvalidOperationException($"Settings changed after preview: {path}. Preview the change again.");
 		}
+	}
+
+	internal static Task WriteSettingsAsync(string path, string content, byte[]? original, CancellationToken token)
+	{
+		Encoding encoding = new UTF8Encoding(false);
+		if (original is not null)
+		{
+			using var reader = new StreamReader(new MemoryStream(original, writable: false), encoding, detectEncodingFromByteOrderMarks: true);
+			_ = reader.Peek();
+			encoding = reader.CurrentEncoding;
+		}
+		return AtomicFileWriter.WriteTextAsync(path, content, null, encoding, token);
 	}
 }

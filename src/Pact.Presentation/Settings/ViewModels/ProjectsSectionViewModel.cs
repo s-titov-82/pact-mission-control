@@ -132,7 +132,7 @@ public sealed class ProjectsSectionViewModel : SettingsSectionViewModelBase
 				}
 			}
 
-			foreach (var page in project.WebPages)
+			foreach (var page in project.WebPages.Where(page => page.IsItemDirty))
 			{
 				if (page.Validate() is { } error)
 				{

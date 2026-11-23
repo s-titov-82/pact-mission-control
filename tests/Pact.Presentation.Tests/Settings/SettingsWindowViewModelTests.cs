@@ -44,7 +44,7 @@ public sealed class SettingsWindowViewModelTests : IDisposable
 				"Web monitoring rules",
 				"Prompt/Shell templates",
 				"Git popup",
-				"Scenarios",
+				"Review types",
 				"Recent directories",
 				"Appearance"
 			]);

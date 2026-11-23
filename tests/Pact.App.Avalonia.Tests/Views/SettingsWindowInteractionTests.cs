@@ -1198,6 +1198,41 @@ public sealed class SettingsWindowInteractionTests : IDisposable
 	}
 
 	[AvaloniaTest]
+	public async Task Review_types_load_and_preserve_malformed_fields_when_other_values_are_edited()
+	{
+		(var vm, _) = await CreateViewModelAsync();
+		var path = new AppPaths(_root).ScenariosPath;
+		await File.WriteAllTextAsync(path, """
+			[{"id":7,"kind":"reviewLoop","name":{},"defaultStrict":"true","legacy":42},
+			 {"id":"code-review","kind":"reviewLoop","name":"Code review"}]
+			""");
+		using SettingsWindow window = new(vm, new RecordingExternalLauncher())
+		{
+			InitialSection = SettingsSection.Scenarios
+		};
+		await window.InitializeAsync();
+		window.Show();
+		await SettingsWindow.DrainUiQueueAsync();
+		var section = vm.ActiveSection.ShouldBeOfType<ScenariosSectionViewModel>();
+		var legacy = section.Items[0].ShouldBeOfType<ScenarioItemViewModel>();
+		legacy.DefaultStrict.ShouldBeTrue();
+		legacy.ReviewRules = "Check compatibility.";
+		section.Items[1].ShouldBeOfType<ScenarioItemViewModel>().Name = "Check code";
+
+		(await section.SaveAsync(CancellationToken.None)).ShouldBeTrue();
+
+		var saved = JsonNode.Parse(await File.ReadAllTextAsync(path))!.AsArray();
+		var original = saved[0]!.AsObject();
+		original["id"]!.GetValue<int>().ShouldBe(7);
+		original["name"].ShouldBeOfType<JsonObject>().Count.ShouldBe(0);
+		original["defaultStrict"]!.GetValue<string>().ShouldBe("true");
+		original["legacy"]!.GetValue<int>().ShouldBe(42);
+		original["reviewRules"]!.GetValue<string>().ShouldBe("Check compatibility.");
+		saved[1]!["name"]!.GetValue<string>().ShouldBe("Check code");
+		window.Close();
+	}
+
+	[AvaloniaTest]
 	public async Task Large_settings_editor_keeps_footer_inside_the_window()
 	{
 		(var vm, _) = await CreateViewModelAsync();

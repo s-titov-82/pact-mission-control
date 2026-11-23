@@ -33,7 +33,6 @@ public sealed partial class SkillCatalogService
 		}
 
 		var members = new List<SkillMatrixMember>();
-		var buffer = new char[65_536];
 		foreach (var (root, _) in sourceRoots)
 		{
 			if (!Directory.Exists(root))
@@ -51,9 +50,7 @@ public sealed partial class SkillCatalogService
 					var source = bound.TryGetValue(physical, out var binding) ? Source(SkillCatalogSourceKind.Bound, binding.Source) :
 						ClassifyInstalledFolder(physical, sourceRoots);
 					using var reader = File.OpenText(file);
-					var length = reader.ReadBlock(buffer, 0, buffer.Length);
-					using var header = new StringReader(new string(buffer, 0, length));
-					var name = CatalogSkill.ManifestName(header, Path.GetFileName(directory));
+					var name = CatalogSkill.ManifestName(reader, Path.GetFileName(directory));
 					members.Add(new SkillMatrixMember(source, name, file, profile));
 					continue;
 				}

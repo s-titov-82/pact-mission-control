@@ -35,20 +35,25 @@ public sealed partial class CodexScreenProfile : AgentScreenProfileBase
 		var menu = FolderAccessMenuRx().Match(screen);
 		if (!menu.Success)
 		{
-			return base.DescribeTrustRequest(screen);
+			return base.DescribeTrustRequest(screen) is null ? null : "Folder access selection";
 		}
 
 		// Codex also shows this menu when changing folders. Enter is safe for the
-		// startup readiness flow only with its affirmative option still selected.
-		return menu.Groups["trust"].Success
+		// startup readiness flow only on its Quit variant with the affirmative option selected.
+		var startup = menu.Groups["trust"].Success && !menu.Groups["cancelSelected"].Success
+			&& menu.Groups["cancel"].Value == "Quit"
+			&& menu.Groups["footer"].Value.EndsWith("· esc quit", StringComparison.Ordinal)
+			&& screen.AsSpan(0, menu.Index).TrimEnd().Contains(
+				"Trust this folder? Codex can read, edit, and run files here,", StringComparison.Ordinal);
+		return startup
 			? TrustPromptDescription
 			: "Folder access selection";
 	}
 
 	[GeneratedRegex(
 		@"^[ \t]*(?<trust>›)?[ \t]*1\. Trust and continue[ \t]*\r?\n"
-		+ @"[ \t]*›?[ \t]*2\. [^\r\n]+\r?\n"
-		+ @"\s*enter continue[^\r\n]*\s*\z",
+		+ @"[ \t]*(?<cancelSelected>›)?[ \t]*2\. (?<cancel>[^\r\n]*?)[ \t]*\r?\n"
+		+ @"\s*(?<footer>enter continue[^\r\n]*?)[ \t]*\s*\z",
 		RegexOptions.Multiline)]
 	private static partial Regex FolderAccessMenuRx();
 
@@ -83,12 +88,6 @@ public sealed partial class CodexScreenProfile : AgentScreenProfileBase
 	protected override (int Index, string Description) FindInputRequest(string scope)
 	{
 		ArgumentNullException.ThrowIfNull(scope);
-		var queued = QueuedQuestionRx().Match(scope);
-		if (queued.Success)
-		{
-			return (queued.Index, queued.Groups["descr"].Value);
-		}
-
 		var (index, description) = LastMatchIndex(scope, InputRequestedRx());
 
 		// A structured question counts once any prompt glyph follows it. Checking the glyph
@@ -114,9 +113,23 @@ public sealed partial class CodexScreenProfile : AgentScreenProfileBase
 	[GeneratedRegex(@"Question\s+\d\/\d[^\r\n]*[\r\n]\s*(?<descr>[^\r\n]*)", RegexOptions.IgnoreCase)]
 	private static partial Regex QuestionHeaderRx();
 
+	/// <inheritdoc />
+	private protected override string? DescribeCurrentInputRequest(string screen)
+	{
+		// A long editable queue can place its header well above the transcript search window.
+		const int maxQueueCharacters = 16_384;
+		var queueScope = screen.Length <= maxQueueCharacters ? screen : screen[^maxQueueCharacters..];
+		var queued = QueuedQuestionRx().Match(queueScope);
+		return queued.Success ? queued.Groups["descr"].Value : null;
+	}
+
 	// Async questions can remain collapsed above the composer while Codex is working.
-	// Match the live answer hint, since the question and its options also appear in history.
-	[GeneratedRegex(@"^[ \t]*\?[ \t]+(?<descr>[1-9]\d* questions?)\s*(?:·\s*)?\S+[ \t]+to answer[ \t)]*\s*(?:›\s*)?\z",
+	// Match the live queue and its answer hint next to the composer. The working line can
+	// appear after the queue while the answer is still pending.
+	[GeneratedRegex(@"^[ \t]*(?:•[ \t]+)?Queued follow-up inputs[ \t]*\r?\n"
+		+ @"(?:[ \t]*↳[^\r\n]*\r?\n)*"
+		+ @"[ \t]*\?[ \t]+(?<descr>[1-9]\d* questions?)(?:[ \t]*·[ \t]*|[ \t]*\r?\n[ \t]*|[ \t]+)"
+		+ @"[^\r\n]{1,60}?[ \t]+to answer[ \t)]*(?:\s+•[ \t]+Working[ \t]+\([^\r\n]*\))?\s*(?:›\s*)?\z",
 		RegexOptions.IgnoreCase | RegexOptions.Multiline)]
 	private static partial Regex QueuedQuestionRx();
 

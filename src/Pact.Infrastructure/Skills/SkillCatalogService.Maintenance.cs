@@ -1,5 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using Pact.Core.Agents;
 using Pact.Infrastructure.Storage;
 
 namespace Pact.Infrastructure.Skills;
@@ -7,18 +9,22 @@ namespace Pact.Infrastructure.Skills;
 /// <summary>Describes an exact native package or directory link selected for removal or migration.</summary>
 public sealed class SkillMaintenancePreview
 {
-	internal SkillMaintenancePreview(NativeSkillInstallation installation, NativeSkillConnection connection, string source, string? shared)
+	internal SkillMaintenancePreview(NativeSkillInstallation installation, NativeSkillConnection connection, string source, string? shared,
+		IReadOnlyList<AgentProfileRecord>? profiles)
 	{
 		Installation = installation;
 		Connection = connection;
 		SourceDirectory = source;
 		SharedDirectory = shared;
+		Profiles = profiles ?? [];
 	}
 
 	internal NativeSkillInstallation Installation { get; }
 	internal NativeSkillConnection Connection { get; }
+	internal IReadOnlyList<AgentProfileRecord> Profiles { get; }
 	internal SkillMaintenanceRevision? Revision { get; set; }
 	internal string[] IdenticalCopies { get; set; } = [];
+	internal IReadOnlyList<SkillConfigEdit> Edits { get; set; } = [];
 
 	/// <summary>The selected native path, which may be a link to a separately owned package.</summary>
 	public string SourceDirectory { get; }
@@ -35,6 +41,12 @@ public sealed class SkillMaintenancePreview
 	/// <summary>The paths and actions to present before confirmation.</summary>
 	public IReadOnlyList<string> Changes { get; internal set; } = [];
 
+	/// <summary>The package, connection and settings paths changed by confirmation.</summary>
+	public IReadOnlyList<string> AffectedFiles { get; internal set; } = [];
+
+	/// <summary>The profiles that can observe the package or connection change.</summary>
+	public IReadOnlyList<string> AffectedProfiles { get; internal set; } = [];
+
 	/// <summary>Residual staging paths when cleanup could not finish after a successful confirmation.</summary>
 	public string? CleanupWarning { get; internal set; }
 }
@@ -45,8 +57,9 @@ internal sealed record SkillMaintenanceRevision(string Physical, string? Link, s
 public sealed partial class SkillCatalogService
 {
 	/// <summary>Previews moving an independently owned native package into shared skills and retaining its original CLI path as a link.</summary>
-	public SkillMaintenancePreview PreviewMakeShared(NativeSkillInstallation installation, NativeSkillConnection connection) =>
-		PreviewMaintenance(installation, connection, makeShared: true);
+	public SkillMaintenancePreview PreviewMakeShared(NativeSkillInstallation installation, NativeSkillConnection connection,
+		IReadOnlyList<AgentProfileRecord>? profiles = null) =>
+		PreviewMaintenance(installation, connection, makeShared: true, profiles);
 
 	/// <summary>Previews removing the selected directory entry and its applicable binding or link receipt.</summary>
 	public SkillMaintenancePreview PreviewDelete(NativeSkillInstallation installation, NativeSkillConnection connection) =>
@@ -73,7 +86,7 @@ public sealed partial class SkillCatalogService
 			try
 			{
 				if (Same(path, ResolveDirectory(path)) && File.Exists(Path.Combine(path, "SKILL.md"))
-					&& PackageRevision(path) == preview.Revision?.Package)
+					&& PackageRevision(path, InstalledHashes(path, skipGitMetadata: true), skipGitMetadata: true) == preview.Revision?.Package)
 				{
 					return null;
 				}
@@ -117,8 +130,9 @@ public sealed partial class SkillCatalogService
 			SkillActivationService.WriteGate.Wait();
 			try
 			{
-				var current = PreviewMaintenance(preview.Installation, preview.Connection, preview.SharedDirectory is not null);
-				if (current.Conflict is not null || current.Revision != preview.Revision || current.SharedDirectory != preview.SharedDirectory)
+				var current = PreviewMaintenance(preview.Installation, preview.Connection, preview.SharedDirectory is not null, preview.Profiles);
+				if (current.Conflict is not null || current.Revision != preview.Revision || current.SharedDirectory != preview.SharedDirectory ||
+					!current.Edits.SequenceEqual(preview.Edits))
 				{
 					throw new IOException(current.Conflict ?? "The skill changed after preview. Open a fresh preview.");
 				}
@@ -136,27 +150,29 @@ public sealed partial class SkillCatalogService
 		});
 	}
 
-	private SkillMaintenancePreview PreviewMaintenance(NativeSkillInstallation installation, NativeSkillConnection connection, bool makeShared)
+	private SkillMaintenancePreview PreviewMaintenance(NativeSkillInstallation installation, NativeSkillConnection connection, bool makeShared,
+		IReadOnlyList<AgentProfileRecord>? profiles = null)
 	{
 		ArgumentNullException.ThrowIfNull(installation);
 		ArgumentNullException.ThrowIfNull(connection);
-		var preview = NewMaintenance(installation, connection, makeShared);
+		var preview = NewMaintenance(installation, connection, makeShared, profiles);
 		try
 		{
 			InspectMaintenance(preview);
 		}
-		catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+		catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException)
 		{
 			preview.Conflict = ex.Message;
 		}
 		return preview;
 	}
 
-	private SkillMaintenancePreview NewMaintenance(NativeSkillInstallation installation, NativeSkillConnection connection, bool makeShared)
+	private SkillMaintenancePreview NewMaintenance(NativeSkillInstallation installation, NativeSkillConnection connection, bool makeShared,
+		IReadOnlyList<AgentProfileRecord>? profiles = null)
 	{
 		var source = Path.GetDirectoryName(Path.GetFullPath(connection.ManifestPath))!;
 		var shared = makeShared ? Path.Combine(_skillsDirectory, Path.GetFileName(source)) : null;
-		return new(installation, connection, source, shared);
+		return new(installation, connection, source, shared, profiles);
 	}
 
 	private (string Physical, string? Link) CheckOwnership(SkillMaintenancePreview preview)
@@ -207,22 +223,19 @@ public sealed partial class SkillCatalogService
 		var parent = Path.GetDirectoryName(source)!;
 		var registry = LoadRegistry();
 		var name = Path.GetFileName(source);
-		var binding = Same(parent, _skillsDirectory) ? registry[name]?.ToJsonString() : null;
+		var binding = Same(parent, _skillsDirectory) ? registry[BindingKey(registry, name)]?.ToJsonString() : null;
 		var activation = MaintenanceReceipt(source, migration: false);
 		var migration = MaintenanceReceipt(source, migration: true);
 		var activationText = ReadReceipt(activation);
 		var migrationText = ReadReceipt(migration);
 		var changes = new List<string>();
+		var files = new List<string> { source };
 		preview.Changes = changes;
 		var package = link is null ? PackageRevision(source) : null;
 		string? sharedRevision = null;
 		string? destinationBinding = null;
 		if (preview.SharedDirectory is { } shared)
 		{
-			if (activationText is not null || migrationText is not null)
-			{
-				throw new IOException($"An existing connection receipt for {source} needs review.");
-			}
 			if (Directory.Exists(shared))
 			{
 				sharedRevision = PackageRevision(shared);
@@ -235,7 +248,7 @@ public sealed partial class SkillCatalogService
 			{
 				throw new IOException($"A shared package or file conflicts with {shared}.");
 			}
-			destinationBinding = registry[name]?.ToJsonString();
+			destinationBinding = registry[BindingKey(registry, name)]?.ToJsonString();
 			if (destinationBinding is not null && sharedRevision is null)
 			{
 				throw new IOException($"A saved source binding already claims the missing destination {shared}.");
@@ -244,6 +257,16 @@ public sealed partial class SkillCatalogService
 				$"Reuse {shared}. File contents and named streams match. The shared directory keeps its own permissions and timestamps.");
 			changes.Add($"Replace {source} with a directory link to {shared}. Existing CLI paths continue to work.");
 			changes.Add($"Record the migrated link in {migration}.");
+			files.AddRange([shared, migration]);
+			if (activationText is not null)
+			{
+				changes.Add($"Remove the obsolete connection receipt {activation}.");
+				files.Add(activation);
+			}
+			var activationService = MaintenanceActivation();
+			var observing = preview.Installation.Connections.SelectMany(connection => connection.Profiles).Concat(
+				preview.Profiles.Where(profile => profile.Kind == AgentKind.Codex && VerifiedNativeRoot(activationService, profile) is not null));
+			preview.AffectedProfiles = ProfileNames(observing);
 		}
 		else
 		{
@@ -255,16 +278,56 @@ public sealed partial class SkillCatalogService
 				changes.AddRange(Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories).Order(StringComparer.OrdinalIgnoreCase));
 			}
 			if (binding is not null)
-			{ changes.Add($"Remove the update binding for {name} from {_registry}."); }
+			{
+				changes.Add($"Remove the update binding for {name} from {_registry}.");
+				files.Add(_registry);
+			}
 			if (activationText is not null)
-			{ changes.Add($"Remove the connection receipt {activation}."); }
+			{
+				changes.Add($"Remove the connection receipt {activation}.");
+				files.Add(activation);
+			}
 			if (migrationText is not null)
-			{ changes.Add($"Remove the migration receipt {migration}."); }
+			{
+				changes.Add($"Remove the migration receipt {migration}.");
+				files.Add(migration);
+			}
+			var recordedTarget = SkillDirectoryConnection.ReadTarget(migrationText, source);
+			var survivingManifest = link is not null && recordedTarget is not null && Same(recordedTarget, physical) &&
+				Same(Path.GetDirectoryName(physical)!, _skillsDirectory) ? Path.Combine(physical, "SKILL.md") : null;
+			if (survivingManifest is not null && (!File.Exists(survivingManifest) || !Same(ResolveManifest(survivingManifest), survivingManifest)))
+			{
+				throw new IOException($"Cannot verify the shared manifest at {survivingManifest} before removing {source}.");
+			}
+			preview.Edits = SkillRenameReferences.PreviewDeletion(Path.GetDirectoryName(_registry)!, source, link is not null, survivingManifest);
+			changes.AddRange(preview.Edits.Select(edit => survivingManifest is null ? $"Remove skill rules for {name} from {edit.Path}." :
+				$"Move skill rules for {name} to {survivingManifest} in {edit.Path}."));
+			files.AddRange(preview.Edits.Select(edit => edit.Path));
+			preview.AffectedProfiles = ProfileNames(preview.Connection.Profiles);
 		}
+		preview.AffectedFiles = files;
 		preview.Revision = new(physical, link, package, sharedRevision, binding, destinationBinding, activationText, migrationText);
 	}
 
-	private static void CheckDependents(string source, string physical, bool isLink, string[] roots, string ownActivation, string ownMigration)
+	private SkillActivationService MaintenanceActivation() =>
+		new(new AppPaths(Path.GetDirectoryName(Path.GetDirectoryName(_registry)!)!), _skillsDirectory, _userHome);
+
+	private static string? VerifiedNativeRoot(SkillActivationService activation, AgentProfileRecord profile)
+	{
+		try
+		{
+			return activation.SkillDirectories(profile, null)[0];
+		}
+		catch (InvalidOperationException)
+		{
+			return null;
+		}
+	}
+
+	private static string[] ProfileNames(IEnumerable<AgentProfileRecord> profiles) =>
+		profiles.Select(profile => profile.DisplayName).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+
+	private void CheckDependents(string source, string physical, bool isLink, string[] roots, string ownActivation, string ownMigration)
 	{
 		foreach (var receiptDir in new[] { Path.GetDirectoryName(ownActivation), Path.GetDirectoryName(ownMigration) })
 		{
@@ -274,12 +337,14 @@ public sealed partial class SkillCatalogService
 			{
 				if (Same(receipt, ownActivation) || Same(receipt, ownMigration))
 				{ continue; }
-				var target = File.ReadAllText(receipt);
-				if (!Path.IsPathFullyQualified(target))
+				var content = File.ReadAllText(receipt);
+				var target = SkillDirectoryConnection.ReadTarget(content);
+				if (!Path.IsPathFullyQualified(target ?? ""))
 				{
 					throw new IOException($"The connection receipt {receipt} has an unreadable target.");
 				}
-				if (IsWithin(target, source) || !isLink && IsWithin(ResolveDirectory(target), physical))
+				if ((IsWithin(target!, source) || !isLink && IsWithin(ResolveDirectory(target!), physical)) &&
+					!IsObsoleteReceipt(receipt, content, target!, roots, Same(receiptDir!, Path.GetDirectoryName(ownMigration)!)))
 				{
 					throw new IOException($"A Pact connection still depends on {source}. Review {receipt} before removal.");
 				}
@@ -317,6 +382,45 @@ public sealed partial class SkillCatalogService
 		}
 	}
 
+	private bool IsObsoleteReceipt(string receipt, string content, string target, IEnumerable<string> roots, bool migration)
+	{
+		var recorded = SkillDirectoryConnection.RecordedPath(content);
+		var candidates = recorded is null ? roots.Select(root => Path.Combine(root, Path.GetFileName(target))) : [recorded];
+		return candidates.Any(path => Path.IsPathFullyQualified(path) && Same(MaintenanceReceipt(path, migration), receipt) &&
+			IsProvenMissing(path));
+	}
+
+	private static bool IsProvenMissing(string path)
+	{
+		// Exists conflates missing entries with inaccessible drives and network shares. Walk to
+		// an accessible directory before treating a missing leaf or missing ancestor as obsolete.
+		try
+		{
+			for (var current = path; ; current = Path.GetDirectoryName(current)!)
+			{
+				try
+				{
+					var attributes = File.GetAttributes(current);
+					if (Same(current, path) || (attributes & (FileAttributes.Directory | FileAttributes.ReparsePoint)) != FileAttributes.Directory)
+					{
+						return false;
+					}
+					using var entries = Directory.EnumerateFileSystemEntries(current).GetEnumerator();
+					_ = entries.MoveNext();
+					return true;
+				}
+				catch (Exception ex) when ((ex is FileNotFoundException or DirectoryNotFoundException) && Path.GetDirectoryName(current) is not null)
+				{
+					// Try the next parent. If even the root is inaccessible, the receipt remains active.
+				}
+			}
+		}
+		catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+		{
+			return false;
+		}
+	}
+
 	private string MaintenanceReceipt(string source, bool migration)
 	{
 		var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source.ToUpperInvariant())));
@@ -326,9 +430,10 @@ public sealed partial class SkillCatalogService
 	private static string? ReadReceipt(string path) => File.Exists(path) ? File.ReadAllText(path) : null;
 	private static bool Same(string first, string second) => string.Equals(first, second, StringComparison.OrdinalIgnoreCase);
 
-	private static string PackageRevision(string directory)
+	private static string PackageRevision(string directory) => PackageRevision(directory, InstalledHashes(directory), skipGitMetadata: false);
+
+	private static string PackageRevision(string directory, Dictionary<string, string> files, bool skipGitMetadata)
 	{
-		var files = InstalledHashes(directory);
 		using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
 		foreach (var (file, digest) in files.OrderBy(entry => entry.Key, StringComparer.Ordinal))
 		{
@@ -337,7 +442,7 @@ public sealed partial class SkillCatalogService
 		}
 		hash.AppendData("R\0"u8);
 		SkillPackageStreams.AppendHashes(hash, directory);
-		foreach (var folder in SafeSubdirectories(directory).Order(StringComparer.Ordinal))
+		foreach (var folder in SafeSubdirectories(directory, skipGitMetadata).Order(StringComparer.Ordinal))
 		{
 			hash.AppendData(Encoding.UTF8.GetBytes("D" + Path.GetRelativePath(directory, folder) + "\0"));
 			SkillPackageStreams.AppendHashes(hash, folder);
@@ -345,8 +450,27 @@ public sealed partial class SkillCatalogService
 		return Convert.ToHexString(hash.GetHashAndReset());
 	}
 
-	private static IEnumerable<string> SafeSubdirectories(string directory) =>
-		Directory.EnumerateDirectories(directory, "*", new EnumerationOptions { RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint, IgnoreInaccessible = false });
+	private static IEnumerable<string> SafeSubdirectories(string directory, bool skipGitMetadata = false)
+	{
+		var pending = new Stack<string>();
+		pending.Push(directory);
+		while (pending.TryPop(out var parent))
+		{
+			foreach (var child in Directory.EnumerateDirectories(parent))
+			{
+				if ((File.GetAttributes(child) & FileAttributes.ReparsePoint) != 0)
+				{
+					throw new IOException($"Linked package path: {child}");
+				}
+				if (skipGitMetadata && Path.GetFileName(child).Equals(".git", StringComparison.OrdinalIgnoreCase))
+				{
+					continue;
+				}
+				pending.Push(child);
+				yield return child;
+			}
+		}
+	}
 
 	private void CommitMaintenance(SkillMaintenancePreview preview)
 	{
@@ -357,6 +481,7 @@ public sealed partial class SkillCatalogService
 		var migration = MaintenanceReceipt(source, migration: true);
 		var activation = MaintenanceReceipt(source, migration: false);
 		var receipts = new List<(string Path, string Backup)>();
+		var settings = new Stack<(SkillConfigEdit Edit, byte[] Original)>();
 		var moved = false;
 		var sharedCreated = false;
 		var renamedToShared = false;
@@ -390,47 +515,82 @@ public sealed partial class SkillCatalogService
 				{
 					throw new IOException("The shared package changed during confirmation.");
 				}
-				SkillDirectoryConnection.ApplyAsync(new(source, shared, migration, true), CancellationToken.None).GetAwaiter().GetResult();
+				SkillDirectoryConnection.ApplyAsync(new(source, shared, migration, true, PreviousReceipt: state.MigrationReceipt),
+					CancellationToken.None).GetAwaiter().GetResult();
 				linkCreated = true;
+				StageReceipt(activation, state.ActivationReceipt);
 			}
 			else
 			{
 				foreach (var (path, expected) in new[] { (activation, state.ActivationReceipt), (migration, state.MigrationReceipt) })
 				{
-					if (ReadReceipt(path) != expected)
-					{ throw new IOException($"The receipt changed at {path}."); }
-					if (expected is null)
-					{ continue; }
-					var temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
-					File.Move(path, temp);
-					receipts.Add((path, temp));
+					StageReceipt(path, expected);
+				}
+				foreach (var edit in preview.Edits)
+				{
+					if (ReadReceipt(edit.Path) != edit.Original)
+					{ throw new IOException($"The settings changed at {edit.Path}."); }
+					var original = File.ReadAllBytes(edit.Path);
+					SkillActivationService.WriteSettingsAsync(edit.Path, edit.Updated!, original, CancellationToken.None).GetAwaiter().GetResult();
+					settings.Push((edit, original));
 				}
 				if (state.Binding is not null)
 				{
 					var registry = LoadRegistry();
-					var name = Path.GetFileName(source);
-					if (registry[name]?.ToJsonString() != state.Binding)
+					var key = BindingKey(registry, Path.GetFileName(source));
+					if (registry[key]?.ToJsonString() != state.Binding)
 					{ throw new IOException("The update binding changed."); }
-					registry.Remove(name);
+					registry.Remove(key);
 					AtomicFileWriter.WriteTextAsync(_registry, registry.ToJsonString(), CancellationToken.None).GetAwaiter().GetResult();
 				}
 			}
 		}
-		catch
+		catch (Exception error)
 		{
+			var failures = new List<Exception>();
+			while (settings.TryPop(out var setting))
+			{
+				Restore(() =>
+				{
+					if (ReadReceipt(setting.Edit.Path) != setting.Edit.Updated)
+					{ throw new IOException($"The settings changed during rollback at {setting.Edit.Path}."); }
+					AtomicFileWriter.WriteBytesAsync(setting.Edit.Path, setting.Original, CancellationToken.None).GetAwaiter().GetResult();
+				});
+			}
 			if (linkCreated)
 			{
-				SkillDirectoryConnection.ApplyAsync(new(source, shared!, migration, false), CancellationToken.None).GetAwaiter().GetResult();
+				Restore(() => SkillDirectoryConnection.ApplyAsync(new(source, shared!, migration, false, PreviousReceipt: state.MigrationReceipt),
+					CancellationToken.None).GetAwaiter().GetResult());
 			}
 			if (moved)
-			{ Directory.Move(renamedToShared ? shared! : backup, source); }
+			{ Restore(() => Directory.Move(renamedToShared ? shared! : backup, source)); }
 			foreach (var receipt in receipts)
-			{ File.Move(receipt.Backup, receipt.Path); }
-			if (sharedCreated && !renamedToShared && new DirectoryInfo(shared!).LinkTarget is null && PackageRevision(shared!) == state.Package)
+			{ Restore(() => File.Move(receipt.Backup, receipt.Path)); }
+			if (sharedCreated && !renamedToShared)
 			{
-				Directory.Delete(shared!, recursive: true);
+				Restore(() =>
+				{
+					if (new DirectoryInfo(shared!).LinkTarget is null && PackageRevision(shared!) == state.Package)
+					{
+						Directory.Delete(shared!, recursive: true);
+					}
+				});
 			}
+			if (failures.Count != 0)
+			{ throw new AggregateException($"Skill maintenance failed and rollback needs attention. Package staging path: {backup}", [error, .. failures]); }
 			throw;
+
+			void Restore(Action action)
+			{
+				try
+				{
+					action();
+				}
+				catch (Exception rollback)
+				{
+					failures.Add(rollback);
+				}
+			}
 		}
 
 		// Removing a reparse point is always non-recursive, even when its target is on another volume.
@@ -459,6 +619,17 @@ public sealed partial class SkillCatalogService
 		if (leftovers.Count != 0)
 		{
 			preview.CleanupWarning = "The requested change was applied. Cleanup is pending at " + string.Join(", ", leftovers);
+		}
+
+		void StageReceipt(string path, string? expected)
+		{
+			if (ReadReceipt(path) != expected)
+			{ throw new IOException($"The receipt changed at {path}."); }
+			if (expected is null)
+			{ return; }
+			var temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+			File.Move(path, temp);
+			receipts.Add((path, temp));
 		}
 	}
 

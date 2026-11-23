@@ -41,6 +41,7 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 	private readonly TimeSpan _pasteLandingTimeout;
 	private readonly TimeSpan _preEnterCaptureTimeout;
 	private readonly SemaphoreSlim _activationGate = new(1, 1);
+	private readonly SemaphoreSlim _clipboardPasteGate = new(1, 1);
 	private readonly Lock _lifecycleGate = new();
 	private readonly Dictionary<string, SessionRuntime> _runtimes = new(StringComparer.Ordinal);
 	private int _activationVersion;
@@ -1102,17 +1103,53 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 		DeliveryTrace trace,
 		CancellationToken cancellationToken)
 	{
-		var viaClipboard = ClientPasteClipboard is { } clipboard
-			&& runtime.InputModes.IsSgrMouseActive
-			&& await OfferOnClipboardAsync(clipboard, text).ConfigureAwait(false);
-		trace.Paste = viaClipboard ? "clipboard" : "bracketed";
-		var input = viaClipboard
-			? await BuildClientPasteClicksAsync(runtime, cancellationToken).ConfigureAwait(false)
-			: BuildPastedInput(text);
+		ClientPasteConfirmation confirmation = new(text);
+		if (ClientPasteClipboard is { } clipboard && runtime.InputModes.IsSgrMouseActive
+			&& !confirmation.IsTriviallyConfirmed)
+		{
+			await _clipboardPasteGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+			try
+			{
+				var clicks = await BuildClientPasteClicksAsync(runtime, cancellationToken).ConfigureAwait(false);
+				await using var offer = await clipboard.TryOfferPasteTextAsync(text).ConfigureAwait(false);
+				if (offer?.IsCurrent == true)
+				{
+					trace.Paste = "clipboard";
+					offer.MarkPasteTriggered();
+					var landed = await WriteAndObservePasteAsync(runtime, controller, clicks, confirmation, trace, cancellationToken, offer.TextRequested)
+						.ConfigureAwait(false);
+					if (!offer.IsCurrent)
+					{
+						trace.Shown = "clipboard-changed";
+						return false;
+					}
+					return landed;
+				}
+			}
+			finally
+			{
+				_clipboardPasteGate.Release();
+			}
+		}
 
+		trace.Paste = "bracketed";
+		return await WriteAndObservePasteAsync(runtime, controller, BuildPastedInput(text), confirmation, trace, cancellationToken)
+			.ConfigureAwait(false);
+	}
+
+	private async Task<bool> WriteAndObservePasteAsync(
+		SessionRuntime runtime,
+		TerminalController controller,
+		string input,
+		ClientPasteConfirmation confirmation,
+		DeliveryTrace trace,
+		CancellationToken cancellationToken,
+		Task? textRequested = null)
+	{
 		// The wait starts before the write, so output from a fast paste cannot be missed.
+		var startedAt = Stopwatch.GetTimestamp();
 		using var stopWaiting = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-		var landed = runtime.WaitForClientPasteAsync(text, _pasteLandingTimeout, stopWaiting.Token);
+		var landed = runtime.WaitForClientPasteAsync(confirmation, _pasteLandingTimeout, stopWaiting.Token);
 		try
 		{
 			await WriteRequiredInputAsync(controller, input).ConfigureAwait(false);
@@ -1127,6 +1164,12 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 		try
 		{
 			await landed.ConfigureAwait(false);
+			if (textRequested is { IsCompletedSuccessfully: false })
+			{
+				var remaining = _pasteLandingTimeout - Stopwatch.GetElapsedTime(startedAt);
+				await textRequested.WaitAsync(remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero, cancellationToken)
+					.ConfigureAwait(false);
+			}
 			trace.Shown = trace.Elapsed();
 			return true;
 		}
@@ -1250,14 +1293,6 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 		}
 	}
 
-	// Text already on the clipboard, such as an agent's own copy of a selection, is not rewritten.
-	private static async Task<bool> OfferOnClipboardAsync(IClipboardService clipboard, string text)
-	{
-		var current = await clipboard.GetTextAsync().ConfigureAwait(false);
-		return string.Equals(NormalizeLineEndings(current), NormalizeLineEndings(text), StringComparison.Ordinal)
-			|| await clipboard.TrySetTextAsync(text).ConfigureAwait(false);
-	}
-
 	private static string NormalizeLineEndings(string text) =>
 		text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace("\r", "\n", StringComparison.Ordinal);
 
@@ -1333,5 +1368,9 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 	private bool IsSuperseded(int version) => version != Volatile.Read(ref _activationVersion);
 
 	/// <summary>Releases the activation serialization gate.</summary>
-	public void Dispose() => _activationGate.Dispose();
+	public void Dispose()
+	{
+		_activationGate.Dispose();
+		_clipboardPasteGate.Dispose();
+	}
 }

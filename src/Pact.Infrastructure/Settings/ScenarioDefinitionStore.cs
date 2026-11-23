@@ -43,9 +43,9 @@ public sealed class ScenarioDefinitionStore
 		}
 
 		var json = await File.ReadAllTextAsync(_path, cancellationToken).ConfigureAwait(false);
-		var entries = JsonNode.Parse(json)?.AsArray() ?? throw new JsonException("Expected a scenario array.");
+		var entries = JsonNode.Parse(json) as JsonArray ?? throw new JsonException("Expected a scenario array.");
 		return entries.OfType<JsonObject>()
-			.Where(node => string.Equals((string?)node["kind"], "reviewLoop", StringComparison.OrdinalIgnoreCase))
+			.Where(node => string.Equals(ReadString(node["kind"]), "reviewLoop", StringComparison.OrdinalIgnoreCase))
 			.Select(ReadReview)
 			.ToArray();
 	}
@@ -84,13 +84,13 @@ public sealed class ScenarioDefinitionStore
 	public static ScenarioDefinition ReadReview(JsonObject node)
 	{
 		ArgumentNullException.ThrowIfNull(node);
-		var id = (string?)node["id"] ?? string.Empty;
-		var rules = (string?)node["reviewRules"];
+		var id = ReadString(node["id"]) ?? string.Empty;
+		var rules = ReadString(node["reviewRules"]);
 		if (rules is null)
 		{
 			// Older shipped prompts enclosed the editable criteria between a common opening
 			// and the findings format. Recover those criteria without replaying file transport.
-			var prompt = ((string?)node["startPromptTemplate"] ?? string.Empty).ReplaceLineEndings("\n");
+			var prompt = (ReadString(node["startPromptTemplate"]) ?? string.Empty).ReplaceLineEndings("\n");
 			const string openingEnd = "review the text as-is.\n\n";
 			var start = prompt.IndexOf(openingEnd, StringComparison.Ordinal);
 			if (start >= 0)
@@ -111,21 +111,35 @@ public sealed class ScenarioDefinitionStore
 			{
 				// There is no reliable boundary between criteria and framing in a custom
 				// opening. Keep its text available to the reviewer and the settings editor.
-				rules = prompt;
+				rules = prompt.Replace("{target}", "the review target", StringComparison.Ordinal)
+					.Replace("{reviewerInstruction}", string.Empty, StringComparison.Ordinal)
+					.Replace("{stopMarkerPrefix}", string.Empty, StringComparison.Ordinal)
+					.Replace("{stopMarkerSuffix}", string.Empty, StringComparison.Ordinal)
+					.Trim();
 			}
 
-			var presetId = (string?)node["defaultReviewerInstructionId"];
+			var presetId = ReadString(node["defaultReviewerInstructionId"]);
 			if (presetId is not (null or "strict" or "allow-minors") && node["reviewerInstructions"] is JsonArray presets)
 			{
-				var preset = presets.OfType<JsonObject>().FirstOrDefault(item => (string?)item["id"] == presetId);
-				if ((string?)preset?["text"] is { Length: > 0 } criteria)
+				var preset = presets.OfType<JsonObject>().FirstOrDefault(item => ReadString(item["id"]) == presetId);
+				if (ReadString(preset?["text"]) is { Length: > 0 } criteria)
 				{
 					rules = string.IsNullOrWhiteSpace(rules) ? criteria : rules + "\n\n" + criteria;
 				}
 			}
 		}
 
-		var strict = (bool?)node["defaultStrict"] ?? ((string?)node["defaultReviewerInstructionId"] != "allow-minors");
-		return new(id, ScenarioKind.ReviewLoop, (string?)node["name"] ?? string.Empty, rules, strict);
+		var strict = node["defaultStrict"] is JsonValue boolean && boolean.TryGetValue<bool>(out var configuredStrict)
+			? configuredStrict
+			: ReadString(node["defaultReviewerInstructionId"]) != "allow-minors";
+		return new(id, ScenarioKind.ReviewLoop, ReadString(node["name"]) ?? string.Empty, rules, strict)
+		{
+			MaxIterations = node["maxIterations"] is JsonValue number && number.TryGetValue<int>(out var limit) && limit > 0
+				? limit
+				: null
+		};
 	}
+
+	private static string? ReadString(JsonNode? node) =>
+		node is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;
 }

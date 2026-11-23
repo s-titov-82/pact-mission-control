@@ -143,8 +143,8 @@ public sealed class StyledAgentScreenProfileTests
 	[TestCase(true, "Quit", "enter continue and create sandbox · esc quit", AgentScreenProfileBase.TrustPromptDescription)]
 	[TestCase(true, "Quit", "enter continue · esc quit", AgentScreenProfileBase.TrustPromptDescription)]
 	[TestCase(false, "Quit", "enter continue · esc quit", "Folder access selection")]
-	[TestCase(true, "Keep current directory", "enter continue · esc cancel", AgentScreenProfileBase.TrustPromptDescription)]
-	[TestCase(true, "Back to Agent Command Center", "enter continue · esc back", AgentScreenProfileBase.TrustPromptDescription)]
+	[TestCase(true, "Keep current directory", "enter continue · esc cancel", "Folder access selection")]
+	[TestCase(true, "Back to Agent Command Center", "enter continue · esc back", "Folder access selection")]
 	[TestCase(false, "Back to Agent Command Center", "enter continue · esc back", "Folder access selection")]
 	public void Current_Codex_folder_access_menu_allows_Enter_only_on_selected_startup_trust(
 		bool trustSelected, string cancelLabel, string footer, string expectedDescription)
@@ -167,6 +167,21 @@ public sealed class StyledAgentScreenProfileTests
 	}
 
 	[Test]
+	public void Codex_trust_option_without_a_live_folder_trust_prompt_requires_manual_input()
+	{
+		var verdict = CodexScreenProfile.Instance.Classify("""
+			Choose an action
+			› 1. Trust and continue
+			  2. Quit
+
+			  enter continue · esc quit
+			""");
+
+		verdict.State.ShouldBe(TerminalScreenVerdictState.InputRequested);
+		verdict.Description.ShouldBe("Folder access selection");
+	}
+
+	[Test]
 	public void Codex_work_below_the_start_banner_is_still_busy()
 	{
 		var verdict = CodexScreenProfile.Instance.Classify(CodexStartScreen(
@@ -177,19 +192,32 @@ public sealed class StyledAgentScreenProfileTests
 		verdict.State.ShouldBe(TerminalScreenVerdictState.Busy);
 	}
 
-	[TestCase("? 1 question", "shift+← to answer")]
-	[TestCase("? 2 questions · alt+↑ to answer", "")]
-	public void Codex_collapsed_questions_request_input_even_while_working(string count, string hint)
+	[TestCase("? 1 question", "shift+← to answer", "")]
+	[TestCase("? 2 questions · alt+↑ to answer", "", "")]
+	[TestCase("? 1 question", "Shift + Enter to answer", "• Working (4s • esc to interrupt)")]
+	public void Codex_collapsed_questions_request_input_even_while_working(string count, string hint, string status)
 	{
 		var screen = CodexStartScreen(
 			new("• Working (3s • esc to interrupt)", false, []),
 			new("• Queued follow-up inputs", false, []),
 			new("  " + count, false, []),
-			new("    " + hint, false, []));
+			new("    " + hint, false, []),
+			new(status, false, []));
 
 		var verdict = CodexScreenProfile.Instance.Classify(screen);
 		verdict.State.ShouldBe(TerminalScreenVerdictState.InputRequested);
 		verdict.Description.ShouldContain("question");
+	}
+
+	[Test]
+	public void Codex_collapsed_question_keeps_its_queue_header_with_long_follow_up_inputs()
+	{
+		var screen = CodexStartScreen([
+			new("• Queued follow-up inputs", false, []),
+			.. Enumerable.Range(1, 55).Select(index => new TerminalScreenRow($"  ↳ Follow-up {index}: {new string('x', 55)}", false, [])),
+			new("  ? 1 question · Shift + Enter to answer", false, [])]);
+
+		CodexScreenProfile.Instance.Classify(screen).State.ShouldBe(TerminalScreenVerdictState.InputRequested);
 	}
 
 	[Test]
@@ -199,6 +227,8 @@ public sealed class StyledAgentScreenProfileTests
 			new("? Где показать сигнал?", false, []),
 			new("  • На вкладке", false, []),
 			new("  • На панели", false, []),
+			new("? 1 question · Shift + Enter to answer", false, []),
+			new("This text is part of a completed message.", false, []),
 			new("• Queued follow-up inputs", false, []),
 			new("  ↳ next task", false, []),
 			new("    shift+← edit last queued message", false, []));

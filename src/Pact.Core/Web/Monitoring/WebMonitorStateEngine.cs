@@ -42,8 +42,11 @@ public sealed record WebMonitorTransition(
 /// </summary>
 public sealed class WebMonitorStateEngine
 {
+	private const int AmbiguousRestoreObservationLimit = 3;
 	private readonly string _webPageId;
 	private WebMonitorSnapshot? _snapshot;
+	private bool _awaitingRestoredObservation;
+	private int _ambiguousRestoreObservations;
 	private bool? _projectedActivity;
 	private bool _loaded;
 	private bool _selected;
@@ -113,11 +116,28 @@ public sealed class WebMonitorStateEngine
 		var observedActivity = rule.Source.Activity is null
 			? false
 			: observation.Activity;
-		var nextActivity = observedActivity ?? previousActivity;
-		var nextRevision = observation.Revision ?? previousRevision;
+		var restoredBaseline = _awaitingRestoredObservation && compatibleBaseline;
+		var adoptNewBaseline = false;
+		if (restoredBaseline && previousActivity == true && (rule.Source.Revision is null
+			? observedActivity is null
+			: observation.Revision is null && observedActivity != true))
+		{
+			// Allow time for a login or intermediate screen to give way to the application.
+			if (rule.Source.Revision is null || ++_ambiguousRestoreObservations < AmbiguousRestoreObservationLimit)
+			{
+				return CreateTransition(snapshotChanged: false);
+			}
 
-		var createsEvent = compatibleBaseline
-			&& (previousActivity == true && observedActivity == false
+			// With neither marker, adopt the live result without comparing it to the old application state.
+			adoptNewBaseline = true;
+		}
+		_awaitingRestoredObservation = false;
+		var nextActivity = observedActivity ?? (adoptNewBaseline ? null : previousActivity);
+		var nextRevision = observation.Revision ?? (adoptNewBaseline ? null : previousRevision);
+
+		var createsEvent = compatibleBaseline && !adoptNewBaseline
+			// An activity-only rule cannot distinguish its first idle result from an intermediate screen.
+			&& (previousActivity == true && observedActivity == false && (!restoredBaseline || rule.Source.Revision is not null)
 				|| previousRevision is not null
 				&& observation.Revision is not null
 				&& nextActivity == false
@@ -196,6 +216,8 @@ public sealed class WebMonitorStateEngine
 	public void Restore(WebMonitorSnapshot? snapshot)
 	{
 		_snapshot = TryValidateSnapshotShape(snapshot, out _) ? snapshot : null;
+		_awaitingRestoredObservation = _snapshot is not null;
+		_ambiguousRestoreObservations = 0;
 		_projectedActivity = null;
 	}
 

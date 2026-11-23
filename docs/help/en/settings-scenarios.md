@@ -6,4 +6,4 @@ A new review type allows five rounds. Each round gives the reviewer a turn to ap
 
 With **Strict review by default** selected, the reviewer must verify that every finding has been resolved or successfully disputed before approving. With it cleared, the reviewer may approve with minor findings open and lists them in the final summary.
 
-An agent starts a review with `pact_request_review`, supplying the scenario ID, reviewer profile ID, and target. Optional `strict` and `maxIterations` arguments override the defaults for that run.
+An agent starts a review with `pact_request_review`, supplying the review type ID, reviewer profile ID, and target. Optional `strict` and `maxIterations` arguments override the defaults for that run.

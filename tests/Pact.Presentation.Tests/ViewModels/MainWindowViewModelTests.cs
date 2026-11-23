@@ -2134,6 +2134,53 @@ public sealed class MainWindowViewModelTests
 	}
 
 	[Test]
+	public async Task MoveTreeItemAsync_moves_a_project_down_and_rejects_a_repeat_no_op()
+	{
+		var first = CreateProjectRecord("first", "First");
+		var paused = CreateProjectRecord("paused", "Paused", WorkspaceStatus.Paused);
+		var second = CreateProjectRecord("second", "Second");
+		var third = CreateProjectRecord("third", "Third");
+		UpdateOnlyProjectStore store = new(ProjectsDocument.CreateDefault() with
+		{
+			Projects = [first, paused, second, third]
+		});
+		var viewModel = MainWindowViewModelTestFactory.Create(store);
+		await viewModel.LoadAsync(CancellationToken.None);
+		var source = viewModel.Workspaces[0];
+		var target = viewModel.Workspaces[2];
+
+		(await viewModel.MoveTreeItemAsync(source, target, insertAfter: true, CancellationToken.None)).ShouldBeTrue();
+		viewModel.Workspaces.Select(project => project.Id).ShouldBe(["second", "third", "first"]);
+		store.Document.Projects.Select(project => project.Id).ShouldBe(["paused", "second", "third", "first"]);
+		(await viewModel.MoveTreeItemAsync(source, target, insertAfter: true, CancellationToken.None)).ShouldBeFalse();
+		store.UpdateCallCount.ShouldBe(1);
+	}
+
+	[TestCase(true)]
+	[TestCase(false)]
+	public async Task MoveTreeItemAsync_rejects_a_project_paused_in_the_store_before_the_view_updates(bool pauseSource)
+	{
+		var first = CreateProjectRecord("first", "First");
+		var second = CreateProjectRecord("second", "Second");
+		InMemoryProjectStore store = new(ProjectsDocument.CreateDefault() with { Projects = [first, second] });
+		var viewModel = MainWindowViewModelTestFactory.Create(store);
+		await viewModel.LoadAsync(CancellationToken.None);
+		await store.UpdateAsync(document => document with
+		{
+			Projects = pauseSource ? [first with { Status = WorkspaceStatus.Paused }, second]
+				: [first, second with { Status = WorkspaceStatus.Paused }]
+		}, CancellationToken.None);
+		var before = store.Document;
+
+		var moved = await viewModel.MoveTreeItemAsync(
+			viewModel.Workspaces[0], viewModel.Workspaces[1], insertAfter: true, CancellationToken.None);
+
+		moved.ShouldBeFalse();
+		viewModel.Workspaces.Select(project => project.Id).ShouldBe(["first", "second"]);
+		store.Document.ShouldBeSameAs(before);
+	}
+
+	[Test]
 	public async Task MoveTreeItemAsync_persists_project_session_order_and_preserves_selection()
 	{
 		var createdAt = DateTimeOffset.UtcNow.AddMinutes(-10);

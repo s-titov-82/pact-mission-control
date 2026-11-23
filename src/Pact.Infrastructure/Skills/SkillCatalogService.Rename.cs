@@ -1,5 +1,3 @@
-using System.Text;
-using System.Text.Json.Nodes;
 using Pact.Core.Agents;
 using Pact.Infrastructure.Storage;
 
@@ -44,6 +42,12 @@ public sealed class SkillRenamePreview
 
 	/// <summary>The physical move, native links and settings files affected by confirmation.</summary>
 	public IReadOnlyList<string> Changes { get; internal set; } = [];
+
+	/// <summary>The package, connection and settings paths changed by confirmation.</summary>
+	public IReadOnlyList<string> AffectedFiles { get; internal set; } = [];
+
+	/// <summary>The profiles that can observe the rename or a migrated setting.</summary>
+	public IReadOnlyList<string> AffectedProfiles { get; internal set; } = [];
 
 	/// <summary>Temporary entries that could not be cleaned after a successful rename.</summary>
 	public string? CleanupWarning { get; internal set; }
@@ -112,7 +116,7 @@ public sealed partial class SkillCatalogService
 		{
 			FindRenameLinks(root, source, destination, preview.Links);
 		}
-		var projections = Path.Combine(Path.GetDirectoryName(_registry)!, "Skills", "FolderDiscovery");
+		var projections = Path.Combine(ResolveDirectory(Path.GetDirectoryName(Path.GetDirectoryName(_registry)!)!), "Settings", "Skills", "FolderDiscovery");
 		if (Directory.Exists(projections))
 		{
 			var projectionLinks = new List<RenameLink>();
@@ -120,7 +124,7 @@ public sealed partial class SkillCatalogService
 			foreach (var projection in projectionLinks)
 			{
 				var receipt = MaintenanceReceipt(projection.Path, false);
-				if (ReadReceipt(receipt) is not { } savedTarget || !Same(savedTarget, source))
+				if (SkillDirectoryConnection.ReadTarget(ReadReceipt(receipt), projection.Path) is not { } savedTarget || !Same(savedTarget, source))
 				{
 					throw new IOException($"Cannot verify the managed folder discovery connection at {projection.Path}.");
 				}
@@ -136,15 +140,16 @@ public sealed partial class SkillCatalogService
 			}
 		}
 		preview.Links.Sort((left, right) => StringComparer.OrdinalIgnoreCase.Compare(left.Path, right.Path));
-		PreviewRenameReceipts(preview);
+		PreviewRenameReceipts(preview, roots);
 		if (Same(Path.GetDirectoryName(source)!, _skillsDirectory) && File.Exists(_registry))
 		{
 			var original = File.ReadAllText(_registry);
-			var registry = JsonNode.Parse(original)?.AsObject() ?? throw new IOException("Invalid installation registry.");
-			var oldKey = registry.Select(pair => pair.Key).SingleOrDefault(key => Same(key, Path.GetFileName(source)));
-			if (registry.Any(pair => Same(pair.Key, name) && pair.Key != oldKey))
+			var registry = ParseRegistry(original);
+			var oldKey = BindingKey(registry, Path.GetFileName(source));
+			var newKey = BindingKey(registry, name);
+			if (registry.ContainsKey(newKey) && newKey != oldKey)
 			{ throw new IOException($"A binding already uses {name}."); }
-			if (oldKey is not null)
+			if (registry.ContainsKey(oldKey))
 			{
 				var binding = registry[oldKey]?.DeepClone();
 				registry.Remove(oldKey);
@@ -161,6 +166,33 @@ public sealed partial class SkillCatalogService
 				? $"Remove {item.Path}. The next matching Claude launch creates the renamed discovery connection."
 				: $"Retarget {item.Path} to {item.NewTarget}."),
 			.. preview.Edits.Select(item => $"Update {item.Path}.")];
+		preview.AffectedFiles = new[] { source, destination }.Concat(preview.Links.Select(item => item.Path))
+			.Concat(preview.Edits.Select(item => item.Path)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+		var activation = MaintenanceActivation();
+		preview.AffectedProfiles = ProfileNames(preview.Installation.Connections.SelectMany(connection => connection.Profiles)
+			.Concat(preview.Profiles.Where(Affected)));
+
+		bool Affected(AgentProfileRecord profile)
+		{
+			var native = VerifiedNativeRoot(activation, profile);
+			if (native is null)
+			{
+				return false;
+			}
+			var nativeConfig = Path.Combine(Path.GetDirectoryName(native)!, profile.Kind == AgentKind.Codex ? "config.toml" : "settings.json");
+			var config = ResolveManifest(nativeConfig);
+			return IsWithin(source, ResolveDirectory(native)) ||
+				profile.Kind == AgentKind.Codex && IsWithin(source, ResolveDirectory(_skillsDirectory)) ||
+				preview.Links.Any(item => IsWithin(item.Path, native)) ||
+				preview.Edits.Any(item => Same(item.Path, config)) ||
+				preview.Projects.Any(project =>
+				{
+					var projectRoot = Path.Combine(project, profile.Kind == AgentKind.Codex ? ".agents" : ".claude");
+					return IsWithin(source, Path.Combine(projectRoot, "skills")) ||
+						preview.Links.Any(item => IsWithin(item.Path, Path.Combine(projectRoot, "skills"))) ||
+						preview.Edits.Any(item => IsWithin(item.Path, Path.Combine(project, profile.Kind == AgentKind.Codex ? ".codex" : ".claude")));
+				});
+		}
 	}
 
 	private static void FindRenameLinks(string root, string source, string destination, List<RenameLink> found)
@@ -192,13 +224,15 @@ public sealed partial class SkillCatalogService
 			{ continue; }
 			foreach (var child in Directory.EnumerateDirectories(current))
 			{
-				if (!Path.GetFileName(child).Equals(".git", StringComparison.OrdinalIgnoreCase))
+				var name = Path.GetFileName(child);
+				if (!name.Equals(".git", StringComparison.OrdinalIgnoreCase) &&
+					!name.StartsWith(".pact-skill-", StringComparison.OrdinalIgnoreCase))
 				{ pending.Push(child); }
 			}
 		}
 	}
 
-	private void PreviewRenameReceipts(SkillRenamePreview preview)
+	private void PreviewRenameReceipts(SkillRenamePreview preview, IEnumerable<string> roots)
 	{
 		foreach (var migration in new[] { false, true })
 		{
@@ -208,12 +242,16 @@ public sealed partial class SkillCatalogService
 			foreach (var path in Directory.EnumerateFiles(folder, "*.txt"))
 			{
 				var original = File.ReadAllText(path);
-				if (!Path.IsPathFullyQualified(original))
+				var target = SkillDirectoryConnection.ReadTarget(original);
+				if (!Path.IsPathFullyQualified(target ?? ""))
 				{ throw new IOException($"Invalid connection receipt at {path}."); }
-				if (!IsWithin(original, preview.SourceDirectory))
+				if (!IsWithin(target!, preview.SourceDirectory))
 				{ continue; }
-				var link = preview.Links.FirstOrDefault(item => Same(MaintenanceReceipt(item.Path, migration), path)) ?? throw new IOException($"An undiscovered Pact link depends on {preview.SourceDirectory}. Open its project to locate the connection in {path}.");
-				preview.Edits.Add(new(path, original, link.RetireProjection ? null : link.NewTarget));
+				var link = preview.Links.FirstOrDefault(item => Same(MaintenanceReceipt(item.Path, migration), path));
+				if (link is null && !IsObsoleteReceipt(path, original, target!, roots, migration))
+				{ throw new IOException($"An undiscovered Pact link depends on {preview.SourceDirectory}. Open its project to locate the connection in {path}."); }
+				preview.Edits.Add(new(path, original, link is null || link.RetireProjection ? null :
+					SkillDirectoryConnection.FormatReceipt(link.NewTarget, link.Path)));
 			}
 		}
 	}
@@ -248,6 +286,10 @@ public sealed partial class SkillCatalogService
 	{
 		var rollback = new Stack<Action>();
 		var backups = new List<string>();
+		var source = preview.SourceDirectory;
+		var destination = preview.DestinationDirectory;
+		var stage = TemporarySibling(source);
+		var recoveryLocations = new List<string> { $"Source: {source}", $"Destination: {destination}", $"Package staging: {stage}" };
 		try
 		{
 			foreach (var link in preview.Links)
@@ -258,12 +300,10 @@ public sealed partial class SkillCatalogService
 				}
 				var backup = TemporarySibling(link.Path);
 				Directory.Move(link.Path, backup);
+				recoveryLocations.Add($"Link {link.Path} staged at {backup}");
 				rollback.Push(() => Directory.Move(backup, link.Path));
 				backups.Add(backup);
 			}
-			var source = preview.SourceDirectory;
-			var destination = preview.DestinationDirectory;
-			var stage = TemporarySibling(source);
 			Directory.Move(source, stage);
 			rollback.Push(() => Directory.Move(stage, source));
 			if (new DirectoryInfo(stage).LinkTarget is not null || PackageRevision(stage) != preview.Package)
@@ -274,6 +314,15 @@ public sealed partial class SkillCatalogService
 			rollback.Push(() => Directory.Move(destination, stage));
 			foreach (var link in preview.Links.Where(item => !item.RetireProjection))
 			{
+				var connection = new SkillLinkEdit(link.Path, link.NewTarget, "", true);
+				var created = false;
+				rollback.Push(() =>
+				{
+					if (created)
+					{
+						SkillDirectoryConnection.RemoveCreatedLink(connection);
+					}
+				});
 				if (link.IsSymbolic)
 				{
 					var target = Path.IsPathFullyQualified(link.OriginalTarget) ? link.NewTarget :
@@ -282,16 +331,9 @@ public sealed partial class SkillCatalogService
 				}
 				else
 				{
-					SkillDirectoryConnection.CreateLinkAsync(new(link.Path, link.NewTarget, "", true)).GetAwaiter().GetResult();
+					SkillDirectoryConnection.CreateLinkAsync(connection).GetAwaiter().GetResult();
 				}
-				rollback.Push(() =>
-				{
-					if (new DirectoryInfo(link.Path).LinkTarget is null || !Same(ResolveDirectory(link.Path), ResolveDirectory(link.NewTarget)))
-					{
-						throw new IOException($"The new link at {link.Path} changed.");
-					}
-					Directory.Delete(link.Path);
-				});
+				created = true;
 			}
 			foreach (var edit in preview.Edits)
 			{
@@ -301,7 +343,7 @@ public sealed partial class SkillCatalogService
 				if (edit.Updated is null)
 				{ File.Delete(edit.Path); }
 				else
-				{ AtomicFileWriter.WriteTextAsync(edit.Path, edit.Updated, null, new UTF8Encoding(false), CancellationToken.None).GetAwaiter().GetResult(); }
+				{ SkillActivationService.WriteSettingsAsync(edit.Path, edit.Updated, previous, CancellationToken.None).GetAwaiter().GetResult(); }
 				rollback.Push(() =>
 				{
 					if (ReadReceipt(edit.Path) != edit.Updated)
@@ -323,7 +365,7 @@ public sealed partial class SkillCatalogService
 				catch (Exception ex) { errors.Add(ex); }
 			}
 			if (errors.Count > 1)
-			{ throw new AggregateException("Package rename failed and rollback needs attention.", errors); }
+			{ throw new AggregateException("Package rename failed and rollback needs attention. " + string.Join(". ", recoveryLocations) + ".", errors); }
 			throw;
 		}
 		var retained = new List<string>();

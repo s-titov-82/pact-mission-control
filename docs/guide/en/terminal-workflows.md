@@ -10,7 +10,7 @@ actions visible around it.
 
 The terminal menu is built from launch profiles. A profile chooses the agent
 kind, shell route, command for a new session, and a resume-command template.
-The starter set covers Codex, Claude, Hermes, and PowerShell; Custom profiles
+The starter set covers Codex, Claude, and PowerShell. Custom profiles
 can launch another terminal program.
 
 The selected profile's command, model, account, and permission arguments remain
@@ -45,8 +45,8 @@ and right-clicks the agent so it pastes the text in one piece; the clipboard is
 left holding that text.
 
 The compact target list stays within the current project or ROOT owner. Use
-`More targets…` to choose another running project. Paused, web, and
-scenario-locked targets are excluded.
+`More targets…` to choose another running project. Paused terminals and web
+pages are excluded.
 
 Inside xterm, right-click copies an existing selection. With no selection, an
 agent that captures the mouse (Codex and Claude in their fullscreen modes)

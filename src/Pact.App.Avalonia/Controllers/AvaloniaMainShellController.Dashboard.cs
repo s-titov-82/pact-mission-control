@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using Pact.Core.Agents;
-using Pact.Presentation.Services;
 using Pact.Presentation.ViewModels;
 
 namespace Pact.App.Avalonia.Controllers;
@@ -44,17 +43,12 @@ internal sealed partial class AvaloniaMainShellController
 		_projectNavigationVersion++;
 		try
 		{
-			await AddProjectFromDirectoryCoreAsync(directory, selectWorkspace: false, cancellationToken);
+			var project = await AddProjectFromDirectoryCoreAsync(directory, cancellationToken);
 			if (_disposed || _shutdownBegun || intent != _navigationIntent)
 			{ return; }
-			var root = WorkspaceRootDetector.NormalizeRoot(directory.Trim());
-			var paused = ViewModel.PausedWorkspaces.FirstOrDefault(owner =>
-				string.Equals(WorkspaceRootDetector.NormalizeRoot(owner.RootPath), root, StringComparison.OrdinalIgnoreCase));
-			if (paused is not null)
-			{ await ResumeWorkspaceAsync(paused, cancellationToken); return; }
-			var project = ViewModel.Workspaces.FirstOrDefault(owner =>
-				string.Equals(WorkspaceRootDetector.NormalizeRoot(owner.RootPath), root, StringComparison.OrdinalIgnoreCase));
-			if (project is not null)
+			if (ViewModel.PausedWorkspaces.Contains(project))
+			{ await ResumeWorkspaceAsync(project, cancellationToken); }
+			else if (ViewModel.Workspaces.Contains(project))
 			{ await OpenProjectScreenAsync(project, ProjectScreenTab.Overview, cancellationToken); }
 		}
 		finally { _openingRecentProject = false; }

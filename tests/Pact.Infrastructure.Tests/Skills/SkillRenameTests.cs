@@ -26,7 +26,12 @@ public sealed class SkillRenameTests
 		foreach (var alias in new[] { native, local })
 		{
 			var key = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(alias.ToUpperInvariant())));
-			await SkillDirectoryConnection.ApplyAsync(new(alias, from, Path.Combine(receiptDirectory, key + ".txt"), true), token);
+			var receipt = Path.Combine(receiptDirectory, key + ".txt");
+			await SkillDirectoryConnection.ApplyAsync(new(alias, from, receipt, true), token);
+			if (alias == native)
+			{
+				File.WriteAllText(receipt, from); // Legacy receipts record only the target.
+			}
 		}
 		var info = (await catalog.DiscoverInstalledAsync([], new SkillActivationService(paths), token)).Installations.Single(i => i.ResolvedManifest == Path.Combine(from, "SKILL.md"));
 		var preview = catalog.PreviewRename(info, info.Connections.Single(c => c.IsSharedUserDirectory), "finish-work", [], [project]);
@@ -38,9 +43,32 @@ public sealed class SkillRenameTests
 		File.ReadAllText(Path.Combine(to, "SKILL.md")).ShouldBe(content);
 		SkillCatalogService.ResolveDirectory(native).ShouldBe(to);
 		SkillCatalogService.ResolveDirectory(local).ShouldBe(to);
-		Directory.EnumerateFiles(receiptDirectory).Select(File.ReadAllText).Distinct().ShouldBe([to]);
+		Directory.EnumerateFiles(receiptDirectory).Select(File.ReadAllText).ShouldBe(
+			[SkillDirectoryConnection.FormatReceipt(to, native), SkillDirectoryConnection.FormatReceipt(to, local)], ignoreOrder: true);
 		catalog.GetBindings().Keys.ShouldBe(["finish-work"]);
 		(await catalog.CheckUpdateAsync("finish-work")).Destination.ShouldBe(to);
+	}
+
+	[Test]
+	public async Task RenameChangesOnlyTheClaudeOverrideAndPreservesBom()
+	{
+		using var temp = TemporaryDirectory.Create();
+		var paths = new AppPaths(Path.Combine(temp.Path, "pact"));
+		var shared = Path.Combine(temp.Path, ".agents", "skills");
+		var home = Path.Combine(temp.Path, ".claude");
+		var source = Directory.CreateDirectory(Path.Combine(home, "skills", "old")).FullName;
+		File.WriteAllText(Path.Combine(source, "SKILL.md"), "example");
+		var config = Path.Combine(home, "settings.json");
+		var utf8 = new System.Text.UTF8Encoding(true);
+		const string original = "{\r\n\t\"language\" : \"Français\",\r\n\t\"skillOverrides\": {\"old\": \"off\", \"other\" : \"name-only\"}\r\n}\r\n";
+		File.WriteAllText(config, original, utf8);
+		var catalog = new SkillCatalogService(paths.SettingsDirectory, shared, temp.Path);
+		var installation = (await catalog.DiscoverInstalledAsync([], new SkillActivationService(paths, shared))).Installations.Single();
+
+		catalog.Apply(catalog.PreviewRename(installation, installation.Connections.Single(), "new"));
+
+		const string expected = "{\r\n\t\"language\" : \"Français\",\r\n\t\"skillOverrides\": {\"other\" : \"name-only\", \"new\": \"off\"}\r\n}\r\n";
+		File.ReadAllBytes(config).ShouldBe(utf8.GetPreamble().Concat(utf8.GetBytes(expected)).ToArray());
 	}
 
 	[Test]
@@ -109,6 +137,7 @@ public sealed class SkillRenameTests
 		var receipt = Path.Combine(paths.SettingsDirectory, "Skills", "Connections",
 			Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(alias.ToUpperInvariant()))) + ".txt");
 		await SkillDirectoryConnection.ApplyAsync(new(alias, before, receipt, true), TestContext.CurrentContext.CancellationToken);
+		var originalReceipt = File.ReadAllBytes(receipt);
 		var info = (await catalog.DiscoverInstalledAsync([], new SkillActivationService(paths))).Installations.Single(i => i.Skill.Name == "before");
 		var change = catalog.PreviewRename(info, info.Connections.Single(c => c.IsSharedUserDirectory), "after");
 		change.Conflict.ShouldBeNull();
@@ -117,7 +146,7 @@ public sealed class SkillRenameTests
 		File.ReadAllText(Path.Combine(before, "SKILL.md")).ShouldBe("unchanged");
 		Directory.Exists(Path.Combine(shared, "after")).ShouldBeFalse();
 		SkillCatalogService.ResolveDirectory(alias).ShouldBe(before);
-		File.ReadAllText(receipt).ShouldBe(before);
+		File.ReadAllBytes(receipt).ShouldBe(originalReceipt);
 		catalog.GetBindings().Keys.ShouldBe(["before"]);
 	}
 }

@@ -335,6 +335,23 @@ public sealed class ProjectsSectionViewModelTests : IDisposable
 	}
 
 	[Test]
+	public async Task Renaming_a_project_preserves_an_unedited_legacy_web_address()
+	{
+		var workspace = CreateWorkspace("project", "Project", CreateSubDir("legacy-address"));
+		var now = DateTimeOffset.UtcNow;
+		workspace.WebPages.Add(new(new("web", "Browser", "old relative address", "old relative address", now, now)));
+		FakeProjectSettingsEditor editor = new();
+		var section = CreateSection(() => [workspace], editor);
+		await section.LoadAsync(CancellationToken.None);
+		section.Items[0].Name = "Renamed";
+
+		(await section.SaveAsync(CancellationToken.None)).ShouldBeTrue();
+
+		editor.ProjectUpdates.ShouldHaveSingleItem().Edit.Name.ShouldBe("Renamed");
+		editor.PageUpdates.ShouldBeEmpty();
+	}
+
+	[Test]
 	public async Task WebTabEditorSavesOnlyTheSelectedPage()
 	{
 		var owner = CreateWorkspace("project", "Project", Path.Combine(_tempRoot, "missing-root"));

@@ -150,7 +150,7 @@ public sealed class ReviewRelay
 				template,
 				profile,
 				request.Target,
-				request.MaxIterations ?? 5,
+				request.MaxIterations ?? (template.MaxIterations is > 0 ? template.MaxIterations.Value : 5),
 				request.Strict ?? template.DefaultStrict);
 			_active.Add(review);
 		}

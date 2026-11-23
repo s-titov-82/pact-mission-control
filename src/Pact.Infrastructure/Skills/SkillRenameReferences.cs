@@ -12,6 +12,78 @@ internal static class SkillRenameReferences
 	private static readonly StringComparer Paths = StringComparer.OrdinalIgnoreCase;
 	private static readonly JsonSerializerOptions Indented = new() { WriteIndented = true };
 
+	internal static IReadOnlyList<SkillConfigEdit> PreviewDeletion(string settingsDirectory, string source, bool isLink, string? survivingManifest)
+	{
+		var edits = new List<SkillConfigEdit>();
+		foreach (var section in new[] { "Policies", "ProjectRules" })
+		{
+			var directory = Path.Combine(settingsDirectory, "Skills", section);
+			if (!Directory.Exists(directory))
+			{
+				continue;
+			}
+			foreach (var file in Directory.EnumerateFiles(directory, "*.json").Order(Paths))
+			{
+				try
+				{
+					var original = File.ReadAllText(file);
+					var doc = Object(original);
+					var changed = section == "ProjectRules" && Update(doc, survivingManifest);
+					if (section == "Policies")
+					{
+						foreach (var field in new[] { "children", "materialized" })
+						{
+							if (doc[field] is JsonObject entries)
+							{
+								changed |= Update(entries, survivingManifest?.ToUpperInvariant());
+							}
+							else if (doc[field] is not null)
+							{
+								throw new JsonException($"Expected an object for {field}.");
+							}
+						}
+					}
+					if (changed)
+					{
+						edits.Add(new(file, original, doc.ToJsonString(Indented)));
+					}
+				}
+				catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or ArgumentException)
+				{
+					var reason = ex is JsonException ? "Invalid skill settings." : ex.Message;
+					throw new IOException($"Review the saved skill settings in {file} before removing {source}. {reason}", ex);
+				}
+			}
+		}
+		return edits;
+
+		bool Update(JsonObject entries, string? destination)
+		{
+			if (destination is not null)
+			{
+				return RenameKeys(entries, key => IsRemovedManifest(key) ? destination : null);
+			}
+			var changed = false;
+			foreach (var key in entries.Select(entry => entry.Key).Where(IsRemovedManifest).ToArray())
+			{
+				changed |= entries.Remove(key);
+			}
+			return changed;
+		}
+
+		bool IsRemovedManifest(string key)
+		{
+			if (!Path.IsPathFullyQualified(key) || !Paths.Equals(Path.GetFileName(key), "SKILL.md"))
+			{
+				return false;
+			}
+			var folder = Directory.GetParent(key)!;
+			return folder.Parent is { } parent &&
+				(Paths.Equals(Path.Combine(SkillCatalogService.ResolveDirectory(parent.FullName), folder.Name), source) ||
+					!isLink && Paths.Equals(SkillCatalogService.ResolveDirectory(folder.FullName), source));
+		}
+	}
+
 	internal static IReadOnlyList<SkillConfigEdit> Preview(AppPaths paths, IReadOnlyList<AgentProfileRecord> profiles,
 		IReadOnlyList<string> projects, IReadOnlyDictionary<string, string> directoryMoves, IReadOnlyList<NativeSkillConnection> connections,
 		string declaredName, string userHome)
@@ -181,7 +253,7 @@ internal static class SkillRenameReferences
 			{
 				return original;
 			}
-			var changed = false;
+			var updated = original;
 			foreach (var move in moves.Where(move => visibility.Any(root => Within(move.Parent, root))))
 			{
 				var oldKey = move.OldName;
@@ -205,15 +277,19 @@ internal static class SkillRenameReferences
 					throw new IOException($"The Claude command {newKey} already belongs to another installed skill.");
 				}
 				overrides[newKey] = oldValue?.DeepClone();
+				if (!hasNew && oldValue is not null)
+				{
+					updated = ClaudeSkillRules.Edit(updated, newKey, oldValue.GetValue<string>())!;
+				}
 				var keepAlias = sharedWith.Select(root => Path.Combine(root, oldKey, "SKILL.md"))
 					.Any(file => File.Exists(file) && RenamedManifest(file) == null);
 				if (!keepAlias)
 				{
 					overrides.Remove(oldKey);
+					updated = ClaudeSkillRules.Edit(updated, oldKey, null)!;
 				}
-				changed |= !hasNew || !keepAlias;
 			}
-			return changed ? doc.ToJsonString(Indented) : original;
+			return updated;
 		}
 	}
 
@@ -244,11 +320,10 @@ internal static class SkillRenameReferences
 	private static (AgentKind Kind, string Root)[] NativeRoots(IReadOnlyList<AgentProfileRecord> profiles, IReadOnlyList<NativeSkillConnection> connections, string userHome)
 	{
 		var roots = new List<(AgentKind Kind, string Root)>();
-		var inheritEnvironment = Paths.Equals(Path.GetFullPath(userHome), Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
 		foreach (var kind in new[] { AgentKind.Codex, AgentKind.Claude })
 		{
 			roots.Add((kind, Path.Combine(userHome, kind == AgentKind.Codex ? ".codex" : ".claude", "skills")));
-			var inherited = inheritEnvironment ? Environment.GetEnvironmentVariable(kind == AgentKind.Codex ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR") : null;
+			var inherited = SkillActivationService.InheritedHome(userHome, kind);
 			if (inherited != null && Path.IsPathFullyQualified(inherited))
 			{
 				roots.Add((kind, Path.Combine(inherited, "skills")));
@@ -257,9 +332,9 @@ internal static class SkillRenameReferences
 		foreach (var profile in profiles.Where(p => p.Kind is AgentKind.Codex or AgentKind.Claude))
 		{
 			var home = profile.NativeConfigDirectory;
-			if (string.IsNullOrWhiteSpace(home) && inheritEnvironment)
+			if (string.IsNullOrWhiteSpace(home))
 			{
-				home = Environment.GetEnvironmentVariable(profile.Kind == AgentKind.Codex ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR");
+				home = SkillActivationService.InheritedHome(userHome, profile.Kind);
 			}
 			if (string.IsNullOrWhiteSpace(home))
 			{

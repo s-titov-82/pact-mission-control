@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless.NUnit;
 using Avalonia.Headless;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
@@ -68,6 +69,21 @@ public sealed class MainWindowPaneVisibilityHeadlessTests
 		backgroundPage.SetMonitorUnread(false);
 		Dispatcher.UIThread.RunJobs();
 		badge.IsVisible.ShouldBeFalse();
+		var innerHandledEscape = false;
+		void HandleEscape(object? sender, KeyEventArgs args)
+		{
+			innerHandledEscape = true;
+			args.Handled = true;
+		}
+		rail.KeyDown += HandleEscape;
+		rail.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Escape });
+		innerHandledEscape.ShouldBeTrue();
+		popup.IsOpen.ShouldBeTrue();
+		rail.KeyDown -= HandleEscape;
+		rail.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Escape });
+		popup.IsOpen.ShouldBeFalse();
+		rail.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+		popup.IsOpen.ShouldBeTrue();
 		pin.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
 		window.UpdateLayout();
 		popup.IsOpen.ShouldBeFalse();

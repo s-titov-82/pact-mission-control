@@ -124,6 +124,8 @@ public sealed partial class SkillActivationService
 		var catalog = new SkillCatalogService(Path.GetDirectoryName(_storage)!, _sharedSkillsDirectory, _userHome);
 		var changes = new Dictionary<string, bool>(PathsEqual);
 		var additions = new HashSet<string>(PathsEqual);
+		var inspection = new NativeInspection();
+		var directories = SkillDirectories(profile, projectDirectory);
 		foreach (var member in catalog.DiscoverPolicyMembers(profile, this, projectDirectory, includeShared: folders.Count > 0))
 		{
 			if (globalPolicy.Source(member.Source) == SkillMode.Inherit && !globalPolicy.HasChild(member.SkillFile)
@@ -132,15 +134,16 @@ public sealed partial class SkillActivationService
 			{
 				continue;
 			}
-			var state = MatrixState(profile, member.Source, member.SkillName, member.SkillFile, projectDirectory, globalPolicy, projectPolicy, folders);
-			var alias = profile.Kind == AgentKind.Claude ? Discover(SkillDirectories(profile, projectDirectory), member.SkillFile) : member.SkillFile;
+			var original = InspectVisibility(profile, member.SkillName, member.SkillFile, projectDirectory, afterInstallation: false, inspection);
+			var alias = Discover(directories, member.SkillFile, inspection: inspection);
+			var state = MatrixState(profile, member.Source, member.SkillFile, projectDirectory, globalPolicy, projectPolicy, folders, original, alias, inspection);
 			if (state.EffectiveEnabled && state.OriginDirectory != null
 				&& alias == null
 				&& FolderDiscoveryArgument(profile, state.OriginDirectory, member.SkillFile, materialize: true) is { } directory)
 			{
 				additions.Add(directory);
 			}
-			if (state.EffectiveEnabled != Inspect(profile, member.SkillName, member.SkillFile, projectDirectory).EffectiveEnabled)
+			if (state.EffectiveEnabled != original.EffectiveEnabled)
 			{
 				var selector = profile.Kind == AgentKind.Codex ? member.SkillFile : FolderName(alias ?? member.SkillFile);
 				changes[selector] = state.EffectiveEnabled;
@@ -179,17 +182,15 @@ public sealed partial class SkillActivationService
 				{
 					throw new InvalidOperationException("The existing Claude settings argument is not inline JSON.");
 				}
-				var settings = ParseObject(original);
-				settings["skillOverrides"] ??= new JsonObject();
 				foreach (var entry in changes)
 				{
-					settings["skillOverrides"]![entry.Key] = entry.Value ? "on" : "off";
+					original = ClaudeSkillRules.Edit(original, entry.Key, entry.Value ? "on" : "off")!;
 				}
-				arguments[valueIndex] = (inline ? "--settings=" : "") + settings.ToJsonString();
+				arguments[valueIndex] = (inline ? "--settings=" : "") + original;
 			}
 			return native with { Arguments = arguments };
 		}
-		return WithCodexOverrides(native, ReadFile(NativeConfig(profile)), changes);
+		return WithCodexOverrides(native, null, changes, inspection.CodexRules(NativeConfig(profile)), inspection.Manifest);
 	}
 
 	private string PolicyPath(AgentProfileRecord profile, string? project, bool folderScope = false)
@@ -261,7 +262,11 @@ public sealed partial class SkillActivationService
 		var global = new SkillMatrixPolicy(ReadFile(PolicyPath(profile, null)));
 		var project = projectDirectory == null || folderScope ? null : new SkillMatrixPolicy(ReadFile(PolicyPath(profile, projectDirectory)));
 		var folders = FolderPolicies(profile, projectDirectory);
-		var state = MatrixState(profile, source, skillName, skillFile, folderScope ? null : projectDirectory, global, project, folders);
+		var scope = folderScope ? null : projectDirectory;
+		var inspection = new NativeInspection();
+		var native = InspectVisibility(profile, skillName, skillFile, scope, afterInstallation: false, inspection);
+		var alias = Discover(SkillDirectories(profile, scope), skillFile, inspection: inspection);
+		var state = MatrixState(profile, source, skillFile, scope, global, project, folders, native, alias, inspection);
 		if (!folderScope)
 		{
 			return state;
@@ -271,10 +276,13 @@ public sealed partial class SkillActivationService
 		return state with { ExplicitMode = selected.Child(skillFile, SkillMode.Inherit), SourceMode = selected.Source(source), ConfigPath = path };
 	}
 
-	private SkillActivationState MatrixState(AgentProfileRecord profile, SkillCatalogSource source, string name, string file,
-		string? projectDirectory, SkillMatrixPolicy global, SkillMatrixPolicy? project, List<SkillMatrixPolicy> folders)
+	private SkillActivationState MatrixState(AgentProfileRecord profile, SkillCatalogSource source, string file,
+		string? projectDirectory, SkillMatrixPolicy global, SkillMatrixPolicy? project, List<SkillMatrixPolicy> folders,
+		SkillActivationState native, string? alias, NativeInspection inspection)
 	{
-		var native = Inspect(profile, name, file, projectDirectory);
+		var shared = projectDirectory != null && profile.Kind == AgentKind.Claude
+			? ClaudeMode(inspection.JsonConfig(Path.Combine(projectDirectory, ".claude", "settings.json")), FolderName(alias ?? file))
+			: SkillMode.Inherit;
 		var globalChild = global.Child(file, native.DefaultMode);
 		var globalSource = global.Source(source);
 		var local = project ?? global;
@@ -289,16 +297,12 @@ public sealed partial class SkillActivationService
 			resolved = globalChild == SkillMode.Inherit ? globalSource : globalChild;
 			reason = "Inherited from profile defaults.";
 			managed = global.HasChild(file) || globalChild == SkillMode.Inherit && globalSource != SkillMode.Inherit;
-			if (managed && profile.Kind == AgentKind.Claude && ClaudeMode(ReadFile(Path.Combine(projectDirectory!, ".claude", "settings.json")),
-				FolderName(Discover(SkillDirectories(profile, projectDirectory), file) ?? file)) != SkillMode.Inherit)
+			if (managed && shared != SkillMode.Inherit)
 			{
 				managed = false;
 			}
 		}
-		if ((project == null || child == SkillMode.Inherit && sourceMode == SkillMode.Inherit)
-			&& (projectDirectory == null || profile.Kind != AgentKind.Claude
-				|| ClaudeMode(ReadFile(Path.Combine(projectDirectory, ".claude", "settings.json")),
-					FolderName(Discover(SkillDirectories(profile, projectDirectory), file) ?? file)) == SkillMode.Inherit))
+		if ((project == null || child == SkillMode.Inherit && sourceMode == SkillMode.Inherit) && shared == SkillMode.Inherit)
 		{
 			foreach (var folder in folders)
 			{
@@ -313,8 +317,7 @@ public sealed partial class SkillActivationService
 				}
 			}
 		}
-		var discoverable = managed && (Discover(SkillDirectories(profile, projectDirectory), file) != null
-			|| origin != null && CanProjectFolderSkill(profile, file));
+		var discoverable = managed && (alias != null || origin != null && CanProjectFolderSkill(profile, file));
 		var effective = managed ? resolved == SkillMode.Enabled && discoverable : native.EffectiveEnabled;
 		return native with
 		{

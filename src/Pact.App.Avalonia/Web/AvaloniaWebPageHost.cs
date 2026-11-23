@@ -19,6 +19,22 @@ namespace Pact.App.Avalonia.Web;
 internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttributionSource
 {
 	private static readonly TimeSpan AdapterReadyTimeout = TimeSpan.FromSeconds(10);
+	private const string NativeInteractionMessage = "pact:browser-interaction";
+	private const string NativeInteractionScript = """
+		(() => {
+		    const marker = Symbol.for('pact.browserInteraction');
+		    if (window[marker]) return;
+		    window[marker] = true;
+		    const message = 'pact:browser-interaction';
+		    const notify = () => window.chrome?.webview?.postMessage(message);
+		    window.addEventListener('pointerdown', event => {
+		        if (event.isTrusted) notify();
+		    }, { capture: true, passive: true });
+		    window.addEventListener('keydown', event => {
+		        if (event.isTrusted && !event.defaultPrevented && event.key === 'Escape') notify();
+		    }, { passive: true });
+		})()
+		""";
 	private readonly NativeWebView _webView;
 	private readonly Panel _container;
 	private readonly WebViewDiagnosticTrace _diagnostics;
@@ -30,6 +46,7 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 	private readonly IWebView2ProcessInfoReader _processInfoReader;
 	private readonly Func<NativeWebView, nint?> _captureHolderWindow;
 	private readonly Action<nint> _destroyHolderWindow;
+	private readonly Action? _nativeInteraction;
 	private bool _keepsRunningWhileHidden;
 	private string? _backgroundVisibilityScriptId;
 	private TaskCompletionSource _adapterReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -38,9 +55,15 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 	private bool _isPresented;
 	private bool _isNavigationLoading;
 	private bool _isNativelyVisible;
+	private bool _hasDocument;
 	private Border? _failureSurface;
+	private string? _failedNavigationUrl;
+	private bool _reloadSuppressed;
 	private CoreWebView2? _browser;
 	private ulong _browserNavigationId;
+	private ulong? _downloadNavigationId;
+	private string? _browserNavigationUrl;
+	private readonly HashSet<CoreWebView2Frame> _interactionFrames = [];
 	private (Uri Url, int Status, Task<(string Type, string? Body)> Content)? _httpError;
 	private long _navigationGeneration;
 	private int _disposed;
@@ -58,10 +81,12 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 		IWebView2ProcessInfoReader? processInfoReader = null,
 		Action<WebViewDiagnosticEntry>? diagnosticSink = null,
 		Func<NativeWebView, nint?>? captureHolderWindow = null,
-		Action<nint>? destroyHolderWindow = null)
+		Action<nint>? destroyHolderWindow = null,
+		Action? nativeInteraction = null)
 	{
 		_captureHolderWindow = captureHolderWindow ?? NativeWebViewHolderWindow.TryCapture;
 		_destroyHolderWindow = destroyHolderWindow ?? NativeWebViewHolderWindow.DestroyIfOwned;
+		_nativeInteraction = nativeInteraction;
 		ArgumentException.ThrowIfNullOrWhiteSpace(id);
 		Id = id;
 		_diagnostics = new WebViewDiagnosticTrace($"browser:{id}", diagnosticSink);
@@ -115,7 +140,7 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 			}
 			cancellationToken.ThrowIfCancellationRequested();
 			ObjectDisposedException.ThrowIf(_disposed != 0, this);
-			Source = uri;
+			Source ??= uri;
 			_webView.Source = uri;
 			RecordDiagnostic("navigation-requested", $"source={uri.AbsoluteUri}");
 		});
@@ -124,7 +149,22 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 	public async Task ReloadAsync(CancellationToken cancellationToken)
 	{
 		cancellationToken.ThrowIfCancellationRequested();
-		await Dispatcher.UIThread.InvokeAsync(_webView.Refresh);
+		await Dispatcher.UIThread.InvokeAsync(() =>
+		{
+			if (_reloadSuppressed)
+			{
+				return;
+			}
+
+			if (_browser is { } browser && _failedNavigationUrl is { } url)
+			{
+				browser.Navigate(url);
+			}
+			else
+			{
+				_webView.Refresh();
+			}
+		});
 	}
 
 	public async Task ShowAsync(CancellationToken cancellationToken)
@@ -278,9 +318,9 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 			return;
 		}
 
-		DetachEventProducers();
 		await Dispatcher.UIThread.InvokeAsync(() =>
 		{
+			DetachEventProducers();
 			RecordDiagnostic("host-disposing");
 			_adapterReady.TrySetCanceled();
 			var holderWindow = _captureHolderWindow(_webView);
@@ -299,6 +339,12 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 
 	internal void DetachEventProducers()
 	{
+		if (!Dispatcher.UIThread.CheckAccess())
+		{
+			Dispatcher.UIThread.Post(DetachEventProducers);
+			return;
+		}
+
 		if (Interlocked.Exchange(ref _eventProducersAttached, 0) == 0)
 		{
 			return;
@@ -317,24 +363,32 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 	{
 		RunOnUiThreadInOrder(() =>
 		{
-			_navigationGeneration++;
-			_httpError = null;
-			ClearFailureSurface();
-			_isNavigationLoading = true;
-			ApplyNativeVisibility();
-			RecordDiagnostic("navigation-started", $"source={_webView.Source?.AbsoluteUri ?? string.Empty}");
-			NavigationStarted?.Invoke(this, EventArgs.Empty);
+			if (_browser is null && _disposed == 0)
+			{
+				BeginNavigation(_webView.Source?.AbsoluteUri);
+			}
 		});
+	}
+
+	private void BeginNavigation(string? url)
+	{
+		_navigationGeneration++;
+		_httpError = null;
+		ClearFailureSurface();
+		_isNavigationLoading = true;
+		ApplyNativeVisibility();
+		RecordDiagnostic("navigation-started", $"source={url ?? string.Empty}");
+		NavigationStarted?.Invoke(this, EventArgs.Empty);
 	}
 
 	private void OnNavigationCompleted(object? sender, WebViewNavigationCompletedEventArgs args)
 	{
-		if (_browser is not null)
-		{
-			return;
-		}
 		RunOnUiThreadInOrder(() =>
 		{
+			if (_browser is not null || _disposed != 0)
+			{
+				return;
+			}
 			var url = args.Request?.AbsoluteUri ?? Source?.AbsoluteUri ?? string.Empty;
 			RecordDiagnostic("navigation-completed", $"source={url};success={args.IsSuccess}");
 			var generation = _navigationGeneration;
@@ -350,6 +404,21 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 		_browser?.NavigationStarting += OnBrowserNavigationStarting;
 		_browser?.NavigationCompleted += OnBrowserNavigationCompleted;
 		_browser?.WebResourceResponseReceived += OnResponseReceived;
+		_browser?.DownloadStarting += OnDownloadStarting;
+		if (_nativeInteraction is not null && _browser is { } browser)
+		{
+			browser.WebMessageReceived += OnBrowserWebMessageReceived;
+			browser.FrameCreated += OnBrowserFrameCreated;
+			_eventTasks.TryRun("browser-interaction-registration", async () =>
+			{
+				await browser.AddScriptToExecuteOnDocumentCreatedAsync(NativeInteractionScript);
+				// The first document can load before registration finishes.
+				if (ReferenceEquals(_browser, browser))
+				{
+					await browser.ExecuteScriptAsync(NativeInteractionScript);
+				}
+			});
+		}
 	}
 
 	private void DetachBrowser()
@@ -357,44 +426,166 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 		_browser?.NavigationStarting -= OnBrowserNavigationStarting;
 		_browser?.NavigationCompleted -= OnBrowserNavigationCompleted;
 		_browser?.WebResourceResponseReceived -= OnResponseReceived;
+		_browser?.DownloadStarting -= OnDownloadStarting;
+		_browser?.WebMessageReceived -= OnBrowserWebMessageReceived;
+		_browser?.FrameCreated -= OnBrowserFrameCreated;
+		foreach (var frame in _interactionFrames.ToArray())
+		{
+			DetachFrame(frame);
+		}
 		_httpError = null;
 		_browser = null;
 		_browserNavigationId = 0;
+		_downloadNavigationId = null;
+		_browserNavigationUrl = null;
 	}
 
-	private void OnBrowserNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs args) =>
+	private void OnBrowserFrameCreated(object? sender, CoreWebView2FrameCreatedEventArgs args)
+	{
+		if (!ReferenceEquals(sender, _browser) && (sender is not CoreWebView2Frame parent || !_interactionFrames.Contains(parent)))
+		{
+			return;
+		}
+		var frame = args.Frame;
+		if (_interactionFrames.Add(frame))
+		{
+			frame.WebMessageReceived += OnBrowserWebMessageReceived;
+			frame.FrameCreated += OnBrowserFrameCreated;
+			frame.Destroyed += OnBrowserFrameDestroyed;
+		}
+	}
+
+	private void OnBrowserFrameDestroyed(object? sender, object args)
+	{
+		if (sender is CoreWebView2Frame frame)
+		{
+			DetachFrame(frame);
+		}
+	}
+
+	private void DetachFrame(CoreWebView2Frame frame)
+	{
+		_interactionFrames.Remove(frame);
+		frame.WebMessageReceived -= OnBrowserWebMessageReceived;
+		frame.FrameCreated -= OnBrowserFrameCreated;
+		frame.Destroyed -= OnBrowserFrameDestroyed;
+	}
+
+	private void OnBrowserWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs args)
+	{
+		// A page request has only this one effect. It carries no arguments or other capabilities.
+		if (_isPresented && (ReferenceEquals(sender, _browser) || sender is CoreWebView2Frame frame && _interactionFrames.Contains(frame))
+			&& args.WebMessageAsJson == "\"" + NativeInteractionMessage + "\"")
+		{
+			_nativeInteraction?.Invoke();
+		}
+	}
+
+	private void OnBrowserNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs args)
+	{
+		if (!ReferenceEquals(sender, _browser))
+		{
+			return;
+		}
+		var isNewNavigation = _browserNavigationId != args.NavigationId;
 		_browserNavigationId = args.NavigationId;
+		_browserNavigationUrl = args.Uri;
+		if (isNewNavigation)
+		{
+			_downloadNavigationId = null;
+			BeginNavigation(args.Uri);
+		}
+	}
+
+	private void OnDownloadStarting(object? sender, CoreWebView2DownloadStartingEventArgs args)
+	{
+		if (ReferenceEquals(sender, _browser) && _isNavigationLoading && SameUrl(_browserNavigationUrl, args.DownloadOperation.Uri))
+		{
+			_downloadNavigationId = _browserNavigationId;
+		}
+	}
+
+	private static bool SameUrl(string? first, string? second) =>
+		Uri.TryCreate(first, UriKind.Absolute, out var firstUri) &&
+		Uri.TryCreate(second, UriKind.Absolute, out var secondUri) && firstUri == secondUri;
 
 	private void OnResponseReceived(object? sender, CoreWebView2WebResourceResponseReceivedEventArgs args)
 	{
-		if (args.Response.StatusCode >= 400 && args.Request.Headers.Contains("Sec-Fetch-Dest") &&
+		if (ReferenceEquals(sender, _browser) && args.Request.Headers.Contains("Sec-Fetch-Dest") &&
 			args.Request.Headers.GetHeader("Sec-Fetch-Dest") == "document" &&
 			Uri.TryCreate(args.Request.Uri, UriKind.Absolute, out var url))
 		{
-			_httpError = (url, args.Response.StatusCode, ReadErrorContentAsync(args.Response));
+			if (args.Response.StatusCode >= 400)
+			{
+				_httpError = (url, args.Response.StatusCode, ReadErrorContentAsync(args.Response));
+			}
+			else if (_isNavigationLoading && SameUrl(_browserNavigationUrl, args.Request.Uri) &&
+				args.Response.Headers.Contains("Content-Disposition") &&
+				args.Response.Headers.GetHeader("Content-Disposition").Split(';', 2)[0].Trim()
+					.Equals("attachment", StringComparison.OrdinalIgnoreCase))
+			{
+				_downloadNavigationId = _browserNavigationId;
+			}
 		}
 	}
 
 	private void OnBrowserNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs args)
 	{
-		var url = _browser?.Source ?? Source?.AbsoluteUri ?? string.Empty;
-		var generation = _navigationGeneration;
-		var status = args.HttpStatusCode;
-		var success = args.IsSuccess;
-		if (_browserNavigationId != 0 && args.NavigationId != _browserNavigationId)
+		if (args.NavigationId != _browserNavigationId || !ReferenceEquals(sender, _browser) || !_isNavigationLoading)
 		{
 			return;
 		}
+		var url = _browserNavigationUrl ?? string.Empty;
+		var status = args.HttpStatusCode;
+		var success = args.IsSuccess;
 		RecordDiagnostic("navigation-completed", $"source={url};success={success};status={status}");
+		var generation = _navigationGeneration;
+		if (status is 204 or 205)
+		{
+			CompleteWithoutDocument(url, "No page content returned", $"The server returned HTTP {status}.", generation);
+			return;
+		}
+		if (_downloadNavigationId == args.NavigationId)
+		{
+			CompleteWithoutDocument(url, "Download requested", "This address starts a file download.", generation, canReload: false);
+			return;
+		}
+		if (!success && status < 400 &&
+			(args.WebErrorStatus == CoreWebView2WebErrorStatus.OperationCanceled ||
+				args.WebErrorStatus == CoreWebView2WebErrorStatus.ConnectionAborted &&
+				Uri.TryCreate(url, UriKind.Absolute, out var external) &&
+				(external.Scheme is not ("http" or "https") ||
+					Source is { } previous && previous != external &&
+					Uri.TryCreate(_browser?.Source, UriKind.Absolute, out var current) && current == previous)))
+		{
+			CompleteWithoutDocument(url, "Navigation canceled", "Reload to try this address again.", generation);
+			return;
+		}
 		if (success && status is > 0 and < 400)
 		{
-			OnNavigated(url, string.Empty);
+			OnNavigated(_browser?.Source ?? url, generation);
 			return;
 		}
 		var response = _httpError is { } error && error.Status == status
 			&& Uri.TryCreate(url, UriKind.Absolute, out var target) && error.Url.Equals(target) ? error.Content : null;
 		_httpError = null;
 		_eventTasks.TryRun("browser-navigation-result", () => CompleteNavigationAsync(url, success, generation, status, response));
+	}
+
+	private void CompleteWithoutDocument(string url, string heading, string detail, long generation, bool canReload = true)
+	{
+		if (!IsCurrentNavigation(generation))
+		{
+			return;
+		}
+		_httpError = null;
+		if (!_hasDocument)
+		{
+			ShowNavigationMessage(url, heading, detail, canReload);
+		}
+		_isNavigationLoading = false;
+		ApplyNativeVisibility();
+		NavigationCompleted?.Invoke(this, EventArgs.Empty);
 	}
 
 	private async Task CompleteNavigationAsync(string url, bool isSuccess, long generation, int status = 0,
@@ -463,23 +654,29 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 
 		await Dispatcher.UIThread.InvokeAsync(() =>
 		{
-			if (_disposed != 0 || generation != _navigationGeneration)
+			if (!IsCurrentNavigation(generation))
 			{
+				return;
+			}
+			if (status is 204 or 205)
+			{
+				CompleteWithoutDocument(url, "No page content returned", $"The server returned HTTP {status}.", generation);
 				return;
 			}
 
 			if (!isSuccess || status >= 400)
 			{
+				_hasDocument = hasContent;
 				if (!hasContent)
 				{
 					ShowFailureSurface(url, status, body);
 				}
 				RecordDiagnostic("navigation-error-presented", $"status={status};surface={(hasContent ? "html" : "message")}");
-				OnLoadFailed(url, status > 0 ? status : -1, string.Empty);
+				OnLoadFailed(url, status > 0 ? status : -1, generation);
 			}
 			else
 			{
-				OnNavigated(url, string.Empty);
+				OnNavigated(url, generation);
 			}
 		});
 	}
@@ -522,45 +719,57 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 		return new Bitmap(stream);
 	});
 
-	private void ShowFailureSurface(string url, int status, string? body)
+	private void ShowFailureSurface(string url, int status, string? body) => ShowNavigationMessage(
+		url,
+		status > 0 ? $"Page failed to load (HTTP {status})" : "Page failed to load",
+		!string.IsNullOrWhiteSpace(body) ? body : status > 0
+			? "The server did not provide error details." : "Check the address and your network connection.");
+
+	private void ShowNavigationMessage(string url, string heading, string description, bool canReload = true)
 	{
 		ClearFailureSurface();
-		Button reload = new() { Content = "Reload", HorizontalAlignment = HorizontalAlignment.Left };
+		_reloadSuppressed = !canReload;
+		_failedNavigationUrl = canReload && url.Length > 0 ? url : null;
 		var detail = new TextBlock
 		{
-			Text = !string.IsNullOrWhiteSpace(body) ? body : status > 0
-				? "Сервер не вернул текст ошибки." : "Проверьте адрес и подключение к сети.",
+			Text = description,
 			FontSize = 16,
 			Foreground = Brushes.White,
 			TextWrapping = TextWrapping.Wrap
 		};
-		reload.Click += (_, _) => _eventTasks.TryRun("browser-retry", () => ReloadAsync(CancellationToken.None));
+		var content = new StackPanel
+		{
+			VerticalAlignment = VerticalAlignment.Center,
+			HorizontalAlignment = HorizontalAlignment.Center,
+			MaxWidth = 720,
+			Spacing = 16,
+			Children =
+			{
+				new Image { Source = ErrorLogo.Value, Width = 64, Height = 64 },
+				new TextBlock { Text = heading, FontSize = 18, Foreground = Brushes.White, TextWrapping = TextWrapping.Wrap },
+				new ScrollViewer { MaxHeight = 320, Content = detail },
+				new TextBlock { Text = url, Foreground = Brushes.LightGray, TextWrapping = TextWrapping.Wrap }
+			}
+		};
+		if (canReload)
+		{
+			Button reload = new() { Content = "Reload", HorizontalAlignment = HorizontalAlignment.Left };
+			reload.Click += (_, _) => _eventTasks.TryRun("browser-retry", () => ReloadAsync(CancellationToken.None));
+			content.Children.Add(reload);
+		}
 		_failureSurface = new Border
 		{
 			Background = new SolidColorBrush(Color.Parse("#0f172a")),
 			Padding = new global::Avalonia.Thickness(32),
-			Child = new StackPanel
-			{
-				VerticalAlignment = VerticalAlignment.Center,
-				HorizontalAlignment = HorizontalAlignment.Center,
-				MaxWidth = 720,
-				Spacing = 16,
-				Children =
-				{
-					new Image { Source = ErrorLogo.Value, Width = 64, Height = 64 },
-					new TextBlock { Text = status > 0 ? $"Ошибка загрузки: {status}" : "Ошибка загрузки",
-						FontSize = 18, Foreground = Brushes.White, TextWrapping = TextWrapping.Wrap },
-					new ScrollViewer { MaxHeight = 320, Content = detail },
-					new TextBlock { Text = url, Foreground = Brushes.LightGray, TextWrapping = TextWrapping.Wrap },
-					reload
-				}
-			}
+			Child = content
 		};
 		_container.Children.Add(_failureSurface);
 	}
 
 	private void ClearFailureSurface()
 	{
+		_reloadSuppressed = false;
+		_failedNavigationUrl = null;
 		if (_failureSurface is { } surface)
 		{
 			_container.Children.Remove(surface);
@@ -577,15 +786,18 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 		}
 	}
 
-	private void OnNavigated(string url, string frameName)
+	private bool IsCurrentNavigation(long generation) => _disposed == 0 && generation == _navigationGeneration;
+
+	private void OnNavigated(string url, long generation)
 	{
 		RunOnUiThreadInOrder(() =>
 		{
-			if (!string.IsNullOrEmpty(frameName))
+			if (!IsCurrentNavigation(generation))
 			{
 				return;
 			}
 
+			_hasDocument = !string.Equals(url, "about:blank", StringComparison.OrdinalIgnoreCase);
 			_isNavigationLoading = false;
 			ApplyNativeVisibility();
 			if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
@@ -593,10 +805,14 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 				Source = uri;
 				SourceChanged?.Invoke(this, uri);
 			}
+			if (!IsCurrentNavigation(generation))
+			{
+				return;
+			}
 			NavigationCompleted?.Invoke(this, EventArgs.Empty);
 			_eventTasks.TryRun(
 				"web-page-title-poll",
-				PollTitleAsync,
+				() => PollTitleAsync(generation),
 				exception =>
 				{
 					RecordDiagnostic("title-poll-failed", exception.GetType().Name);
@@ -605,7 +821,7 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 		});
 	}
 
-	private async Task PollTitleAsync()
+	private async Task PollTitleAsync(long generation)
 	{
 		// NativeWebView has no TitleChanged event; read the document title once
 		// navigation completes so IWebPageHost.TitleChanged keeps firing for callers.
@@ -613,15 +829,21 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 		RecordDiagnostic("document-response", $"hasTitle={!string.IsNullOrEmpty(title)}");
 		if (!string.IsNullOrEmpty(title))
 		{
-			_uiTaskDispatcher.Post(() => TitleChanged?.Invoke(this, title.Trim('"')));
+			_uiTaskDispatcher.Post(() =>
+			{
+				if (IsCurrentNavigation(generation))
+				{
+					TitleChanged?.Invoke(this, title.Trim('"'));
+				}
+			});
 		}
 	}
 
-	private void OnLoadFailed(string url, int errorCode, string frameName)
+	private void OnLoadFailed(string url, int errorCode, long generation)
 	{
 		RunOnUiThreadInOrder(() =>
 		{
-			if (!string.IsNullOrEmpty(frameName))
+			if (!IsCurrentNavigation(generation))
 			{
 				return;
 			}
@@ -629,7 +851,10 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 			_isNavigationLoading = false;
 			ApplyNativeVisibility();
 			NavigationCompleted?.Invoke(this, EventArgs.Empty);
-			NavigationFailed?.Invoke(this, $"Navigation failed ({errorCode}): {url}");
+			if (IsCurrentNavigation(generation))
+			{
+				NavigationFailed?.Invoke(this, $"Navigation failed ({errorCode}): {url}");
+			}
 		});
 	}
 
@@ -692,13 +917,25 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 
 	private void OnAdapterDestroyed(object? sender, EventArgs args)
 	{
-		DetachBrowser();
-		_adapterReady.TrySetCanceled();
-		_adapterReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
-		_backgroundVisibilityScriptId = null;
-		_visibilityController = null;
-		_isNativelyVisible = false;
-		RecordDiagnostic("adapter-destroyed");
+		RunOnUiThreadInOrder(() =>
+		{
+			var wasLoading = _isNavigationLoading;
+			_isNavigationLoading = false;
+			_hasDocument = false;
+			_navigationGeneration++;
+			DetachBrowser();
+			var previous = _adapterReady;
+			_adapterReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+			_backgroundVisibilityScriptId = null;
+			_visibilityController = null;
+			_isNativelyVisible = false;
+			previous.TrySetCanceled();
+			RecordDiagnostic("adapter-destroyed");
+			if (wasLoading && _disposed == 0)
+			{
+				NavigationCompleted?.Invoke(this, EventArgs.Empty);
+			}
+		});
 	}
 
 	private void ApplyNativeVisibility()

@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using Pact.Core.Agents;
 
 namespace Pact.Infrastructure.Skills;
@@ -91,10 +89,36 @@ public sealed partial class SkillCatalogService
 		ArgumentNullException.ThrowIfNull(installations);
 		ArgumentNullException.ThrowIfNull(bindings);
 		var groups = new List<SkillDuplicateGroup>();
-		var fingerprints = installations.Where(item => item.Skill.InspectionWarning is null)
-			.ToDictionary(item => item, item => Fingerprint(item.Skill));
+		var fingerprints = new Dictionary<NativeSkillInstallation, string>();
+		var fileHashes = new Dictionary<NativeSkillInstallation, Dictionary<string, string>>();
+		var warnings = new Dictionary<NativeSkillInstallation, string>();
+		var nameClusters = installations.GroupBy(item => item.Skill.Name, StringComparer.OrdinalIgnoreCase).ToArray();
+		// Equal packages must have equal file counts and byte counts, including packages whose
+		// manifests fall back to different folder names. Re-read only possible matches and name conflicts.
+		var candidates = nameClusters.Where(cluster => cluster.Skip(1).Any()).SelectMany(cluster => cluster)
+			.Concat(installations.GroupBy(item => (item.Skill.Content.Count, Bytes: item.Skill.Content.Values.Sum(bytes => (long)bytes.Length)))
+				.Where(cluster => cluster.Skip(1).Any()).SelectMany(cluster => cluster)).Distinct();
+		foreach (var item in candidates)
+		{
+			if (item.Skill.InspectionWarning is { } warning)
+			{
+				warnings[item] = warning;
+				continue;
+			}
+			try
+			{
+				var folder = Folder(item);
+				var hashes = InstalledHashes(folder, skipGitMetadata: true);
+				fingerprints[item] = PackageRevision(folder, hashes, skipGitMetadata: true);
+				fileHashes[item] = new(hashes, StringComparer.Ordinal);
+			}
+			catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+			{
+				warnings[item] = ex.Message;
+			}
+		}
 
-		foreach (var cluster in installations.GroupBy(item => item.Skill.Name, StringComparer.OrdinalIgnoreCase))
+		foreach (var cluster in nameClusters)
 		{
 			var items = cluster.OrderBy(item => item.ResolvedManifest, StringComparer.OrdinalIgnoreCase).ToArray();
 			if (items.Length == 1)
@@ -104,14 +128,16 @@ public sealed partial class SkillCatalogService
 			if (items.Any(item => !fingerprints.ContainsKey(item)))
 			{
 				groups.Add(new(cluster.Key, SkillDuplicateKind.Incomplete, items,
-					["Keep each package until every file can be compared.", .. items.Where(item => item.Skill.InspectionWarning is not null)
-						.Select(item => $"{Folder(item)}: {item.Skill.InspectionWarning}")], []));
+					["Keep each package until every file can be compared.", .. items.Where(warnings.ContainsKey)
+						.Select(item => $"{Folder(item)}: {warnings[item]}")], []));
 				continue;
 			}
 			if (items.Select(item => fingerprints[item]).Distinct(StringComparer.Ordinal).Skip(1).Any())
 			{
-				groups.Add(new(cluster.Key, SkillDuplicateKind.Different, items,
-					["Keep each version. Review the differing files before choosing which package each agent should use."], DifferingFiles(items)));
+				var differingFiles = DifferingFiles(items.Select(item => fileHashes[item]).ToArray());
+				groups.Add(new(cluster.Key, SkillDuplicateKind.Different, items, differingFiles.Length == 0
+					? ["The directory entries or named data streams differ. Keep each version until these differences are reviewed."]
+					: ["Keep each version. Review the differing files before choosing which package each agent should use."], differingFiles));
 			}
 		}
 
@@ -191,24 +217,11 @@ public sealed partial class SkillCatalogService
 
 	private static string Folder(NativeSkillInstallation installation) => Path.GetDirectoryName(installation.ResolvedManifest)!;
 
-	private static string Fingerprint(CatalogSkill skill)
+	private static string[] DifferingFiles(Dictionary<string, string>[] contents)
 	{
-		using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-		foreach (var path in skill.Files)
-		{
-			hash.AppendData(Encoding.UTF8.GetBytes(path));
-			hash.AppendData([0]);
-			hash.AppendData(SHA256.HashData(skill.Content[path]));
-		}
-		return Convert.ToHexString(hash.GetHashAndReset());
-	}
-
-	private static string[] DifferingFiles(NativeSkillInstallation[] items)
-	{
-		var contents = items.Select(item => new Dictionary<string, byte[]>(item.Skill.Content, StringComparer.Ordinal)).ToArray();
 		var paths = contents.SelectMany(files => files.Keys).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal);
 		return paths.Where(path => !contents[0].TryGetValue(path, out var original) ||
-			contents.Any(files => !files.TryGetValue(path, out var bytes) || !bytes.AsSpan().SequenceEqual(original))).ToArray();
+			contents.Any(files => !files.TryGetValue(path, out var digest) || digest != original)).ToArray();
 	}
 
 	private static bool IsWithin(string directory, string root)

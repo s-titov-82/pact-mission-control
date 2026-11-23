@@ -36,6 +36,13 @@ public sealed class ProfileDiagnostics(AppPaths paths, IExecutableLocator locato
 		lines.Add(matching.Any(s => initialized(s.Record.Id))
 			? "MCP: authenticated initialization observed." : "MCP: Not tested.");
 
+		// Session facts are read on the caller's UI thread. File and process probes can block.
+		return await Task.Run(() => CheckEnvironmentAsync(profile, lines, cancellationToken), cancellationToken);
+	}
+
+	private async Task<string> CheckEnvironmentAsync(
+		AgentProfileRecord profile, List<string> lines, CancellationToken cancellationToken)
+	{
 		var shell = locator.FindOnPath(profile.DefaultShell);
 		lines.Add(shell is null ? $"Configured shell: '{profile.DefaultShell}' missing. Set the executable path or install the shell."
 			: $"Configured shell: {shell}");
@@ -119,9 +126,10 @@ public sealed class ProfileDiagnostics(AppPaths paths, IExecutableLocator locato
 		using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 		timeout.CancelAfter(TimeSpan.FromSeconds(10));
 		using var process = new Process { StartInfo = options };
+		var started = false;
 		try
 		{
-			process.Start();
+			started = process.Start();
 			process.StandardInput.Close();
 			string? found = null;
 			string? version = null;
@@ -145,23 +153,26 @@ public sealed class ProfileDiagnostics(AppPaths paths, IExecutableLocator locato
 		}
 		catch (OperationCanceledException)
 		{
-			try
-			{
-				if (!process.HasExited)
-				{
-					process.Kill(entireProcessTree: true);
-				}
-			}
-			catch (InvalidOperationException)
-			{
-				// The child exited between the state check and Kill.
-			}
 			cancellationToken.ThrowIfCancellationRequested();
 			return "CLI check timed out. Check the PowerShell profile and run the CLI version command in the test terminal.";
 		}
 		catch (Exception ex) when (ex is Win32Exception or IOException or InvalidOperationException)
 		{
 			return $"CLI check failed. Verify that pwsh is available on PATH. {ex.Message}";
+		}
+		finally
+		{
+			try
+			{
+				if (started && !process.HasExited)
+				{
+					process.Kill(entireProcessTree: true);
+				}
+			}
+			catch (Exception ex) when (ex is InvalidOperationException or Win32Exception)
+			{
+				// The process may exit before Kill reaches it.
+			}
 		}
 	}
 }

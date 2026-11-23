@@ -21,4 +21,8 @@ public sealed record ScenarioDefinition(
 	ScenarioKind Kind,
 	string Name,
 	string ReviewRules,
-	bool DefaultStrict = true);
+	bool DefaultStrict = true)
+{
+	/// <summary>An existing review type's round limit when the request supplies no override.</summary>
+	public int? MaxIterations { get; init; }
+}

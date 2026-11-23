@@ -28,7 +28,7 @@ public sealed partial class SkillActivationService
 		foreach (var kind in new[] { AgentKind.Codex, AgentKind.Claude })
 		{
 			yield return Path.Combine(_userHome, kind == AgentKind.Codex ? ".codex" : ".claude", "skills");
-			var inherited = Environment.GetEnvironmentVariable(HomeVariable(kind));
+			var inherited = InheritedHome(_userHome, kind);
 			if (Path.IsPathFullyQualified(inherited ?? ""))
 			{
 				yield return Path.Combine(inherited!, "skills");

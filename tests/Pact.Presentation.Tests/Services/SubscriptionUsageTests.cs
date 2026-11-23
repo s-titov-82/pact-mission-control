@@ -801,6 +801,56 @@ public sealed class SubscriptionUsageTests : IDisposable
 		(snapshot.Weekly?.RemainingPercent).ShouldBe(30);
 	}
 
+	[TestCase("npx @openai/codex")]
+	[TestCase("codex-work")]
+	public async Task Codex_wrapper_uses_fresh_session_usage_from_its_configured_home(string command)
+	{
+		var root = CreateTempDirectory();
+		FixedTimeProvider clock = new(DateTimeOffset.UtcNow);
+		await WriteCodexSessionFileAsync(root, 35, 10080, clock.GetUtcNow());
+		StubCodexUsageApiClient api = new();
+		var reader = CreateCodexReader(Path.Combine(root, "missing-codex"), api, clock);
+		var snapshot = await reader.ReadAsync(CodexProfile with
+		{
+			CommandTemplate = command,
+			NativeConfigDirectory = Path.Combine(root, ".codex")
+		}, CancellationToken.None);
+
+		snapshot.Weekly!.RemainingPercent.ShouldBe(65);
+		api.Calls.ShouldBe(0);
+	}
+
+	[Test]
+	public async Task Codex_wrapper_without_a_configured_home_asks_its_own_account()
+	{
+		var root = CreateTempDirectory();
+		FixedTimeProvider clock = new(DateTimeOffset.UtcNow);
+		await WriteCodexSessionFileAsync(root, 35, 10080, clock.GetUtcNow());
+		StubCodexUsageApiClient api = new(SucceedingCodexApiResult(70, 10080));
+		var reader = CreateCodexReader(Path.Combine(root, ".codex", "sessions"), api, clock);
+
+		var snapshot = await reader.ReadAsync(CodexProfile with { CommandTemplate = "codex-work" }, CancellationToken.None);
+
+		snapshot.Weekly!.RemainingPercent.ShouldBe(30);
+		api.Calls.ShouldBe(1);
+	}
+
+	[Test]
+	public async Task Renaming_the_codex_profile_keeps_its_cached_answer_and_throttle()
+	{
+		var root = CreateTempDirectory();
+		FixedTimeProvider clock = new(DateTimeOffset.UtcNow);
+		StubCodexUsageApiClient api = new(SucceedingCodexApiResult(70, 10080));
+		var reader = CreateCodexReader(root, api, clock);
+		await reader.ReadAsync(CodexProfile, CancellationToken.None);
+
+		var renamed = await reader.ReadAsync(CodexProfile with { DisplayName = "Work account" }, CancellationToken.None);
+
+		renamed.Weekly!.RemainingPercent.ShouldBe(30);
+		renamed.ProfileName.ShouldBe("Work account");
+		api.Calls.ShouldBe(1);
+	}
+
 	[Test]
 	public void Row_shows_the_warning_of_a_successful_read_that_kept_older_figures()
 	{

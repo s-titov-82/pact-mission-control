@@ -2,7 +2,7 @@
         x:Class="Pact.App.Avalonia.Views.Settings.SkillCatalogWindow" x:CompileBindings="False"
         Title="Skills" Width="1100" Height="740" MinWidth="780" MinHeight="560"
         Icon="/Assets/AppIcon.ico" WindowStartupLocation="CenterOwner">
-  <Grid Margin="16" RowDefinitions="*,Auto" RowSpacing="8">
+  <Grid Margin="16" RowDefinitions="*,Auto,Auto" RowSpacing="8">
     <TabControl x:Name="Details">
       <TabItem Header="Catalog">
         <Grid Margin="0,10,0,0" RowDefinitions="Auto,*" RowSpacing="10">
@@ -79,5 +79,8 @@
         <Button x:Name="Apply" Content="Apply" IsVisible="False" Click="OnApply"/>
       </StackPanel>
     </Grid>
+    <ScrollViewer x:Name="LoadStatusPanel" Grid.Row="2" IsVisible="False" MaxHeight="100">
+      <SelectableTextBlock x:Name="LoadStatus" TextWrapping="Wrap"/>
+    </ScrollViewer>
   </Grid>
 </Window>

@@ -15,6 +15,82 @@ namespace Pact.App.Avalonia.Tests.Views;
 public sealed partial class SkillCatalogWindowTests
 {
 	[AvaloniaTest]
+	public Task Malformed_source_settings_remain_visible_and_cannot_be_overwritten_from_either_tab() =>
+		AssertSourceSettingsReadFailureAsync("{\"sources\":[\"existing\"],\"mappingFolders\":17}");
+
+	[AvaloniaTest]
+	public Task Duplicate_source_settings_keys_disable_writes_and_leave_installed_skills_visible() =>
+		AssertSourceSettingsReadFailureAsync("{\"sources\":[],\"sources\":[\"existing\"]}");
+
+	private static async Task AssertSourceSettingsReadFailureAsync(string malformed)
+	{
+		using var temp = TemporaryDirectory.Create();
+		var paths = new AppPaths(Path.Combine(temp.Path, "pact"));
+		Directory.CreateDirectory(paths.SettingsDirectory);
+		var settings = Path.Combine(paths.SettingsDirectory, "skill-sources.json");
+		await File.WriteAllTextAsync(settings, malformed);
+		var installed = Path.Combine(temp.Path, "installed");
+		var package = Directory.CreateDirectory(Path.Combine(installed, "available")).FullName;
+		await File.WriteAllTextAsync(Path.Combine(package, "SKILL.md"), "# Available");
+		using var window = new SkillCatalogWindow(paths, [], [temp.Path], temp.Path, installed);
+		try
+		{
+			await AfterOperationAsync(window, window.Show);
+			var details = window.FindControl<TabControl>("Details")!;
+			details.SelectedItem.ShouldBe(window.FindControl<TabItem>("AvailabilityTab"));
+			var status = window.FindControl<SelectableTextBlock>("LoadStatus")!;
+			status.Text.ShouldNotBeNull().ShouldContain(settings);
+			var host = window.FindControl<ContentControl>("MatrixHost")!;
+			host.GetLogicalDescendants().OfType<Button>().Single(b => b.Name == "MatrixPickFolder").IsEnabled.ShouldBeFalse();
+			Assert.ThrowsAsync<InvalidOperationException>(() => window.AddMappingDirectoryAsync(temp.Path, false));
+			details.SelectedIndex = 0;
+			window.FindControl<Expander>("SourceEditor")!.IsEnabled.ShouldBeFalse();
+			window.FindControl<TextBlock>("SkillTitle")!.Text.ShouldBe("available");
+			status.Text.ShouldNotBeNull().ShouldContain(settings);
+			(await File.ReadAllTextAsync(settings)).ShouldBe(malformed);
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[AvaloniaTest]
+	public async Task Installation_preview_reports_malformed_codex_settings_alongside_other_profiles()
+	{
+		using var temp = TemporaryDirectory.Create();
+		var paths = new AppPaths(Path.Combine(temp.Path, "pact"));
+		Directory.CreateDirectory(paths.SettingsDirectory);
+		var source = Directory.CreateDirectory(Path.Combine(temp.Path, "source", "review")).Parent!.FullName;
+		await File.WriteAllTextAsync(Path.Combine(source, "review", "SKILL.md"), "# Review");
+		await File.WriteAllTextAsync(Path.Combine(paths.SettingsDirectory, "skill-sources.json"),
+			System.Text.Json.JsonSerializer.Serialize(new { sources = new[] { source } }));
+		var brokenHome = Directory.CreateDirectory(Path.Combine(temp.Path, "broken")).FullName;
+		await File.WriteAllTextAsync(Path.Combine(brokenHome, "config.toml"), "[[skills.config]\n");
+		var broken = new AgentProfileRecord("broken", AgentKind.Codex, "Broken Codex", "codex", null, "pwsh")
+		{ NativeConfigDirectory = brokenHome };
+		var other = new AgentProfileRecord("other", AgentKind.Codex, "Other Codex", "codex", null, "pwsh")
+		{ NativeConfigDirectory = Path.Combine(temp.Path, "other") };
+		using var window = new SkillCatalogWindow(paths, [broken, other], [], null, Path.Combine(temp.Path, "shared"));
+		try
+		{
+			await AfterOperationAsync(window, window.Show);
+			var tree = window.FindControl<TreeView>("Skills")!;
+			tree.SelectedItem = tree.Items.OfType<TreeViewItem>().SelectMany(node => node.Items.OfType<TreeViewItem>())
+				.Single(item => Equals(item.Header, "review"));
+			await ClickAsync(window, "Install");
+			var preview = window.FindControl<SelectableTextBlock>("Status")!.Text.ShouldNotBeNull();
+			preview.ShouldContain("Broken Codex · profile default:");
+			preview.ShouldContain("Other Codex (other) · profile default");
+			window.FindControl<Button>("Apply")!.IsVisible.ShouldBeTrue();
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[AvaloniaTest]
 	public async Task Private_skill_and_group_have_no_foreign_profile_choices_until_made_shared()
 	{
 		using var temp = TemporaryDirectory.Create();
@@ -109,6 +185,7 @@ public sealed partial class SkillCatalogWindowTests
 			var message = Named<SelectableTextBlock>("MatrixSummary").Text.ShouldNotBeNull();
 			message.ShouldContain("Profiles: Claude");
 			message.ShouldContain(Path.Combine(project, ".claude", "skills", "local-review"));
+			message.ShouldContain(Path.Combine(temp.Path, "pact", "Settings", "Skills", "Connections"));
 			Named<Button>("MatrixApply").IsVisible.ShouldBeTrue();
 			Directory.Exists(Path.Combine(project, ".claude")).ShouldBeFalse();
 			await AfterOperationAsync(window, () => Named<Button>("MatrixApply").RaiseEvent(new RoutedEventArgs(Button.ClickEvent)));

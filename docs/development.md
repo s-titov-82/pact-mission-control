@@ -28,7 +28,14 @@ pwsh -NoProfile -File tools/Invoke-PactAppTests.ps1
 
 The Avalonia runner isolates view fixtures in sequential test hosts to bound
 headless style/template caches. It checks that the summed TRX counts match full
-test discovery, so isolation cannot silently omit tests.
+discovery for the ordinary Avalonia suite.
+
+Run the clipboard gate on an interactive Windows desktop. It uses a separate
+test host and window station and requires a fresh report with one passing test.
+
+```powershell
+pwsh -NoProfile -File tools/Invoke-PactAppTests.ps1 -NativeClipboardOnly
+```
 
 Run the bundled-ConPTY tests separately on Windows:
 

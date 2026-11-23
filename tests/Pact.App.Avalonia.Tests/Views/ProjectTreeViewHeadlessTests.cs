@@ -121,6 +121,7 @@ public sealed class ProjectTreeViewHeadlessTests
 
 			window.MouseMove(start);
 			window.MouseDown(start, MouseButton.Left);
+			activations.ShouldBeEmpty();
 			window.MouseUp(start, MouseButton.Left);
 
 			activations.ShouldBe([second]);

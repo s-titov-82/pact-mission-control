@@ -99,7 +99,7 @@
             <TextBlock Text="Paused" FontSize="16" FontWeight="SemiBold" />
             <TextBlock Text="No paused projects" IsVisible="{Binding IsPausedEmpty}" TextWrapping="Wrap"
                        Foreground="{DynamicResource AppTextMutedBrush}" />
-<ItemsControl ItemsSource="{Binding PausedProjects}">
+            <ItemsControl ItemsSource="{Binding PausedProjects}">
               <ItemsControl.Template>
                 <ControlTemplate><ItemsPresenter Name="PART_ItemsPresenter" /></ControlTemplate>
               </ItemsControl.Template>
@@ -127,7 +127,7 @@
             <TextBlock Text="Recent" FontSize="16" FontWeight="SemiBold" />
             <TextBlock Text="{Binding RecentEmptyText}" IsVisible="{Binding IsRecentEmpty}" TextWrapping="Wrap"
                        Foreground="{DynamicResource AppTextMutedBrush}" />
-<ItemsControl ItemsSource="{Binding RecentDirectories}">
+            <ItemsControl ItemsSource="{Binding RecentDirectories}">
               <ItemsControl.Template>
                 <ControlTemplate><ItemsPresenter Name="PART_ItemsPresenter" /></ControlTemplate>
               </ItemsControl.Template>

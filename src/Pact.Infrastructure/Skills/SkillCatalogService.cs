@@ -43,17 +43,29 @@ public sealed partial class SkillCatalogService
 	public IReadOnlyList<string> GetManagedNames() => LoadRegistry().Select(pair => pair.Key).ToArray();
 
 	/// <summary>Returns saved source bindings keyed by native installation folder.</summary>
-	public IReadOnlyDictionary<string, SkillSourceBinding> GetBindings() => LoadRegistry().ToDictionary(
-		pair => pair.Key, pair => pair.Value?.Deserialize<SkillSourceBinding>()
-			?? throw new InvalidDataException($"Invalid skill binding: {pair.Key}."), StringComparer.OrdinalIgnoreCase);
+	public IReadOnlyDictionary<string, SkillSourceBinding> GetBindings()
+	{
+		var bindings = new Dictionary<string, SkillSourceBinding>(StringComparer.OrdinalIgnoreCase);
+		foreach (var (folder, binding) in LoadRegistry())
+		{
+			bindings.Add(folder, binding?.Deserialize<SkillSourceBinding>()
+				?? throw new InvalidDataException($"Invalid skill binding for {folder} in {_registry}."));
+		}
+		return bindings;
+	}
 
 	/// <summary>Compares the snapshot with the exact native destination, reporting user changes and source conflicts.</summary>
 	public SkillInstallPreview Preview(CatalogSkill skill)
 	{
 		ArgumentNullException.ThrowIfNull(skill);
+		if (skill.InspectionWarning is { } warning)
+		{
+			throw new IOException($"Cannot install an incomplete package. {warning}");
+		}
 		SkillPackageReader.ValidatePath(skill.FolderName);
 		var destination = Path.Combine(_skillsDirectory, skill.FolderName);
-		var installed = LoadRegistry()[skill.FolderName];
+		var registry = LoadRegistry();
+		var installed = registry[BindingKey(registry, skill.FolderName)];
 		var expected = skill.Hashes();
 		var actual = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		var exists = Directory.Exists(destination);
@@ -107,12 +119,14 @@ public sealed partial class SkillCatalogService
 	public async Task<SkillInstallPreview> CheckUpdateAsync(string installedSkillName, CancellationToken cancellationToken = default)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(installedSkillName);
-		var binding = LoadRegistry()[installedSkillName] ?? throw new InvalidOperationException("This installation has no bound update source.");
+		var registry = LoadRegistry();
+		var folder = BindingKey(registry, installedSkillName);
+		var binding = registry[folder] ?? throw new InvalidOperationException("This installation has no bound update source.");
 		var source = (string?)binding["Source"] ?? throw new InvalidDataException("Missing update source.");
 		var packages = await Task.Run(() => _reader.ReadAsync(source, false, (string?)binding["Reference"], cancellationToken), cancellationToken).ConfigureAwait(false);
 		var package = packages.SingleOrDefault(item => string.Equals(item.RelativePath, (string?)binding["RelativePath"], StringComparison.Ordinal))
 			?? throw new IOException($"The bound package {binding["RelativePath"]} no longer exists in {source}.");
-		return Preview(package.ForInstallationFolder(installedSkillName));
+		return Preview(package.ForInstallationFolder(folder));
 	}
 
 	/// <summary>Compares a candidate with the selected manual installation, including when their directory names differ.</summary>
@@ -158,6 +172,7 @@ public sealed partial class SkillCatalogService
 			}
 
 			Commit(current);
+			preview.CleanupWarning = current.CleanupWarning;
 		});
 	}
 
@@ -196,13 +211,14 @@ public sealed partial class SkillCatalogService
 			throw new IOException("Select the package at its update source to bind an existing installation.");
 		}
 
-		var binding = registry[skill.FolderName]?.AsObject() ?? new JsonObject();
+		var bindingKey = BindingKey(registry, skill.FolderName);
+		var binding = registry[bindingKey]?.AsObject() ?? new JsonObject();
 		binding["Source"] = skill.Source;
 		binding["RelativePath"] = skill.RelativePath;
 		binding["Reference"] = skill.Reference;
 		binding["Revision"] = skill.Revision;
 		binding["Files"] = JsonSerializer.SerializeToNode(skill.Hashes());
-		registry[skill.FolderName] = binding;
+		registry[bindingKey] = binding;
 		Directory.CreateDirectory(_skillsDirectory);
 		// Agent CLIs discover subdirectories of their native skills root while Pact is running.
 		// Keep unpublished bytes and backups on the same volume but outside their search path.
@@ -230,7 +246,7 @@ public sealed partial class SkillCatalogService
 
 					Directory.Move(preview.Destination, backup);
 					moved = true;
-					var original = LoadRegistry()[skill.FolderName]!["Files"]!.Deserialize<Dictionary<string, string>>()!;
+					var original = LoadRegistry()[bindingKey]!["Files"]!.Deserialize<Dictionary<string, string>>()!;
 					if (Differences(InstalledHashes(backup), original).Count != 0)
 					{
 						throw new IOException($"The installation changed at {preview.Destination}. Open a fresh preview.");
@@ -247,42 +263,85 @@ public sealed partial class SkillCatalogService
 
 			AtomicFileWriter.WriteTextAsync(_registry, registry.ToJsonString(), CancellationToken.None).GetAwaiter().GetResult();
 		}
-		catch
+		catch (Exception failure)
 		{
-			if (published)
+			try
 			{
-				Directory.Move(preview.Destination, stage);
+				if (published)
+				{
+					Directory.Move(preview.Destination, stage);
+				}
+				if (moved)
+				{
+					Directory.Move(backup, preview.Destination);
+				}
+				if (!TryDeleteWorkDirectory(stage))
+				{
+					throw new IOException($"Could not remove the staged files at {stage}.");
+				}
 			}
-
-			if (moved)
+			catch (Exception rollback) when (rollback is IOException or UnauthorizedAccessException)
 			{
-				Directory.Move(backup, preview.Destination);
+				throw new AggregateException($"Installation failed and rollback needs attention. Staging: {stage}. Backup: {backup}.", failure, rollback);
 			}
 
 			throw;
 		}
-		finally
+		var leftovers = new[] { stage, backup }.Where(path => !TryDeleteWorkDirectory(path)).ToArray();
+		if (leftovers.Length != 0)
 		{
-			DeleteWorkDirectory(stage);
+			preview.CleanupWarning = "The installation was applied. Cleanup is pending at " + string.Join(", ", leftovers);
 		}
-
-		DeleteWorkDirectory(backup);
 	}
 
-	private static void DeleteWorkDirectory(string path)
+	private static bool TryDeleteWorkDirectory(string path)
 	{
-		if (Directory.Exists(path))
+		try
 		{
+			if (!Directory.Exists(path))
+			{
+				return !Path.Exists(path) && new DirectoryInfo(path).LinkTarget is null;
+			}
+			if (new DirectoryInfo(path).LinkTarget is not null)
+			{
+				return false;
+			}
 			Directory.Delete(path, recursive: true);
+			return true;
+		}
+		catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+		{
+			return false;
 		}
 	}
 
 	private JsonObject LoadRegistry() => File.Exists(_registry)
-		? JsonNode.Parse(File.ReadAllText(_registry))?.AsObject() ?? throw new InvalidDataException("Empty skill installation registry.")
-		: [];
+		? ParseRegistry(File.ReadAllText(_registry)) : [];
 
-	private static Dictionary<string, string> InstalledHashes(string directory) =>
-		SkillPackageReader.ReadDirectory(directory, CancellationToken.None).ToDictionary(entry => entry.Key,
+	private JsonObject ParseRegistry(string original)
+	{
+		using var document = JsonDocument.Parse(original);
+		if (document.RootElement.ValueKind != JsonValueKind.Object)
+		{
+			throw new IOException($"Expected a skill installation registry object in {_registry}.");
+		}
+		var names = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		foreach (var binding in document.RootElement.EnumerateObject())
+		{
+			if (names.TryGetValue(binding.Name, out var previous))
+			{
+				throw new IOException($"Duplicate update binding keys '{previous}' and '{binding.Name}' in {_registry}. Resolve those entries before continuing.");
+			}
+			names.Add(binding.Name, binding.Name);
+		}
+		return JsonNode.Parse(original)!.AsObject();
+	}
+
+	private static string BindingKey(JsonObject registry, string folder) =>
+		registry.Select(pair => pair.Key).FirstOrDefault(key => Same(key, folder)) ?? folder;
+
+	private static Dictionary<string, string> InstalledHashes(string directory, bool skipGitMetadata = false) =>
+		SkillPackageReader.ReadDirectory(directory, CancellationToken.None, skipGitMetadata).ToDictionary(entry => entry.Key,
 			entry => Convert.ToHexString(SHA256.HashData(entry.Value)), StringComparer.OrdinalIgnoreCase);
 
 	private static List<string> Differences(Dictionary<string, string> before, Dictionary<string, string> after)

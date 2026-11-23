@@ -16,6 +16,7 @@ internal sealed partial class MainWindow
 	private double _lastNormalHeight = double.NaN;
 	private bool _pausedProjectsHintShown;
 	private bool _rightPanelPinned = true;
+	private bool _rightPanelOwnerDisabled;
 	private double _expandedRightColumnWidth;
 
 	private void ApplyWindowLayout(AppWindowLayout? layout)
@@ -46,7 +47,15 @@ internal sealed partial class MainWindow
 		CenterPane.AddHandler(PointerPressedEvent, OnCenterPointerPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
 		CenterPane.SizeChanged += OnCenterSizeChanged;
 		TerminalPane.WebViewControl.Host.SelectionDismissed += OnNativeTerminalInput;
+		BrowserPane.ConfigureNativeInteraction(OnNativeBrowserInput);
+		Deactivated += OnRightPanelOwnerDeactivated;
+		AddHandler(KeyDownEvent, OnPanelKeyDown, RoutingStrategies.Bubble);
 		RightPanelBody.KeyDown += OnPanelKeyDown;
+		var hasNativeOwner = TryGetPlatformHandle() is { HandleDescriptor: "HWND" };
+		if (hasNativeOwner)
+		{
+			Win32Properties.AddWndProcHookCallback(this, OnRightPanelOwnerMessage);
+		}
 		_eventDetachments.Add(() =>
 		{
 			RightPanelPopup.IsOpen = false;
@@ -54,7 +63,14 @@ internal sealed partial class MainWindow
 			CenterPane.RemoveHandler(PointerPressedEvent, OnCenterPointerPressed);
 			CenterPane.SizeChanged -= OnCenterSizeChanged;
 			TerminalPane.WebViewControl.Host.SelectionDismissed -= OnNativeTerminalInput;
+			BrowserPane.ConfigureNativeInteraction(null);
+			Deactivated -= OnRightPanelOwnerDeactivated;
+			RemoveHandler(KeyDownEvent, OnPanelKeyDown);
 			RightPanelBody.KeyDown -= OnPanelKeyDown;
+			if (hasNativeOwner)
+			{
+				Win32Properties.RemoveWndProcHookCallback(this, OnRightPanelOwnerMessage);
+			}
 		});
 
 		// Maximizing rewrites Position/Width/Height with the maximized geometry,
@@ -146,7 +162,7 @@ internal sealed partial class MainWindow
 
 	private void OpenRightPanel()
 	{
-		if (!_rightPanelPinned && !BusyOverlay.IsVisible)
+		if (!_rightPanelPinned && !_rightPanelOwnerDisabled && !BusyOverlay.IsVisible)
 		{
 			SizeRightPanelPopup();
 			RightPanelPopup.IsOpen = true;
@@ -169,6 +185,22 @@ internal sealed partial class MainWindow
 
 	private void OnCenterPointerPressed(object? sender, PointerPressedEventArgs args) => RightPanelPopup.IsOpen = false;
 
+	private void OnRightPanelOwnerDeactivated(object? sender, EventArgs args) => RightPanelPopup.IsOpen = false;
+
+	private nint OnRightPanelOwnerMessage(nint window, uint message, nint enabled, nint lParam, ref bool handled)
+	{
+		const uint enableMessage = 0x000A; // WM_ENABLE
+		if (message == enableMessage)
+		{
+			_rightPanelOwnerDisabled = enabled == 0;
+			if (_rightPanelOwnerDisabled)
+			{
+				RightPanelPopup.IsOpen = false;
+			}
+		}
+		return 0;
+	}
+
 	// Native WebView2 receives pointer input outside the Avalonia routed-event tree.
 	private void OnNativeTerminalInput(object? sender, string sessionId)
 	{
@@ -179,9 +211,18 @@ internal sealed partial class MainWindow
 		}
 	}
 
+	private void OnNativeBrowserInput(string pageId)
+	{
+		if (EngineProbeController.PresentedSurface is PresentedSurface.Web
+			&& EngineProbeController.ViewModel.SelectedWebPage?.Record.Id == pageId)
+		{
+			RightPanelPopup.IsOpen = false;
+		}
+	}
+
 	private void OnPanelKeyDown(object? sender, KeyEventArgs args)
 	{
-		if (args.Key == Key.Escape && RightPanelPopup.IsOpen)
+		if (!args.Handled && args.Key == Key.Escape && RightPanelPopup.IsOpen)
 		{
 			RightPanelPopup.IsOpen = false;
 			RightPanelRail.Focus();
