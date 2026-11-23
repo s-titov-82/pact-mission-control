@@ -174,6 +174,10 @@ not required by the project.
   public API. Explain the contract or non-obvious constraint, not the name.
 - Prefer targeted behavioral tests and the relevant native integration gate.
   Do not add source-text, private-shape, or timing-sleep tests.
+- Before handing a task to the user for manual verification, publish the
+  current changes as a launch-ready, framework-dependent `win-x64` build in
+  `artifacts/local-diag`. Verify that `Pact.App.Avalonia.exe` is present and
+  include its path in the handoff.
 - Run `git diff --check HEAD -- <paths>` for touched docs and whitespace.
 - The worktree may be dirty. Preserve unrelated user and generated changes.
 - Use `apply_patch` for manual text edits.

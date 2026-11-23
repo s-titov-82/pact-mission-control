@@ -326,8 +326,15 @@
         <Setter Property="Background" Value="{DynamicResource AppAccentSoftBrush}" />
         <Setter Property="BorderBrush" Value="{DynamicResource AppAccentBrush}" />
       </Style>
-      <Style Selector="Border.project-row">
-        <Setter Property="Background" Value="{DynamicResource AppStepBackgroundBrush}" />
+      <Style Selector="TreeViewItem.project-header /template/ Border#PART_LayoutRoot">
+        <Setter Property="Background" Value="{DynamicResource AppProjectHeaderBrush}" />
+        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="BorderThickness" Value="3,0,0,0" />
+        <Setter Property="Margin" Value="0,2" />
+      </Style>
+      <Style Selector="TreeViewItem.project-header.current-project /template/ Border#PART_LayoutRoot">
+        <Setter Property="Background" Value="{DynamicResource AppAccentSoftBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource AppAccentBrush}" />
       </Style>
       <Style Selector="Border.current">
         <Setter Property="Background" Value="{DynamicResource AppAccentSoftBrush}" />
@@ -364,7 +371,10 @@
     </TreeView.Styles>
     <TreeView.DataTemplates>
       <TreeDataTemplate DataType="vm:WorkspaceViewModel" ItemsSource="{Binding TreeItems}">
-        <Border x:Name="ProjectRow" Classes="project-row" CornerRadius="4" Classes.current="{Binding IsCurrentProject}">
+        <Border x:Name="ProjectRow" Background="Transparent"
+                DragDrop.AllowDrop="True" DragDrop.DragOver="OnTreeItemDragOver" DragDrop.Drop="OnTreeItemDrop"
+                PointerPressed="OnTreeItemDragPointerPressed" PointerMoved="OnTreeItemDragPointerMoved"
+                PointerReleased="OnTreeItemDragPointerReleased">
         <Grid Margin="2" RowDefinitions="Auto,Auto" HorizontalAlignment="Stretch">
           <StackPanel Grid.Row="0">
             <TextBlock FontWeight="SemiBold" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />

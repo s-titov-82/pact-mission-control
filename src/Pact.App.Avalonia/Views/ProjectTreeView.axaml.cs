@@ -2,6 +2,7 @@ using System.Collections.Specialized;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Data;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
@@ -22,6 +23,9 @@ internal sealed partial class ProjectTreeView : UserControl
 	private bool _selectionActivationEnabled = true;
 	private bool _userSelectionInputPending;
 	private int _busySpinnerFrameIndex;
+
+	internal Func<PointerPressedEventArgs, DataTransfer, Task<DragDropEffects>> BeginDragAsync { get; set; } =
+		(args, transfer) => DragDrop.DoDragDropAsync(args, transfer, DragDropEffects.Move);
 
 	public ProjectTreeView()
 	{
@@ -48,6 +52,8 @@ internal sealed partial class ProjectTreeView : UserControl
 	{
 		if (e.Container is TreeViewItem item && ProjectTree.ItemFromContainer(item) is WorkspaceViewModel workspace)
 		{
+			item.Classes.Add("project-header");
+			item.BindClass("current-project", new ReflectionBinding(nameof(WorkspaceViewModel.IsCurrentProject)), item);
 			item.IsExpanded = workspace.IsExpanded;
 			item.PropertyChanged += OnProjectContainerPropertyChanged;
 		}
@@ -57,6 +63,7 @@ internal sealed partial class ProjectTreeView : UserControl
 	{
 		if (e.Container is TreeViewItem item)
 		{
+			item.Classes.Remove("project-header");
 			item.PropertyChanged -= OnProjectContainerPropertyChanged;
 		}
 	}
@@ -261,6 +268,13 @@ internal sealed partial class ProjectTreeView : UserControl
 
 		if (e.Source is Control source
 			&& (source is Button || source.FindAncestorOfType<Button>() is not null))
+		{
+			return;
+		}
+
+		// The project header commits a click on release, once the drag gesture has been ruled out.
+		if (e.GetCurrentPoint(tree).Properties.IsLeftButtonPressed && e.Source is Visual visual
+			&& visual.GetSelfAndVisualAncestors().OfType<Border>().Any(border => border.Name == "ProjectRow"))
 		{
 			return;
 		}
@@ -470,7 +484,7 @@ internal sealed partial class ProjectTreeView : UserControl
 		}
 
 		if (!properties.IsLeftButtonPressed
-			|| sender is not Control { DataContext: SessionViewModel or WebPageViewModel } control
+			|| sender is not Control { DataContext: WorkspaceViewModel or SessionViewModel or WebPageViewModel } control
 			|| e.Source is Control sourceControl
 				&& (sourceControl is Button
 					|| sourceControl.GetVisualAncestors().OfType<Button>().Any()))
@@ -504,7 +518,7 @@ internal sealed partial class ProjectTreeView : UserControl
 		_draggedTreeItem = draggedItem;
 		try
 		{
-			await DragDrop.DoDragDropAsync(pointerPressed, dataTransfer, DragDropEffects.Move);
+			await BeginDragAsync(pointerPressed, dataTransfer);
 		}
 		finally
 		{
@@ -512,8 +526,18 @@ internal sealed partial class ProjectTreeView : UserControl
 		}
 	}
 
-	private void OnTreeItemDragPointerReleased(object? sender, PointerReleasedEventArgs e) =>
+	private void OnTreeItemDragPointerReleased(object? sender, PointerReleasedEventArgs e)
+	{
+		var clickedProject = _dragCandidate as WorkspaceViewModel;
 		ClearDragCandidate();
+		if (_selectionActivationEnabled && clickedProject is not null
+			&& e.InitialPressMouseButton == MouseButton.Left
+			&& sender is Control control && ReferenceEquals(control.DataContext, clickedProject)
+			&& new Rect(control.Bounds.Size).Contains(e.GetPosition(control)))
+		{
+			SelectedItemChanged?.Invoke(this, clickedProject);
+		}
+	}
 
 	private void OnTreeItemDragOver(object? sender, DragEventArgs e)
 	{
@@ -557,6 +581,12 @@ internal sealed partial class ProjectTreeView : UserControl
 				&& _viewModel?.Workspaces.Any(workspace =>
 					workspace.Sessions.Contains(sourceSession)
 					&& workspace.Sessions.Contains(targetSession)) == true;
+		}
+
+		if (source is WorkspaceViewModel sourceProject && target is WorkspaceViewModel targetProject)
+		{
+			return _viewModel?.Workspaces.Contains(sourceProject) == true
+				&& _viewModel.Workspaces.Contains(targetProject);
 		}
 
 		if (source is WebPageViewModel sourcePage && target is WebPageViewModel targetPage)

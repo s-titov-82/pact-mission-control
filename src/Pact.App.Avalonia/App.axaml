@@ -81,6 +81,7 @@
           <SolidColorBrush x:Key="AppGitModifiedBrush" Color="#795C24" />
           <SolidColorBrush x:Key="AppGitRemovedBrush" Color="#9D4F53" />
           <SolidColorBrush x:Key="AppStepBackgroundBrush" Color="#E5E7EB" />
+          <SolidColorBrush x:Key="AppProjectHeaderBrush" Color="#E5E7EB" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="Dark">
           <SolidColorBrush x:Key="AppBorderBrush" Color="#334155" />
@@ -102,6 +103,7 @@
           <SolidColorBrush x:Key="AppGitModifiedBrush" Color="#C4AD78" />
           <SolidColorBrush x:Key="AppGitRemovedBrush" Color="#D19A9B" />
           <SolidColorBrush x:Key="AppStepBackgroundBrush" Color="#1F2937" />
+          <SolidColorBrush x:Key="AppProjectHeaderBrush" Color="#2D3A4D" />
         </ResourceDictionary>
       </ResourceDictionary.ThemeDictionaries>
       <SolidColorBrush x:Key="AppTerminalBackgroundBrush" Color="#09090B" />

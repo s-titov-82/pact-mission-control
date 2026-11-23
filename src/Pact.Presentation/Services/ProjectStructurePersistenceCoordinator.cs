@@ -40,6 +40,32 @@ internal sealed class ProjectStructurePersistenceCoordinator(IProjectStore proje
 			},
 			cancellationToken);
 
+	/// <summary>Reorders two active projects in the latest saved document.</summary>
+	public async Task<ProjectsDocument?> MoveProjectAsync(
+		string sourceId,
+		string targetId,
+		bool insertAfter,
+		CancellationToken cancellationToken)
+	{
+		var moved = false;
+		var saved = await _projectStore.UpdateAsync(
+			document =>
+			{
+				var activeProjects = document.Projects.Where(project => project.Status == WorkspaceStatus.Active);
+				if (!activeProjects.Any(project => project.Id == sourceId)
+					|| !activeProjects.Any(project => project.Id == targetId))
+				{
+					return document;
+				}
+
+				var ordered = SavedItemOrder.Move(document.Projects, project => project.Id, sourceId, targetId, insertAfter);
+				moved = !document.Projects.SequenceEqual(ordered);
+				return moved ? document with { Projects = ordered } : document;
+			},
+			cancellationToken);
+		return moved ? saved : null;
+	}
+
 	public Task<ProjectRecord?> AddWebPageAsync(
 		string projectId,
 		WebPageRecord webPage,
@@ -301,16 +327,19 @@ internal sealed class ProjectStructurePersistenceCoordinator(IProjectStore proje
 			},
 			cancellationToken);
 
-	public Task<ProjectRecord?> RestoreProjectAsync(
+	/// <summary>Restores the project and returns the saved order for reinserting its row.</summary>
+	public Task<ProjectsDocument> RestoreProjectAsync(
 		string projectId,
 		CancellationToken cancellationToken) =>
-		UpdateProjectAsync(
-			projectId,
-			project => project with
-			{
-				Status = WorkspaceStatus.Active,
-				LastActiveAt = DateTimeOffset.UtcNow
-			},
+		_projectStore.UpdateAsync(
+			document => !document.Projects.Any(project => project.Id == projectId)
+				? document
+				: document with
+				{
+					Projects = document.Projects.Select(project => project.Id == projectId
+						? project with { Status = WorkspaceStatus.Active, LastActiveAt = DateTimeOffset.UtcNow }
+						: project).ToArray()
+				},
 			cancellationToken);
 
 	private async Task<ProjectRecord?> UpdateProjectAsync(

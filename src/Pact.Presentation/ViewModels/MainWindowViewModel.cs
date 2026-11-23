@@ -27,6 +27,8 @@ namespace Pact.Presentation.ViewModels;
 /// tree cannot drift apart. Selection is exclusive across sessions, web pages, scenario runs,
 /// and notes: selecting one clears the others.
 /// </remarks>
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1001:Types that own disposable fields should be disposable",
+	Justification = "The project reorder gate never creates a wait handle and lives as long as the shell view model.")]
 public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 {
 	private readonly IProjectStore _projectStore;
@@ -34,6 +36,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 	private readonly RootTabsPersistenceCoordinator _rootPersistence;
 	private readonly ProjectPersistenceCoordinator _persistence;
 	private readonly ProjectStructurePersistenceCoordinator _structurePersistence;
+	private readonly SemaphoreSlim _projectMoveGate = new(1, 1);
 	private readonly IProjectNotesStore _notesStore;
 	private readonly IProjectMarkdownFileStore _markdownFileStore;
 	private readonly HashSet<SessionViewModel> _terminalStatusSessions = [];
@@ -509,8 +512,8 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 	}
 
 	/// <summary>
-	/// Moves a terminal or browser tab relative to a peer of the same type and owner, persisting
-	/// the new order before changing the observable projection.
+	/// Moves a project relative to another active project, or a tab relative to a peer of the
+	/// same type and owner. The new order is persisted before changing the observable projection.
 	/// </summary>
 	public async Task<bool> MoveTreeItemAsync(
 		object source,
@@ -523,6 +526,11 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 		if (ReferenceEquals(source, target) || source.GetType() != target.GetType())
 		{
 			return false;
+		}
+
+		if (source is WorkspaceViewModel sourceProject && target is WorkspaceViewModel targetProject)
+		{
+			return await MoveProjectAsync(sourceProject, targetProject, insertAfter, cancellationToken);
 		}
 
 		if (source is SessionViewModel sourceSession && target is SessionViewModel targetSession)
@@ -2026,14 +2034,28 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 		RefreshTerminalActionTargets();
 	}
 
-	/// <summary>Reopens a parked project and reselects the item it was parked on.</summary>
+	/// <summary>Reopens a parked project in saved order and reselects the item it was parked on.</summary>
 	public async Task RestoreWorkspaceAsync(string workspaceId, CancellationToken cancellationToken)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(workspaceId);
 
-		var updatedProject = await _structurePersistence.RestoreProjectAsync(
+		await _projectMoveGate.WaitAsync(cancellationToken);
+		try
+		{
+			await RestoreWorkspaceInSavedOrderAsync(workspaceId, cancellationToken);
+		}
+		finally
+		{
+			_projectMoveGate.Release();
+		}
+	}
+
+	private async Task RestoreWorkspaceInSavedOrderAsync(string workspaceId, CancellationToken cancellationToken)
+	{
+		var document = await _structurePersistence.RestoreProjectAsync(
 			workspaceId,
 			cancellationToken);
+		var updatedProject = document.Projects.FirstOrDefault(project => project.Id == workspaceId);
 
 		if (updatedProject is null)
 		{
@@ -2050,7 +2072,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 		PausedWorkspaces.Remove(viewModel);
 		if (!Workspaces.Contains(viewModel))
 		{
-			Workspaces.Add(viewModel);
+			Workspaces.Insert(GetWorkspaceIndex(document, workspaceId), viewModel);
 		}
 
 		foreach (var session in viewModel.Sessions)
@@ -2441,6 +2463,47 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 			.Concat(PausedWorkspaces)
 			.SelectMany(workspace => workspace.WebPages)
 			.FirstOrDefault(webPage => string.Equals(webPage.Record.Id, webPageId, StringComparison.Ordinal));
+	}
+
+	private async Task<bool> MoveProjectAsync(
+		WorkspaceViewModel source,
+		WorkspaceViewModel target,
+		bool insertAfter,
+		CancellationToken cancellationToken)
+	{
+		await _projectMoveGate.WaitAsync(cancellationToken);
+		try
+		{
+			if (!WouldMove(Workspaces, source, target, insertAfter))
+			{
+				return false;
+			}
+
+			var saved = await _structurePersistence.MoveProjectAsync(source.Id, target.Id, insertAfter, cancellationToken);
+			if (saved is null)
+			{
+				return false;
+			}
+
+			var sourceIndex = Workspaces.IndexOf(source);
+			if (sourceIndex >= 0)
+			{
+				Workspaces.Move(sourceIndex, GetWorkspaceIndex(saved, source.Id));
+			}
+
+			return true;
+		}
+		finally
+		{
+			_projectMoveGate.Release();
+		}
+	}
+
+	private int GetWorkspaceIndex(ProjectsDocument document, string workspaceId)
+	{
+		var precedingProjects = document.Projects.TakeWhile(project => project.Id != workspaceId)
+			.Select(project => project.Id).ToHashSet(StringComparer.Ordinal);
+		return Workspaces.Count(workspace => precedingProjects.Contains(workspace.Id));
 	}
 
 	private async Task<bool> MoveSessionAsync(

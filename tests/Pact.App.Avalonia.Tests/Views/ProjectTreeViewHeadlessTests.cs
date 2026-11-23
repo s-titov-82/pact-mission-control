@@ -1,6 +1,9 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Headless;
 using Avalonia.Headless.NUnit;
+using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Themes.Fluent;
@@ -57,6 +60,76 @@ public sealed class ProjectTreeViewHeadlessTests
 		view.CanDropTreeItem(first, root).ShouldBeFalse();
 		view.CanDropTreeItem(first, first).ShouldBeFalse();
 		view.CanDropTreeItem(first, new object()).ShouldBeFalse();
+		view.CanDropTreeItem(firstWorkspace, secondWorkspace).ShouldBeTrue();
+		view.CanDropTreeItem(firstWorkspace, firstWorkspace).ShouldBeFalse();
+		view.CanDropTreeItem(firstWorkspace, first).ShouldBeFalse();
+		viewModel.Workspaces.Remove(secondWorkspace);
+		viewModel.PausedWorkspaces.Add(secondWorkspace);
+		view.CanDropTreeItem(firstWorkspace, secondWorkspace).ShouldBeFalse();
+	}
+
+	[AvaloniaTest]
+	public void Dragging_a_project_title_requests_a_move_and_a_click_opens_the_project()
+	{
+		MainWindowViewModel model = new(new EmptyProjectStore(), new EmptyNotesStore());
+		var now = DateTimeOffset.UtcNow;
+		WorkspaceViewModel first = new(new ProjectRecord("one", "One", "C:\\one", now, now, null));
+		WorkspaceViewModel second = new(new ProjectRecord("two", "Two", "C:\\two", now, now, null));
+		model.Workspaces.Add(first);
+		model.Workspaces.Add(second);
+		model.SelectProject(first);
+		ProjectTreeView view = new() { DataContext = model };
+		TreeItemDropRequest? request = null;
+		List<object?> activations = [];
+		view.TreeItemDropRequested += (_, args) => request = args;
+		view.SelectedItemChanged += (_, item) => activations.Add(item);
+		FluentTheme theme = new();
+		Application.Current!.Styles.Add(theme);
+		Window window = new() { Content = view, Width = 600, Height = 800 };
+		try
+		{
+			window.Show();
+			Dispatcher.UIThread.RunJobs();
+			var tree = view.FindControl<TreeView>("ProjectTree").ShouldNotBeNull();
+			Point HeaderPoint(WorkspaceViewModel project)
+			{
+				var item = tree.ContainerFromItem(project).ShouldBeOfType<TreeViewItem>();
+				var title = item.GetVisualDescendants().OfType<TextBlock>().Single(text => text.Text == project.Name);
+				return title.TranslatePoint(new Point(3, 5), window)!.Value;
+			}
+
+			var start = HeaderPoint(second);
+			var drop = HeaderPoint(first);
+			view.BeginDragAsync = (_, transfer) =>
+			{
+				var hit = window.InputHitTest(drop).ShouldBeAssignableTo<Control>().ShouldNotBeNull();
+				var args = new DragEventArgs(DragDrop.DropEvent, transfer, hit, window.TranslatePoint(drop, hit)!.Value, KeyModifiers.None);
+				if (DragDrop.GetAllowDrop(hit))
+				{
+					hit.RaiseEvent(args);
+				}
+				return Task.FromResult(args.DragEffects);
+			};
+			var moved = new Point(start.X + 16, start.Y);
+			window.MouseMove(start);
+			window.MouseDown(start, MouseButton.Left);
+			window.MouseMove(moved, RawInputModifiers.LeftMouseButton);
+			window.MouseUp(moved, MouseButton.Left);
+
+			request.ShouldBe(new TreeItemDropRequest(second, first, InsertAfter: false));
+			activations.ShouldBeEmpty();
+
+			window.MouseMove(start);
+			window.MouseDown(start, MouseButton.Left);
+			window.MouseUp(start, MouseButton.Left);
+
+			activations.ShouldBe([second]);
+		}
+		finally
+		{
+			window.Close();
+			Application.Current.Styles.Remove(theme);
+		}
 	}
 
 	[AvaloniaTest]
@@ -154,28 +227,38 @@ public sealed class ProjectTreeViewHeadlessTests
 	}
 
 	[AvaloniaTest]
-	public void The_shown_project_row_is_marked_current()
+	public void Project_header_shades_the_chevron_and_title_and_highlights_the_current_project()
 	{
 		MainWindowViewModel viewModel = new(new EmptyProjectStore(), new EmptyNotesStore());
 		var now = DateTimeOffset.UtcNow;
 		WorkspaceViewModel workspace = new(new ProjectRecord("project-1", "One", "C:\\one", now, now, null), static _ => false);
+		workspace.Sessions.Add(new SessionViewModel(CreateSession("session-1", now)));
 		viewModel.Workspaces.Add(workspace);
 		ProjectTreeView view = new() { DataContext = viewModel };
 		FluentTheme theme = new();
 		Application.Current!.Styles.Add(theme);
 		Window window = new() { Content = view, Width = 600, Height = 800 };
+		SolidColorBrush background = new(Color.Parse("#334455"));
+		SolidColorBrush accentSoft = new(Color.Parse("#445566"));
+		SolidColorBrush accent = new(Color.Parse("#556677"));
+		window.Resources["AppProjectHeaderBrush"] = background;
+		window.Resources["AppAccentSoftBrush"] = accentSoft;
+		window.Resources["AppAccentBrush"] = accent;
 		try
 		{
 			window.Show();
 			Dispatcher.UIThread.RunJobs();
 			var tree = view.FindControl<TreeView>("ProjectTree").ShouldNotBeNull();
-			var row = tree.ContainerFromItem(workspace).ShouldBeOfType<TreeViewItem>()
-				.GetVisualDescendants().OfType<Border>().Single(border => border.Name == "ProjectRow");
-			row.Classes.ShouldNotContain("current");
+			var container = tree.ContainerFromItem(workspace).ShouldBeOfType<TreeViewItem>();
+			var chevron = container.GetVisualDescendants().OfType<ToggleButton>().First();
+			var title = container.GetVisualDescendants().OfType<TextBlock>().Single(text => text.Text == workspace.Name);
+			var header = chevron.GetVisualAncestors().OfType<Border>()
+				.First(border => title.GetVisualAncestors().Contains(border));
+			header.Background.ShouldBeSameAs(background);
 
 			viewModel.SelectProject(workspace);
 
-			row.Classes.ShouldContain("current");
+			AssertTierStyle(header, accentSoft, accent, new Thickness(3, 0, 0, 0));
 		}
 		finally
 		{

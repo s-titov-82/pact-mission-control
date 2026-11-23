@@ -1790,7 +1790,7 @@ internal sealed partial class AvaloniaMainShellController : INotifyPropertyChang
 		await SelectWebPageAsync(webPage, cancellationToken);
 	}
 
-	/// <summary>Persists and applies a requested terminal or browser tab reorder.</summary>
+	/// <summary>Persists and applies a requested project or tab reorder in the left tree.</summary>
 	public Task<bool> MoveTreeItemAsync(
 		object source,
 		object target,

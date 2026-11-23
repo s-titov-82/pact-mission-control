@@ -2102,6 +2102,38 @@ public sealed class MainWindowViewModelTests
 	}
 
 	[Test]
+	public async Task MoveTreeItemAsync_persists_project_order_and_preserves_active_project()
+	{
+		var first = CreateProjectRecord("first", "First");
+		var paused = CreateProjectRecord("paused", "Paused") with { Status = WorkspaceStatus.Paused };
+		var second = CreateProjectRecord("second", "Second") with { IsCollapsed = true };
+		var third = CreateProjectRecord("third", "Third");
+		InMemoryProjectStore store = new(ProjectsDocument.CreateDefault() with
+		{
+			Projects = [first, paused, second, third]
+		});
+		var viewModel = MainWindowViewModelTestFactory.Create(store);
+		await viewModel.LoadAsync(CancellationToken.None);
+		var selected = viewModel.Workspaces[1];
+		viewModel.SelectProject(selected);
+
+		var moved = await viewModel.MoveTreeItemAsync(
+			viewModel.Workspaces[2], viewModel.Workspaces[0], insertAfter: false, CancellationToken.None);
+
+		moved.ShouldBeTrue();
+		viewModel.Workspaces.Select(workspace => workspace.Id).ShouldBe(["third", "first", "second"]);
+		viewModel.SelectedWorkspace.ShouldBeSameAs(selected);
+		selected.IsExpanded.ShouldBeFalse();
+		viewModel.PausedWorkspaces.Single().Id.ShouldBe("paused");
+
+		var reopened = MainWindowViewModelTestFactory.Create(store);
+		await reopened.LoadAsync(CancellationToken.None);
+		reopened.Workspaces.Select(workspace => workspace.Id).ShouldBe(["third", "first", "second"]);
+		await reopened.RestoreWorkspaceAsync("paused", CancellationToken.None);
+		reopened.Workspaces.Select(workspace => workspace.Id).ShouldBe(["third", "first", "paused", "second"]);
+	}
+
+	[Test]
 	public async Task MoveTreeItemAsync_persists_project_session_order_and_preserves_selection()
 	{
 		var createdAt = DateTimeOffset.UtcNow.AddMinutes(-10);
