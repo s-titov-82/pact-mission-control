@@ -7,6 +7,8 @@ namespace Pact.Core.ScreenVerdictProfiles;
 /// </summary>
 public sealed partial class ClaudeScreenProfile : AgentScreenProfileBase
 {
+	private const string IdleCompaction = "Compacted while idle";
+
 	/// <summary>
 	/// Gets the stateless Claude screen classifier.
 	/// </summary>
@@ -38,6 +40,9 @@ public sealed partial class ClaudeScreenProfile : AgentScreenProfileBase
 
 	/// <inheritdoc />
 	protected override Regex WorkedForRegex => WorkedForRx();
+
+	/// <inheritdoc />
+	private protected override bool IsBackgroundCompletion(string description) => description == IdleCompaction;
 
 	/// <inheritdoc />
 	protected override Regex LastMessageRegex => LastMessageRx();
@@ -76,7 +81,7 @@ public sealed partial class ClaudeScreenProfile : AgentScreenProfileBase
 	// "Worked for 2m 30s", "Cooked for 12s", "Sautéed for 3s" - a
 	// capitalized past-tense verb followed by a duration. Claude's own idle compaction
 	// animates a spinner but completes with "Compacted while idle" instead of a summary.
-	[GeneratedRegex(@"(?<descr>[A-Z][a-z\-é]{2,15}ed\sfor\s\d{1,2}[hms]|Compacted while idle)", RegexOptions.RightToLeft)]
+	[GeneratedRegex(@"(?<descr>[A-Z][a-z\-é]{2,15}ed\sfor\s\d{1,2}[hms])|^[^\S\r\n]*●[^\S\r\n]+(?<descr>" + IdleCompaction + @"),", RegexOptions.Multiline | RegexOptions.RightToLeft)]
 	private static partial Regex WorkedForRx();
 
 	[GeneratedRegex(@"(?:[⎿✻]\s*(?<descr>Interrupted|529 Overloaded|API Error|Unable to connect to API)|●\s*(?<descr>API Error:\s*529 Overloaded))", RegexOptions.RightToLeft)]

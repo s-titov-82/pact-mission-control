@@ -48,7 +48,11 @@ public sealed record TerminalScreenVerdict(
 	string Description = "",
 	string LastMessage = "",
 	bool? PromptIsEmpty = null,
-	TerminalPromptEvidence? PromptEvidence = null);
+	TerminalPromptEvidence? PromptEvidence = null)
+{
+	/// <summary>Whether the completion ends background maintenance without a new reply.</summary>
+	internal bool IsBackgroundCompletion { get; init; }
+}
 
 /// <summary>
 /// Describes what a stable terminal screen reveals about the current activity.

@@ -21,6 +21,7 @@ public sealed class TerminalTabStatusEngine
 
 	// Set while the activity in progress is only the agent redrawing a resumed conversation.
 	private bool _activityIsResumeReplay;
+	private bool _activityWasSubmitted;
 	private long _activityEpoch;
 	private bool _hasUnreadCompletion;
 	private bool _inputRequested;
@@ -295,6 +296,7 @@ public sealed class TerminalTabStatusEngine
 			_promptIsEmpty = null;
 			_stablePromptIsEmpty = null;
 			_promptEvidence = null;
+			_activityWasSubmitted = false;
 			if (mode == TerminalStartMode.Resume)
 			{
 				StartActivity(occurredAt, resumeReplay: true);
@@ -326,6 +328,7 @@ public sealed class TerminalTabStatusEngine
 				_stablePromptIsEmpty = null;
 				_promptEvidence = null;
 				StartActivity(occurredAt, restart: true);
+				_activityWasSubmitted = true;
 			}
 		});
 	}
@@ -414,9 +417,8 @@ public sealed class TerminalTabStatusEngine
 					break;
 				case TerminalScreenVerdictState.Done when stable && _activityInProgress:
 					ApplyVerdict(verdict);
-					// Finishing a resume replay is not a completion the user is waiting for:
-					// the agent only redrew the conversation it was restarted with.
-					var completedWork = !_activityIsResumeReplay;
+					// A short Claude reply can leave the last compaction marker in the viewport.
+					var completedWork = !_activityIsResumeReplay && (_activityWasSubmitted || !verdict.IsBackgroundCompletion);
 					EndActivity();
 					_hasUnreadCompletion |= completedWork;
 					break;
@@ -554,6 +556,7 @@ public sealed class TerminalTabStatusEngine
 	{
 		_activityInProgress = false;
 		_activityIsResumeReplay = false;
+		_activityWasSubmitted = false;
 	}
 
 	private TerminalTabIndicator CalculateIndicator()

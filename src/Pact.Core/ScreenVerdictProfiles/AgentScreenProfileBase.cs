@@ -55,6 +55,9 @@ namespace Pact.Core.ScreenVerdictProfiles
 		/// <summary>Matches the completion summary shown after the agent finishes a turn.</summary>
 		protected abstract Regex WorkedForRegex { get; }
 
+		/// <summary>Identifies completion markers for background maintenance that should finish quietly.</summary>
+		private protected virtual bool IsBackgroundCompletion(string description) => false;
+
 		/// <summary>Recognizes a screen on which the agent waits for a human answer.</summary>
 		protected abstract Regex InputRequestedRegex { get; }
 
@@ -239,7 +242,10 @@ namespace Pact.Core.ScreenVerdictProfiles
 					doneDescr,
 					lastMessage,
 					promptIsEmpty,
-					promptEvidence);
+					promptEvidence)
+				{
+					IsBackgroundCompletion = IsBackgroundCompletion(doneDescr)
+				};
 		}
 
 		private string ExtractLastMessage(string scope)

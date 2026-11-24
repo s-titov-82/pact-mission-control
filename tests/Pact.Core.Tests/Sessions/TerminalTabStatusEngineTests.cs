@@ -120,6 +120,62 @@ public sealed class TerminalTabStatusEngineTests
 		engine.CurrentIndicator.ShouldBe(TerminalTabIndicator.Unread);
 	}
 
+	[TestCase(false, TerminalTabIndicator.None)]
+	[TestCase(true, TerminalTabIndicator.Unread)]
+	public void Claude_idle_compaction_preserves_existing_unread(
+		bool hadUnread, TerminalTabIndicator expectedIndicator)
+	{
+		var engine = CreateEngine(windowVisible: true, windowActive: true, profile: ClaudeScreenProfile.Instance);
+		if (hadUnread)
+		{
+			engine.RestoreUnreadCompletion(T0);
+		}
+
+		const string previousTurn = "● Updated the report.\n\n✻ Cogitated for 1m 32s · done 15:31\n\n";
+		const string composer = "\n\n────────────────────────────────────────\n>\n────────────────────────────────────────";
+		engine.OnScreenSnapshot(previousTurn + "✻ Compacting…" + composer, T0.AddSeconds(1), stable: false);
+		engine.CurrentIndicator.ShouldBe(TerminalTabIndicator.Busy);
+
+		engine.OnScreenSnapshot(previousTurn +
+			"recap: Updated the report.\nRead Users.razor (34 lines)\nSkills restored (ru-writing)\n\n" +
+			"● Compacted while idle, before the prompt cache expired · turn off with \"idleCompaction\": false in settings.json" +
+			composer, T0.AddSeconds(2));
+
+		engine.ActivityInProgress.ShouldBeFalse();
+		engine.HasUnreadCompletion.ShouldBe(hadUnread);
+		engine.CurrentIndicator.ShouldBe(expectedIndicator);
+	}
+
+	[Test]
+	public void A_short_claude_reply_after_idle_compaction_still_marks_the_tab_unread()
+	{
+		var engine = CreateEngine(windowVisible: true, windowActive: true, profile: ClaudeScreenProfile.Instance);
+		const string composer = "\n\n────────────────────────────────────────\n>\n────────────────────────────────────────";
+		const string compaction = "● Compacted while idle, before the prompt cache expired\n\n";
+		engine.OnScreenSnapshot("✻ Compacting…" + composer, T0, stable: false);
+		engine.OnScreenSnapshot(compaction + composer, T0.AddSeconds(1));
+		engine.CurrentIndicator.ShouldBe(TerminalTabIndicator.None);
+
+		engine.OnUserInput("\r", T0.AddSeconds(2));
+		engine.OnScreenSnapshot(compaction + "✻ Thinking…" + composer, T0.AddSeconds(3), stable: false);
+		engine.OnScreenSnapshot(compaction + "> Say hello\n\n● Hello!" + composer, T0.AddSeconds(4));
+
+		engine.CurrentIndicator.ShouldBe(TerminalTabIndicator.Unread);
+	}
+
+	[Test]
+	public void Claude_work_completion_with_quoted_compaction_text_marks_the_tab_unread()
+	{
+		var engine = CreateEngine(windowVisible: true, windowActive: true, profile: ClaudeScreenProfile.Instance);
+		const string composer = "\n\n────────────────────────────────────────\n>\n────────────────────────────────────────";
+		engine.OnScreenSnapshot("✻ Cogitating…" + composer, T0, stable: false);
+
+		engine.OnScreenSnapshot("● Updated the report.\n\n✻ Cogitated for 1m 32s\n" +
+			"recap: The report explains \"Compacted while idle, before the prompt cache expired\"." + composer, T0.AddSeconds(1));
+
+		engine.CurrentIndicator.ShouldBe(TerminalTabIndicator.Unread);
+	}
+
 	[Test]
 	public void Restored_unread_remains_until_the_tab_is_selected_in_an_active_visible_window()
 	{
