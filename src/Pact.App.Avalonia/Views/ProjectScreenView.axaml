@@ -50,7 +50,7 @@
     <Grid x:Name="DocumentsPanel" Grid.Row="1" RowDefinitions="*,2*">
       <ScrollViewer x:Name="OverviewPanel" HorizontalScrollBarVisibility="Disabled">
         <StackPanel Margin="14,10" Spacing="6">
-          <Grid ColumnDefinitions="Auto,Auto,Auto" ColumnSpacing="6" HorizontalAlignment="Left">
+          <Grid ColumnDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="6" HorizontalAlignment="Left">
             <TextBlock FontSize="18" LineHeight="24" FontWeight="SemiBold" Text="{Binding Workspace.Name}" />
             <Button x:Name="EditProjectButton" Grid.Column="1" Classes="overview-inline" Width="24" Height="24"
                     ToolTip.Tip="Edit project settings" Click="OnEditProjectClicked">
@@ -59,6 +59,8 @@
             <Button x:Name="ProjectSkillMappingButton" Grid.Column="2" Height="24" MinHeight="0"
                     Content="Skill mapping" Padding="6,0" ToolTip.Tip="Configure skills for this project"
                     Click="OnProjectSkillMappingClicked" />
+            <Button Grid.Column="3" Height="24" MinHeight="0" Content="MCP catalog" Padding="6,0"
+                    ToolTip.Tip="Configure MCP servers for this project" Click="OnProjectMcpCatalogClicked" />
           </Grid>
           <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
             <Button Classes="overview-inline" ToolTip.Tip="Open project folder" Click="OnOpenFolderClicked">

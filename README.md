@@ -202,6 +202,22 @@ available ids changes, so restarting their terminal is unnecessary. Direct
 external edits are observed only after that Settings reload boundary or an
 application restart.
 
+Open **MCP catalog** under **Settings → Agents** or from the project's
+**Overview**. Select a Codex or Claude launch profile to see declarations
+in its native files and in the selected project. Edit native entries with
+the agent. Use **Add server** to register a streamable HTTP or stdio server
+in Pact, then set it **On** under **Profile defaults**. For one project,
+choose **Inherit**, **On**, or **Off**. Before **Apply**, Pact shows the
+affected profiles and the settings file it will write. ROOT sessions started
+from a launch profile use its defaults.
+
+After starting or restarting the session, open `/mcp` in the agent and find
+the server by the `pact_catalog_` name shown in the catalog. The agent reports
+connection and authentication status. Supply credentials through environment
+variable names or the agent's own sign-in. For stdio, install and update the
+executable with its own package manager. Edit a registered endpoint or command
+in Pact and review the affected profiles before applying the new definition.
+
 ## Build from source
 
 ```powershell

@@ -209,6 +209,19 @@ Shared native profiles
 are identified by configuration path. An explicit native configuration
 directory travels with the saved session for subsequent starts and resumes.
 
+`Settings/mcp-catalog.json` stores Pact-registered streamable HTTP and stdio
+definitions and their selections. A selection belongs to a launch profile ID
+and agent kind. An exact project root can override its profile default. The
+editor previews the affected profiles and atomically replaces this file after
+Apply. File-backed native MCP entries are shown by source and transport.
+
+At process start Pact appends Codex config flags or points Claude's
+`--mcp-config` at an immutable document under `Temp/Session/McpCatalog`.
+Both use `pact_catalog_` server names. The same launch can carry the
+independent Pact agent-control connection. Catalog entries carry environment
+variable names for credentials. Authentication, native policy and package
+updates belong to the agent or the server's own installation.
+
 ### Project Board
 
 `Pact.Core.Boards` owns immutable snapshots, commands, limits and transitions.

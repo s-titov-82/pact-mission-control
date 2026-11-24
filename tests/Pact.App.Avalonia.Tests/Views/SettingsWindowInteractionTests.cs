@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
@@ -293,8 +294,8 @@ public sealed class SettingsWindowInteractionTests : IDisposable
 		navigation.Children.OfType<TextBlock>().Select(heading => heading.Text).ShouldBe([
 			"Application", "Agents", "Commands and templates", "Reviews", "Web pages"]);
 		var buttons = navigation.Children.OfType<Button>().ToArray();
-		var catalog = buttons.Single(button => button.Tag is null);
-		buttons[Array.IndexOf(buttons, catalog) - 1].Content.ShouldBe("Terminal profiles");
+		var terminalProfiles = Array.FindIndex(buttons, button => Equals(button.Content, "Terminal profiles"));
+		buttons.Skip(terminalProfiles + 1).Take(2).Select(AutomationProperties.GetName).ShouldBe(["Skill catalog", "MCP catalog"]);
 		var sections = buttons.Select(button => button.Tag).OfType<SettingsSectionViewModelBase>();
 		sections.Select(section => section.NavigationLabel).ShouldBe([
 			"Appearance", "Terminal profiles", "Saved prompts", "Git actions",

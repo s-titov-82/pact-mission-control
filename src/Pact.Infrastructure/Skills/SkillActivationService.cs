@@ -357,20 +357,12 @@ public sealed partial class SkillActivationService(AppPaths paths, string? share
 		}
 
 		var executable = profile.Kind == AgentKind.Codex ? "codex" : "claude";
-		var match = ExecutablePattern().Match(profile.CommandTemplate.Trim());
-		var command = Path.GetFileNameWithoutExtension(match.Value.Trim('"'));
-		if (!PathsEqual.Equals(command, executable)
-			|| CustomConfigPattern().IsMatch(profile.CommandTemplate))
+		if (!MatchesNativeExecutable(profile) || CustomConfigPattern().IsMatch(profile.CommandTemplate))
 		{
 			throw new InvalidOperationException("This launch command's native skill configuration cannot be verified.");
 		}
 
-		var directory = profile.NativeConfigDirectory;
-		if (string.IsNullOrWhiteSpace(directory))
-		{
-			directory = InheritedHome(_userHome, profile.Kind);
-		}
-
+		var directory = NativeDirectoryOverride(profile, _userHome);
 		if (string.IsNullOrWhiteSpace(directory))
 		{
 			directory = Path.Combine(_userHome, "." + executable);
@@ -383,6 +375,21 @@ public sealed partial class SkillActivationService(AppPaths paths, string? share
 
 		return Path.GetFullPath(directory);
 	}
+
+	internal static bool MatchesNativeExecutable(AgentProfileRecord profile)
+	{
+		var executable = profile.Kind switch
+		{
+			AgentKind.Codex => "codex",
+			AgentKind.Claude => "claude",
+			_ => null
+		};
+		return executable is not null && PathsEqual.Equals(executable,
+			Path.GetFileNameWithoutExtension(ExecutablePattern().Match(profile.CommandTemplate.Trim()).Value.Trim('"')));
+	}
+
+	internal static string? NativeDirectoryOverride(AgentProfileRecord profile, string userHome) =>
+		string.IsNullOrWhiteSpace(profile.NativeConfigDirectory) ? InheritedHome(userHome, profile.Kind) : profile.NativeConfigDirectory;
 
 	private static string HomeVariable(AgentKind kind) => kind == AgentKind.Codex ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR";
 	internal static string? InheritedHome(string userHome, AgentKind kind) =>

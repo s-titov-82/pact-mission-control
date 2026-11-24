@@ -4,13 +4,59 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json.Nodes;
+using Pact.Core.AgentControl;
+using Pact.Core.Agents;
 using Pact.Infrastructure.AgentControl;
+using Pact.Infrastructure.Storage;
 
 namespace Pact.Infrastructure.Tests.AgentControl;
 
 public sealed class AgentControlClientInteropTests
 {
 	private const string Token = "interop-token";
+
+	[TestCase(AgentKind.Codex, "codex")]
+	[TestCase(AgentKind.Claude, "claude")]
+	[Explicit("Requires the installed agent CLI and loopback HTTP listeners.")]
+	public async Task Installed_agent_connects_to_selected_catalog_server_and_pact(AgentKind kind, string cli)
+	{
+		using var directory = TemporaryDirectory.Create();
+		await using ProbeServer pact = new();
+		await using ProbeServer probe = new();
+		var catalog = new McpCatalogService(new AppPaths(directory.Path));
+		var original = catalog.Read();
+		var profile = new AgentProfileRecord("native", kind, "Native", cli, null, "pwsh");
+		await catalog.SaveAsync(original, original.Settings with
+		{
+			Servers = [new("probe", probe.Address.AbsoluteUri, null, [], "PACT_AGENT_CONTROL_TOKEN")],
+			Selections = [new(profile.Id, kind, directory.Path, "probe", true)]
+		}, CancellationToken.None);
+		var pactInjection = AgentControlLaunchInjection.Create(AgentControlArgumentTemplates.For(kind),
+			[], directory.Path, "catalog-test", pact.Address, Token);
+		var configured = catalog.ComposeLaunch(profile, directory.Path, pactInjection);
+		IReadOnlyList<string> args = kind == AgentKind.Codex
+			? ["debug", "prompt-input", .. configured.Arguments]
+			: [.. configured.Arguments, "-p", "Reply only OK"];
+		using Process process = Start(cli, args, throughPowerShellProfile: true);
+		try
+		{
+			var streams = await Task.WhenAll(probe.GetOpened.Task, pact.GetOpened.Task).WaitAsync(TimeSpan.FromSeconds(20));
+			foreach (var stream in streams)
+			{
+				AssertSseRequest(stream, requireSessionId: kind == AgentKind.Codex);
+			}
+		}
+		catch (TimeoutException)
+		{
+			Stop(process);
+			throw new AssertionException($"{cli} did not open both streams. Catalog: {string.Join(", ", probe.SeenMethods)}. " +
+				$"Pact: {string.Join(", ", pact.SeenMethods)}. Exited with {process.ExitCode}.");
+		}
+		finally
+		{
+			Stop(process);
+		}
+	}
 
 	[Test]
 	[Explicit("Requires the installed Codex CLI and a loopback HTTP listener.")]

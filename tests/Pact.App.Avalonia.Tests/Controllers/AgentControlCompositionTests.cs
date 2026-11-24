@@ -15,6 +15,7 @@ using Pact.Core.Reviews;
 using Pact.Core.Sessions;
 using Pact.Core.Terminal;
 using Pact.Core.Workspaces;
+using Pact.Infrastructure.AgentControl;
 using Pact.Infrastructure.Storage;
 using Pact.Presentation.Services.Reviews;
 using Pact.Presentation.Services.WebMonitoring;
@@ -545,6 +546,21 @@ public sealed class AgentControlCompositionTests
 			.ShouldBe(CompositionFixture.SessionA);
 	}
 
+	[Test]
+	public async Task MalformedMcpCatalogReportsItsPathAndStillStartsTheSession()
+	{
+		await using CompositionFixture fixture = new(twoProjects: true, launchProfileId: "codex");
+		var catalogPath = new McpCatalogService(fixture.Paths).SettingsPath;
+		Directory.CreateDirectory(fixture.Paths.SettingsDirectory);
+		await File.WriteAllTextAsync(catalogPath, "{");
+		List<string> messages = [];
+		fixture.Controller.StatusMessage += (_, message) => messages.Add(message);
+		await fixture.InitializeAsync();
+
+		messages.Any(message => message.Contains(catalogPath, StringComparison.Ordinal)).ShouldBeTrue();
+		fixture.BackendOf(CompositionFixture.SessionA).LastStartOptions!.CommandLine.ShouldContain("mcp_servers.pact.url=");
+	}
+
 	[TestCase(true)]
 	[TestCase(false)]
 	public async Task Restore_and_manual_resume_suppress_Codex_updates_but_manual_fresh_start_does_not(bool agentControlEnabled)
@@ -855,14 +871,15 @@ public sealed class AgentControlCompositionTests
 		public CompositionFixture(
 			bool twoProjects,
 			Func<string, IReadOnlyList<string>, Task<string?>>? resolveCommandAsync = null,
-			bool agentControlEnabled = true)
+			bool agentControlEnabled = true,
+			string? launchProfileId = null)
 		{
 			var now = DateTimeOffset.UtcNow;
 			var rootA = Path.Combine(_temporaryDirectory.Path, ProjectA);
 			var rootB = Path.Combine(_temporaryDirectory.Path, ProjectB);
 			Directory.CreateDirectory(rootA);
 			Directory.CreateDirectory(rootB);
-			var first = Session(SessionA, rootA, now);
+			var first = Session(SessionA, rootA, now) with { LaunchProfileId = launchProfileId };
 			var second = Session(SessionB, twoProjects ? rootB : rootA, now);
 			ProjectRecord projectA = new(
 				ProjectA,

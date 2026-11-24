@@ -21,6 +21,9 @@ internal sealed partial class ProjectScreenView
 	/// <summary>Requests the skill mapping for the workspace currently displayed in the overview.</summary>
 	public event EventHandler<WorkspaceViewModel>? SkillMappingRequested;
 
+	/// <summary>Requests the MCP catalog with the current workspace selected.</summary>
+	public event EventHandler<WorkspaceViewModel>? McpCatalogRequested;
+
 	internal void ConfigureOverview(AvaloniaMainShellController controller, IExternalLauncher? externalLauncher)
 	{
 		_controller = controller;
@@ -142,6 +145,14 @@ internal sealed partial class ProjectScreenView
 		if (_screen is { } screen)
 		{
 			SkillMappingRequested?.Invoke(this, screen.Workspace);
+		}
+	}
+
+	private void OnProjectMcpCatalogClicked(object? sender, RoutedEventArgs e)
+	{
+		if (_screen is { } screen)
+		{
+			McpCatalogRequested?.Invoke(this, screen.Workspace);
 		}
 	}
 

@@ -111,9 +111,6 @@ public static class AgentControlLaunchInjection
 	/// </remarks>
 	private static string WriteConfiguration(string stagingDirectory, Uri endpoint)
 	{
-		Directory.CreateDirectory(stagingDirectory);
-		var path = Path.Combine(stagingDirectory, "pact-mcp.json");
-		var temporaryPath = Path.Combine(stagingDirectory, $".pact-mcp-{Guid.NewGuid():N}.tmp");
 		var json = new JsonObject
 		{
 			["mcpServers"] = new JsonObject
@@ -129,11 +126,27 @@ public static class AgentControlLaunchInjection
 				}
 			}
 		}.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+		return WriteConfiguration(stagingDirectory, "pact-mcp.json", json, overwrite: true);
+	}
+
+	internal static string WriteConfiguration(string directory, string fileName, string json, bool overwrite)
+	{
+		Directory.CreateDirectory(directory);
+		var path = Path.Combine(directory, fileName);
+		if (!overwrite && File.Exists(path))
+		{
+			return path;
+		}
+		var temporaryPath = Path.Combine(directory, $".pact-mcp-{Guid.NewGuid():N}.tmp");
 
 		try
 		{
 			File.WriteAllText(temporaryPath, json, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-			File.Move(temporaryPath, path, overwrite: true);
+			File.Move(temporaryPath, path, overwrite);
+		}
+		catch (IOException) when (!overwrite && File.Exists(path))
+		{
+			// Another launcher has already published the same content-addressed document.
 		}
 		finally
 		{

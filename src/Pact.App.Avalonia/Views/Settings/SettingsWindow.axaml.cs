@@ -116,6 +116,11 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 				ToolTip.SetTip(catalog, "Open skill catalog in a separate window");
 				catalog.Click += (_, _) => RunEvent("settings-skills", OpenSkillsAsync);
 				SectionList.Children.Add(catalog);
+				var mcp = new Button { Content = "MCP catalog" };
+				AutomationProperties.SetName(mcp, "MCP catalog");
+				ToolTip.SetTip(mcp, "Open the MCP server catalog in a separate window");
+				mcp.Click += (_, _) => RunEvent("settings-mcp-catalog", OpenMcpCatalogAsync);
+				SectionList.Children.Add(mcp);
 			}
 		}
 		viewModel.PropertyChanged += OnWindowViewModelPropertyChanged;
@@ -165,6 +170,28 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 		var selectedProfile = _viewModel.ActiveSection == launch ? (launch.SelectedItem as ShellProfileItemViewModel)?.Id : null;
 		using var catalog = new SkillCatalogWindow(new AppPaths(root), profiles,
 			projects.SelectMany(section => section.Items).Select(p => p.RootPath).ToArray(), selected, selectedProfileId: selectedProfile);
+		await catalog.ShowDialog(this);
+	}
+
+	private async Task OpenMcpCatalogAsync()
+	{
+		if (!_initialized || _viewModel is null)
+		{
+			return;
+		}
+		var launch = _viewModel.Sections.OfType<LaunchProfilesSectionViewModel>().Single();
+		var projects = _viewModel.Sections.OfType<ProjectsSectionViewModel>().ToArray();
+		if (launch.IsDirty || projects.Any(section => section.IsDirty))
+		{
+			StatusText.Text = "Save or revert profile and project edits before opening the MCP catalog.";
+			return;
+		}
+		var profiles = launch.Items.OfType<ShellProfileItemViewModel>().Select(item => item.ToProfile());
+		var root = Directory.GetParent(Path.GetDirectoryName(launch.FilePath)!)!.FullName;
+		var selectedProject = (_viewModel.ActiveSection as ProjectsSectionViewModel)?.SelectedItem?.RootPath;
+		var selectedProfile = _viewModel.ActiveSection == launch ? (launch.SelectedItem as ShellProfileItemViewModel)?.Id : null;
+		var catalog = new McpCatalogWindow(new AppPaths(root), profiles,
+			projects.SelectMany(section => section.Items).Select(item => item.RootPath), selectedProject, selectedProfile);
 		await catalog.ShowDialog(this);
 	}
 

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Pact.App.Avalonia.Lifecycle;
 using Pact.Core.AgentControl;
 using Pact.Core.Agents;
@@ -80,11 +81,11 @@ internal sealed class SessionLauncher(
 		var injection = CreateAgentLaunchInjection(session.Record);
 		try
 		{
-			string? diagnostic = null;
-			injection = await ApplySkillSettingsAsync(session, startPlan.CommandLine, injection, message => diagnostic = message, cancellationToken);
-			if (diagnostic != null)
+			List<string> diagnostics = [];
+			injection = await ApplyProfileSettingsAsync(session, startPlan.CommandLine, injection, diagnostics.Add, cancellationToken);
+			if (diagnostics.Count > 0)
 			{
-				await _reportStatusAsync(diagnostic);
+				await _reportStatusAsync(string.Join(Environment.NewLine, diagnostics));
 			}
 		}
 		catch
@@ -234,7 +235,7 @@ internal sealed class SessionLauncher(
 		}
 	}
 
-	private Task<LaunchInjection> ApplySkillSettingsAsync(SessionViewModel session, string commandLine, LaunchInjection injection,
+	private Task<LaunchInjection> ApplyProfileSettingsAsync(SessionViewModel session, string commandLine, LaunchInjection injection,
 		Action<string> reportDiagnostic, CancellationToken cancellationToken)
 	{
 		var record = session.Record;
@@ -258,7 +259,20 @@ internal sealed class SessionLauncher(
 		var saved = new AgentProfileRecord(id, record.Kind, record.Title, commandLine, record.ResumeCommand, string.Empty)
 		{ NativeConfigDirectory = record.NativeConfigDirectory };
 		var directory = session.IsRootItem ? null : session.ProjectRootPath ?? record.WorkingDirectory;
-		return Task.Run(() => new SkillActivationService(_appPaths).ComposeLaunch(saved, directory, injection, reportDiagnostic, record.WorkingDirectory), cancellationToken);
+		return Task.Run(() =>
+		{
+			var launch = new SkillActivationService(_appPaths).ComposeLaunch(saved, directory, injection, reportDiagnostic, record.WorkingDirectory);
+			var catalog = new McpCatalogService(_appPaths);
+			try
+			{
+				return catalog.ComposeLaunch(saved, directory, launch);
+			}
+			catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException or ArgumentException or InvalidOperationException)
+			{
+				reportDiagnostic($"Could not apply the MCP catalog for this launch. Check {catalog.SettingsPath}.");
+				return launch;
+			}
+		}, cancellationToken);
 	}
 
 	private void OnControllerExited(string sessionId, TerminalController controller) =>
