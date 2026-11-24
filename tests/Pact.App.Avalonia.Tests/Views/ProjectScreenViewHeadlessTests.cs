@@ -19,6 +19,24 @@ namespace Pact.App.Avalonia.Tests.Views;
 public sealed class ProjectScreenViewHeadlessTests
 {
 	[AvaloniaTest]
+	public async Task Overview_edit_button_aligns_with_skill_mapping_button()
+	{
+		await WithScreenAsync(new FileDiff(null, []), (_, view, window) =>
+		{
+			window.UpdateLayout();
+			var editButton = view.FindControl<Button>("EditProjectButton").ShouldNotBeNull();
+			var skillMappingButton = view.FindControl<Button>("ProjectSkillMappingButton").ShouldNotBeNull();
+			var editBounds = editButton.Bounds;
+			var skillMappingBounds = skillMappingButton.Bounds;
+
+			skillMappingBounds.Height.ShouldBeGreaterThan(0);
+			editBounds.Size.ShouldBe(new Size(skillMappingBounds.Height, skillMappingBounds.Height));
+			editBounds.Top.ShouldBe(skillMappingBounds.Top);
+			return Task.CompletedTask;
+		});
+	}
+
+	[AvaloniaTest]
 	public async Task Overview_skill_mapping_button_requests_the_displayed_workspace()
 	{
 		await WithScreenAsync(new FileDiff(null, []), (screen, view, _) =>

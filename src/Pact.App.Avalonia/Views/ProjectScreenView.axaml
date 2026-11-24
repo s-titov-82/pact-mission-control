@@ -52,7 +52,7 @@
         <StackPanel Margin="14,10" Spacing="6">
           <Grid ColumnDefinitions="Auto,Auto,Auto" ColumnSpacing="6" HorizontalAlignment="Left">
             <TextBlock FontSize="18" LineHeight="24" FontWeight="SemiBold" Text="{Binding Workspace.Name}" />
-            <Button x:Name="EditProjectButton" Grid.Column="1" Classes="overview-inline" Width="20" Height="20"
+            <Button x:Name="EditProjectButton" Grid.Column="1" Classes="overview-inline" Width="24" Height="24"
                     ToolTip.Tip="Edit project settings" Click="OnEditProjectClicked">
               <PathIcon Width="14" Height="14" Data="{StaticResource AppEditIcon}" />
             </Button>
