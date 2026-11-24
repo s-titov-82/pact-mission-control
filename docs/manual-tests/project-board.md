@@ -35,6 +35,14 @@ they do not certify drag gestures, native focus or visual layout.
 10. Change the project root through Settings. Pending text must save first.
     The new root opens its own board; the old JSON remains under Settings/Boards.
     Switch back and verify the original cards.
+11. Open a card without a description and click **Delete**. Its drawer closes
+    and the card disappears immediately. Add a description to another card and
+    click **Delete**. Dismiss the confirmation and verify the card stays. Repeat
+    and confirm that the card and its comments disappear.
+12. Archive two Done cards and leave a third card active. Open Archive and
+    select **Clean archive**. Decline once, then confirm. The archive empties,
+    its cleanup button becomes disabled, and the active card remains after a
+    restart.
 
 Record actual outcomes separately. A successful native WebView gate verifies
 terminal/browser integration, not these manual Board interactions.

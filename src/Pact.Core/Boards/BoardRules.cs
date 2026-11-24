@@ -67,18 +67,46 @@ public static class BoardRules
 			}), actor, now);
 		}
 
+		if (command is CleanArchive clean)
+		{
+			if (clean.ExpectedArchiveRevision != BoardRevisions.ForArchive(state))
+			{
+				return Reject(BoardMutationOutcome.Conflict);
+			}
+
+			var remaining = state.Cards.Where(card => !card.IsArchived).ToList();
+			return remaining.Count == state.Cards.Count
+				? Reject(BoardMutationOutcome.Empty)
+				: new(BoardMutationOutcome.Applied, state with { Cards = remaining.AsReadOnly() });
+		}
+
 		var cardId = command switch
 		{
 			UpdateCard update => update.CardId,
 			AddComment add => add.CardId,
 			DeleteComment delete => delete.CardId,
 			SetArchived archive => archive.CardId,
+			DeleteCard delete => delete.CardId,
 			_ => null
 		};
 		var card = state.Cards.FirstOrDefault(c => c.Id == cardId);
 		if (card is null)
 		{
 			return Reject(BoardMutationOutcome.NotFound);
+		}
+
+		if (command is DeleteCard deleteCard)
+		{
+			if (deleteCard.ExpectedDeletionRevision != BoardRevisions.ForDeletion(card))
+			{
+				return Reject(BoardMutationOutcome.Conflict);
+			}
+
+			return new(BoardMutationOutcome.Applied, state with
+			{
+				Cards = state.Cards.Where(candidate => candidate.Id != card.Id).ToList().AsReadOnly(),
+				OrderVersion = card.IsArchived ? state.OrderVersion : checked(state.OrderVersion + 1)
+			}, card.Id);
 		}
 
 		if (card.IsArchived && command is not SetArchived)

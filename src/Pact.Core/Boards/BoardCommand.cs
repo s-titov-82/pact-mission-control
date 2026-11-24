@@ -32,6 +32,10 @@ public sealed record AddComment(string CardId, string Text) : BoardCommand;
 public sealed record DeleteComment(string CardId, string CommentId) : BoardCommand;
 /// <summary>Archives Done or restores to the end of Done.</summary>
 public sealed record SetArchived(string CardId, bool Archived, string ExpectedCardRevision) : BoardCommand;
+/// <summary>Permanently removes one active or archived card with its comments.</summary>
+public sealed record DeleteCard(string CardId, string ExpectedDeletionRevision) : BoardCommand;
+/// <summary>Permanently removes the archive contents covered by the confirmation.</summary>
+public sealed record CleanArchive(string ExpectedArchiveRevision) : BoardCommand;
 /// <summary>Claims the first Ready card using the observed order token.</summary>
 public sealed record TakeNext(string ExpectedOrderRevision) : BoardCommand;
 
@@ -40,7 +44,7 @@ public enum BoardMutationOutcome
 {
 	/// <summary>The request was applied, possibly as a no-op.</summary>
 	Applied,
-	/// <summary>There are no Ready cards.</summary>
+	/// <summary>The requested collection has no cards.</summary>
 	Empty,
 	/// <summary>A supplied revision is stale.</summary>
 	Conflict,

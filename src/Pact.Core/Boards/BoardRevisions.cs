@@ -20,5 +20,19 @@ public static class BoardRevisions
 		return Hash(new { state.OrderVersion, Cards = state.Cards.Where(c => !c.IsArchived).Select(c => new { c.Id, c.Status }).ToArray() });
 	}
 
+	/// <summary>Protects the fields and discussion that will be removed together.</summary>
+	public static string ForDeletion(BoardCard card)
+	{
+		ArgumentNullException.ThrowIfNull(card);
+		return Hash(new { Fields = ForCard(card), card.NextCommentNumber, Comments = card.Comments.Select(comment => comment.Id) });
+	}
+
+	/// <summary>Protects the archive contents independently of active board changes.</summary>
+	public static string ForArchive(BoardState state)
+	{
+		ArgumentNullException.ThrowIfNull(state);
+		return Hash(state.Cards.Where(card => card.IsArchived).Select(ForDeletion));
+	}
+
 	private static string Hash<T>(T value) => Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(value)));
 }

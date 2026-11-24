@@ -92,6 +92,70 @@ public sealed class BoardRulesTests
 	}
 
 	[Test]
+	public void Deleting_a_ready_card_removes_its_discussion_and_invalidates_the_queue_token()
+	{
+		var state = Apply(ReadyPair(), new AddComment("a", "Result")).State;
+		var revision = BoardRevisions.ForDeletion(state.Cards[0]);
+		var deleted = Apply(state, new DeleteCard("a", revision));
+		deleted.Outcome.ShouldBe(BoardMutationOutcome.Applied);
+		deleted.State.Cards.ShouldBe([state.Cards[1]]);
+		Apply(deleted.State, new TakeNext(BoardRevisions.ForOrder(state))).Outcome.ShouldBe(BoardMutationOutcome.Conflict);
+		Apply(deleted.State, new DeleteCard("a", revision)).Outcome.ShouldBe(BoardMutationOutcome.NotFound);
+		var created = Apply(deleted.State, new CreateCard("New task", "", null));
+		created.State.Cards.Single(card => card.Id == created.CardId).Number.ShouldBe(state.NextCardNumber);
+	}
+
+	[TestCase(false)]
+	[TestCase(true)]
+	public void Delete_rejects_a_revision_before_a_description_or_comment_change(bool changeDescription)
+	{
+		var state = ReadyPair();
+		var card = state.Cards[0];
+		var command = new DeleteCard(card.Id, BoardRevisions.ForDeletion(card));
+		var changed = Apply(state, changeDescription
+			? new UpdateCard(card.Id, BoardRevisions.ForCard(card), new() { Description = new("New brief") })
+			: new AddComment(card.Id, "New comment")).State;
+		var rejected = Apply(changed, command);
+		rejected.Outcome.ShouldBe(BoardMutationOutcome.Conflict);
+		rejected.State.ShouldBeSameAs(changed);
+	}
+
+	[Test]
+	public void Deleting_one_archived_card_preserves_the_queue_and_other_archived_cards()
+	{
+		var archived = Card("archive", BoardCardStatus.Done) with { Number = 3, IsArchived = true };
+		var other = archived with { Id = "other", Number = 4 };
+		var active = ReadyPair();
+		var state = active with { Cards = [.. active.Cards, archived, other], NextCardNumber = 5 };
+		var result = Apply(state, new DeleteCard(archived.Id, BoardRevisions.ForDeletion(archived)));
+		result.Outcome.ShouldBe(BoardMutationOutcome.Applied);
+		result.State.Cards.ShouldBe([.. active.Cards, other]);
+		BoardRevisions.ForOrder(result.State).ShouldBe(BoardRevisions.ForOrder(state));
+	}
+
+	[Test]
+	public void Cleaning_archive_rejects_new_archived_cards_and_preserves_active_order_and_numbering()
+	{
+		var active = ReadyPair();
+		var archived = Card("archive", BoardCardStatus.Done) with { Number = 3, IsArchived = true };
+		var done = Card("done", BoardCardStatus.Done) with { Number = 4 };
+		var state = active with { Cards = [active.Cards[0], archived, active.Cards[1], done], NextCardNumber = 5 };
+		var command = new CleanArchive(BoardRevisions.ForArchive(state));
+		var changedArchive = Apply(state, new SetArchived(done.Id, true, BoardRevisions.ForCard(done))).State;
+		Apply(changedArchive, command).Outcome.ShouldBe(BoardMutationOutcome.Conflict);
+
+		var changedActive = Apply(state, new AddComment(done.Id, "Keep me")).State;
+		var cleaned = Apply(changedActive, command);
+		cleaned.Outcome.ShouldBe(BoardMutationOutcome.Applied);
+		cleaned.State.Cards.ShouldBe(changedActive.Cards.Where(card => !card.IsArchived));
+		cleaned.State.NextCardNumber.ShouldBe(state.NextCardNumber);
+		BoardRevisions.ForOrder(cleaned.State).ShouldBe(BoardRevisions.ForOrder(changedActive));
+		var empty = Apply(cleaned.State, new CleanArchive(BoardRevisions.ForArchive(cleaned.State)));
+		empty.Outcome.ShouldBe(BoardMutationOutcome.Empty);
+		empty.State.ShouldBeSameAs(cleaned.State);
+	}
+
+	[Test]
 	public void Move_invalid_anchor_leaves_whole_state_untouched()
 	{
 		var state = ReadyPair();

@@ -6,8 +6,10 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.LogicalTree;
 using Avalonia.Themes.Fluent;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Pact.App.Avalonia.Views;
+using Pact.App.Avalonia.Views.Dialogs;
 using Pact.Core.Boards;
 using Pact.Presentation.Services;
 using Pact.Presentation.ViewModels;
@@ -144,6 +146,153 @@ public sealed class ProjectBoardViewHeadlessTests
 	}
 
 	[AvaloniaTest]
+	public async Task Delete_without_description_removes_card_and_closes_editor_without_a_dialog()
+	{
+		await WithBoard(async (board, view, window) =>
+		{
+			await board.CreateAsync("Empty brief", CancellationToken.None);
+			Click(view, "DeleteCardButton");
+			window.OwnedWindows.ShouldBeEmpty();
+			board.Cards.ShouldBeEmpty();
+			view.FindControl<Border>("Drawer")!.IsVisible.ShouldBeFalse();
+		});
+	}
+
+	[AvaloniaTest]
+	public async Task Delete_with_description_requires_confirmation_and_keeps_a_declined_card()
+	{
+		await WithBoard(async (board, view, window) =>
+		{
+			await board.CreateAsync("Has a brief", CancellationToken.None);
+			view.FindControl<TextBox>("DescriptionBox")!.Text = "Pending Markdown";
+			Click(view, "DeleteCardButton");
+			board.Cards.Single().Title.ShouldBe("Has a brief");
+			Answer(window, "NoButton");
+			board.SelectedCard!.Description.ShouldBe("Pending Markdown");
+			Click(view, "DeleteCardButton");
+			Answer(window, "YesButton");
+			board.Cards.ShouldBeEmpty();
+		});
+	}
+
+	[AvaloniaTest]
+	public async Task Clean_archive_requires_confirmation_and_disables_its_button_when_empty()
+	{
+		await WithBoard(async (board, view, window) =>
+		{
+			await board.CreateAsync("Keep active", CancellationToken.None);
+			await board.CreateAsync("Archive me", CancellationToken.None);
+			await board.UpdateAsync(new() { Status = new(BoardCardStatus.Done) }, CancellationToken.None);
+			await board.ArchiveAsync(CancellationToken.None);
+			var clean = view.FindControl<Button>("CleanArchiveButton").ShouldNotBeNull();
+			clean.IsVisible.ShouldBeFalse();
+			Click(view, "ArchiveButton");
+			clean.IsVisible.ShouldBeTrue();
+			clean.IsEnabled.ShouldBeTrue();
+			await board.OpenAsync(board.Cards.Single().Id, CancellationToken.None);
+			Click(view, "CleanArchiveButton");
+			Answer(window, "NoButton");
+			board.SelectedCard!.Title.ShouldBe("Archive me");
+			Click(view, "CleanArchiveButton");
+			Answer(window, "YesButton");
+			board.Cards.ShouldBeEmpty();
+			view.FindControl<Border>("Drawer")!.IsVisible.ShouldBeFalse();
+			clean.IsEnabled.ShouldBeFalse();
+			Click(view, "ArchiveButton");
+			board.Cards.Single().Title.ShouldBe("Keep active");
+		});
+	}
+
+	[AvaloniaTest]
+	public async Task Delete_rejects_a_comment_added_while_confirming_and_keeps_the_editor()
+	{
+		await WithBoard(async (board, view, window) =>
+		{
+			await board.CreateAsync("Discussed card", CancellationToken.None);
+			var editor = board.Editor.ShouldNotBeNull();
+			editor.Description = "A brief";
+			Click(view, "DeleteCardButton");
+			window.OwnedWindows.OfType<MessageDialogWindow>().ShouldHaveSingleItem();
+			await board.Workspace.ExecuteAsync(new AddComment(editor.CardId, "New comment"), new("agent", "Agent"), CancellationToken.None);
+			Answer(window, "YesButton");
+			board.SelectedCard!.Comments.Single().Text.ShouldBe("New comment");
+			board.Editor.ShouldBeSameAs(editor);
+			var drawer = view.FindControl<Border>("Drawer").ShouldNotBeNull();
+			drawer.IsVisible.ShouldBeTrue();
+			drawer.IsEnabled.ShouldBeTrue();
+			view.FindControl<TextBlock>("ErrorText")!.Text.ShouldNotBeNull().ShouldContain("Conflict");
+		});
+	}
+
+	[AvaloniaTest]
+	public async Task Delete_preparation_keeps_its_save_error_visible_after_a_board_refresh()
+	{
+		await WithBoard(async (board, view, window) =>
+		{
+			await board.CreateAsync("Edited card", CancellationToken.None);
+			var editor = board.Editor.ShouldNotBeNull();
+			var card = board.SelectedCard.ShouldNotBeNull();
+			editor.Description = "Local brief";
+			await board.Workspace.ExecuteAsync(new UpdateCard(card.Id, BoardRevisions.ForCard(card), new() { Description = new("Agent brief") }),
+				new("agent", "Agent"), CancellationToken.None);
+			Click(view, "DeleteCardButton");
+			window.OwnedWindows.ShouldBeEmpty();
+			await board.Workspace.LoadAsync(CancellationToken.None);
+			view.FindControl<TextBlock>("ErrorText")!.Text.ShouldNotBeNull().ShouldContain("unsaved edits");
+			board.Editor.ShouldBeSameAs(editor);
+			editor.Description.ShouldBe("Local brief");
+			editor.Reload();
+		});
+	}
+
+	[AvaloniaTest]
+	public async Task Clean_archive_rejects_an_archive_change_while_confirming()
+	{
+		await WithBoard(async (board, view, window) =>
+		{
+			await board.CreateAsync("Already archived", CancellationToken.None);
+			await board.UpdateAsync(new() { Status = new(BoardCardStatus.Done) }, CancellationToken.None);
+			await board.ArchiveAsync(CancellationToken.None);
+			await board.CreateAsync("New archive entry", CancellationToken.None);
+			await board.UpdateAsync(new() { Status = new(BoardCardStatus.Done) }, CancellationToken.None);
+			var done = board.SelectedCard.ShouldNotBeNull();
+			Click(view, "ArchiveButton");
+			Click(view, "CleanArchiveButton");
+			window.OwnedWindows.OfType<MessageDialogWindow>().ShouldHaveSingleItem();
+			await board.Workspace.ExecuteAsync(new SetArchived(done.Id, true, BoardRevisions.ForCard(done)), new("agent", "Agent"), CancellationToken.None);
+			Answer(window, "YesButton");
+			board.Cards.Select(card => card.Title).ShouldBe(["Already archived", "New archive entry"]);
+			view.FindControl<TextBlock>("ErrorText")!.Text.ShouldNotBeNull().ShouldContain("The archive changed");
+		});
+	}
+
+	[AvaloniaTest]
+	public async Task Delete_from_archive_keeps_other_archived_cards_and_active_order()
+	{
+		await WithBoard(async (board, view, window) =>
+		{
+			await board.CreateAsync("First active", CancellationToken.None);
+			await board.CreateAsync("Second active", CancellationToken.None);
+			foreach (var title in new[] { "Remove archived", "Keep archived" })
+			{
+				await board.CreateAsync(title, CancellationToken.None);
+				await board.UpdateAsync(new() { Status = new(BoardCardStatus.Done) }, CancellationToken.None);
+				await board.ArchiveAsync(CancellationToken.None);
+			}
+			var order = board.Workspace.Snapshot!.OrderRevision;
+			Click(view, "ArchiveButton");
+			await board.OpenAsync(board.Cards[0].Id, CancellationToken.None);
+			Click(view, "DeleteCardButton");
+			window.OwnedWindows.ShouldBeEmpty();
+			board.Cards.Single().Title.ShouldBe("Keep archived");
+			view.FindControl<Border>("Drawer")!.IsVisible.ShouldBeFalse();
+			board.Workspace.Snapshot!.OrderRevision.ShouldBe(order);
+			Click(view, "ArchiveButton");
+			board.Cards.Select(card => card.Title).ShouldBe(["First active", "Second active"]);
+		});
+	}
+
+	[AvaloniaTest]
 	public async Task Keyboard_accessible_order_buttons_change_ready_queue()
 	{
 		await WithBoard(async (board, view, window) =>
@@ -161,6 +310,14 @@ public sealed class ProjectBoardViewHeadlessTests
 	}
 
 	private static void Click(ProjectBoardView view, string name) => view.FindControl<Button>(name)!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+	private static void Answer(Window owner, string buttonName)
+	{
+		Dispatcher.UIThread.RunJobs();
+		var dialog = owner.OwnedWindows.OfType<MessageDialogWindow>().Single();
+		dialog.FindControl<Button>(buttonName).ShouldNotBeNull().RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+		Dispatcher.UIThread.RunJobs();
+	}
 
 	private static async Task WithBoard(Func<ProjectBoardViewModel, ProjectBoardView, Window, Task> action)
 	{

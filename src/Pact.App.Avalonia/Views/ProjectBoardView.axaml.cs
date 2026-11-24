@@ -5,6 +5,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Pact.App.Avalonia.Views.Dialogs;
 using Pact.Core.Boards;
 using Pact.Presentation.Services;
 using Pact.Presentation.ViewModels;
@@ -77,6 +78,8 @@ internal sealed partial class ProjectBoardView : UserControl
 			ErrorText.Text = _board?.Error;
 			ErrorText.IsVisible = !string.IsNullOrEmpty(ErrorText.Text);
 			ArchiveButton.Content = _board?.ShowArchive == true ? "Active board" : "Archive";
+			CleanArchiveButton.IsVisible = _board?.ShowArchive == true;
+			CleanArchiveButton.IsEnabled = _board?.ShowArchive == true && _board.Cards.Count > 0;
 			if (!ReferenceEquals(_columnsSnapshot, _board?.Workspace.Snapshot) || _columnsArchive != (_board?.ShowArchive == true))
 			{
 				_columnsSnapshot = _board?.Workspace.Snapshot;
@@ -332,6 +335,63 @@ internal sealed partial class ProjectBoardView : UserControl
 		}
 	}
 	private void OnArchiveCard(object? sender, RoutedEventArgs e) => Run(async board => await board.ArchiveAsync(CancellationToken.None));
+	private void OnDeleteCard(object? sender, RoutedEventArgs e) => Run(async board =>
+	{
+		if (board.Editor is not { } editor)
+		{
+			return;
+		}
+
+		Drawer.IsEnabled = false;
+		try
+		{
+			if (await board.PrepareDeleteAsync(CancellationToken.None) is not { } deletion
+				|| !ReferenceEquals(_board, board) || !ReferenceEquals(board.Editor, editor))
+			{
+				return;
+			}
+
+			if (deletion.RequiresConfirmation
+				&& !await ConfirmRemovalAsync("Delete card", $"Permanently delete card #{deletion.Card.Number} and its comments?"))
+			{
+				return;
+			}
+
+			if (ReferenceEquals(_board, board) && ReferenceEquals(board.Editor, editor)
+				&& await board.DeleteAsync(deletion.Card, CancellationToken.None))
+			{
+				(board.ShowArchive ? ArchiveButton : CreateButton).Focus();
+			}
+		}
+		finally
+		{
+			Drawer.IsEnabled = true;
+		}
+	});
+
+	private void OnCleanArchive(object? sender, RoutedEventArgs e) => Run(async board =>
+	{
+		if (!board.ShowArchive || board.Workspace.Snapshot is not { } snapshot || board.Cards.Count == 0)
+		{
+			return;
+		}
+
+		var revision = BoardRevisions.ForArchive(snapshot.State);
+		if (await ConfirmRemovalAsync("Clean archive", "Permanently delete all archived cards and their comments?")
+			&& ReferenceEquals(_board, board) && board.ShowArchive
+			&& await board.CleanArchiveAsync(revision, CancellationToken.None))
+		{
+			ArchiveButton.Focus();
+		}
+	});
+
+	private async Task<bool> ConfirmRemovalAsync(string title, string message)
+	{
+		return TopLevel.GetTopLevel(this) is Window owner
+			&& await MessageDialogWindow.ShowOwnedAsync(owner,
+				new(title, message, MessageDialogButtons.YesNo, MessageDialogResult.No)) == MessageDialogResult.Yes;
+	}
+
 	private void OnMoveUp(object? sender, RoutedEventArgs e) => MoveSelected(-1);
 	private void OnMoveDown(object? sender, RoutedEventArgs e) => MoveSelected(1);
 	private void MoveSelected(int direction) => Run(async board =>

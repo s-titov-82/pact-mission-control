@@ -3,11 +3,12 @@
              xmlns:md="https://github.com/whistyun/Markdown.Avalonia"
              x:Class="Pact.App.Avalonia.Views.ProjectBoardView" x:CompileBindings="False">
   <Grid RowDefinitions="Auto,Auto,*" Margin="12">
-    <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
+    <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
       <TextBlock Text="Project board" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" />
       <Button Grid.Column="1" x:Name="RefreshButton" Content="Refresh" Click="OnRefresh" />
       <Button Grid.Column="2" x:Name="ArchiveButton" Content="Archive" Click="OnArchiveView" />
-      <Button Grid.Column="3" x:Name="CreateButton" Content="+ Create card" Click="OnCreate" />
+      <Button Grid.Column="3" x:Name="CleanArchiveButton" Content="Clean archive" Click="OnCleanArchive" IsVisible="False" />
+      <Button Grid.Column="4" x:Name="CreateButton" Content="+ Create card" Click="OnCreate" />
     </Grid>
     <TextBlock Grid.Row="1" x:Name="ErrorText" Margin="0,8" TextWrapping="Wrap" Foreground="{DynamicResource AppTextMutedBrush}" />
     <Grid Grid.Row="2">
@@ -55,6 +56,7 @@
                 <Button x:Name="MoveUpButton" Content="Move up" Click="OnMoveUp" />
                 <Button x:Name="MoveDownButton" Content="Move down" Click="OnMoveDown" />
                 <Button x:Name="ArchiveCardButton" Content="Archive card" Click="OnArchiveCard" />
+                <Button x:Name="DeleteCardButton" Content="Delete" Click="OnDeleteCard" />
               </StackPanel>
               <TextBlock Text="Comments" FontWeight="SemiBold" />
               <StackPanel x:Name="CommentsPanel" Spacing="12" />

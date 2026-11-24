@@ -125,6 +125,48 @@ public sealed class ProjectBoardViewModel : INotifyPropertyChanged, IDisposable
 		Editor?.Dispose();
 		Editor = null;
 	});
+	/// <summary>Flushes the selected editor and captures the saved card and its confirmation requirement.</summary>
+	public async Task<(BoardCard Card, bool RequiresConfirmation)?> PrepareDeleteAsync(CancellationToken cancellationToken)
+	{
+		(BoardCard, bool)? prepared = null;
+		await RunAsync(async () =>
+		{
+			if (SelectedCard is not { } displayed || Editor is not { } editor)
+			{
+				throw new InvalidOperationException("Select a card first.");
+			}
+
+			var hadDescription = !string.IsNullOrWhiteSpace(displayed.Description) || !string.IsNullOrWhiteSpace(editor.Description);
+			await Workspace.FlushAsync(cancellationToken);
+			if (ReferenceEquals(Editor, editor) && SelectedCard is { } saved)
+			{
+				prepared = (saved, hadDescription || !string.IsNullOrWhiteSpace(saved.Description));
+			}
+		});
+		return prepared;
+	}
+
+	/// <summary>Deletes the displayed revision and closes its editor after the saved result.</summary>
+	public Task<bool> DeleteAsync(BoardCard card, CancellationToken cancellationToken)
+	{
+		ArgumentNullException.ThrowIfNull(card);
+		return RemoveAsync(new DeleteCard(card.Id, BoardRevisions.ForDeletion(card)), cancellationToken);
+	}
+	/// <summary>Removes exactly the archive contents covered by the given revision.</summary>
+	public Task<bool> CleanArchiveAsync(string expectedArchiveRevision, CancellationToken cancellationToken) =>
+		RemoveAsync(new CleanArchive(expectedArchiveRevision), cancellationToken);
+
+	private Task<bool> RemoveAsync(BoardCommand command, CancellationToken cancellationToken) => RunAsync(async () =>
+	{
+		var result = await ApplyAsync(command, cancellationToken);
+		if (Editor is { } editor && !result.Snapshot.State.Cards.Any(card => card.Id == editor.CardId))
+		{
+			editor.Dispose();
+			Editor = null;
+			CommentText = string.Empty;
+		}
+	});
+
 	/// <summary>Appends the composer text once; failed writes retain it for inspection and retry.</summary>
 	public Task<bool> AddCommentAsync(CancellationToken cancellationToken) => RunAsync(async () =>
 	{
@@ -147,7 +189,10 @@ public sealed class ProjectBoardViewModel : INotifyPropertyChanged, IDisposable
 		var result = await Workspace.ExecuteAsync(command, new(null, "You"), cancellationToken);
 		if (result.Outcome != BoardMutationOutcome.Applied)
 		{
-			throw new InvalidOperationException($"Card was not changed: {result.Outcome}. Refresh and check the latest card.");
+			var message = command is CleanArchive
+				? "The archive changed. Review its contents before trying again."
+				: $"Card was not changed: {result.Outcome}. Refresh and check the latest card.";
+			throw new InvalidOperationException(message);
 		}
 		return result;
 	}
