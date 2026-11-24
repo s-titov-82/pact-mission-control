@@ -11,10 +11,12 @@ using Pact.Core.AgentControl;
 using Pact.Core.Agents;
 using Pact.Core.Platform;
 using Pact.Core.Projects;
+using Pact.Core.Reviews;
 using Pact.Core.Sessions;
 using Pact.Core.Terminal;
 using Pact.Core.Workspaces;
 using Pact.Infrastructure.Storage;
+using Pact.Presentation.Services.Reviews;
 using Pact.Presentation.Services.WebMonitoring;
 using Pact.Presentation.ViewModels;
 
@@ -147,9 +149,9 @@ public sealed class AgentControlCompositionTests
 	}
 
 	[Test]
-	public async Task A_review_passes_turns_through_the_tools_and_ends_in_the_log()
+	public async Task An_approved_review_offers_its_log_without_switching_from_another_project()
 	{
-		await using CompositionFixture fixture = new(twoProjects: false);
+		await using CompositionFixture fixture = new(twoProjects: true);
 		await fixture.InitializeAsync();
 		var backendCount = fixture.Backends.Count;
 		var requestTask = fixture.InvokeToolAsync(
@@ -166,6 +168,7 @@ public sealed class AgentControlCompositionTests
 		var turn = await fixture.InvokeToolAsync(reviewer.Record.Id, "pact_get_review_turn", new JsonObject());
 		turn.IsError.ShouldBeFalse(turn.Text);
 		var turnId = (string)JsonNode.Parse(turn.Text)!["turnId"]!;
+		await fixture.StartSessionAsync(CompositionFixture.SessionB);
 		var submitted = await fixture.InvokeToolAsync(
 			reviewer.Record.Id,
 			"pact_submit_review_turn",
@@ -176,9 +179,13 @@ public sealed class AgentControlCompositionTests
 		var log = Directory.GetFiles(Path.Combine(fixture.RootOf(CompositionFixture.ProjectA), ".pact", "reviews"), "*.md")
 			.ShouldHaveSingleItem();
 		(await File.ReadAllTextAsync(log)).ShouldContain("Looks right.");
-		var screen = fixture.Controller.PresentedSurface.ShouldBeOfType<PresentedSurface.Project>().Screen;
-		screen.SelectedTab.ShouldBe(ProjectScreenTab.ReviewLogs);
-		screen.SelectedReviewLog.ShouldNotBeNull().ShouldStartWith(".pact/reviews/");
+		fixture.Controller.PresentedSurface.ShouldBeOfType<PresentedSurface.Terminal>()
+			.Session.Record.Id.ShouldBe(CompositionFixture.SessionB);
+		var card = fixture.ViewModel.Attention.Items.Single(item => item.IsReviewResult);
+		card.Workspace!.Id.ShouldBe(CompositionFixture.ProjectA);
+		var result = card.Target.ShouldBeOfType<ReviewResult>();
+		result.State.ShouldBe(ReviewState.Completed);
+		result.RelativePath.ShouldBe($".pact/reviews/{Path.GetFileName(log)}");
 	}
 
 	[Test]
@@ -203,7 +210,7 @@ public sealed class AgentControlCompositionTests
 
 	[TestCase(false)]
 	[TestCase(true)]
-	public async Task Closing_review_participant_preserves_the_relays_newer_review_log_navigation(bool current)
+	public async Task Closing_a_review_participant_offers_the_log_and_follows_normal_close_navigation(bool current)
 	{
 		await using CompositionFixture fixture = new(twoProjects: true);
 		await fixture.InitializeAsync();
@@ -220,8 +227,11 @@ public sealed class AgentControlCompositionTests
 		{ await fixture.Controller.OpenProjectScreenAsync(other, ProjectScreenTab.Overview); }
 		await fixture.Controller.CloseSessionAsync(reviewer);
 		var screen = fixture.Controller.CurrentProjectScreen.ShouldNotBeNull();
-		screen.Workspace.ShouldBeSameAs(owner);
-		screen.SelectedTab.ShouldBe(ProjectScreenTab.ReviewLogs);
+		screen.Workspace.ShouldBeSameAs(current ? owner : other);
+		screen.SelectedTab.ShouldBe(ProjectScreenTab.Overview);
+		var card = fixture.ViewModel.Attention.Items.Single(item => item.IsReviewResult);
+		card.Workspace.ShouldBeSameAs(owner);
+		card.Target.ShouldBeOfType<ReviewResult>().State.ShouldBe(ReviewState.Aborted);
 	}
 
 	[Test]

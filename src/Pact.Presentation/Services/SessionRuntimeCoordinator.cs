@@ -177,7 +177,7 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 		Action<string, TerminalController> exited,
 		EventHandler<string>? outputHandler,
 		Func<string, Task>? inputWritingHandler,
-		EventHandler<string>? inputWrittenHandler,
+		EventHandler<(string Input, PromptSender Sender)>? inputWrittenHandler,
 		EventHandler<TerminalViewportChangedEventArgs>? viewportChangedHandler,
 		CancellationToken cancellationToken)
 	{
@@ -279,7 +279,7 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 		Action<string, TerminalController> exited,
 		EventHandler<string>? outputHandler,
 		Func<string, Task>? inputWritingHandler,
-		EventHandler<string>? inputWrittenHandler,
+		EventHandler<(string Input, PromptSender Sender)>? inputWrittenHandler,
 		EventHandler<TerminalViewportChangedEventArgs>? viewportChangedHandler,
 		CancellationToken cancellationToken)
 	{
@@ -864,7 +864,7 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 
 				EnsureScenarioControllerIsCurrent(sessionId, runtime, controller);
 				keyboardAtEnter = runtime.KeyboardInputCount;
-				await WriteRequiredInputAsync(controller, runtime.EncodeEnter()).ConfigureAwait(false);
+				await WriteRequiredInputAsync(controller, runtime.EncodeEnter(), sender).ConfigureAwait(false);
 				trace.Enter = trace.Elapsed();
 				return null;
 			},
@@ -916,7 +916,7 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 				}
 
 				EnsureScenarioControllerIsCurrent(sessionId, runtime, controller);
-				await WriteRequiredInputAsync(controller, runtime.EncodeEnter()).ConfigureAwait(false);
+				await WriteRequiredInputAsync(controller, runtime.EncodeEnter(), sender).ConfigureAwait(false);
 				trace.Repair = "enter";
 				return null;
 			},
@@ -1285,9 +1285,12 @@ public sealed class SessionRuntimeCoordinator : IDisposable
 			cancellationToken).ConfigureAwait(false);
 	}
 
-	private static async Task WriteRequiredInputAsync(TerminalController controller, string input)
+	private static async Task WriteRequiredInputAsync(
+		TerminalController controller,
+		string input,
+		PromptSender sender = PromptSender.Outsider)
 	{
-		if (!await controller.WriteInputAsync(input).ConfigureAwait(false))
+		if (!await controller.WriteInputAsync(input, sender).ConfigureAwait(false))
 		{
 			throw new InvalidOperationException("Target session input write failed.");
 		}

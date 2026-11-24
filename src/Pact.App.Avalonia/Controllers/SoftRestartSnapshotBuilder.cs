@@ -54,7 +54,7 @@ internal sealed class SoftRestartSnapshotBuilder
 		var diagnostics = _getDiagnostics();
 		var unreadTerminalIds = liveTerminalIds
 			.Where(id => diagnostics.TryGetValue(id, out var item)
-				&& item.HasUnreadCompletion)
+				&& item.HasUnreadCompletion && !item.HasReviewTurnUnread)
 			.ToArray();
 		var orchestratorId = _viewModel.OrchestratorSlot.Session?.Record.Id;
 		var orchestratorWasRunning = _viewModel.OrchestratorSlot.IsRunning

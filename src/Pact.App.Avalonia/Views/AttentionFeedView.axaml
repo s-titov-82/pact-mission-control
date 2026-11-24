@@ -25,22 +25,36 @@
       <ItemsControl ItemsSource="{Binding Items}">
         <ItemsControl.ItemTemplate>
           <DataTemplate>
-            <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
-                    Padding="8,5" Margin="0,0,0,4" ToolTip.Tip="{Binding ToolTip}">
-              <Grid ColumnDefinitions="18,*">
-                <TextBlock Classes="attention-glyph" FontWeight="Bold" VerticalAlignment="Center"
-                           Classes.question="{Binding Indicator, Converter={StaticResource IndicatorEquals}, ConverterParameter=InputRequested}"
-                           Classes.failed="{Binding Indicator, Converter={StaticResource IndicatorEquals}, ConverterParameter=Failed}"
-                           Text="{Binding Indicator, Converter={StaticResource Glyph}}" />
-                <StackPanel Grid.Column="1" Spacing="1">
+            <Panel Margin="0,0,0,4" ToolTip.Tip="{Binding ToolTip}">
+              <Button IsVisible="{Binding !IsReviewResult}" HorizontalAlignment="Stretch"
+                      HorizontalContentAlignment="Stretch" Padding="8,5">
+                <Grid ColumnDefinitions="18,*">
+                  <TextBlock Classes="attention-glyph" FontWeight="Bold" VerticalAlignment="Center"
+                             Classes.question="{Binding Indicator, Converter={StaticResource IndicatorEquals}, ConverterParameter=InputRequested}"
+                             Classes.failed="{Binding Indicator, Converter={StaticResource IndicatorEquals}, ConverterParameter=Failed}"
+                             Text="{Binding Indicator, Converter={StaticResource Glyph}}" />
+                  <StackPanel Grid.Column="1" Spacing="1">
+                    <TextBlock Text="{Binding OwnerName}" FontSize="11" TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource AppTextMutedBrush}" />
+                    <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="◇ Read later" IsVisible="{Binding IsMarkedForLater}" FontSize="11"
+                               Foreground="{DynamicResource AppAccentBrush}" />
+                  </StackPanel>
+                </Grid>
+              </Button>
+              <Border IsVisible="{Binding IsReviewResult}" Padding="8,5"
+                      BorderThickness="1" CornerRadius="4" BorderBrush="{DynamicResource AppBorderBrush}">
+                <StackPanel Spacing="4">
                   <TextBlock Text="{Binding OwnerName}" FontSize="11" TextTrimming="CharacterEllipsis"
                              Foreground="{DynamicResource AppTextMutedBrush}" />
                   <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
-                  <TextBlock Text="◇ Read later" IsVisible="{Binding IsMarkedForLater}" FontSize="11"
-                             Foreground="{DynamicResource AppAccentBrush}" />
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Button Content="View" />
+                    <Button Content="Close" Click="OnReviewResultClosed" />
+                  </StackPanel>
                 </StackPanel>
-              </Grid>
-            </Button>
+              </Border>
+            </Panel>
           </DataTemplate>
         </ItemsControl.ItemTemplate>
       </ItemsControl>

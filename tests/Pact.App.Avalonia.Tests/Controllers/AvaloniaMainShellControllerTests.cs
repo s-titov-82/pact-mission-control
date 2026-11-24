@@ -1196,8 +1196,8 @@ public sealed class AvaloniaMainShellControllerTests
 		workspace.Notes.ShouldBeEmpty();
 	}
 
-	// A confirmation dialog awaits the user while other surfaces can come up (a review finishing
-	// in another project opens its log), so deletion acts on the screen that was confirmed.
+	// A confirmation dialog awaits the user while other surfaces can come up,
+	// so deletion acts on the screen that was confirmed.
 	[Test]
 	public async Task Review_logs_are_deleted_on_the_confirmed_screen_even_after_it_is_left()
 	{

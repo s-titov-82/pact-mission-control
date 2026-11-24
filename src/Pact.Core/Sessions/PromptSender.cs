@@ -4,5 +4,8 @@ namespace Pact.Core.Sessions;
 public enum PromptSender
 {
 	/// <summary>Anyone putting a prompt into a session; a pending question refuses it.</summary>
-	Outsider
+	Outsider,
+
+	/// <summary>An automatic review trigger, whose completion is quiet in the attention feed.</summary>
+	Review
 }

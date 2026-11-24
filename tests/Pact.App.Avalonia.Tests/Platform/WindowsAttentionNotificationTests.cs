@@ -1,12 +1,54 @@
 using Pact.App.Avalonia.Platform;
 using Pact.Core.Agents;
+using Pact.Core.Projects;
+using Pact.Core.Reviews;
+using Pact.Core.RootTabs;
 using Pact.Core.Sessions;
+using Pact.Presentation.Services;
+using Pact.Presentation.Services.Reviews;
 using Pact.Presentation.ViewModels;
 
 namespace Pact.App.Avalonia.Tests.Platform;
 
 public sealed class WindowsAttentionNotificationTests
 {
+	[Test]
+	public void Review_journal_and_last_turn_are_quiet_until_the_author_finishes_reading_the_result()
+	{
+		var now = DateTimeOffset.UtcNow;
+		WorkspaceViewModel workspace = new(new ProjectRecord("project", "Project", @"C:\repo", now, now, null));
+		SessionViewModel author = new(new SessionRecord("author", AgentKind.Pwsh, "Author",
+			workspace.RootPath, "pwsh", null, SessionStatus.Running, now, now));
+		workspace.Sessions.Add(author);
+		using AttentionFeedViewModel feed = new([workspace], new(RootTabsRecord.CreateDefault()), new());
+		TerminalTabStatusCoordinator statuses = new(action => action());
+		statuses.RegisterSession(author);
+		statuses.OnLifecycleChanged(author.Record.Id, SessionStatus.Running, now);
+		List<AttentionItem> shown = [];
+		using AttentionNotificationList notifications = new((item, _) =>
+		{
+			shown.Add(item);
+			return new Reminder();
+		}, ex => Assert.Fail(ex.Message));
+		AppearancePreferences preferences = new(AppearanceMode.System) { ShowNotifications = true };
+		author.ApplyReviews([new ReviewSummary("review", workspace.Id, author.Record.Id, "reviewer",
+			ReviewState.Running, 1, ReviewRole.Author, "log", 1)]);
+		statuses.OnUserInput(author.Record.Id, "\r", now.AddSeconds(1));
+		author.ApplyReviews([]);
+		feed.AddReviewResult(new(workspace.Id, ".pact/reviews/log.md", "Review", ReviewState.MaxIterationsReached));
+		statuses.OnScreenSnapshot(author.Record.Id, @"PS C:\repo> ", now.AddSeconds(2));
+
+		author.Indicator.ShouldBe(TerminalTabIndicator.Unread);
+		feed.Items.ShouldHaveSingleItem().IsReviewResult.ShouldBeTrue();
+		notifications.Update(feed.Items, preferences);
+		shown.ShouldBeEmpty();
+
+		statuses.OnUserInput(author.Record.Id, "\r", now.AddSeconds(3));
+		statuses.OnScreenSnapshot(author.Record.Id, @"PS C:\repo> ", now.AddSeconds(4));
+		notifications.Update(feed.Items, preferences);
+		shown.ShouldHaveSingleItem().Target.ShouldBeSameAs(author);
+	}
+
 	[Test]
 	public void Feed_updates_only_notify_new_events_and_withdraw_resolved_events()
 	{

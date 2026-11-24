@@ -96,7 +96,8 @@ public sealed class TerminalTabStatusCoordinator
 			registration,
 			engine.CurrentIndicator,
 			engine.ActivityStartedAt,
-			engine.CurrentDescription);
+			engine.CurrentDescription,
+			hasReviewTurnUnread: false);
 		DispatchDiagnostics(registration, engine.CurrentDiagnostics);
 	}
 
@@ -180,12 +181,16 @@ public sealed class TerminalTabStatusCoordinator
 	}
 
 	/// <summary>Reports user input sent to a session. Unknown ids are ignored.</summary>
-	public void OnUserInput(string sessionId, string input, DateTimeOffset occurredAt)
+	public void OnUserInput(string sessionId, string input, DateTimeOffset occurredAt) =>
+		OnUserInput(sessionId, input, occurredAt, PromptSender.Outsider);
+
+	/// <summary>Reports accepted input and its sender to the session status engine.</summary>
+	public void OnUserInput(string sessionId, string input, DateTimeOffset occurredAt, PromptSender sender)
 	{
 		ArgumentNullException.ThrowIfNull(input);
 		if (TryGetEngine(sessionId, out var engine))
 		{
-			engine.OnUserInput(input, occurredAt);
+			engine.OnUserInput(input, occurredAt, sender);
 		}
 	}
 
@@ -298,7 +303,8 @@ public sealed class TerminalTabStatusCoordinator
 			registration,
 			args.Indicator,
 			args.ActivityStartedAt,
-			args.Description);
+			args.Description,
+			args.HasReviewTurnUnread);
 	}
 
 	private void OnDiagnosticsChanged(
@@ -327,7 +333,8 @@ public sealed class TerminalTabStatusCoordinator
 		Registration registration,
 		TerminalTabIndicator indicator,
 		DateTimeOffset? activityStartedAt,
-		string description) => _dispatchToUi(() =>
+		string description,
+		bool hasReviewTurnUnread) => _dispatchToUi(() =>
 												   {
 													   lock (_gate)
 													   {
@@ -341,7 +348,8 @@ public sealed class TerminalTabStatusCoordinator
 													   registration.Session.ApplyTerminalStatus(
 														   indicator,
 														   activityStartedAt,
-														   description);
+														   description,
+														   hasReviewTurnUnread);
 												   });
 
 	private void DispatchDiagnostics(

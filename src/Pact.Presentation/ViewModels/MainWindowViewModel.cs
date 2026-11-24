@@ -225,7 +225,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 	/// Whether any session has an unseen completion, which drives taskbar attention.
 	/// </summary>
 	public bool HasUnreadCompletions => Sessions.Any(session =>
-		session.Indicator == TerminalTabIndicator.Unread);
+		session.AttentionIndicator == TerminalTabIndicator.Unread);
 
 	/// <summary>
 	/// Selected terminal session, or <see langword="null"/>. Setting this clears the web page,
@@ -2407,7 +2407,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 
 	private void OnTerminalStatusSessionPropertyChanged(object? sender, PropertyChangedEventArgs args)
 	{
-		if (args.PropertyName is nameof(SessionViewModel.Indicator))
+		if (args.PropertyName is nameof(SessionViewModel.AttentionIndicator))
 		{
 			OnPropertyChanged(nameof(HasUnreadCompletions));
 		}

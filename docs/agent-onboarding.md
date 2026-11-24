@@ -35,7 +35,8 @@ The app must not become a headless API proxy for subscription TUI tools. Raw
 selection and manual insertion actions do not submit. Prompt and shell template
 actions submit when their Auto-submit option is enabled. Pact delivers review
 turn notices through ConPTY to already-live TUI sessions. Participants exchange
-review text through MCP, and completed review logs open in Docs.
+review text through MCP. Finished review journals appear in the attention feed
+with View and Close actions.
 
 ## Current Architecture
 

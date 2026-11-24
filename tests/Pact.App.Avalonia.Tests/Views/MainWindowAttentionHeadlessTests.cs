@@ -8,9 +8,11 @@ using Pact.App.Avalonia.Views;
 using Pact.Core.Agents;
 using Pact.Core.Platform;
 using Pact.Core.Projects;
+using Pact.Core.Reviews;
 using Pact.Core.Sessions;
 using Pact.Infrastructure.Storage;
 using Pact.Presentation.Services;
+using Pact.Presentation.Services.Reviews;
 using Pact.Presentation.ViewModels;
 
 namespace Pact.App.Avalonia.Tests.Views;
@@ -85,6 +87,49 @@ public sealed class MainWindowAttentionHeadlessTests
 		fixture.Statuses.OnScreenSnapshot("session-1", @"PS D:\> ", now.AddSeconds(2));
 
 		(attention.RequestCount > 0).ShouldBeTrue();
+		GC.KeepAlive(window);
+	}
+
+	[AvaloniaTest]
+	public async Task Ordinary_author_completion_during_review_reaches_the_feed_and_taskbar()
+	{
+		await using SessionFixture fixture = new();
+		FakeUserAttention attention = new();
+		using MainWindow window = new(fixture.Controller, userAttention: attention);
+		var session = fixture.ViewModel.Sessions.ShouldHaveSingleItem();
+		session.ApplyReviews([new ReviewSummary("review", "project-1", session.Record.Id, "reviewer",
+			ReviewState.Running, 1, ReviewRole.Reviewer, "log", 5)]);
+
+		var now = DateTimeOffset.UtcNow;
+		fixture.Statuses.OnLifecycleChanged(session.Record.Id, SessionStatus.Running, now);
+		fixture.Statuses.OnUserInput(session.Record.Id, "\r", now.AddSeconds(1));
+		fixture.Statuses.OnScreenSnapshot(session.Record.Id, @"PS D:\> ", now.AddSeconds(2));
+
+		fixture.ViewModel.Attention.Items.ShouldHaveSingleItem().Indicator.ShouldBe(TerminalTabIndicator.Unread);
+		fixture.ViewModel.HasUnreadCompletions.ShouldBeTrue();
+		session.HasReviewTurnUnread.ShouldBeFalse();
+		attention.RequestCount.ShouldBeGreaterThan(0);
+		GC.KeepAlive(window);
+	}
+
+	[AvaloniaTest]
+	public async Task Unread_from_a_review_turn_does_not_flash_the_taskbar()
+	{
+		await using SessionFixture fixture = new();
+		FakeUserAttention attention = new();
+		using MainWindow window = new(fixture.Controller, userAttention: attention);
+		var session = fixture.ViewModel.Sessions.ShouldHaveSingleItem();
+		session.ApplyReviews([new ReviewSummary("review", "project-1", session.Record.Id, "reviewer",
+			ReviewState.Running, 1, ReviewRole.Reviewer, "log", 5)]);
+
+		var now = DateTimeOffset.UtcNow;
+		fixture.Statuses.OnLifecycleChanged(session.Record.Id, SessionStatus.Running, now);
+		fixture.Statuses.OnUserInput(session.Record.Id, "\r", now.AddSeconds(1), PromptSender.Review);
+		session.ApplyReviews([]);
+		fixture.Statuses.OnScreenSnapshot(session.Record.Id, @"PS D:\> ", now.AddSeconds(2));
+
+		session.Indicator.ShouldBe(TerminalTabIndicator.Unread);
+		attention.RequestCount.ShouldBe(0);
 		GC.KeepAlive(window);
 	}
 

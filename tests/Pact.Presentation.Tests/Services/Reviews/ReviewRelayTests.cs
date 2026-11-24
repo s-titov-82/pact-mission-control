@@ -124,6 +124,7 @@ public sealed class ReviewRelayTests : IDisposable
 		approved.Succeeded.ShouldBeTrue();
 		host.ClosedSessions.ShouldBeEmpty();
 		host.OpenedDocuments.ShouldBeEmpty();
+		host.ReviewResults.ShouldBeEmpty();
 		host.Deliveries.Select(delivery => delivery.SessionId).ShouldBe([Reviewer]);
 		another.Failure!.Code.ShouldBe("pact-shutting-down");
 	}
@@ -140,7 +141,7 @@ public sealed class ReviewRelayTests : IDisposable
 			.WaitAsync(TimeSpan.FromSeconds(10));
 
 		host.ClosedSessions.ShouldBe([Reviewer]);
-		host.OpenedDocuments.ShouldHaveSingleItem();
+		host.ReviewResults.ShouldHaveSingleItem();
 		await host.WaitForDeliveriesAsync(2);
 		host.Deliveries.Select(delivery => delivery.SessionId).ShouldBe([Reviewer, Author]);
 		((string?)Turn(relay, Author)["state"]).ShouldBe("Completed");
@@ -244,6 +245,7 @@ public sealed class ReviewRelayTests : IDisposable
 		(await request).Failure!.Code.ShouldBe("review-start-failed");
 		host.Deliveries.ShouldBeEmpty();
 		host.OpenedDocuments.ShouldBeEmpty();
+		host.ReviewResults.ShouldBeEmpty();
 	}
 
 	[Test]
@@ -270,6 +272,8 @@ public sealed class ReviewRelayTests : IDisposable
 		result.Failure.Message.ShouldContain("Trust this folder?");
 		host.ClosedSessions.ShouldBeEmpty();
 		host.Deliveries.ShouldBeEmpty();
+		host.OpenedDocuments.ShouldBeEmpty();
+		host.ReviewResults.ShouldHaveSingleItem().State.ShouldBe(ReviewState.Failed);
 		(await ReadLogAsync(host)).ShouldContain("Ended: Failed");
 	}
 
@@ -482,7 +486,7 @@ public sealed class ReviewRelayTests : IDisposable
 	}
 
 	[Test]
-	public async Task Approval_closes_the_reviewer_opens_the_log_and_tells_the_author()
+	public async Task Approval_closes_the_reviewer_leaves_the_current_screen_and_tells_the_author()
 	{
 		var (relay, host) = Create();
 		var reviewId = (await relay.RequestAsync(Author, Request(), CancellationToken.None)).Payload!;
@@ -492,8 +496,12 @@ public sealed class ReviewRelayTests : IDisposable
 
 		result.Succeeded.ShouldBeTrue();
 		host.ClosedSessions.ShouldBe([Reviewer]);
-		host.OpenedDocuments.Single().ProjectId.ShouldBe("project-1");
-		host.OpenedDocuments.Single().RelativePath.ShouldStartWith(".pact/reviews/");
+		host.OpenedDocuments.ShouldBeEmpty();
+		var journal = host.ReviewResults.ShouldHaveSingleItem();
+		journal.ProjectId.ShouldBe("project-1");
+		journal.State.ShouldBe(ReviewState.Completed);
+		journal.RelativePath.ShouldStartWith(".pact/reviews/");
+		(await File.ReadAllTextAsync(Path.Combine(_root.Path, journal.RelativePath))).ShouldContain("Ended: Completed");
 		host.Deliveries.Select(delivery => delivery.SessionId).ShouldBe([Reviewer, Author]);
 		relay.Find(reviewId).ShouldBeNull();
 		var ended = Turn(relay, Author);
@@ -530,6 +538,9 @@ public sealed class ReviewRelayTests : IDisposable
 		await relay.SubmitAsync(Author, (string)Turn(relay, Author)["turnId"]!, "fixed", false, CancellationToken.None);
 
 		host.ClosedSessions.ShouldBe([Reviewer]);
+		host.ReviewResults.ShouldHaveSingleItem().State.ShouldBe(ReviewState.MaxIterationsReached);
+		await host.WaitForDeliveriesAsync(3);
+		host.Deliveries.Select(delivery => delivery.SessionId).ShouldBe([Reviewer, Author, Author]);
 		((string?)Turn(relay, Author)["state"]).ShouldBe("MaxIterationsReached");
 	}
 
@@ -584,6 +595,7 @@ public sealed class ReviewRelayTests : IDisposable
 
 		host.Deliveries.Count.ShouldBe(1);
 		host.OpenedDocuments.ShouldBeEmpty();
+		host.ReviewResults.ShouldBeEmpty();
 		host.ClosedSessions.ShouldBeEmpty();
 		(await ReadLogAsync(host)).ShouldContain("Ended: Aborted");
 	}
@@ -620,6 +632,7 @@ public sealed class ReviewRelayTests : IDisposable
 		relay.Find(reviewId).ShouldBeNull();
 		host.ClosedSessions.ShouldBe([Reviewer]);
 		host.Deliveries.Select(delivery => delivery.SessionId).ShouldBe([Reviewer, Author]);
+		host.ReviewResults.ShouldBeEmpty();
 		host.Traces.ShouldContain(line => line.Contains("log-failed", StringComparison.Ordinal));
 	}
 
@@ -700,6 +713,7 @@ public sealed class ReviewRelayTests : IDisposable
 		((string?)Turn(relay, Author)["state"]).ShouldBe("Aborted");
 		host.Deliveries.Count.ShouldBe(1);
 		host.OpenedDocuments.ShouldBeEmpty();
+		host.ReviewResults.ShouldBeEmpty();
 		host.ClosedSessions.ShouldBeEmpty();
 		(await ReadLogAsync(host)).ShouldContain("Ended: Aborted");
 	}
@@ -829,6 +843,7 @@ public sealed class ReviewRelayTests : IDisposable
 		public List<(string SessionId, string Text, CancellationToken Token)> Deliveries { get; } = [];
 		public List<string> ClosedSessions { get; } = [];
 		public List<(string ProjectId, string RelativePath)> OpenedDocuments { get; } = [];
+		public List<ReviewResult> ReviewResults { get; } = [];
 		public List<string> Traces { get; } = [];
 
 		public TaskCompletionSource<ReviewerStart> HoldStart() =>
@@ -924,6 +939,12 @@ public sealed class ReviewRelayTests : IDisposable
 		public Task OpenProjectDocumentAsync(string projectId, string relativePath)
 		{
 			OpenedDocuments.Add((projectId, relativePath));
+			return Task.CompletedTask;
+		}
+
+		public Task PublishReviewResultAsync(ReviewResult result)
+		{
+			ReviewResults.Add(result);
 			return Task.CompletedTask;
 		}
 

@@ -24,4 +24,7 @@ public sealed class TerminalTabIndicatorChangedEventArgs(
 
 	/// <summary>Latest accepted text describing the classifier state.</summary>
 	public string Description { get; } = description;
+
+	/// <summary>Whether all pending unread completions came from automatic review turns.</summary>
+	public bool HasReviewTurnUnread { get; init; }
 }

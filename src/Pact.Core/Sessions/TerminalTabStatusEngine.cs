@@ -22,8 +22,10 @@ public sealed class TerminalTabStatusEngine
 	// Set while the activity in progress is only the agent redrawing a resumed conversation.
 	private bool _activityIsResumeReplay;
 	private bool _activityWasSubmitted;
+	private bool _lastSubmissionWasReview;
 	private long _activityEpoch;
 	private bool _hasUnreadCompletion;
+	private bool _hasOrdinaryUnread;
 	private bool _inputRequested;
 	private string _inputRequestStatusLine = string.Empty;
 	private bool? _promptIsEmpty;
@@ -172,7 +174,11 @@ public sealed class TerminalTabStatusEngine
 		Process(
 			TerminalTabEventKind.UnreadRestored,
 			occurredAt,
-			() => _hasUnreadCompletion = true);
+			() =>
+			{
+				_hasUnreadCompletion = true;
+				_hasOrdinaryUnread = true;
+			});
 
 	/// <summary>
 	/// Atomically reads the delivery-relevant status retained from settled screen evidence.
@@ -258,6 +264,7 @@ public sealed class TerminalTabStatusEngine
 			if (status is SessionStatus.Stopped or SessionStatus.Exited or SessionStatus.Failed)
 			{
 				EndActivity();
+				_lastSubmissionWasReview = false;
 				_inputRequested = false;
 				_inputRequestStatusLine = string.Empty;
 			}
@@ -297,6 +304,7 @@ public sealed class TerminalTabStatusEngine
 			_stablePromptIsEmpty = null;
 			_promptEvidence = null;
 			_activityWasSubmitted = false;
+			_lastSubmissionWasReview = false;
 			if (mode == TerminalStartMode.Resume)
 			{
 				StartActivity(occurredAt, resumeReplay: true);
@@ -307,7 +315,11 @@ public sealed class TerminalTabStatusEngine
 	/// Records user input. Only input containing a carriage return starts an activity, so
 	/// ordinary typing into the composer does not mark the tab busy.
 	/// </summary>
-	public void OnUserInput(string input, DateTimeOffset occurredAt)
+	public void OnUserInput(string input, DateTimeOffset occurredAt) =>
+		OnUserInput(input, occurredAt, PromptSender.Outsider);
+
+	/// <summary>Records accepted input and retains what submitted the activity.</summary>
+	public void OnUserInput(string input, DateTimeOffset occurredAt, PromptSender sender)
 	{
 		ArgumentNullException.ThrowIfNull(input);
 		Process(TerminalTabEventKind.UserInput, occurredAt, () =>
@@ -327,6 +339,9 @@ public sealed class TerminalTabStatusEngine
 				_promptIsEmpty = null;
 				_stablePromptIsEmpty = null;
 				_promptEvidence = null;
+				// A review trigger queued behind submitted ordinary work must not mute its reply.
+				_lastSubmissionWasReview = sender == PromptSender.Review
+					&& (!_activityWasSubmitted || _lastSubmissionWasReview);
 				StartActivity(occurredAt, restart: true);
 				_activityWasSubmitted = true;
 			}
@@ -418,9 +433,13 @@ public sealed class TerminalTabStatusEngine
 				case TerminalScreenVerdictState.Done when stable && _activityInProgress:
 					ApplyVerdict(verdict);
 					// A short Claude reply can leave the last compaction marker in the viewport.
-					var completedWork = !_activityIsResumeReplay && (_activityWasSubmitted || !verdict.IsBackgroundCompletion);
+					if (!_activityIsResumeReplay && (_activityWasSubmitted || !verdict.IsBackgroundCompletion))
+					{
+						_hasUnreadCompletion = true;
+						// An automatic continuation belongs to the last submitted turn.
+						_hasOrdinaryUnread |= !_lastSubmissionWasReview;
+					}
 					EndActivity();
-					_hasUnreadCompletion |= completedWork;
 					break;
 				case TerminalScreenVerdictState.InputRequested when stable:
 					ApplyVerdict(verdict);
@@ -464,16 +483,22 @@ public sealed class TerminalTabStatusEngine
 			if (_selected && _windowVisible && _windowActive)
 			{
 				_hasUnreadCompletion = false;
+				_hasOrdinaryUnread = false;
 			}
 
 			var next = CalculateIndicator();
-			if (next != _currentIndicator || _currentDescription != previousDescription)
+			var reviewTurnUnread = HasReviewTurnUnreadUnsafe;
+			if (next != _currentIndicator || _currentDescription != previousDescription
+				|| reviewTurnUnread != previousDiagnostics.HasReviewTurnUnread)
 			{
 				_currentIndicator = next;
 				change = new TerminalTabIndicatorChangedEventArgs(
 					next,
 					_activityStartedAt,
-					_currentDescription);
+					_currentDescription)
+				{
+					HasReviewTurnUnread = reviewTurnUnread
+				};
 			}
 
 			var currentDiagnostics = CreateDiagnosticsUnsafe();
@@ -496,6 +521,8 @@ public sealed class TerminalTabStatusEngine
 		}
 	}
 
+	private bool HasReviewTurnUnreadUnsafe => _hasUnreadCompletion && !_hasOrdinaryUnread;
+
 	private TerminalClassifierDiagnostics CreateDiagnosticsUnsafe() => new(
 		SessionId,
 		TerminalKind,
@@ -514,7 +541,10 @@ public sealed class TerminalTabStatusEngine
 		LastRows,
 		_lastClassificationAt,
 		_promptEvidence,
-		_currentVerdictState);
+		_currentVerdictState)
+	{
+		HasReviewTurnUnread = HasReviewTurnUnreadUnsafe
+	};
 
 	private void ApplyVerdict(TerminalScreenVerdict verdict)
 	{

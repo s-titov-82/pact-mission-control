@@ -45,7 +45,11 @@ public sealed record TerminalClassifierDiagnostics(
 	int? Rows,
 	DateTimeOffset? LastClassificationAt,
 	TerminalPromptEvidence? PromptEvidence = null,
-	TerminalScreenVerdictState? AcceptedVerdictState = null);
+	TerminalScreenVerdictState? AcceptedVerdictState = null)
+{
+	/// <summary>Whether all pending unread completions came from automatic review turns.</summary>
+	public bool HasReviewTurnUnread { get; init; }
+}
 
 /// <summary>Reports a change to one session's classifier diagnostics.</summary>
 public sealed class TerminalClassifierDiagnosticsChangedEventArgs : EventArgs

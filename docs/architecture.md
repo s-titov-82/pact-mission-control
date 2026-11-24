@@ -355,8 +355,17 @@ Every review keeps a Markdown log in `.pact/reviews/` of the author's project
 (header, each accepted turn as submitted, footer), appended after each turn;
 `.pact/.gitignore` ignores the folder. On Completed or MaxIterationsReached the
 reviewer tab closes the way the user would close it; on Failed or Aborted it
-stays. Every end opens the log in the project's Docs pane and tells the author
-with a last trigger, except during shutdown. Pausing or closing a project ends
+stays. A finished journal appears in the attention feed without a Windows
+notification. View opens the journal in Review logs and clears its card.
+Close clears the card and keeps the journal. Pact tells the author with a last
+trigger when the author is still participating. Shutdown skips these actions.
+Unread from work submitted by an automatic review trigger stays on the terminal
+row for the current run. This also covers continuations that start without a
+new submission. Ordinary replies still reach the attention feed and survive a
+restart, including replies in a tab that is taking part in a review.
+Finished review cards live in memory, and their journals remain available under
+Review logs after restart.
+Input requests and failures still reach the attention feed. Pausing or closing a project ends
 the reviews its sessions take part in. Startup removes `.pact-reviews`
 directories left by older versions; generic `.reviews` directories are never
 owned by Pact.

@@ -12,7 +12,6 @@ namespace Pact.Presentation.ViewModels;
 /// </summary>
 public sealed class SessionViewModel : INotifyPropertyChanged
 {
-
 	/// <summary>
 	/// Creates a view model over a saved session.
 	/// </summary>
@@ -89,6 +88,15 @@ public sealed class SessionViewModel : INotifyPropertyChanged
 	/// </summary>
 	public TerminalTabIndicator Indicator { get; private set; }
 
+	/// <summary>The terminal indicator eligible for attention outside the terminal tree.</summary>
+	internal TerminalTabIndicator AttentionIndicator =>
+		Indicator == TerminalTabIndicator.Unread && HasReviewTurnUnread
+			? TerminalTabIndicator.None
+			: Indicator;
+
+	/// <summary>Whether the pending unread completions all came from automatic review turns.</summary>
+	public bool HasReviewTurnUnread { get; private set; }
+
 	/// <summary>
 	/// Whether the tree row needs its single status cell for an engine indicator or an explicit
 	/// ROOT pause glyph.
@@ -125,7 +133,8 @@ public sealed class SessionViewModel : INotifyPropertyChanged
 	internal void ApplyTerminalStatus(
 		TerminalTabIndicator indicator,
 		DateTimeOffset? activityStartedAt,
-		string statusDescription)
+		string statusDescription,
+		bool hasReviewTurnUnread = false)
 	{
 		if (StatusDescription != statusDescription)
 		{
@@ -139,15 +148,30 @@ public sealed class SessionViewModel : INotifyPropertyChanged
 			OnPropertyChanged(nameof(BusySince));
 		}
 
-		if (Indicator == indicator)
+		var indicatorChanged = Indicator != indicator;
+		if (!indicatorChanged && HasReviewTurnUnread == hasReviewTurnUnread)
 		{
 			return;
 		}
 
+		var previousAttention = AttentionIndicator;
+		var previousReviewTurnUnread = HasReviewTurnUnread;
+		HasReviewTurnUnread = hasReviewTurnUnread;
 		Indicator = indicator;
-		OnPropertyChanged(nameof(Indicator));
-		OnPropertyChanged(nameof(ShowStatusIndicator));
-		OnPropertyChanged(nameof(ShowPausedIndicator));
+		if (indicatorChanged)
+		{
+			OnPropertyChanged(nameof(Indicator));
+			OnPropertyChanged(nameof(ShowStatusIndicator));
+			OnPropertyChanged(nameof(ShowPausedIndicator));
+		}
+		if (HasReviewTurnUnread != previousReviewTurnUnread)
+		{
+			OnPropertyChanged(nameof(HasReviewTurnUnread));
+		}
+		if (AttentionIndicator != previousAttention)
+		{
+			OnPropertyChanged(nameof(AttentionIndicator));
+		}
 	}
 
 	/// <summary>Shows the review among <paramref name="reviews"/> that this session takes part in.</summary>

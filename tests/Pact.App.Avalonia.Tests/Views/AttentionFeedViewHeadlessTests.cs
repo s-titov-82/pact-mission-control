@@ -33,7 +33,7 @@ public sealed class AttentionFeedViewHeadlessTests
 			Dispatcher.UIThread.RunJobs();
 			window.UpdateLayout();
 			view.IsVisible.ShouldBeTrue();
-			var button = view.GetVisualDescendants().OfType<Button>().ShouldHaveSingleItem();
+			var button = view.GetVisualDescendants().OfType<Button>().Where(button => button.IsEffectivelyVisible).ShouldHaveSingleItem();
 			button.GetVisualDescendants().OfType<TextBlock>().Select(text => text.Text).ShouldContain("ROOT");
 			button.GetVisualDescendants().OfType<TextBlock>().Select(text => text.Text).ShouldContain("Build results");
 			List<AttentionItem> requested = [];

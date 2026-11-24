@@ -1,5 +1,6 @@
 using Pact.Core.AgentControl;
 using Pact.Core.Agents;
+using Pact.Core.Reviews;
 using Pact.Core.Sessions;
 
 namespace Pact.Presentation.Services.Reviews;
@@ -15,6 +16,13 @@ public sealed record ReviewProject(string ProjectId, string RootPath, string Ses
 /// <param name="Ready">The reviewer is ready for a prompt.</param>
 /// <param name="StatusLine">What blocked it when not ready.</param>
 public sealed record ReviewerStart(bool Ready, string StatusLine);
+
+/// <summary>A finished review with a journal available for the user to open.</summary>
+/// <param name="ProjectId">Owning project.</param>
+/// <param name="RelativePath">Journal path relative to the project root.</param>
+/// <param name="ReviewName">The review type's display name.</param>
+/// <param name="State">How the review ended.</param>
+public sealed record ReviewResult(string ProjectId, string RelativePath, string ReviewName, ReviewState State);
 
 /// <summary>The shell operations a review relay needs.</summary>
 public interface IReviewRelayHost
@@ -46,6 +54,9 @@ public interface IReviewRelayHost
 
 	/// <summary>Shows a project document and switches the user to it.</summary>
 	Task OpenProjectDocumentAsync(string projectId, string relativePath);
+
+	/// <summary>Offers the finished journal without navigating away from the user's current view.</summary>
+	Task PublishReviewResultAsync(ReviewResult result);
 
 	/// <summary>Writes a fact to the application log; never message text.</summary>
 	void Trace(string line);

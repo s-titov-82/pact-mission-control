@@ -177,6 +177,65 @@ public sealed class TerminalTabStatusEngineTests
 	}
 
 	[Test]
+	public void A_review_completion_does_not_hide_an_existing_ordinary_unread_reply()
+	{
+		var engine = CreateEngine(windowVisible: true, windowActive: true);
+		engine.OnUserInput("\r", T0);
+		engine.OnScreenSnapshot("Ordinary reply", T0.AddSeconds(1));
+
+		engine.OnUserInput("\r", T0.AddSeconds(2), PromptSender.Review);
+		engine.OnScreenSnapshot("Review reply", T0.AddSeconds(3));
+
+		engine.CurrentIndicator.ShouldBe(TerminalTabIndicator.Unread);
+		engine.CurrentDiagnostics.HasReviewTurnUnread.ShouldBeFalse();
+	}
+
+	[Test]
+	public void A_review_trigger_queued_behind_a_submitted_user_turn_keeps_its_reply_ordinary()
+	{
+		var engine = CreateEngine(windowVisible: true, windowActive: true);
+		engine.OnUserInput("\r", T0);
+		engine.CurrentIndicator.ShouldBe(TerminalTabIndicator.Busy);
+		engine.OnUserInput("\r", T0.AddSeconds(1), PromptSender.Review);
+		engine.OnScreenSnapshot("Ordinary reply", T0.AddSeconds(2));
+
+		engine.CurrentIndicator.ShouldBe(TerminalTabIndicator.Unread);
+		engine.CurrentDiagnostics.HasReviewTurnUnread.ShouldBeFalse();
+	}
+
+	[TestCase(false)]
+	[TestCase(true)]
+	public void An_automatic_continuation_keeps_the_review_origin_until_the_next_ordinary_submission(bool acknowledgeFirstReply)
+	{
+		TerminalScreenVerdict done = new(TerminalScreenVerdictState.Done, "Done");
+		ScriptedProfile profile = new() { Verdict = done };
+		var engine = CreateEngine(windowVisible: true, windowActive: true, profile: profile);
+		engine.OnUserInput("\r", T0, PromptSender.Review);
+		engine.OnScreenSnapshot("Review reply", T0.AddSeconds(1));
+		engine.CurrentDiagnostics.HasReviewTurnUnread.ShouldBeTrue();
+
+		if (acknowledgeFirstReply)
+		{
+			engine.SetSelected(true, T0.AddSeconds(2));
+			engine.SetSelected(false, T0.AddSeconds(3));
+			engine.HasUnreadCompletion.ShouldBeFalse();
+		}
+
+		profile.Verdict = new(TerminalScreenVerdictState.Busy, "Running follow-up");
+		engine.OnScreenSnapshot("Background task notification", T0.AddSeconds(4));
+		engine.CurrentIndicator.ShouldBe(TerminalTabIndicator.Busy);
+		profile.Verdict = done;
+		engine.OnScreenSnapshot("Review follow-up", T0.AddSeconds(5));
+		engine.CurrentIndicator.ShouldBe(TerminalTabIndicator.Unread);
+		engine.CurrentDiagnostics.HasReviewTurnUnread.ShouldBeTrue();
+
+		engine.OnUserInput("\r", T0.AddSeconds(6));
+		engine.OnScreenSnapshot("Ordinary reply", T0.AddSeconds(7));
+		engine.CurrentIndicator.ShouldBe(TerminalTabIndicator.Unread);
+		engine.CurrentDiagnostics.HasReviewTurnUnread.ShouldBeFalse();
+	}
+
+	[Test]
 	public void Restored_unread_remains_until_the_tab_is_selected_in_an_active_visible_window()
 	{
 		var engine = CreateEngine(selected: false, windowVisible: true, windowActive: true);

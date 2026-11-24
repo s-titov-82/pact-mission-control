@@ -64,16 +64,54 @@ public sealed class AttentionFeedViewModelTests
 	}
 
 	[Test]
-	public void Unread_and_review_delivery_failure_keep_both_reasons()
+	public void Unread_from_a_review_turn_stays_out_of_the_feed_after_the_review_ends()
+	{
+		var project = Project();
+		var session = Session("author", TerminalTabIndicator.Busy);
+		project.Sessions.Add(session);
+		using AttentionFeedViewModel feed = new([project], Root(), new());
+		session.ApplyReviews([Review("author") with { DeliveryIssue = null }]);
+		session.ApplyTerminalStatus(TerminalTabIndicator.Unread, null, "Turn submitted", hasReviewTurnUnread: true);
+		feed.HasItems.ShouldBeFalse();
+
+		session.ApplyReviews([]);
+		feed.HasItems.ShouldBeFalse();
+		session.ApplyTerminalStatus(TerminalTabIndicator.Busy, null, "Reading the result");
+		session.ApplyTerminalStatus(TerminalTabIndicator.Unread, null, "Review result read");
+		feed.Items.ShouldHaveSingleItem().Indicator.ShouldBe(TerminalTabIndicator.Unread);
+	}
+
+	[Test]
+	public void Last_review_turn_stays_quiet_when_the_badge_clears_while_the_author_is_busy()
+	{
+		var project = Project();
+		var session = Session("author", TerminalTabIndicator.Busy);
+		project.Sessions.Add(session);
+		using AttentionFeedViewModel feed = new([project], Root(), new());
+		session.ApplyReviews([Review("author") with { DeliveryIssue = null }]);
+
+		session.ApplyReviews([]);
+		session.ApplyTerminalStatus(TerminalTabIndicator.Unread, null, "Last turn submitted", hasReviewTurnUnread: true);
+
+		feed.HasItems.ShouldBeFalse();
+		session.Indicator.ShouldBe(TerminalTabIndicator.Unread);
+		session.ApplyTerminalStatus(TerminalTabIndicator.Busy, null, "Reading final result");
+		session.ApplyTerminalStatus(TerminalTabIndicator.Unread, null, "Final result read");
+		feed.Items.ShouldHaveSingleItem().Indicator.ShouldBe(TerminalTabIndicator.Unread);
+	}
+
+	[Test]
+	public void Review_delivery_failure_keeps_its_own_attention_reason()
 	{
 		var project = Project();
 		var session = Session("author", TerminalTabIndicator.Unread);
+		session.ApplyTerminalStatus(TerminalTabIndicator.Unread, null, "Turn submitted", hasReviewTurnUnread: true);
 		project.Sessions.Add(session);
 		using AttentionFeedViewModel feed = new([project], Root(), new());
 		session.ApplyReviews([Review("author")]);
 		var card = feed.Items.ShouldHaveSingleItem();
 		card.Indicator.ShouldBe(TerminalTabIndicator.Failed);
-		card.ToolTip.ShouldContain("Unread");
+		card.ToolTip.ShouldNotContain("Unread");
 		card.ToolTip.ShouldContain("delivery failed");
 	}
 
@@ -163,6 +201,23 @@ public sealed class AttentionFeedViewModelTests
 		feed.HasItems.ShouldBeFalse();
 		session.ApplyTerminalStatus(TerminalTabIndicator.InputRequested, null, "later");
 		feed.HasItems.ShouldBeFalse();
+	}
+
+	[Test]
+	public void Removing_the_project_rejects_stale_journal_cards_even_after_the_project_returns()
+	{
+		var project = Project();
+		ObservableCollection<WorkspaceViewModel> projects = [project];
+		using AttentionFeedViewModel feed = new(projects, Root(), new());
+		feed.AddReviewResult(new(project.Id, ".pact/reviews/log.md", "Review", ReviewState.Completed));
+		var card = feed.Items.ShouldHaveSingleItem();
+
+		projects.Remove(project);
+		projects.Add(project);
+
+		feed.Contains(card).ShouldBeFalse();
+		feed.DismissReviewResult(card).ShouldBeFalse();
+		feed.Items.ShouldBeEmpty();
 	}
 
 	[Test]

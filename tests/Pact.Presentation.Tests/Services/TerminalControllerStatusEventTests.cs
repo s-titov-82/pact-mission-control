@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using Pact.Core.Sessions;
 using Pact.Core.Terminal;
 using Pact.Presentation.Services;
 
@@ -10,21 +11,22 @@ namespace Pact.Presentation.Tests.Services;
 	Justification = "Backend ownership is transferred to the awaited TerminalController fixture.")]
 public sealed class TerminalControllerStatusEventTests
 {
-	[Test]
-	public async Task InputWritten_fires_once_after_successful_nonempty_write()
+	[TestCase(PromptSender.Outsider)]
+	[TestCase(PromptSender.Review)]
+	public async Task InputWritten_fires_once_with_the_sender_after_successful_nonempty_write(PromptSender sender)
 	{
 		StatusEventBackend backend = new();
 		await using var controller = CreateController(backend);
-		List<string> observed = [];
+		List<(string Input, PromptSender Sender)> observed = [];
 		controller.InputWritten += (_, input) => observed.Add(input);
 		await controller.StartAsync("fake", Environment.CurrentDirectory, 80, 24);
 
-		var written = await controller.WriteInputAsync("hello");
+		var written = await controller.WriteInputAsync("hello", sender);
 		var emptyWritten = await controller.WriteInputAsync(string.Empty);
 
 		written.ShouldBeTrue();
 		emptyWritten.ShouldBeFalse();
-		observed.ShouldBe(["hello"]);
+		observed.ShouldBe([("hello", sender)]);
 	}
 
 	[Test]
@@ -33,7 +35,7 @@ public sealed class TerminalControllerStatusEventTests
 		StatusEventBackend backend = new();
 		await using var controller = CreateController(backend);
 		List<string> observed = [];
-		controller.InputWritten += (_, input) => observed.Add(input);
+		controller.InputWritten += (_, input) => observed.Add(input.Input);
 		(await controller.WriteInputAsync("before")).ShouldBeFalse();
 		await controller.StartAsync("fake", Environment.CurrentDirectory, 80, 24);
 		backend.FailWrite = true;

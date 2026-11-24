@@ -42,7 +42,7 @@ internal sealed partial class RightActionsPanel : UserControl
 		if (AttentionFeed.IsVisible)
 		{
 			AttentionFeed.BringIntoView();
-			AttentionFeed.GetVisualDescendants().OfType<Button>().FirstOrDefault()?.Focus();
+			AttentionFeed.GetVisualDescendants().OfType<Button>().FirstOrDefault(button => button.IsEffectivelyVisible)?.Focus();
 		}
 	}
 

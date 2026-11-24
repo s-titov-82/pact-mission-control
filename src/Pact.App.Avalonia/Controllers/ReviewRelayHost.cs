@@ -120,7 +120,7 @@ internal sealed class ReviewRelayHost(
 			sessionId,
 			text,
 			submit: true,
-			PromptSender.Outsider,
+			PromptSender.Review,
 			startIfNotRunning: false,
 			cancellationToken);
 
@@ -140,6 +140,13 @@ internal sealed class ReviewRelayHost(
 	public Task OpenProjectDocumentAsync(string projectId, string relativePath) =>
 		_uiDispatcher.InvokeAsync(() =>
 			_openProjectDocumentAsync(projectId, relativePath, CancellationToken.None));
+
+	public Task PublishReviewResultAsync(ReviewResult result) =>
+		_uiDispatcher.InvokeAsync(() =>
+		{
+			_viewModel.Attention.AddReviewResult(result);
+			return Task.CompletedTask;
+		});
 
 	public void Trace(string line) => _trace(line);
 

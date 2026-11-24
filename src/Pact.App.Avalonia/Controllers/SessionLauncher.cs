@@ -168,12 +168,13 @@ internal sealed class SessionLauncher(
 				: Task.CompletedTask;
 		}
 
-		void InputWrittenHandler(object? _, string input)
+		void InputWrittenHandler(object? _, (string Input, PromptSender Sender) input)
 		{
 			_viewModel.TerminalTabStatuses.OnUserInput(
 				sessionId,
-				input,
-				DateTimeOffset.UtcNow);
+				input.Input,
+				DateTimeOffset.UtcNow,
+				input.Sender);
 		}
 
 		void ViewportChangedHandler(object? _, TerminalViewportChangedEventArgs args)

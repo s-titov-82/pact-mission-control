@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using Pact.Core.Sessions;
 using Pact.Core.Terminal;
 using Pact.Infrastructure.Terminal;
 
@@ -57,8 +58,8 @@ public sealed class TerminalController : IAsyncDisposable
 	/// </summary>
 	public event Func<string, Task>? InputWriting;
 
-	/// <summary>Raised after input was accepted by the backend.</summary>
-	public event EventHandler<string>? InputWritten;
+	/// <summary>Reports accepted input with the sender responsible for the write.</summary>
+	public event EventHandler<(string Input, PromptSender Sender)>? InputWritten;
 
 	/// <summary>Raised when the pseudo-console has been resized.</summary>
 	public event EventHandler<TerminalViewportChangedEventArgs>? ViewportChanged;
@@ -126,7 +127,9 @@ public sealed class TerminalController : IAsyncDisposable
 	/// <see langword="false"/> when the controller is not active or the input is empty, so
 	/// callers can report the keystroke was ignored instead of assuming it landed.
 	/// </returns>
-	public async Task<bool> WriteInputAsync(string input)
+	public Task<bool> WriteInputAsync(string input) => WriteInputAsync(input, PromptSender.Outsider);
+
+	internal async Task<bool> WriteInputAsync(string input, PromptSender sender)
 	{
 		ObjectDisposedException.ThrowIf(_disposed, this);
 
@@ -142,7 +145,7 @@ public sealed class TerminalController : IAsyncDisposable
 			"Terminal input write failed").ConfigureAwait(false);
 		if (written)
 		{
-			InputWritten?.Invoke(this, input);
+			InputWritten?.Invoke(this, (input, sender));
 		}
 
 		return written;

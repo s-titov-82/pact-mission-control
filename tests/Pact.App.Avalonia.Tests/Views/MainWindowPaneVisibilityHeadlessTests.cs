@@ -18,11 +18,13 @@ using Pact.App.Avalonia.Views.Settings;
 using Pact.Core.Agents;
 using Pact.Core.Platform;
 using Pact.Core.Projects;
+using Pact.Core.Reviews;
 using Pact.Core.RootTabs;
 using Pact.Core.Sessions;
 using Pact.Core.Web;
 using Pact.Infrastructure.Storage;
 using Pact.Presentation.Services;
+using Pact.Presentation.Services.Reviews;
 using Pact.Presentation.Settings;
 using Pact.Presentation.ViewModels;
 
@@ -224,6 +226,61 @@ public sealed class MainWindowPaneVisibilityHeadlessTests
 		}
 	}
 	[AvaloniaTest]
+	public async Task Review_results_keep_the_current_screen_until_view_and_close_keeps_the_journal()
+	{
+		using ApplicationStyleScope styles = new();
+		await using WindowFixture fixture = new();
+		var token = TestContext.CurrentContext.CancellationToken;
+		await fixture.Controller.InitializeAsync(new Uri("file:///terminal.html"), token);
+		var workspace = fixture.ViewModel.Workspaces.ShouldHaveSingleItem();
+		using MainWindow window = new(fixture.Controller);
+		var centerPane = window.FindControl<Grid>("CenterPane")!;
+		centerPane.Children.Remove(window.FindControl<TerminalPaneView>("TerminalPane")!);
+		centerPane.Children.Remove(window.FindControl<BrowserPaneView>("BrowserPane")!);
+		window.Show();
+		await fixture.Controller.OpenProjectScreenAsync(workspace, ProjectScreenTab.Overview, token);
+		const string relativePath = ".pact/reviews/2026-10-26-1200-code-review-a.md";
+		var journal = Path.Combine(fixture.Root, relativePath);
+		Directory.CreateDirectory(Path.GetDirectoryName(journal)!);
+		await File.WriteAllTextAsync(journal, "# Approved review", token);
+
+		var feed = fixture.ViewModel.Attention;
+		ReviewResult result = new(workspace.Id, relativePath, "Code review", ReviewState.Completed);
+		feed.AddReviewResult(result);
+		fixture.Controller.CurrentProjectScreen!.SelectedTab.ShouldBe(ProjectScreenTab.Overview);
+		Button FindAction(string action)
+		{
+			Dispatcher.UIThread.RunJobs();
+			window.UpdateLayout();
+			return window.GetVisualDescendants().OfType<AttentionFeedView>().ShouldHaveSingleItem()
+				.GetVisualDescendants().OfType<Button>().Single(button => button.IsEffectivelyVisible
+					&& Equals(button.Content, action));
+		}
+
+		FindAction("Close").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+		feed.HasItems.ShouldBeFalse();
+		File.Exists(journal).ShouldBeTrue();
+		fixture.Controller.CurrentProjectScreen!.SelectedTab.ShouldBe(ProjectScreenTab.Overview);
+
+		feed.AddReviewResult(result);
+		FindAction("View").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+		await fixture.Controller.GetEventTasks().WaitForIdleAsync();
+		var screen = fixture.Controller.CurrentProjectScreen.ShouldNotBeNull();
+		screen.SelectedTab.ShouldBe(ProjectScreenTab.ReviewLogs);
+		screen.SelectedReviewLog.ShouldBe(relativePath);
+		screen.ReviewLogText.ShouldBe("# Approved review");
+		feed.HasItems.ShouldBeFalse();
+
+		await fixture.Controller.OpenProjectScreenAsync(workspace, ProjectScreenTab.Overview, token);
+		feed.AddReviewResult(result);
+		File.Delete(journal);
+		FindAction("View").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+		await fixture.Controller.GetEventTasks().WaitForIdleAsync();
+		screen.SelectedTab.ShouldBe(ProjectScreenTab.Overview);
+		feed.HasItems.ShouldBeFalse();
+	}
+
+	[AvaloniaTest]
 	public async Task Attention_card_opens_its_tab_once_and_reveals_a_collapsed_project()
 	{
 		TestContext.Progress.WriteLine("attention navigation: setup");
@@ -275,7 +332,8 @@ public sealed class MainWindowPaneVisibilityHeadlessTests
 		tree.ScrollIntoView(fixture.ViewModel.Workspaces[0]);
 		window.UpdateLayout();
 		var button = feed.GetVisualDescendants().OfType<Button>()
-			.Single(candidate => candidate.DataContext is AttentionItem item && ReferenceEquals(item.Target, target));
+			.Single(candidate => candidate.IsEffectivelyVisible && candidate.DataContext is AttentionItem item
+				&& ReferenceEquals(item.Target, target));
 		var switches = 0;
 		fixture.ViewModel.PropertyChanged += (_, args) =>
 		{

@@ -26,4 +26,13 @@ internal sealed partial class AttentionFeedView : UserControl
 			ItemRequested?.Invoke(this, item);
 		}
 	}
+
+	private void OnReviewResultClosed(object? sender, RoutedEventArgs args)
+	{
+		args.Handled = true;
+		if (sender is Button { DataContext: AttentionItem item } && DataContext is AttentionFeedViewModel feed)
+		{
+			feed.DismissReviewResult(item);
+		}
+	}
 }

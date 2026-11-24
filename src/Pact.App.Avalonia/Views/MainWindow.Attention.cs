@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Pact.App.Avalonia.Controllers;
 using Pact.App.Avalonia.Platform;
 using Pact.Presentation.Services;
+using Pact.Presentation.Services.Reviews;
 using Pact.Core.Sessions;
 using Pact.Presentation.ViewModels;
 using System.ComponentModel;
@@ -84,6 +85,17 @@ internal sealed partial class MainWindow
 
 	private async Task OpenAttentionTargetAsync(AttentionItem item)
 	{
+		if (item.Target is ReviewResult result)
+		{
+			var feed = EngineProbeController.ViewModel.Attention;
+			if (item.Workspace is { } workspace && feed.Contains(item)
+				&& (await EngineProbeController.OpenProjectDocumentAsync(result.ProjectId, result.RelativePath)
+					|| !File.Exists(Path.Combine(workspace.RootPath, result.RelativePath))))
+			{
+				feed.DismissReviewResult(item);
+			}
+			return;
+		}
 		if (item.IsOrchestrator)
 		{
 			await EngineProbeController.SelectOrchestratorAsync();

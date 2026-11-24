@@ -1,9 +1,11 @@
 using Pact.App.Avalonia.Controllers;
 using Pact.Core.Agents;
 using Pact.Core.Projects;
+using Pact.Core.Reviews;
 using Pact.Core.RootTabs;
 using Pact.Core.Sessions;
 using Pact.Core.Web;
+using Pact.Presentation.Services.Reviews;
 using Pact.Presentation.ViewModels;
 
 namespace Pact.App.Avalonia.Tests.Controllers;
@@ -33,6 +35,41 @@ public sealed class SoftRestartSnapshotBuilderTests
 		var state = builder.Capture();
 		state.LiveTerminalIds.ShouldBeEmpty();
 		state.Selection.ShouldBe(new Pact.Core.Updates.SoftRestartSelection(null, "paused-root"));
+	}
+
+	[Test]
+	public void Snapshot_keeps_existing_unread_but_drops_unread_from_review_work()
+	{
+		var viewModel = CreateViewModel();
+		var project = CreateWorkspace("project-1", "author", reviewerId: null, "project-web");
+		project.Sessions.Add(new SessionViewModel(Session("reviewer")));
+		viewModel.Workspaces.Add(project);
+		var now = DateTimeOffset.UtcNow;
+		var statuses = viewModel.TerminalTabStatuses;
+		foreach (var session in project.Sessions)
+		{
+			statuses.RegisterSession(session);
+			statuses.OnLifecycleChanged(session.Record.Id, SessionStatus.Running, now);
+		}
+		ReviewSummary review = new("review", project.Id, "author", "reviewer", ReviewState.Running,
+			1, ReviewRole.Author, "log", 5);
+		foreach (var session in project.Sessions)
+		{
+			session.ApplyReviews([review]);
+		}
+		statuses.OnUserInput("author", "\r", now.AddSeconds(1));
+		statuses.OnScreenSnapshot("author", @"PS D:\> ", now.AddSeconds(2));
+		statuses.OnUserInput("reviewer", "\r", now.AddSeconds(1), PromptSender.Review);
+		statuses.OnScreenSnapshot("reviewer", @"PS D:\> ", now.AddSeconds(2));
+		project.Sessions.Select(session => session.Indicator)
+			.ShouldBe([TerminalTabIndicator.Unread, TerminalTabIndicator.Unread]);
+		SoftRestartSnapshotBuilder builder = new(viewModel, () => ["author", "reviewer"],
+			statuses.GetDiagnosticsSnapshot, () => []);
+
+		var state = builder.Capture();
+
+		state.LiveTerminalIds.ShouldBe(["author", "reviewer"]);
+		state.UnreadTerminalIds.ShouldBe(["author"]);
 	}
 
 	[Test]

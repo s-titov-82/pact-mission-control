@@ -181,8 +181,7 @@ internal sealed partial class AvaloniaMainShellController
 			&& ReferenceEquals(CurrentProjectScreen, screen);
 	}
 
-	// Deletion takes the screen the user confirmed it on: while the dialog waits, a review finishing
-	// elsewhere can bring up another project's screen.
+	// Deletion takes the screen the user confirmed it on, even if navigation changes while the dialog waits.
 
 	/// <summary>Deletes a review log of a project screen, unless a running review writes it.</summary>
 	public async Task DeleteReviewLogAsync(

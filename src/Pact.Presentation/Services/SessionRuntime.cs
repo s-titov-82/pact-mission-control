@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using Pact.Core.Agents;
+using Pact.Core.Sessions;
 using Pact.Core.Terminal;
 
 namespace Pact.Presentation.Services;
@@ -25,7 +26,7 @@ public sealed class SessionRuntime(string sessionId)
 	private EventHandler<string>? _outputHandler;
 	private EventHandler? _exitedHandler;
 	private Func<string, Task>? _inputWritingHandler;
-	private EventHandler<string>? _inputWrittenHandler;
+	private EventHandler<(string Input, PromptSender Sender)>? _inputWrittenHandler;
 	private EventHandler<TerminalViewportChangedEventArgs>? _viewportChangedHandler;
 
 	/// <summary>Session this runtime belongs to.</summary>
@@ -41,7 +42,7 @@ public sealed class SessionRuntime(string sessionId)
 		EventHandler<string>? outputHandler = null,
 		EventHandler? exitedHandler = null,
 		Func<string, Task>? inputWritingHandler = null,
-		EventHandler<string>? inputWrittenHandler = null,
+		EventHandler<(string Input, PromptSender Sender)>? inputWrittenHandler = null,
 		EventHandler<TerminalViewportChangedEventArgs>? viewportChangedHandler = null)
 	{
 		ArgumentNullException.ThrowIfNull(controller);

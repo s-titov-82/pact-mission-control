@@ -621,7 +621,7 @@ public sealed class ReviewRelay
 				.ConfigureAwait(false);
 		}
 
-		await RunHostStepAsync(review, "open-log", () => OpenLogAsync(review)).ConfigureAwait(false);
+		await PublishReviewResultAsync(review, state).ConfigureAwait(false);
 		if (review.TellAuthor)
 		{
 			StartTrigger(review, review.AuthorSessionId, "final");
@@ -639,9 +639,9 @@ public sealed class ReviewRelay
 		_host.Trace($"review phase=start-ended review={review.Id} state={review.EndState}");
 		await WriteFooterThenRetireAsync(review, review.EndState, review.EndReason).ConfigureAwait(false);
 		PruneLogs(review);
-		if (!review.Quiet && review.LogPath is not null)
+		if (!review.Quiet)
 		{
-			await RunHostStepAsync(review, "open-log", () => OpenLogAsync(review)).ConfigureAwait(false);
+			await PublishReviewResultAsync(review, review.EndState).ConfigureAwait(false);
 		}
 
 		return AgentControlResult.Refused(
@@ -685,7 +685,7 @@ public sealed class ReviewRelay
 		}
 	}
 
-	// Closing the reviewer tab and opening the log are courtesies at the end; a failure is traced
+	// Closing the reviewer tab and offering the log are courtesies at the end; a failure is traced
 	// and the end goes on, so the agent's accepted answer is never reported as an error.
 	private async Task RunHostStepAsync(Review review, string step, Func<Task> action)
 	{
@@ -741,9 +741,16 @@ public sealed class ReviewRelay
 	}
 
 	private Task OpenLogAsync(Review review) =>
-		_host.OpenProjectDocumentAsync(
-			review.Project.ProjectId,
-			Path.GetRelativePath(review.Project.RootPath, review.LogPath!).Replace(Path.DirectorySeparatorChar, '/'));
+		_host.OpenProjectDocumentAsync(review.Project.ProjectId, RelativeLogPath(review));
+
+	private Task PublishReviewResultAsync(Review review, ReviewState state) =>
+		File.Exists(review.LogPath)
+			? RunHostStepAsync(review, "publish-result", () => _host.PublishReviewResultAsync(
+				new(review.Project.ProjectId, RelativeLogPath(review), review.Template.Name, state)))
+			: Task.CompletedTask;
+
+	private static string RelativeLogPath(Review review) =>
+		Path.GetRelativePath(review.Project.RootPath, review.LogPath!).Replace(Path.DirectorySeparatorChar, '/');
 
 	private void StartTrigger(Review review, string sessionId, string label)
 	{
@@ -902,7 +909,7 @@ public sealed class ReviewRelay
 	private string[] LogsInUse() => [.. _active.Select(active => active.LogPath).OfType<string>()];
 
 	// A review that ended no longer protects older logs, so the folder shrinks back to ten; its
-	// own log stays, since it is the one being opened.
+	// own log stays, since it is the one being offered.
 	private void PruneLogs(Review review)
 	{
 		if (review.LogPath is not { } finishedLog)
