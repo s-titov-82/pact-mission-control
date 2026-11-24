@@ -27,6 +27,28 @@ internal sealed partial class ProjectTreeView : UserControl
 	internal Func<PointerPressedEventArgs, DataTransfer, Task<DragDropEffects>> BeginDragAsync { get; set; } =
 		(args, transfer) => DragDrop.DoDragDropAsync(args, transfer, DragDropEffects.Move);
 
+	/// <summary>Controls whether web tab rows reserve space for a site icon.</summary>
+	public static readonly StyledProperty<bool> ShowFaviconsProperty =
+		AvaloniaProperty.Register<ProjectTreeView, bool>(nameof(ShowFavicons), defaultValue: true);
+
+	/// <summary>Whether web tabs in ROOT and projects show site icons.</summary>
+	public bool ShowFavicons
+	{
+		get => GetValue(ShowFaviconsProperty);
+		set => SetValue(ShowFaviconsProperty, value);
+	}
+
+	/// <summary>Controls whether agent rows reserve space for a logo.</summary>
+	public static readonly StyledProperty<bool> ShowAgentIconsProperty =
+		AvaloniaProperty.Register<ProjectTreeView, bool>(nameof(ShowAgentIcons), defaultValue: true);
+
+	/// <summary>Whether agent sessions in ROOT and projects show logos.</summary>
+	public bool ShowAgentIcons
+	{
+		get => GetValue(ShowAgentIconsProperty);
+		set => SetValue(ShowAgentIconsProperty, value);
+	}
+
 	public ProjectTreeView()
 	{
 		InitializeComponent();

@@ -111,6 +111,32 @@ public sealed partial class AppearanceSectionViewModel : SettingsSectionViewMode
 		}
 	}
 
+	/// <summary>Gets or sets whether the sidebar shows site icons for web tabs.</summary>
+	public bool ShowFavicons
+	{
+		get;
+		set
+		{
+			if (SetField(ref field, value) && !_loading)
+			{
+				MarkDirty();
+			}
+		}
+	} = true;
+
+	/// <summary>Gets or sets whether the sidebar shows agent logos alongside sessions.</summary>
+	public bool ShowAgentIcons
+	{
+		get;
+		set
+		{
+			if (SetField(ref field, value) && !_loading)
+			{
+				MarkDirty();
+			}
+		}
+	} = true;
+
 	/// <summary>Gets or sets whether the right panel shows details for the selected tab.</summary>
 	public bool ShowSelectedTabDetails
 	{
@@ -145,6 +171,8 @@ public sealed partial class AppearanceSectionViewModel : SettingsSectionViewMode
 		{
 			var preferences = await _store.LoadPreferencesAsync(cancellationToken);
 			SelectedMode = preferences.Theme;
+			ShowFavicons = preferences.ShowFavicons;
+			ShowAgentIcons = preferences.ShowAgentIcons;
 			ShowSelectedTabDetails = preferences.ShowSelectedTabDetails;
 			ShowExternalProcessMetrics = preferences.ShowExternalProcessMetrics;
 			ShowNotifications = preferences.ShowNotifications;
@@ -189,6 +217,8 @@ public sealed partial class AppearanceSectionViewModel : SettingsSectionViewMode
 	public AppearancePreferences GetPreviewPreferences() =>
 		new(SelectedMode, ShowSelectedTabDetails, ShowExternalProcessMetrics)
 		{
+			ShowFavicons = ShowFavicons,
+			ShowAgentIcons = ShowAgentIcons,
 			ShowNotifications = ShowNotifications,
 			NotificationSoundMode = (NotificationSoundMode)NotificationSoundIndex,
 			NotificationSeconds = NotificationSeconds,

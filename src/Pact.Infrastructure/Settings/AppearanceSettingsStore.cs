@@ -50,6 +50,10 @@ public sealed record AppearancePreferences(
 	bool ShowSelectedTabDetails = true,
 	bool ShowExternalProcessMetrics = false)
 {
+	/// <summary>Show site icons alongside web tabs in the sidebar.</summary>
+	public bool ShowFavicons { get; init; } = true;
+	/// <summary>Show agent logos alongside terminal sessions in the sidebar.</summary>
+	public bool ShowAgentIcons { get; init; } = true;
 	/// <summary>Terminal rendering overrides. Missing overrides follow the application theme.</summary>
 	public TerminalAppearance? Terminal { get; init; }
 	/// <summary>Controls native Windows notifications for new attention events.</summary>
@@ -98,6 +102,8 @@ public sealed class AppearanceSettingsStore
 			ReadValue(settings["showSelectedTabDetails"], true),
 			ReadValue(settings["showExternalProcessMetrics"], false))
 		{
+			ShowFavicons = ReadValue(settings["showFavicons"], true),
+			ShowAgentIcons = ReadValue(settings["showAgentIcons"], true),
 			Terminal = terminal is { IsValid: true } ? terminal : null,
 			ShowNotifications = ReadValue(settings["showNotifications"], false),
 			NotificationSoundMode = sound is { } knownSound && Enum.IsDefined(knownSound)
@@ -123,6 +129,8 @@ public sealed class AppearanceSettingsStore
 		ArgumentNullException.ThrowIfNull(preferences);
 		var root = await LoadRootAsync(cancellationToken).ConfigureAwait(false);
 		root["theme"] = preferences.Theme.ToString().ToLowerInvariant();
+		root["showFavicons"] = preferences.ShowFavicons;
+		root["showAgentIcons"] = preferences.ShowAgentIcons;
 		root["showSelectedTabDetails"] = preferences.ShowSelectedTabDetails;
 		root["showExternalProcessMetrics"] = preferences.ShowExternalProcessMetrics;
 		root["showNotifications"] = preferences.ShowNotifications;

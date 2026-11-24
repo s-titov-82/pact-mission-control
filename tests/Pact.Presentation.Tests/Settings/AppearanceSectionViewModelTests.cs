@@ -160,6 +160,34 @@ public sealed class AppearanceSectionViewModelTests : IDisposable
 	}
 
 	[Test]
+	[TestCase(false, true)]
+	[TestCase(true, false)]
+	public async Task Icon_preferences_default_to_visible_and_save_independently(bool showFavicons, bool showAgentIcons)
+	{
+		AppearanceSettingsStore store = new(Path.Combine(_directory, "appearance.json"));
+		AppearancePreferences? applied = null;
+		AppearanceSectionViewModel section = new(store, preferences => applied = preferences);
+		await section.LoadAsync(CancellationToken.None);
+		section.ShowFavicons.ShouldBeTrue();
+		section.ShowAgentIcons.ShouldBeTrue();
+		section.IsDirty.ShouldBeFalse();
+
+		section.ShowFavicons = showFavicons;
+		section.ShowAgentIcons = showAgentIcons;
+		section.IsDirty.ShouldBeTrue();
+		(await section.SaveAsync(CancellationToken.None)).ShouldBeTrue();
+		applied.ShouldNotBeNull();
+		applied.ShowFavicons.ShouldBe(showFavicons);
+		applied.ShowAgentIcons.ShouldBe(showAgentIcons);
+		section.IsDirty.ShouldBeFalse();
+
+		var reopened = new AppearanceSectionViewModel(store, _ => { });
+		await reopened.LoadAsync(CancellationToken.None);
+		reopened.ShowFavicons.ShouldBe(showFavicons);
+		reopened.ShowAgentIcons.ShouldBe(showAgentIcons);
+	}
+
+	[Test]
 	public async Task Section_marks_dirty_saves_applies_and_reloads()
 	{
 		AppearanceSettingsStore store = new(Path.Combine(_directory, "appearance.json"));

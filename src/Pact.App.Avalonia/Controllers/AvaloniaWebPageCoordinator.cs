@@ -467,6 +467,10 @@ internal sealed class AvaloniaWebPageCoordinator : IDisposable
 		{
 			TitleChanged?.Invoke(this, (page, title));
 		}
+		void OnFaviconChanged(object? _, byte[]? png)
+		{
+			page.SetFavicon(png);
+		}
 		void OnNavigationStarted(object? _, EventArgs __)
 		{
 			page.SetLoading(true);
@@ -515,6 +519,7 @@ internal sealed class AvaloniaWebPageCoordinator : IDisposable
 
 		host.SourceChanged += OnSourceChanged;
 		host.TitleChanged += OnTitleChanged;
+		host.FaviconChanged += OnFaviconChanged;
 		host.NavigationStarted += OnNavigationStarted;
 		host.NavigationCompleted += OnNavigationCompleted;
 		host.NavigationFailed += OnNavigationFailed;
@@ -526,6 +531,8 @@ internal sealed class AvaloniaWebPageCoordinator : IDisposable
 		{
 			host.SourceChanged -= OnSourceChanged;
 			host.TitleChanged -= OnTitleChanged;
+			host.FaviconChanged -= OnFaviconChanged;
+			page.SetFavicon(null);
 			host.NavigationStarted -= OnNavigationStarted;
 			host.NavigationCompleted -= OnNavigationCompleted;
 			host.NavigationFailed -= OnNavigationFailed;

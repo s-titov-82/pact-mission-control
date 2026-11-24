@@ -518,9 +518,9 @@ The pin preference is saved with the window layout.
   unread state, poll schedule,
   navigation, and the last sanitized monitor error. Updates are event-driven;
   raw terminal-screen snapshots are not exposed or persisted.
-- `Appearance -> Show selected tab details` hides only that facts block.
+- `Appearance -> PACT Dev Tools -> Show selected tab details` hides only that facts block.
   Transient action and error status stays independent.
-- `Appearance -> Show external process metrics` is default-off and effective
+- `Appearance -> PACT Dev Tools -> Show external process metrics` is default-off and effective
   only while selected-tab details are visible. For the selected live terminal,
   it shows the root PID and process-tree count, combined working set, and CPU
   normalized to total logical-processor capacity. For a selected loaded web

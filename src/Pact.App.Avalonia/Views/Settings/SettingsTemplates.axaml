@@ -18,12 +18,8 @@
                       ItemsSource="{Binding Modes}" SelectedItem="{Binding SelectedMode}" />
             <TextBlock Foreground="{DynamicResource AppTextMutedBrush}" TextWrapping="Wrap"
                        Text="System follows the Windows theme. Light and Dark override it." />
-            <CheckBox Margin="0,8,0,0" Content="Show selected tab details"
-                      IsChecked="{Binding ShowSelectedTabDetails}" />
-            <CheckBox Content="Show external process metrics"
-                      IsChecked="{Binding ShowExternalProcessMetrics}" />
-            <TextBlock Foreground="{DynamicResource AppTextMutedBrush}" TextWrapping="Wrap"
-                       Text="Opt-in CPU and memory totals for the selected live terminal or loaded web tab." />
+            <CheckBox Margin="0,8,0,0" Content="Show favicons" IsChecked="{Binding ShowFavicons}" />
+            <CheckBox Content="Show agent icons" IsChecked="{Binding ShowAgentIcons}" />
           </StackPanel>
         </ScrollViewer>
       </TabItem>
@@ -95,6 +91,16 @@
               <TextBlock TextWrapping="Wrap" Text="Hidden banners stay in Notification Center while the event needs attention. Windows notification settings apply." />
               <Button HorizontalAlignment="Left" Content="Test notification" Tag="TestNotification" />
             </StackPanel>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+      <TabItem Header="PACT Dev Tools">
+        <ScrollViewer>
+          <StackPanel Margin="0,10,20,0" Spacing="8">
+            <CheckBox Content="Show selected tab details" IsChecked="{Binding ShowSelectedTabDetails}" />
+            <CheckBox Content="Show external process metrics" IsChecked="{Binding ShowExternalProcessMetrics}" />
+            <TextBlock Foreground="{DynamicResource AppTextMutedBrush}" TextWrapping="Wrap"
+                       Text="Opt-in CPU and memory totals for the selected live terminal or loaded web tab." />
           </StackPanel>
         </ScrollViewer>
       </TabItem>

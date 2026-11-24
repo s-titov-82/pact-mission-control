@@ -215,6 +215,41 @@ public sealed class SettingsWindowInteractionTests : IDisposable
 	}
 
 	[AvaloniaTest]
+	public async Task Appearance_places_icon_options_in_general_and_diagnostics_in_the_fourth_tab()
+	{
+		var (vm, _) = await CreateViewModelAsync();
+		using var window = CreateWindow(vm);
+		FluentTheme theme = new();
+		Application.Current!.Styles.Add(theme);
+		try
+		{
+			window.InitialSection = SettingsSection.Appearance;
+			await window.InitializeAsync();
+			window.Show();
+			await DrainUiFourTimesAsync();
+			window.UpdateLayout();
+			var tabs = window.GetVisualDescendants().OfType<TabControl>().Single();
+			tabs.Items.OfType<TabItem>().Select(tab => tab.Header).ShouldBe([
+				"General", "Terminal theme", "Notifications", "PACT Dev Tools"]);
+			window.GetVisualDescendants().OfType<CheckBox>()
+				.Where(checkBox => checkBox.IsEffectivelyVisible).Select(checkBox => checkBox.Content)
+				.ShouldBe(["Show favicons", "Show agent icons"]);
+
+			tabs.SelectedIndex = 3;
+			await DrainUiFourTimesAsync();
+			window.UpdateLayout();
+			window.GetVisualDescendants().OfType<CheckBox>()
+				.Where(checkBox => checkBox.IsEffectivelyVisible).Select(checkBox => checkBox.Content)
+				.ShouldBe(["Show selected tab details", "Show external process metrics"]);
+		}
+		finally
+		{
+			window.Close();
+			Application.Current.Styles.Remove(theme);
+		}
+	}
+
+	[AvaloniaTest]
 	public async Task Selecting_a_terminal_profile_previews_its_colors_before_saving()
 	{
 		(var vm, _) = await CreateViewModelAsync();

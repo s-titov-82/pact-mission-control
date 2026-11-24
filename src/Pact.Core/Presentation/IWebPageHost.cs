@@ -22,6 +22,13 @@ public interface IWebPageHost : IAsyncDisposable
 	/// <summary>Raised when the document title changes; used to relabel the tab.</summary>
 	event EventHandler<string>? TitleChanged;
 
+	/// <summary>Publishes the browser's current favicon as PNG, or null when it has none.</summary>
+	event EventHandler<byte[]?>? FaviconChanged
+	{
+		add { }
+		remove { }
+	}
+
 	/// <summary>Raised when a navigation begins.</summary>
 	event EventHandler? NavigationStarted;
 

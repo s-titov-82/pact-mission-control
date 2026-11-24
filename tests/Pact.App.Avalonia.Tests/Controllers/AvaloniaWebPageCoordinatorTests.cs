@@ -30,6 +30,28 @@ public sealed class AvaloniaWebPageCoordinatorTests
 	}
 
 	[Test]
+	public async Task FaviconUpdatesBelongToTheAttachedHost()
+	{
+		await using CoordinatorFixture fixture = new();
+		await fixture.Coordinator.EnsureLoadedAsync(fixture.Page, CancellationToken.None);
+		byte[] firstIcon = [1, 2, 3];
+		byte[] nextIcon = [4, 5, 6];
+		fixture.Host.PublishFavicon(firstIcon);
+		fixture.Page.Favicon.ShouldBe(firstIcon);
+		fixture.Host.PublishFavicon(nextIcon);
+		fixture.Page.Favicon.ShouldBe(nextIcon);
+		fixture.Host.PublishFavicon(null);
+		fixture.Page.Favicon.ShouldBeNull();
+		fixture.Host.PublishFavicon(nextIcon);
+
+		await fixture.Coordinator.CloseAsync(fixture.Page.Record.Id, deleteSnapshot: false, CancellationToken.None);
+
+		fixture.Page.Favicon.ShouldBeNull();
+		fixture.Host.PublishFavicon(firstIcon);
+		fixture.Page.Favicon.ShouldBeNull();
+	}
+
+	[Test]
 	public async Task MonitorProjectionUpdatesTheOwnedRootPage()
 	{
 		await using CoordinatorFixture fixture = new(isRootItem: true);
@@ -388,6 +410,9 @@ public sealed class AvaloniaWebPageCoordinatorTests
 
 		public event EventHandler<Uri>? SourceChanged { add { } remove { } }
 		public event EventHandler<string>? TitleChanged { add { } remove { } }
+		public event EventHandler<byte[]?>? FaviconChanged;
+
+		public void PublishFavicon(byte[]? png) => FaviconChanged?.Invoke(this, png);
 		public event EventHandler? NavigationStarted { add { } remove { } }
 		public event EventHandler? NavigationCompleted { add { } remove { } }
 		public event EventHandler<string>? NavigationFailed { add { } remove { } }

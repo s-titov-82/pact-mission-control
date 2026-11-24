@@ -33,11 +33,13 @@ public static class SettingsHelpContent
 	};
 
 	private const string AppearanceBody = """
-		In General, choose the application theme and the details shown for the selected tab. System follows Windows. Enable external process metrics to sample CPU and memory usage.
+		In General, choose the application theme and which site icons and agent logos to show in the sidebar. System follows Windows.
 
 		In Terminal theme, choose a Windows Terminal profile to preview its font and colors. You can edit both before saving.
 
-		In Notifications, choose whether Windows shows banners, which sound plays, and how long banners remain on screen. Test notification previews your choices. Save section applies your edits.
+		In Notifications, choose whether Windows shows banners, which sound plays, and how long banners remain on screen. Test notification previews your choices.
+
+		In PACT Dev Tools, show or hide the selected tab's diagnostic details and enable external process metrics to sample CPU and memory usage. Save section applies your edits.
 		""";
 
 	private const string UpdatesBody = "Pact checks stable GitHub releases after startup and then once per hour. Check now runs the same discovery manually. Pact ignores prereleases and draft releases. Release notes open in the default browser. Downloading and installation always require the update actions shown by Pact; this section does not edit a settings file.";

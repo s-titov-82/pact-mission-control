@@ -119,6 +119,8 @@ internal sealed partial class MainWindow : Window, IDisposable
 		_externalLauncher = windowServices.ExternalLauncher;
 		ProjectScreen.ConfigureOverview(EngineProbeController, _externalLauncher);
 		_windowLayoutStore = windowServices.WindowLayoutStore;
+		ProjectTree.ShowFavicons = App.CurrentAppearance.ShowFavicons;
+		ProjectTree.ShowAgentIcons = App.CurrentAppearance.ShowAgentIcons;
 		_showSelectedTabDetails = App.CurrentAppearance.ShowSelectedTabDetails;
 		_showExternalProcessMetrics = App.CurrentAppearance.ShowExternalProcessMetrics;
 		UpdateExternalProcessMetrics();
@@ -894,6 +896,8 @@ internal sealed partial class MainWindow : Window, IDisposable
 			applyAppearance: preferences =>
 			{
 				App.ApplyAppearance(preferences);
+				ProjectTree.ShowFavicons = preferences.ShowFavicons;
+				ProjectTree.ShowAgentIcons = preferences.ShowAgentIcons;
 				_showSelectedTabDetails = preferences.ShowSelectedTabDetails;
 				_showExternalProcessMetrics = preferences.ShowExternalProcessMetrics;
 				UpdateExternalProcessMetrics();

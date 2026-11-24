@@ -1,10 +1,9 @@
 # Appearance
 
-Choose **System** to follow the Windows color theme, or force the **Light** or
-**Dark** application theme. You can independently hide the selected-tab
-diagnostic facts shown below Quick actions and opt in to external process
-metrics. External process metrics sampling stays off while that option is
-disabled. Saved choices apply immediately.
+In **General**, choose **System** to follow the Windows color theme or select
+**Light** or **Dark**. Use **Show favicons** for site icons and **Show agent icons**
+for agent logos in the ROOT and project sidebars. **Save section** applies your
+choices immediately.
 
 In **Terminal theme**, choose a Windows Terminal profile to preview its font
 and colors. You can edit both before choosing **Save section**.
@@ -18,3 +17,7 @@ ICQ-style chirp, or a three-note station chime.
 interval. **Keep until dismissed** keeps the reminder on screen.
 **Hide after a custom interval** lets you choose the number of seconds in Pact.
 Hidden banners remain in Notification Center while the tab needs attention.
+
+In **PACT Dev Tools**, choose whether to show the selected tab's diagnostic
+details below Quick actions and whether to sample CPU and memory for the
+selected live terminal or loaded web tab.

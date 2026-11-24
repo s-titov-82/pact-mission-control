@@ -5,6 +5,7 @@ using Avalonia.Headless.NUnit;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -23,6 +24,63 @@ namespace Pact.App.Avalonia.Tests.Views;
 
 public sealed class ProjectTreeRowActionsHeadlessTests
 {
+	[AvaloniaTest]
+	public void Project_and_root_agent_rows_show_distinct_logos_before_the_title()
+	{
+		ProjectTreeView view = new();
+		var codex = CreateSession();
+		var claude = new SessionViewModel(codex.Record with { Kind = AgentKind.Claude, Title = "Claude" });
+		var hermes = new SessionViewModel(codex.Record with { Kind = AgentKind.Hermes, Title = "Hermes" });
+		var shell = new SessionViewModel(codex.Record with { Kind = AgentKind.Pwsh, Title = "PowerShell" });
+		foreach (var build in new Func<ProjectTreeView, object, Control>[] { BuildRow, BuildRootRow })
+		{
+			var logos = new List<IImage>();
+			foreach (var session in new[] { codex, claude, hermes })
+			{
+				var row = build(view, session);
+				row.Measure(new Size(400, 100));
+				row.Arrange(new Rect(row.DesiredSize));
+				var logo = row.GetVisualDescendants().OfType<Image>().SingleOrDefault();
+				logo.ShouldNotBeNull("the agent's row should display a logo");
+				logo.Source.ShouldNotBeNull();
+				logo.Source.Size.Width.ShouldBeGreaterThan(0);
+				logo.IsVisible.ShouldBeTrue();
+				logo.Bounds.Width.ShouldBeGreaterThan(0);
+				var title = row.GetVisualDescendants().OfType<TextBlock>().Single(text => text.Text == session.Title);
+				logo.Bounds.Right.ShouldBeLessThanOrEqualTo(title.Bounds.Left);
+				logos.Add(logo.Source);
+			}
+			logos.Distinct().Count().ShouldBe(3);
+			build(view, shell).GetVisualDescendants().OfType<Image>().Single().IsVisible.ShouldBeFalse();
+		}
+	}
+
+	[AvaloniaTest]
+	public void Project_and_root_web_rows_replace_the_globe_with_the_sites_favicon()
+	{
+		const string pixelPng = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==";
+		ProjectTreeView view = new();
+		foreach (var build in new Func<ProjectTreeView, object, Control>[] { BuildRow, BuildRootRow })
+		{
+			var page = CreateWebPage();
+			var row = build(view, page);
+			row.Measure(new Size(400, 100));
+			row.Arrange(new Rect(row.DesiredSize));
+			var image = row.GetVisualDescendants().OfType<Image>().Single();
+			var title = row.GetVisualDescendants().OfType<TextBlock>().Single(text => text.Text == page.Title);
+			var globe = image.Source.ShouldBeOfType<DrawingImage>();
+			image.Bounds.Width.ShouldBeGreaterThan(0);
+			image.Bounds.Right.ShouldBeLessThanOrEqualTo(title.Bounds.Left);
+
+			page.SetFavicon(Convert.FromBase64String(pixelPng));
+			var bitmap = image.Source.ShouldBeOfType<Bitmap>();
+			var rebuiltRow = build(view, page);
+			rebuiltRow.GetVisualDescendants().OfType<Image>().Single().Source.ShouldBeSameAs(bitmap);
+			page.SetFavicon(null);
+			image.Source.ShouldBeSameAs(globe);
+		}
+	}
+
 	[AvaloniaTest]
 	public void Double_tap_requests_the_same_manual_toggle_on_project_and_root_rows_but_not_buttons()
 	{

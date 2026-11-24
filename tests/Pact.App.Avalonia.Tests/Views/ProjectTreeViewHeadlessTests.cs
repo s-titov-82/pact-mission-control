@@ -13,12 +13,61 @@ using Pact.App.Avalonia.Views;
 using Pact.Core.Agents;
 using Pact.Core.Projects;
 using Pact.Core.Sessions;
+using Pact.Core.Web;
 using Pact.Presentation.ViewModels;
 
 namespace Pact.App.Avalonia.Tests.Views;
 
 public sealed class ProjectTreeViewHeadlessTests
 {
+	[AvaloniaTest]
+	public void Web_and_agent_icons_can_be_toggled_independently_in_root_and_projects()
+	{
+		var now = DateTimeOffset.UtcNow;
+		MainWindowViewModel model = new(new EmptyProjectStore(), new EmptyNotesStore());
+		WorkspaceViewModel project = new(new ProjectRecord("project-1", "Project", "C:\\repo", now, now, null));
+		var rootPage = new WebPageRecord("root-web", "Home", "https://example.test", "https://example.test", now, now);
+		var projectPage = rootPage with { Id = "project-web", Title = "Docs" };
+		model.RootTabs.WebPages.Add(new WebPageViewModel(rootPage, isRootItem: true));
+		project.WebPages.Add(new WebPageViewModel(projectPage));
+		model.RootTabs.Sessions.Add(new SessionViewModel(
+			CreateSession("root-agent", now) with { Kind = AgentKind.Claude }, isRootItem: true));
+		project.Sessions.Add(new SessionViewModel(CreateSession("agent", now) with { Kind = AgentKind.Codex }));
+		model.Workspaces.Add(project);
+		ProjectTreeView view = new() { DataContext = model };
+		FluentTheme theme = new();
+		Application.Current!.Styles.Add(theme);
+		Window window = new() { Content = view, Width = 600, Height = 800 };
+		try
+		{
+			window.Show();
+			Dispatcher.UIThread.RunJobs();
+			var favicons = view.GetVisualDescendants().OfType<Image>()
+				.Where(image => image.DataContext is WebPageViewModel).ToArray();
+			favicons.Length.ShouldBe(2);
+			favicons.ShouldAllBe(image => image.IsEffectivelyVisible);
+			var logos = view.GetVisualDescendants().OfType<Image>()
+				.Where(image => image.DataContext is SessionViewModel).ToArray();
+			logos.Length.ShouldBe(2);
+			logos.ShouldAllBe(image => image.IsEffectivelyVisible);
+
+			view.ShowFavicons = false;
+			favicons.ShouldAllBe(image => !image.IsEffectivelyVisible);
+			logos.ShouldAllBe(image => image.IsEffectivelyVisible);
+			view.ShowFavicons = true;
+			view.ShowAgentIcons = false;
+			logos.ShouldAllBe(image => !image.IsEffectivelyVisible);
+			favicons.ShouldAllBe(image => image.IsEffectivelyVisible);
+			view.ShowAgentIcons = true;
+			logos.ShouldAllBe(image => image.IsEffectivelyVisible);
+		}
+		finally
+		{
+			window.Close();
+			Application.Current.Styles.Remove(theme);
+		}
+	}
+
 	[Test]
 	public void Drag_threshold_and_drop_half_decisions_are_stable()
 	{

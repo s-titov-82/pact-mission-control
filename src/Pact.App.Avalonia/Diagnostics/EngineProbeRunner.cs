@@ -30,7 +30,10 @@ internal sealed class EngineProbeRunner
 		"""
 		<!doctype html>
 		<html>
-		<head><meta charset="utf-8"><title>Pact engine probe</title></head>
+		<head>
+		  <meta charset="utf-8"><title>Pact engine probe</title>
+		  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%3E%3Ccircle%20cx='8'%20cy='8'%20r='7'%20fill='purple'/%3E%3C/svg%3E">
+		</head>
 		<body>
 		  <main data-build="42">
 		    <span id="status">Running</span>
@@ -262,7 +265,19 @@ internal sealed class EngineProbeRunner
 			var browserHost = await WaitForBrowserDocumentAsync(controller, probePage);
 			webProcessAttribution = await browserHost.ReadProcessAttributionAsync(
 				CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(10));
+			var firstFavicon = probePage.Favicon;
+			var sameIconPage = new UriBuilder(localPage) { Query = "revisit=1" }.Uri;
+			await browserHost.NavigateAsync(sameIconPage, CancellationToken.None);
+			if (!await WaitUntilAsync(() => probePage.Favicon is { } favicon && !ReferenceEquals(favicon, firstFavicon),
+				TimeSpan.FromSeconds(5)))
+			{
+				throw new InvalidOperationException("The browser did not publish the same favicon after a second navigation.");
+			}
 			await CheckHttpErrorsAsync(window, browserHost);
+			if (!await WaitUntilAsync(() => probePage.Favicon is null, TimeSpan.FromSeconds(5)))
+			{
+				throw new InvalidOperationException("The previous favicon remained after navigating to pages without one.");
+			}
 			await controller.SelectSessionAsync(
 				session,
 				startIfNeeded: true,
@@ -526,6 +541,11 @@ internal sealed class EngineProbeRunner
 		if (browserHost.DiagnosticSnapshot.Any(entry => entry.Phase == "navigation-failed"))
 		{
 			throw new InvalidOperationException("The production browser failed to navigate to the local probe page.");
+		}
+		if (!await WaitUntilAsync(() => page.Favicon is { Length: >= 8 } png
+			&& png.AsSpan(0, 8).SequenceEqual(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }), TimeSpan.FromSeconds(5)))
+		{
+			throw new InvalidOperationException("The production browser did not publish the probe page favicon as PNG.");
 		}
 		return browserHost;
 	}

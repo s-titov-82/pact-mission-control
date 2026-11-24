@@ -60,6 +60,8 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 	private string? _failedNavigationUrl;
 	private bool _reloadSuppressed;
 	private CoreWebView2? _browser;
+	private long _faviconGeneration;
+	private const int MaxFaviconBytes = 64 * 1024;
 	private ulong _browserNavigationId;
 	private ulong? _downloadNavigationId;
 	private string? _browserNavigationUrl;
@@ -121,6 +123,8 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 	public Uri? Source { get; private set; }
 	public event EventHandler<Uri>? SourceChanged;
 	public event EventHandler<string>? TitleChanged;
+	/// <inheritdoc />
+	public event EventHandler<byte[]?>? FaviconChanged;
 	public event EventHandler? NavigationStarted;
 	public event EventHandler? NavigationCompleted;
 	public event EventHandler<string>? NavigationFailed;
@@ -403,6 +407,7 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 		_browser = WindowsWebView2BackgroundVisibility.TryGetCore(_webView);
 		_browser?.NavigationStarting += OnBrowserNavigationStarting;
 		_browser?.NavigationCompleted += OnBrowserNavigationCompleted;
+		_browser?.FaviconChanged += OnBrowserFaviconChanged;
 		_browser?.WebResourceResponseReceived += OnResponseReceived;
 		_browser?.DownloadStarting += OnDownloadStarting;
 		if (_nativeInteraction is not null && _browser is { } browser)
@@ -425,6 +430,8 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 	{
 		_browser?.NavigationStarting -= OnBrowserNavigationStarting;
 		_browser?.NavigationCompleted -= OnBrowserNavigationCompleted;
+		_browser?.FaviconChanged -= OnBrowserFaviconChanged;
+		_faviconGeneration++;
 		_browser?.WebResourceResponseReceived -= OnResponseReceived;
 		_browser?.DownloadStarting -= OnDownloadStarting;
 		_browser?.WebMessageReceived -= OnBrowserWebMessageReceived;
@@ -439,6 +446,42 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 		_downloadNavigationId = null;
 		_browserNavigationUrl = null;
 	}
+
+	private void OnBrowserFaviconChanged(object? sender, object args) =>
+		RunOnUiThreadInOrder(() =>
+		{
+			if (_browser is not { } browser || !ReferenceEquals(sender, browser) || _disposed != 0)
+			{
+				return;
+			}
+
+			var generation = ++_faviconGeneration;
+			var navigationGeneration = _navigationGeneration;
+			var uri = browser.FaviconUri;
+			if (string.IsNullOrEmpty(uri))
+			{
+				FaviconChanged?.Invoke(this, null);
+				return;
+			}
+
+			_eventTasks.TryRun("browser-favicon", async () =>
+			{
+				using var image = await browser.GetFaviconAsync(CoreWebView2FaviconImageFormat.Png);
+				if (generation != _faviconGeneration || !IsCurrentNavigation(navigationGeneration)
+					|| browser.FaviconUri != uri)
+				{
+					return;
+				}
+
+				var buffer = new byte[MaxFaviconBytes + 1];
+				var length = image.ReadAtLeast(buffer, buffer.Length, throwOnEndOfStream: false);
+				FaviconChanged?.Invoke(this, length is > 0 and <= MaxFaviconBytes ? buffer[..length] : null);
+			}, exception =>
+			{
+				RecordDiagnostic("favicon-read-failed", exception.GetType().Name);
+				return Task.CompletedTask;
+			});
+		});
 
 	private void OnBrowserFrameCreated(object? sender, CoreWebView2FrameCreatedEventArgs args)
 	{

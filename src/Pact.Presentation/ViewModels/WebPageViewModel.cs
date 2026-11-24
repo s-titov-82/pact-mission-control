@@ -54,6 +54,9 @@ public sealed class WebPageViewModel : INotifyPropertyChanged
 	/// <summary>Whether a browser host is attached and holding this page.</summary>
 	public bool IsBrowserLoaded { get; private set; }
 
+	/// <summary>Current favicon PNG from the live browser, or null when it is unavailable.</summary>
+	public byte[]? Favicon { get; private set; }
+
 	/// <summary>Whether the page has no live host, so monitoring cannot observe it.</summary>
 	public bool IsBrowserPaused => !IsBrowserLoaded;
 
@@ -187,6 +190,18 @@ public sealed class WebPageViewModel : INotifyPropertyChanged
 		OnPropertyChanged(nameof(IsBrowserLoaded));
 		OnPropertyChanged(nameof(IsBrowserPaused));
 		NotifyMonitorProjectionChanged(previousStatus);
+	}
+
+	/// <summary>Replaces the in-memory site icon used by the sidebar.</summary>
+	public void SetFavicon(byte[]? favicon)
+	{
+		if (ReferenceEquals(Favicon, favicon))
+		{
+			return;
+		}
+
+		Favicon = favicon;
+		OnPropertyChanged(nameof(Favicon));
 	}
 
 	/// <summary>
