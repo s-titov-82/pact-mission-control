@@ -426,25 +426,29 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 		}
 	}
 
-	private void DetachBrowser()
+	private void DetachBrowser(bool adapterDestroyed = false)
 	{
-		_browser?.NavigationStarting -= OnBrowserNavigationStarting;
-		_browser?.NavigationCompleted -= OnBrowserNavigationCompleted;
-		_browser?.FaviconChanged -= OnBrowserFaviconChanged;
-		_faviconGeneration++;
-		_browser?.WebResourceResponseReceived -= OnResponseReceived;
-		_browser?.DownloadStarting -= OnDownloadStarting;
-		_browser?.WebMessageReceived -= OnBrowserWebMessageReceived;
-		_browser?.FrameCreated -= OnBrowserFrameCreated;
-		foreach (var frame in _interactionFrames.ToArray())
-		{
-			DetachFrame(frame);
-		}
-		_httpError = null;
+		var browser = _browser;
 		_browser = null;
+		_faviconGeneration++;
+		// Frame callbacks check membership. A frame can already be invalid when its adapter detaches.
+		_interactionFrames.Clear();
+		_httpError = null;
 		_browserNavigationId = 0;
 		_downloadNavigationId = null;
 		_browserNavigationUrl = null;
+		if (browser is null || adapterDestroyed)
+		{
+			return;
+		}
+
+		browser.NavigationStarting -= OnBrowserNavigationStarting;
+		browser.NavigationCompleted -= OnBrowserNavigationCompleted;
+		browser.FaviconChanged -= OnBrowserFaviconChanged;
+		browser.WebResourceResponseReceived -= OnResponseReceived;
+		browser.DownloadStarting -= OnDownloadStarting;
+		browser.WebMessageReceived -= OnBrowserWebMessageReceived;
+		browser.FrameCreated -= OnBrowserFrameCreated;
 	}
 
 	private void OnBrowserFaviconChanged(object? sender, object args) =>
@@ -502,16 +506,8 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 	{
 		if (sender is CoreWebView2Frame frame)
 		{
-			DetachFrame(frame);
+			_interactionFrames.Remove(frame);
 		}
-	}
-
-	private void DetachFrame(CoreWebView2Frame frame)
-	{
-		_interactionFrames.Remove(frame);
-		frame.WebMessageReceived -= OnBrowserWebMessageReceived;
-		frame.FrameCreated -= OnBrowserFrameCreated;
-		frame.Destroyed -= OnBrowserFrameDestroyed;
 	}
 
 	private void OnBrowserWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs args)
@@ -966,7 +962,7 @@ internal sealed class AvaloniaWebPageHost : IWebPageHost, IWebPageProcessAttribu
 			_isNavigationLoading = false;
 			_hasDocument = false;
 			_navigationGeneration++;
-			DetachBrowser();
+			DetachBrowser(adapterDestroyed: true);
 			var previous = _adapterReady;
 			_adapterReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
 			_backgroundVisibilityScriptId = null;

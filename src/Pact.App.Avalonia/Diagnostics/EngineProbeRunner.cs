@@ -1,12 +1,15 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.ExceptionServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using Avalonia.Controls;
 using Avalonia.VisualTree;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Avalonia.Threading;
+using Microsoft.Web.WebView2.Core;
 using Pact.App.Avalonia.Views;
 using Pact.App.Avalonia.Web;
 using Pact.Core.Agents;
@@ -263,6 +266,7 @@ internal sealed class EngineProbeRunner
 				CancellationToken.None);
 			await controller.SelectWebPageAsync(probePage, CancellationToken.None);
 			var browserHost = await WaitForBrowserDocumentAsync(controller, probePage);
+			await CheckFrameRemovalAsync(window);
 			webProcessAttribution = await browserHost.ReadProcessAttributionAsync(
 				CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(10));
 			var firstFavicon = probePage.Favicon;
@@ -308,6 +312,64 @@ internal sealed class EngineProbeRunner
 			controller.DiagnosticSnapshot,
 			domEvidence,
 			webProcessAttribution);
+	}
+
+	private static async Task CheckFrameRemovalAsync(MainWindow window)
+	{
+		var pane = window.GetVisualDescendants().OfType<BrowserPaneView>().Single();
+		var view = pane.GetVisualDescendants().OfType<NativeWebView>().Single(view => view.IsEffectivelyVisible);
+		var browser = WindowsWebView2BackgroundVisibility.TryGetCore(view)
+			?? throw new InvalidOperationException("The frame removal probe requires an active browser.");
+		using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+		TaskCompletionSource created = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		TaskCompletionSource destroyed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		TaskCompletionSource<Exception> frameError = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		void OnFrameCreated(object? sender, CoreWebView2FrameCreatedEventArgs args)
+		{
+			args.Frame.Destroyed += (_, _) => destroyed.TrySetResult();
+			created.TrySetResult();
+		}
+		void OnFrameException(object? sender, FirstChanceExceptionEventArgs args)
+		{
+			if (args.Exception is InvalidOperationException or COMException
+				&& args.Exception.StackTrace?.Contains("CoreWebView2Frame.remove_", StringComparison.Ordinal) == true)
+			{
+				frameError.TrySetResult(args.Exception);
+			}
+		}
+
+		browser.FrameCreated += OnFrameCreated;
+		try
+		{
+			await browser.ExecuteScriptAsync("""
+				(() => {
+				  const frame = document.createElement('iframe');
+				  frame.id = 'pact-probe-frame';
+				  frame.srcdoc = '<p>Removable frame</p>';
+				  document.body.append(frame);
+				})();
+				""").WaitAsync(timeout.Token);
+			await created.Task.WaitAsync(timeout.Token);
+			// A frame callback can throw across COM without tearing down the page.
+			AppDomain.CurrentDomain.FirstChanceException += OnFrameException;
+			try
+			{
+				await browser.ExecuteScriptAsync("document.getElementById('pact-probe-frame').remove()").WaitAsync(timeout.Token);
+				await Task.WhenAny(frameError.Task, destroyed.Task).WaitAsync(timeout.Token);
+				if (frameError.Task.IsCompletedSuccessfully)
+				{
+					throw new InvalidOperationException("WebView2 rejected a frame event unsubscription during removal.", await frameError.Task);
+				}
+			}
+			finally
+			{
+				AppDomain.CurrentDomain.FirstChanceException -= OnFrameException;
+			}
+		}
+		finally
+		{
+			browser.FrameCreated -= OnFrameCreated;
+		}
 	}
 
 	private static async Task VerifyStyledSnapshotsAsync(AvaloniaTerminalWebViewHost host, string sessionId)
