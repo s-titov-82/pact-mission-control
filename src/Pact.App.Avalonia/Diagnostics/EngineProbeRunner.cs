@@ -236,7 +236,8 @@ internal sealed class EngineProbeRunner
 				workspace.Id,
 				"Engine probe",
 				localPage.AbsoluteUri,
-				CancellationToken.None);
+				CancellationToken.None,
+				select: false);
 			await controller.ResumeMonitoredPageForDiagnosticsAsync(probePage, new WebMonitorRule(
 				"engine-probe", "Engine probe", Enabled: true,
 				"^" + Regex.Escape(localPage.AbsoluteUri) + "$",
