@@ -26,15 +26,16 @@ public sealed class GitCliRunnerTests : IDisposable
 	[Test]
 	public async Task RunAsync_streams_stdout_and_stderr_and_returns_buffers()
 	{
-		GitCliRunner runner = new("powershell", TimeSpan.FromSeconds(10));
+		GitCliRunner runner = new("cmd.exe", TimeSpan.FromSeconds(10));
 		ConcurrentQueue<string> streamed = [];
 
 		var result = await runner.RunAsync(
 			CreateTempDirectory(),
 			[
-				"-NoProfile",
-				"-Command",
-				"[Console]::Out.WriteLine('out-one'); [Console]::Error.WriteLine('err-one'); exit 3"
+				"/d",
+				"/s",
+				"/c",
+				"echo out-one&echo err-one>&2&exit /b 3"
 			],
 			new ImmediateProgress(streamed.Enqueue),
 			CancellationToken.None);
