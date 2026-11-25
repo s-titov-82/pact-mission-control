@@ -110,13 +110,13 @@ internal sealed partial class SettingsWindow : Window, IDisposable
 				var indicator = new TextBlock { Text = "↗", HorizontalAlignment = HorizontalAlignment.Right };
 				DockPanel.SetDock(indicator, Dock.Right);
 				row.Children.Add(indicator);
-				row.Children.Add(new TextBlock { Text = "Skill catalog" });
+				row.Children.Add(new TextBlock { Text = "⚙ Skills" });
 				var catalog = new Button { Content = row };
 				AutomationProperties.SetName(catalog, "Skill catalog");
 				ToolTip.SetTip(catalog, "Open skill catalog in a separate window");
 				catalog.Click += (_, _) => RunEvent("settings-skills", OpenSkillsAsync);
 				SectionList.Children.Add(catalog);
-				var mcp = new Button { Content = "MCP catalog" };
+				var mcp = new Button { Content = "⚙ MCP" };
 				AutomationProperties.SetName(mcp, "MCP catalog");
 				ToolTip.SetTip(mcp, "Open the MCP server catalog in a separate window");
 				mcp.Click += (_, _) => RunEvent("settings-mcp-catalog", OpenMcpCatalogAsync);

@@ -59,7 +59,7 @@
             <Button x:Name="ProjectSkillMappingButton" Grid.Column="2" Height="24" MinHeight="0"
                     Content="Skill mapping" Padding="6,0" ToolTip.Tip="Configure skills for this project"
                     Click="OnProjectSkillMappingClicked" />
-            <Button Grid.Column="3" Height="24" MinHeight="0" Content="MCP catalog" Padding="6,0"
+            <Button Grid.Column="3" Height="24" MinHeight="0" Content="MCP mapping" Padding="6,0"
                     ToolTip.Tip="Configure MCP servers for this project" Click="OnProjectMcpCatalogClicked" />
           </Grid>
           <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">

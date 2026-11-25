@@ -159,35 +159,15 @@ public sealed partial class SkillActivationService
 		}
 		if (profile.Kind == AgentKind.Claude)
 		{
-			var overrides = new JsonObject();
-			foreach (var (name, enabled) in changes)
-			{
-				overrides[name] = enabled ? "on" : "off";
-			}
 			var arguments = native.Arguments.ToList();
-			var settingIndex = arguments.FindLastIndex(arg => arg == "--settings" || arg.StartsWith("--settings=", StringComparison.Ordinal));
-			if (settingIndex < 0)
+			ClaudeSettingsArgument.Edit(arguments, original =>
 			{
-				var settings = new JsonObject { ["skillOverrides"] = overrides };
-				arguments.Add("--settings");
-				arguments.Add(settings.ToJsonString());
-			}
-			else
-			{
-				var inline = arguments[settingIndex] != "--settings";
-				var valueIndex = inline ? settingIndex : settingIndex + 1;
-				var original = valueIndex >= arguments.Count ? string.Empty
-					: inline ? arguments[valueIndex]["--settings=".Length..] : arguments[valueIndex];
-				if (!original.TrimStart().StartsWith('{'))
-				{
-					throw new InvalidOperationException("The existing Claude settings argument is not inline JSON.");
-				}
 				foreach (var entry in changes)
 				{
 					original = ClaudeSkillRules.Edit(original, entry.Key, entry.Value ? "on" : "off")!;
 				}
-				arguments[valueIndex] = (inline ? "--settings=" : "") + original;
-			}
+				return original;
+			});
 			return native with { Arguments = arguments };
 		}
 		return WithCodexOverrides(native, null, changes, inspection.CodexRules(NativeConfig(profile)), inspection.Manifest);

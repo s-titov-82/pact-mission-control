@@ -210,17 +210,26 @@ are identified by configuration path. An explicit native configuration
 directory travels with the saved session for subsequent starts and resumes.
 
 `Settings/mcp-catalog.json` stores Pact-registered streamable HTTP and stdio
-definitions and their selections. A selection belongs to a launch profile ID
-and agent kind. An exact project root can override its profile default. The
-editor previews the affected profiles and atomically replaces this file after
-Apply. File-backed native MCP entries are shown by source and transport.
+definitions and availability rules for catalog IDs and native server names.
+A rule belongs to a launch profile ID and agent kind. Exact project rules take
+precedence over folder rules, which are checked from the session's working
+directory up to its ancestors. The profile default is the fallback. The editor
+previews affected profiles and atomically replaces this file after Apply.
+Catalog browsing and launch leave native files untouched. Explicit catalog
+maintenance previews and applies edits to the selected native files. Sharing
+copies a declaration under its original name to the destination profiles'
+user configuration. The catalog's public preview contains file paths only.
+Header and environment values in the declaration go directly to the native
+configuration instead of the Pact catalog. OAuth state stays with its agent.
 
 At process start Pact appends Codex config flags or points Claude's
 `--mcp-config` at an immutable document under `Temp/Session/McpCatalog`.
 Both use `pact_catalog_` server names. The same launch can carry the
-independent Pact agent-control connection. Catalog entries carry environment
-variable names for credentials. Authentication, native policy and package
-updates belong to the agent or the server's own installation.
+independent Pact agent-control connection. Native availability uses Codex
+config overrides or a Claude session deny list merged into the launch settings.
+Pact-owned entries carry environment variable names for credentials.
+Authentication, native policy and package updates belong to the agent or the
+server's own installation.
 
 ### Project Board
 

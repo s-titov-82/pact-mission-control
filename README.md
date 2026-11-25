@@ -154,7 +154,7 @@ In **Settings → Agents → Terminal profiles**, select a profile and check its
 runtime dependencies, and skill directories. Opening a test terminal gives Pact
 a visible session for observing startup and MCP initialization.
 
-Open **Skill catalog** beside the settings gear in the main window or at the
+Open **⚙ Skills** beside the settings gear in the main window or at the
 top of the Settings sidebar. The catalog reads `~/.agents/skills` and the native
 Codex and Claude skill directories, including links into a team checkout.
 On **Catalog**, expand a source to see its skills. Use **Add a skill source**
@@ -202,17 +202,46 @@ available ids changes, so restarting their terminal is unnecessary. Direct
 external edits are observed only after that Settings reload boundary or an
 application restart.
 
-Open **MCP catalog** under **Settings → Agents** or from the project's
-**Overview**. Select a Codex or Claude launch profile to see declarations
-in its native files and in the selected project. Edit native entries with
-the agent. Use **Add server** to register a streamable HTTP or stdio server
-in Pact, then set it **On** under **Profile defaults**. For one project,
-choose **Inherit**, **On**, or **Off**. Before **Apply**, Pact shows the
-affected profiles and the settings file it will write. ROOT sessions started
-from a launch profile use its defaults.
+Open **⚙ MCP** beside **⚙ Skills** in the main window or under
+**Settings → Agents**. The **Catalog** tab lists servers by source. A native
+entry shows its native switch and offers **Enable in agent** or **Disable in agent**
+as appropriate, plus **Remove**. Native edits also apply when starting the agent
+outside Pact. Mapping choices apply to launches through Pact. Select a native server to
+edit its full declaration in the right pane, as JSON for Claude or TOML for
+Codex. The editor includes the declaration's headers and other credential fields.
+**Review changes** validates the block and shows the affected file before **Apply**.
+
+Use **Make shared** to copy a native declaration into the selected profiles'
+user configurations. Those agents can use it when started directly from a
+terminal. Compatible HTTP headers, stdio environment values, and environment
+variable references stay in the native configurations. Sign in separately
+where the destination agent requires OAuth. **Add server** creates a Pact-owned
+entry for sessions launched through Pact.
+
+On **MCP → Agent mapping**, each row is a server and each column is a launch
+profile. Native declarations have controls in the profiles that load them.
+Choose **Default**, a folder or a project on the left. **Add directory** adds
+a folder whose rules include its descendants, or a single unopened project.
+Pact checks the exact project, then the nearest configured folder of the
+session's working directory, then the profile default. **MCP mapping**
+on a project's **Overview** opens this tab with the project selected.
+**Review changes** lists all pending edits, the affected profiles and the
+settings file before **Apply**. ROOT sessions use their launch profile's defaults.
+Native availability choices apply to launches through Pact and respect the
+agent's own connection permissions. Claude merges server denials from user,
+project and project-local configuration. The catalog identifies matching files.
+In Claude, **On** cannot override a native denial. Codex project-only rules are
+applied when the project's configuration is explicitly trusted and in scope.
+
+If the native file changes during an edit, **Review changes** keeps the draft
+and picks up unrelated writes. A change to the same server requires reviewing
+the latest definition. If a running Claude session replaces the server entry
+after **Apply**, close that session before reviewing and applying the edit again.
+Removing a native declaration keeps existing name rules
+available in the mapping, where **Inherit** clears them for that scope.
 
 After starting or restarting the session, open `/mcp` in the agent and find
-the server by the `pact_catalog_` name shown in the catalog. The agent reports
+the server by its native name, or by the `pact_catalog_` name for a Pact-owned entry. The agent reports
 connection and authentication status. Supply credentials through environment
 variable names or the agent's own sign-in. For stdio, install and update the
 executable with its own package manager. Edit a registered endpoint or command

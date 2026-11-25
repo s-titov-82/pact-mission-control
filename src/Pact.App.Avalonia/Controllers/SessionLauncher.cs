@@ -265,7 +265,12 @@ internal sealed class SessionLauncher(
 			var catalog = new McpCatalogService(_appPaths);
 			try
 			{
-				return catalog.ComposeLaunch(saved, directory, launch);
+				return catalog.ComposeLaunch(saved, directory, launch, session.IsRootItem ? null : record.WorkingDirectory);
+			}
+			catch (ClaudeSettingsArgumentException exception)
+			{
+				reportDiagnostic($"Could not apply the MCP catalog for this launch. {exception.Message}");
+				return launch;
 			}
 			catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException or ArgumentException or InvalidOperationException)
 			{

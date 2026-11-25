@@ -64,17 +64,45 @@ public sealed partial class McpCatalogService(AppPaths paths)
 		return SkillActivationService.MatchesNativeExecutable(profile);
 	}
 
-	/// <summary>Tests whether a rule applies to the specified saved profile and exact project scope.</summary>
-	public static bool Matches(McpCatalogSelection selection, AgentProfileRecord profile, string? projectDirectory)
+	/// <summary>Tests whether a rule belongs to the saved profile and exact scope being edited.</summary>
+	public static bool Matches(McpCatalogSelection selection, AgentProfileRecord profile, string? projectDirectory, bool isFolder = false)
 	{
 		ArgumentNullException.ThrowIfNull(selection);
 		ArgumentNullException.ThrowIfNull(profile);
-		return selection.Kind == profile.Kind && selection.ProfileId == profile.Id &&
+		return selection.Kind == profile.Kind && selection.ProfileId == profile.Id && selection.IsFolder == isFolder &&
 			StringComparer.OrdinalIgnoreCase.Equals(NormalizeProject(selection.ProjectDirectory), NormalizeProject(projectDirectory));
 	}
 
+	/// <summary>Returns the choice for one server, preferring the exact project, nearest working-directory ancestor, then default.</summary>
+	public static McpCatalogSelection? EffectiveSelection(IEnumerable<McpCatalogSelection> selections, AgentProfileRecord profile,
+		string? projectDirectory, string? workingDirectory = null)
+	{
+		ArgumentNullException.ThrowIfNull(profile);
+		var project = NormalizeProject(projectDirectory);
+		var directory = NormalizeProject(workingDirectory) ?? project;
+		McpCatalogSelection? effective = null;
+		var priority = -1;
+		foreach (var selection in selections.Where(selection => selection.Kind == profile.Kind && selection.ProfileId == profile.Id))
+		{
+			var scope = NormalizeProject(selection.ProjectDirectory);
+			var candidate = scope is null ? 0 : selection.IsFolder
+				? (directory is not null && IsUnderFolder(directory, scope) ? scope.Length : -1)
+				: (StringComparer.OrdinalIgnoreCase.Equals(scope, project) ? int.MaxValue : -1);
+			if (candidate > priority)
+			{
+				effective = selection;
+				priority = candidate;
+			}
+		}
+		return effective;
+	}
+
+	private static bool IsUnderFolder(string directory, string folder) =>
+		StringComparer.OrdinalIgnoreCase.Equals(directory, folder) || directory.StartsWith(
+			Path.EndsInDirectorySeparator(folder) ? folder : folder + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+
 	/// <summary>Appends configured servers while leaving the agent's native loading and permissions in effect.</summary>
-	public LaunchInjection ComposeLaunch(AgentProfileRecord profile, string? projectDirectory, LaunchInjection injection)
+	public LaunchInjection ComposeLaunch(AgentProfileRecord profile, string? projectDirectory, LaunchInjection injection, string? workingDirectory = null)
 	{
 		ArgumentNullException.ThrowIfNull(profile);
 		ArgumentNullException.ThrowIfNull(injection);
@@ -83,22 +111,54 @@ public sealed partial class McpCatalogService(AppPaths paths)
 			return injection;
 		}
 		var settings = Read().Settings;
-		var selected = settings.Selections.Where(rule => Matches(rule, profile, null)).ToDictionary(rule => rule.ServerId, rule => rule.Enabled);
-		if (projectDirectory is not null)
+		var rules = settings.Selections.Where(rule => rule.ProfileId == profile.Id && rule.Kind == profile.Kind)
+			.ToLookup(rule => (rule.IsNative, rule.ServerId));
+		var native = SupportsNativeManagement(profile) && (rules.Any(group => group.Key.IsNative) ||
+			settings.Servers.Any(server => server.NativeOrigin?.Kind == profile.Kind)) ? ReadNative(profile, projectDirectory) : [];
+		if (profile.Kind == AgentKind.Codex && native.Any(declaration => declaration.ProjectDirectory is not null))
 		{
-			foreach (var rule in settings.Selections.Where(rule => Matches(rule, profile, projectDirectory)))
+			var projectInScope = IsCodexWorkingDirectoryInProject(projectDirectory, workingDirectory);
+			native = native.Where(declaration => declaration.ProjectDirectory is null || declaration.IsProjectConfigurationTrusted && projectInScope).ToArray();
+		}
+		Dictionary<string, bool> nativeChoices = new(StringComparer.Ordinal);
+		foreach (var name in native.Select(server => server.Name).Distinct())
+		{
+			if (EffectiveSelection(rules[(true, name)], profile, projectDirectory, workingDirectory) is { } choice)
 			{
-				selected[rule.ServerId] = rule.Enabled;
+				nativeChoices[name] = choice.Enabled;
 			}
 		}
-		var servers = settings.Servers.Where(server => selected.GetValueOrDefault(server.Id)).ToArray();
-		if (servers.Length == 0)
+		List<McpCatalogServer> servers = [];
+		foreach (var server in settings.Servers)
+		{
+			var choice = EffectiveSelection(rules[(false, server.Id)], profile, projectDirectory, workingDirectory);
+			if (UsesNativeOrigin(server, profile, native))
+			{
+				var name = server.NativeOrigin!.Name;
+				choice = EffectiveSelection(rules[(false, server.Id)].Concat(rules[(true, name)]), profile, projectDirectory, workingDirectory);
+				if (choice is not null)
+				{
+					nativeChoices[name] = choice.Enabled;
+				}
+			}
+			else if (choice?.Enabled == true)
+			{
+				servers.Add(server);
+			}
+		}
+		if (servers.Count == 0 && (nativeChoices.Count == 0 ||
+			profile.Kind == AgentKind.Claude && nativeChoices.Values.All(enabled => enabled)))
 		{
 			return injection;
 		}
 		var args = injection.Arguments.ToList();
 		if (profile.Kind == AgentKind.Codex)
 		{
+			foreach (var (name, enabled) in nativeChoices)
+			{
+				args.Add("-c");
+				args.Add($"mcp_servers.{name}.enabled={(enabled ? "true" : "false")}");
+			}
 			foreach (var server in servers)
 			{
 				args.Add("-c");
@@ -107,15 +167,19 @@ public sealed partial class McpCatalogService(AppPaths paths)
 		}
 		else
 		{
-			var definitions = new JsonObject();
-			foreach (var server in servers)
+			var denied = nativeChoices.Where(choice => !choice.Value).Select(choice => choice.Key).ToArray();
+			if (denied.Length > 0)
 			{
-				definitions.Add(server.AgentName, ClaudeDefinition(server));
+				AddClaudeNativeDenials(args, denied);
 			}
-			var json = new JsonObject { ["mcpServers"] = definitions }.ToJsonString();
-			var hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(json)));
-			args.Add("--mcp-config");
-			args.Add(AgentControlLaunchInjection.WriteConfiguration(_launchDirectory, hash + ".json", json, overwrite: false));
+			if (servers.Count > 0)
+			{
+				var definitions = new JsonObject(servers.Select(server => KeyValuePair.Create<string, JsonNode?>(server.AgentName, ClaudeDefinition(server))));
+				var json = new JsonObject { ["mcpServers"] = definitions }.ToJsonString();
+				var hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(json)));
+				args.Add("--mcp-config");
+				args.Add(AgentControlLaunchInjection.WriteConfiguration(_launchDirectory, hash + ".json", json, overwrite: false));
+			}
 		}
 		return injection with { Arguments = args };
 	}
@@ -127,6 +191,11 @@ public sealed partial class McpCatalogService(AppPaths paths)
 		if (server.Id is null || !IdPattern().IsMatch(server.Id))
 		{
 			throw new ArgumentException("Use 1–40 lowercase letters, digits, hyphens, or underscores for the server ID. Start with a letter.");
+		}
+		if (server.NativeOrigin is { } origin && (origin.Kind is not (AgentKind.Codex or AgentKind.Claude) ||
+			!IsConfigurableNativeName(origin.Name) || !Path.IsPathFullyQualified(origin.SourcePath)))
+		{
+			throw new ArgumentException("The shared MCP server has an invalid native source.");
 		}
 		if (server.Arguments is null || server.Arguments.Any(arg => arg is null || arg.Contains('\0', StringComparison.Ordinal)) ||
 			server.EnvironmentVariables is null || server.EnvironmentVariables.Any(name => name is null || !VariablePattern().IsMatch(name)))
@@ -171,12 +240,13 @@ public sealed partial class McpCatalogService(AppPaths paths)
 				throw new ArgumentException("Each MCP server needs a unique ID.");
 			}
 		}
-		var selections = new HashSet<(string, AgentKind, string?, string)>();
+		var selections = new HashSet<(string, AgentKind, string?, bool, bool, string)>();
 		foreach (var rule in settings.Selections)
 		{
-			if (rule is null || string.IsNullOrWhiteSpace(rule.ProfileId) || !ids.Contains(rule.ServerId) ||
-				rule.Kind is not (AgentKind.Codex or AgentKind.Claude) ||
-				!selections.Add((rule.ProfileId, rule.Kind, NormalizeProject(rule.ProjectDirectory)?.ToUpperInvariant(), rule.ServerId)))
+			if (rule is null || string.IsNullOrWhiteSpace(rule.ProfileId) ||
+				(rule.IsNative ? !IsConfigurableNativeName(rule.ServerId) : !ids.Contains(rule.ServerId)) ||
+				rule.Kind is not (AgentKind.Codex or AgentKind.Claude) || (rule.IsFolder && rule.ProjectDirectory is null) ||
+				!selections.Add((rule.ProfileId, rule.Kind, NormalizeProject(rule.ProjectDirectory)?.ToUpperInvariant(), rule.IsFolder, rule.IsNative, rule.ServerId)))
 			{
 				throw new ArgumentException("Every MCP selection must uniquely identify a server, launch profile, and scope.");
 			}

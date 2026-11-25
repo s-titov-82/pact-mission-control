@@ -676,6 +676,11 @@ internal sealed partial class MainWindow : Window, IDisposable
 			handler => RightActions.SkillCatalogRequested -= handler,
 			"open-skill-catalog",
 			() => OpenSkillCatalogAsync(null));
+		ObserveEvent(
+			handler => RightActions.McpCatalogRequested += handler,
+			handler => RightActions.McpCatalogRequested -= handler,
+			"open-mcp-catalog",
+			() => OpenMcpCatalogAsync(null));
 		ObserveEvent<WorkspaceViewModel>(
 			handler => ProjectScreen.SkillMappingRequested += handler,
 			handler => ProjectScreen.SkillMappingRequested -= handler,
@@ -870,7 +875,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 		await catalog.ShowDialog(this);
 	}
 
-	private Task OpenMcpCatalogAsync(string project)
+	private Task OpenMcpCatalogAsync(string? project)
 	{
 		var model = EngineProbeController.ViewModel;
 		var projects = model.Workspaces.Concat(model.PausedWorkspaces).Select(workspace => workspace.RootPath);

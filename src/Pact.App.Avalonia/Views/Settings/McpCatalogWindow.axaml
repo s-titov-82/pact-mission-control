@@ -1,74 +1,109 @@
 <Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="Pact.App.Avalonia.Views.Settings.McpCatalogWindow" x:CompileBindings="False"
-        Title="MCP catalog" Width="940" Height="690" MinWidth="700" MinHeight="540"
+        Title="MCP" Width="1100" Height="740" MinWidth="780" MinHeight="560"
         Icon="/Assets/AppIcon.ico" WindowStartupLocation="CenterOwner">
   <Grid Margin="16" RowDefinitions="*,Auto,Auto" RowSpacing="10">
-    <Grid x:Name="Catalog" RowDefinitions="Auto,*" RowSpacing="12">
-      <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
-        <StackPanel Spacing="4">
-          <TextBlock Text="Launch profile" />
-          <ComboBox x:Name="Profiles" HorizontalAlignment="Stretch" AutomationProperties.Name="Launch profile"
-                    PlaceholderText="No compatible launch profiles" SelectionChanged="OnScopeChanged" />
-        </StackPanel>
-        <StackPanel Grid.Column="1" Spacing="4">
-          <TextBlock Text="Project" />
-          <ComboBox x:Name="Scopes" HorizontalAlignment="Stretch" AutomationProperties.Name="Project scope"
-                    SelectionChanged="OnScopeChanged" />
-        </StackPanel>
-      </Grid>
-      <Grid Grid.Row="1" ColumnDefinitions="245,*" ColumnSpacing="16">
-        <Grid RowDefinitions="Auto,*,Auto" RowSpacing="6">
-          <TextBlock Text="Servers" FontWeight="SemiBold" />
-          <ListBox Grid.Row="1" x:Name="Servers" AutomationProperties.Name="MCP servers" SelectionChanged="OnServerSelected" />
-          <Button Grid.Row="2" x:Name="AddServer" Content="Add server…" Click="OnAddServer" />
+    <TabControl x:Name="Catalog">
+      <TabItem Header="Catalog">
+        <Grid Margin="0,10,0,0" ColumnDefinitions="300,*" ColumnSpacing="16">
+          <Grid RowDefinitions="Auto,*,Auto" RowSpacing="6">
+            <TextBlock Text="Sources" FontWeight="SemiBold" Margin="8,0,0,0" />
+            <TreeView Grid.Row="1" x:Name="Servers" AutomationProperties.Name="MCP servers by source" SelectionChanged="OnServerSelected" />
+            <Button Grid.Row="2" x:Name="AddServer" Content="Add server…" Click="OnAddServer" />
+          </Grid>
+          <ScrollViewer Grid.Column="1" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Spacing="9" Margin="0,0,8,0">
+              <TextBlock x:Name="ServerTitle" FontSize="19" TextWrapping="Wrap" />
+              <SelectableTextBlock x:Name="ServerDetails" TextWrapping="Wrap" />
+              <TextBlock x:Name="NativeState" IsVisible="False" FontWeight="SemiBold" />
+              <TextBlock x:Name="NativeBlocker" IsVisible="False" TextWrapping="Wrap" />
+              <WrapPanel x:Name="NativeActions" IsVisible="False">
+                <Button x:Name="ShareDefinition" Content="Make shared…" Margin="0,0,6,4" Click="OnShareServer" />
+                <Button x:Name="EnableNative" Content="Enable in agent…" Tag="Enable" Margin="0,0,6,4" Click="OnNativeEdit" />
+                <Button x:Name="DisableNative" Content="Disable in agent…" Tag="Disable" Margin="0,0,6,4" Click="OnNativeEdit" />
+                <Button x:Name="RemoveNative" Content="Remove…" Tag="Remove" Margin="0,0,6,4" Click="OnNativeEdit" />
+              </WrapPanel>
+              <StackPanel x:Name="NativeShareEditor" IsVisible="False" Spacing="6">
+                <TextBlock Text="Select the profiles that should load this server from their user configuration, including outside Pact." TextWrapping="Wrap" />
+                <ListBox x:Name="NativeShareTargets" SelectionMode="Multiple" MaxHeight="200" AutomationProperties.Name="Destination launch profiles" />
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <Button x:Name="ReviewNativeShare" Content="Review sharing…" Click="OnReviewNativeShare" />
+                  <Button Content="Cancel" Click="OnCancelDefinition" />
+                </StackPanel>
+              </StackPanel>
+              <StackPanel x:Name="NativeDefinitionEditor" IsVisible="False" Spacing="6">
+                <TextBlock x:Name="NativeDefinitionFormat" />
+                <TextBox x:Name="NativeDefinitionContent" AcceptsReturn="True" AcceptsTab="True" MinHeight="280" MaxHeight="440"
+                         FontFamily="Cascadia Mono,Consolas" TextWrapping="NoWrap"
+                         ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         AutomationProperties.Name="Native MCP configuration" />
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <Button x:Name="ReviewNativeDefinition" Content="Review changes…" Click="OnReviewNativeDefinition" />
+                  <Button Content="Reset" Click="OnCancelDefinition" />
+                </StackPanel>
+              </StackPanel>
+              <StackPanel x:Name="DefinitionActions" IsVisible="False" Orientation="Horizontal" Spacing="6">
+                <Button x:Name="RemoveDefinition" Content="Remove server…" Click="OnRemoveServer" />
+              </StackPanel>
+              <StackPanel x:Name="DefinitionEditor" IsVisible="False" Spacing="6">
+                <TextBlock Text="Server ID" />
+                <TextBox x:Name="ServerId" AutomationProperties.Name="Server ID" />
+                <TextBlock Text="Transport" />
+                <ComboBox x:Name="Transport" AutomationProperties.Name="Transport" SelectionChanged="OnTransportChanged">
+                  <ComboBoxItem>Streamable HTTP</ComboBoxItem><ComboBoxItem>stdio</ComboBoxItem>
+                </ComboBox>
+                <StackPanel x:Name="HttpFields" Spacing="6">
+                  <TextBlock Text="Endpoint URL" />
+                  <TextBox x:Name="ServerUrl" AutomationProperties.Name="Endpoint URL" />
+                  <TextBlock Text="Bearer token environment variable (optional)" />
+                  <TextBox x:Name="TokenVariable" AutomationProperties.Name="Bearer token environment variable" />
+                </StackPanel>
+                <StackPanel x:Name="StdioFields" IsVisible="False" Spacing="6">
+                  <TextBlock Text="Executable" />
+                  <TextBox x:Name="Command" AutomationProperties.Name="Executable" />
+                  <TextBlock Text="Arguments (JSON array of strings)" />
+                  <TextBox x:Name="Arguments" AutomationProperties.Name="Arguments" PlaceholderText="[]" />
+                  <TextBlock Text="Environment variable names (one per line)" />
+                  <TextBox x:Name="EnvironmentNames" AcceptsReturn="True" MinHeight="60" AutomationProperties.Name="Environment variable names" />
+                </StackPanel>
+                <TextBlock Text="Keep credentials in the environment or sign in through the agent. Update executables with their package manager." TextWrapping="Wrap" />
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <Button x:Name="ReviewDefinition" Content="Review definition…" Click="OnReviewDefinition" />
+                  <Button Content="Cancel" Click="OnCancelDefinition" />
+                </StackPanel>
+              </StackPanel>
+              <TextBlock x:Name="NativeStatus" TextWrapping="Wrap" />
+            </StackPanel>
+          </ScrollViewer>
         </Grid>
-        <ScrollViewer Grid.Column="1" HorizontalScrollBarVisibility="Disabled">
-          <StackPanel Spacing="9" Margin="0,0,8,0">
-            <TextBlock x:Name="ServerTitle" FontSize="19" TextWrapping="Wrap" />
-            <SelectableTextBlock x:Name="ServerDetails" TextWrapping="Wrap" />
-            <StackPanel x:Name="SelectionEditor" IsVisible="False" Spacing="6">
-              <TextBlock x:Name="SelectionStatus" TextWrapping="Wrap" />
-              <StackPanel Orientation="Horizontal" Spacing="6">
-                <ComboBox x:Name="Selection" AutomationProperties.Name="Server availability" />
-                <Button x:Name="ReviewAvailability" Content="Review availability…" Click="OnReviewSelection" />
-              </StackPanel>
-              <TextBlock Text="After starting or restarting the session, open /mcp in the agent to check its connection." TextWrapping="Wrap" />
+      </TabItem>
+      <TabItem x:Name="MappingTab" Header="MCP → Agent mapping">
+        <Grid Margin="0,10,0,0" ColumnDefinitions="230,*" ColumnSpacing="16">
+          <Grid RowDefinitions="Auto,*,Auto" RowSpacing="8">
+            <TextBlock Text="Changes apply to" FontWeight="SemiBold" />
+            <TreeView Grid.Row="1" x:Name="Scopes" AutomationProperties.Name="Default, project or folder" SelectionChanged="OnScopeChanged" />
+            <Button Grid.Row="2" Content="Add directory…">
+              <Button.Flyout>
+                <MenuFlyout>
+                  <MenuItem Header="Folder and descendants…" Tag="Folder" Click="OnAddScope" />
+                  <MenuItem Header="Single project…" Click="OnAddScope" />
+                </MenuFlyout>
+              </Button.Flyout>
+            </Button>
+          </Grid>
+          <Grid Grid.Column="1" RowDefinitions="*,Auto,Auto" RowSpacing="8">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+              <StackPanel x:Name="MappingRows" Spacing="6" />
+            </ScrollViewer>
+            <TextBlock Grid.Row="1" Text="Start or restart the session, then open /mcp in the agent to check the connection." TextWrapping="Wrap" />
+            <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="6">
+              <Button x:Name="ReviewAvailability" Content="Review changes…" IsEnabled="False" Click="OnReviewMapping" />
+              <Button x:Name="DiscardMapping" Content="Discard edits" IsEnabled="False" Click="OnDiscardMapping" />
             </StackPanel>
-            <StackPanel x:Name="DefinitionActions" IsVisible="False" Orientation="Horizontal" Spacing="6">
-              <Button x:Name="EditDefinition" Content="Edit definition…" Click="OnEditServer" />
-              <Button x:Name="RemoveDefinition" Content="Remove server…" Click="OnRemoveServer" />
-            </StackPanel>
-            <StackPanel x:Name="DefinitionEditor" IsVisible="False" Spacing="6">
-              <TextBlock Text="Server ID" />
-              <TextBox x:Name="ServerId" AutomationProperties.Name="Server ID" />
-              <TextBlock Text="Transport" />
-              <ComboBox x:Name="Transport" AutomationProperties.Name="Transport" SelectionChanged="OnTransportChanged">
-                <ComboBoxItem>Streamable HTTP</ComboBoxItem><ComboBoxItem>stdio</ComboBoxItem>
-              </ComboBox>
-              <StackPanel x:Name="HttpFields" Spacing="6">
-                <TextBlock Text="Endpoint URL" />
-                <TextBox x:Name="ServerUrl" AutomationProperties.Name="Endpoint URL" />
-                <TextBlock Text="Bearer token environment variable (optional)" />
-                <TextBox x:Name="TokenVariable" AutomationProperties.Name="Bearer token environment variable" />
-              </StackPanel>
-              <StackPanel x:Name="StdioFields" IsVisible="False" Spacing="6">
-                <TextBlock Text="Executable" />
-                <TextBox x:Name="Command" AutomationProperties.Name="Executable" />
-                <TextBlock Text="Arguments (JSON array of strings)" />
-                <TextBox x:Name="Arguments" AutomationProperties.Name="Arguments" PlaceholderText="[]" />
-                <TextBlock Text="Environment variable names (one per line)" />
-                <TextBox x:Name="EnvironmentNames" AcceptsReturn="True" MinHeight="60" AutomationProperties.Name="Environment variable names" />
-              </StackPanel>
-              <TextBlock Text="Keep credentials in the environment or sign in through the agent. Update executables with their package manager." TextWrapping="Wrap" />
-              <StackPanel Orientation="Horizontal" Spacing="6">
-                <Button x:Name="ReviewDefinition" Content="Review definition…" Click="OnReviewDefinition" />
-                <Button Content="Cancel" Click="OnCancelDefinition" />
-              </StackPanel>
-            </StackPanel>
-          </StackPanel>
-        </ScrollViewer>
-      </Grid>
-    </Grid>
+          </Grid>
+        </Grid>
+      </TabItem>
+    </TabControl>
     <Border Grid.Row="1" x:Name="Preview" IsVisible="False" Padding="10" BorderThickness="1" BorderBrush="{StaticResource AppPanelBorderBrush}">
       <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
         <ScrollViewer MaxHeight="150"><SelectableTextBlock x:Name="PreviewText" TextWrapping="Wrap" /></ScrollViewer>
