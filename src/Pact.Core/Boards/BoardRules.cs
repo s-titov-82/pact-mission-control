@@ -67,6 +67,45 @@ public static class BoardRules
 			}), actor, now);
 		}
 
+		if (command is ArchiveAllDone archiveAll)
+		{
+			if (archiveAll.ExpectedOrderRevision != BoardRevisions.ForOrder(state))
+			{
+				return Reject(BoardMutationOutcome.Conflict);
+			}
+
+			var archived = new List<BoardCard>();
+			var remaining = new List<BoardCard>(state.Cards.Count);
+			foreach (var candidate in state.Cards)
+			{
+				if (candidate is { Status: BoardCardStatus.Done, IsArchived: false })
+				{
+					archived.Add(candidate with
+					{
+						IsArchived = true,
+						FieldsVersion = checked(candidate.FieldsVersion + 1),
+						UpdatedAt = now
+					});
+				}
+				else
+				{
+					remaining.Add(candidate);
+				}
+			}
+
+			if (archived.Count == 0)
+			{
+				return Reject(BoardMutationOutcome.Empty);
+			}
+
+			remaining.AddRange(archived);
+			return new(BoardMutationOutcome.Applied, state with
+			{
+				Cards = remaining.AsReadOnly(),
+				OrderVersion = checked(state.OrderVersion + 1)
+			});
+		}
+
 		if (command is CleanArchive clean)
 		{
 			if (clean.ExpectedArchiveRevision != BoardRevisions.ForArchive(state))

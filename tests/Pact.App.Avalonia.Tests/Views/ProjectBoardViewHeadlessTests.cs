@@ -26,7 +26,7 @@ public sealed class ProjectBoardViewHeadlessTests
 			await board.CreateAsync("Drag me", CancellationToken.None);
 			await board.OpenAsync(null, CancellationToken.None);
 			window.UpdateLayout();
-			var card = view.FindControl<StackPanel>("Columns")!.GetLogicalDescendants().OfType<Button>().Single();
+			var card = CardButtons(view).Single();
 			var position = card.TranslatePoint(new Point(20, 20), window)!.Value;
 			var started = 0;
 			var presses = 0;
@@ -63,7 +63,7 @@ public sealed class ProjectBoardViewHeadlessTests
 			void DropFirstCard(bool belowLast)
 			{
 				window.UpdateLayout();
-				var cards = view.FindControl<StackPanel>("Columns")!.GetLogicalDescendants().OfType<Button>().ToArray();
+				var cards = CardButtons(view).ToArray();
 				var start = cards[0].TranslatePoint(new Point(20, 20), window)!.Value;
 				var anchor = belowLast ? cards[^1] : cards[0];
 				var drop = anchor.TranslatePoint(new Point(40, anchor.Bounds.Height + (belowLast ? 40 : 4)), window)!.Value;
@@ -172,6 +172,60 @@ public sealed class ProjectBoardViewHeadlessTests
 			Click(view, "DeleteCardButton");
 			Answer(window, "YesButton");
 			board.Cards.ShouldBeEmpty();
+		});
+	}
+
+	[AvaloniaTest]
+	public async Task Archive_all_requires_confirmation_and_moves_only_done_cards()
+	{
+		await WithBoard(async (board, view, window) =>
+		{
+			ArchiveAllButton(view).IsEnabled.ShouldBeFalse();
+			await board.CreateAsync("Keep active", CancellationToken.None);
+			await board.CreateAsync("First done", CancellationToken.None);
+			await board.UpdateAsync(new() { Status = new(BoardCardStatus.Done) }, CancellationToken.None);
+			board.CommentText = "Keep this discussion";
+			await board.AddCommentAsync(CancellationToken.None);
+			await board.CreateAsync("Second done", CancellationToken.None);
+			await board.UpdateAsync(new() { Status = new(BoardCardStatus.Done) }, CancellationToken.None);
+			await board.OpenAsync(null, CancellationToken.None);
+
+			ArchiveAllButton(view).IsEnabled.ShouldBeTrue();
+			ArchiveAllButton(view).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+			board.Cards.Count.ShouldBe(3);
+			Answer(window, "NoButton");
+			board.Cards.Count.ShouldBe(3);
+			ArchiveAllButton(view).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+			Answer(window, "YesButton");
+			board.Cards.Select(card => card.Title).ShouldBe(["Keep active"]);
+			ArchiveAllButton(view).IsEnabled.ShouldBeFalse();
+
+			Click(view, "ArchiveButton");
+			view.GetLogicalDescendants().OfType<Button>().ShouldNotContain(button => Equals(button.Content, "Archive all"));
+			board.Cards.Select(card => card.Title).ShouldBe(["First done", "Second done"]);
+			board.Cards[0].Comments.Single().Text.ShouldBe("Keep this discussion");
+		});
+	}
+
+	[AvaloniaTest]
+	public async Task Archive_all_rejects_a_card_added_to_done_while_confirming()
+	{
+		await WithBoard(async (board, view, window) =>
+		{
+			await board.CreateAsync("Already done", CancellationToken.None);
+			await board.UpdateAsync(new() { Status = new(BoardCardStatus.Done) }, CancellationToken.None);
+			await board.CreateAsync("Newly done", CancellationToken.None);
+			var pending = board.SelectedCard.ShouldNotBeNull();
+			await board.OpenAsync(null, CancellationToken.None);
+
+			ArchiveAllButton(view).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+			window.OwnedWindows.OfType<MessageDialogWindow>().ShouldHaveSingleItem();
+			await board.Workspace.ExecuteAsync(new UpdateCard(pending.Id, BoardRevisions.ForCard(pending), new() { Status = new(BoardCardStatus.Done) }),
+				new("agent", "Agent"), CancellationToken.None);
+			Answer(window, "YesButton");
+
+			board.Cards.Select(card => card.Title).ShouldBe(["Already done", "Newly done"]);
+			view.FindControl<TextBlock>("ErrorText")!.Text.ShouldNotBeNull().ShouldContain("The Done column changed");
 		});
 	}
 
@@ -310,6 +364,12 @@ public sealed class ProjectBoardViewHeadlessTests
 	}
 
 	private static void Click(ProjectBoardView view, string name) => view.FindControl<Button>(name)!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+	private static IEnumerable<Button> CardButtons(ProjectBoardView view) => view.FindControl<StackPanel>("Columns")!
+		.GetLogicalDescendants().OfType<Button>().Where(button => button.Tag is string);
+
+	private static Button ArchiveAllButton(ProjectBoardView view) => view.GetLogicalDescendants().OfType<Button>()
+		.Single(button => Equals(button.Content, "Archive all"));
 
 	private static void Answer(Window owner, string buttonName)
 	{

@@ -134,6 +134,42 @@ public sealed class BoardRulesTests
 	}
 
 	[Test]
+	public void Archiving_all_done_preserves_order_and_rejects_stale_or_empty_batches()
+	{
+		var active = ReadyPair();
+		var existingArchive = Card("archive", BoardCardStatus.Done) with { Number = 3, IsArchived = true };
+		var secondDone = Card("second-done", BoardCardStatus.Done) with { Number = 4 };
+		var firstDone = Card("first-done", BoardCardStatus.Done) with { Number = 5, FieldsVersion = 7, UpdatedAt = DateTimeOffset.UnixEpoch };
+		var state = active with
+		{
+			Cards = [active.Cards[0], existingArchive, firstDone, active.Cards[1], secondDone],
+			NextCardNumber = 6,
+			OrderVersion = 10
+		};
+		var command = new ArchiveAllDone(BoardRevisions.ForOrder(state));
+
+		var result = Apply(state, command);
+
+		result.Outcome.ShouldBe(BoardMutationOutcome.Applied);
+		result.State.Cards.ShouldBe([
+			active.Cards[0], existingArchive, active.Cards[1],
+			firstDone with { IsArchived = true, UpdatedAt = Now, FieldsVersion = 8 },
+			secondDone with { IsArchived = true, UpdatedAt = Now, FieldsVersion = 1 }
+		]);
+		result.State.OrderVersion.ShouldBe(11);
+		result.State.NextCardNumber.ShouldBe(6);
+		Apply(result.State, new SetArchived(firstDone.Id, false, BoardRevisions.ForCard(firstDone))).Outcome
+			.ShouldBe(BoardMutationOutcome.Conflict);
+
+		var stale = Apply(result.State, command);
+		stale.Outcome.ShouldBe(BoardMutationOutcome.Conflict);
+		stale.State.ShouldBeSameAs(result.State);
+		var empty = Apply(result.State, new ArchiveAllDone(BoardRevisions.ForOrder(result.State)));
+		empty.Outcome.ShouldBe(BoardMutationOutcome.Empty);
+		empty.State.ShouldBeSameAs(result.State);
+	}
+
+	[Test]
 	public void Cleaning_archive_rejects_new_archived_cards_and_preserves_active_order_and_numbering()
 	{
 		var active = ReadyPair();

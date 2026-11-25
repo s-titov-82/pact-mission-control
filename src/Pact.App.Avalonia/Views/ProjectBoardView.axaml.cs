@@ -172,7 +172,21 @@ internal sealed partial class ProjectBoardView : UserControl
 		{
 			var cards = _board.Cards.Where(card => card.Status == status).ToArray();
 			StackPanel column = new() { Width = 240, Spacing = 8, MinHeight = 180, Tag = status };
-			column.Children.Add(new TextBlock { Text = $"{(_board.ShowArchive ? "Archive" : StatusLabel(status))}  {cards.Length}", FontWeight = FontWeight.SemiBold, Margin = new(4, 8) });
+			Grid header = new() { ColumnDefinitions = new("*,Auto"), MinHeight = 36, Margin = new(4, 0) };
+			header.Children.Add(new TextBlock
+			{
+				Text = $"{(_board.ShowArchive ? "Archive" : StatusLabel(status))}  {cards.Length}",
+				FontWeight = FontWeight.SemiBold,
+				VerticalAlignment = VerticalAlignment.Center
+			});
+			if (!_board.ShowArchive && status == BoardCardStatus.Done)
+			{
+				Button archiveAll = new() { Content = "Archive all", IsEnabled = cards.Length > 0, VerticalAlignment = VerticalAlignment.Center };
+				archiveAll.Click += OnArchiveAllDone;
+				Grid.SetColumn(archiveAll, 1);
+				header.Children.Add(archiveAll);
+			}
+			column.Children.Add(header);
 			if (cards.Length == 0)
 			{
 				column.Children.Add(new TextBlock { Text = status == BoardCardStatus.Ready ? "No Ready cards" : "No cards", Margin = new(4, 8) });
@@ -352,7 +366,7 @@ internal sealed partial class ProjectBoardView : UserControl
 			}
 
 			if (deletion.RequiresConfirmation
-				&& !await ConfirmRemovalAsync("Delete card", $"Permanently delete card #{deletion.Card.Number} and its comments?"))
+				&& !await ConfirmAsync("Delete card", $"Permanently delete card #{deletion.Card.Number} and its comments?"))
 			{
 				return;
 			}
@@ -369,6 +383,31 @@ internal sealed partial class ProjectBoardView : UserControl
 		}
 	});
 
+	private void OnArchiveAllDone(object? sender, RoutedEventArgs e) => Run(async board =>
+	{
+		if (board.ShowArchive || _columnsSnapshot is not { } snapshot
+			|| !snapshot.State.Cards.Any(card => card is { Status: BoardCardStatus.Done, IsArchived: false })
+			|| !await ConfirmAsync("Archive all", "Move all cards in the Done column to the archive?")
+			|| !ReferenceEquals(_board, board) || board.ShowArchive)
+		{
+			return;
+		}
+
+		Drawer.IsEnabled = false;
+		try
+		{
+			if (await board.ArchiveAllDoneAsync(snapshot.OrderRevision, CancellationToken.None)
+				&& ReferenceEquals(_board, board))
+			{
+				ArchiveButton.Focus();
+			}
+		}
+		finally
+		{
+			Drawer.IsEnabled = true;
+		}
+	});
+
 	private void OnCleanArchive(object? sender, RoutedEventArgs e) => Run(async board =>
 	{
 		if (!board.ShowArchive || board.Workspace.Snapshot is not { } snapshot || board.Cards.Count == 0)
@@ -377,7 +416,7 @@ internal sealed partial class ProjectBoardView : UserControl
 		}
 
 		var revision = BoardRevisions.ForArchive(snapshot.State);
-		if (await ConfirmRemovalAsync("Clean archive", "Permanently delete all archived cards and their comments?")
+		if (await ConfirmAsync("Clean archive", "Permanently delete all archived cards and their comments?")
 			&& ReferenceEquals(_board, board) && board.ShowArchive
 			&& await board.CleanArchiveAsync(revision, CancellationToken.None))
 		{
@@ -385,7 +424,7 @@ internal sealed partial class ProjectBoardView : UserControl
 		}
 	});
 
-	private async Task<bool> ConfirmRemovalAsync(string title, string message)
+	private async Task<bool> ConfirmAsync(string title, string message)
 	{
 		return TopLevel.GetTopLevel(this) is Window owner
 			&& await MessageDialogWindow.ShowOwnedAsync(owner,

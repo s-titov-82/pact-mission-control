@@ -125,6 +125,22 @@ public sealed class ProjectBoardViewModel : INotifyPropertyChanged, IDisposable
 		Editor?.Dispose();
 		Editor = null;
 	});
+	/// <summary>Archives the confirmed Done column and closes its card editor after saving.</summary>
+	public Task<bool> ArchiveAllDoneAsync(string expectedOrderRevision, CancellationToken cancellationToken) => RunAsync(async () =>
+	{
+		if (SelectedCard is { Status: BoardCardStatus.Done, IsArchived: false })
+		{
+			await Workspace.FlushAsync(cancellationToken);
+		}
+
+		var result = await ApplyAsync(new ArchiveAllDone(expectedOrderRevision), cancellationToken);
+		if (Editor is { } editor && result.Snapshot.State.Cards.Any(card => card.Id == editor.CardId && card.IsArchived))
+		{
+			editor.Dispose();
+			Editor = null;
+			CommentText = string.Empty;
+		}
+	});
 	/// <summary>Flushes the selected editor and captures the saved card and its confirmation requirement.</summary>
 	public async Task<(BoardCard Card, bool RequiresConfirmation)?> PrepareDeleteAsync(CancellationToken cancellationToken)
 	{
@@ -189,9 +205,12 @@ public sealed class ProjectBoardViewModel : INotifyPropertyChanged, IDisposable
 		var result = await Workspace.ExecuteAsync(command, new(null, "You"), cancellationToken);
 		if (result.Outcome != BoardMutationOutcome.Applied)
 		{
-			var message = command is CleanArchive
-				? "The archive changed. Review its contents before trying again."
-				: $"Card was not changed: {result.Outcome}. Refresh and check the latest card.";
+			var message = command switch
+			{
+				ArchiveAllDone => "The Done column changed. Review the board before trying again.",
+				CleanArchive => "The archive changed. Review its contents before trying again.",
+				_ => $"Card was not changed: {result.Outcome}. Refresh and check the latest card."
+			};
 			throw new InvalidOperationException(message);
 		}
 		return result;

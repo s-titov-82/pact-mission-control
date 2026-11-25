@@ -39,7 +39,11 @@ they do not certify drag gestures, native focus or visual layout.
     and the card disappears immediately. Add a description to another card and
     click **Delete**. Dismiss the confirmation and verify the card stays. Repeat
     and confirm that the card and its comments disappear.
-12. Archive two Done cards and leave a third card active. Open Archive and
+12. Put two cards in Done and leave a third in another column. Select
+    **Archive all** in the Done header. Decline once and verify both cards
+    stay in Done. Repeat and confirm. Done is empty, its button is disabled,
+    and the two cards and their comments are available in Archive.
+13. With those two cards archived and the third still active, open Archive and
     select **Clean archive**. Decline once, then confirm. The archive empties,
     its cleanup button becomes disabled, and the active card remains after a
     restart.

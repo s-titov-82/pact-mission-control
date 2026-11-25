@@ -29,6 +29,70 @@ public sealed class ProjectBoardWorkspaceTests : IDisposable
 	}
 
 	[Test]
+	public async Task Archive_all_saves_the_open_done_editor_before_archiving_and_closes_it()
+	{
+		using var workspace = CreateWorkspace();
+		using ProjectBoardViewModel board = new(workspace, action => action(), () => [], new ManualTimeProvider());
+		await board.CreateAsync("Done", CancellationToken.None);
+		await board.UpdateAsync(new() { Status = new(BoardCardStatus.Done) }, CancellationToken.None);
+		board.Editor.ShouldNotBeNull().Description = "Pending brief";
+		board.CommentText = "Unsubmitted text";
+
+		(await board.ArchiveAllDoneAsync(workspace.Snapshot!.OrderRevision, CancellationToken.None)).ShouldBeTrue();
+
+		board.Editor.ShouldBeNull();
+		board.CommentText.ShouldBeEmpty();
+		using var reopened = CreateWorkspace();
+		var archived = (await reopened.LoadAsync(CancellationToken.None)).State.Cards.Single();
+		archived.IsArchived.ShouldBeTrue();
+		archived.Description.ShouldBe("Pending brief");
+	}
+
+	[Test]
+	public async Task Archive_all_keeps_the_open_done_editor_and_cards_when_text_conflicts()
+	{
+		using var workspace = CreateWorkspace();
+		using ProjectBoardViewModel board = new(workspace, action => action(), () => [], new ManualTimeProvider());
+		await board.CreateAsync("Done", CancellationToken.None);
+		await board.UpdateAsync(new() { Status = new(BoardCardStatus.Done) }, CancellationToken.None);
+		var card = board.SelectedCard.ShouldNotBeNull();
+		var editor = board.Editor.ShouldNotBeNull();
+		editor.Description = "Local brief";
+		await workspace.ExecuteAsync(new UpdateCard(card.Id, BoardRevisions.ForCard(card), new() { Description = new("Agent brief") }),
+			new("agent", "Agent"), CancellationToken.None);
+
+		(await board.ArchiveAllDoneAsync(workspace.Snapshot!.OrderRevision, CancellationToken.None)).ShouldBeFalse();
+
+		board.Error.ShouldNotBeNull().ShouldContain("unsaved edits");
+		board.Editor.ShouldBeSameAs(editor);
+		editor.Description.ShouldBe("Local brief");
+		editor.SaveStatus.State.ShouldBe(DocumentSaveState.Conflict);
+		board.Cards.Single().Description.ShouldBe("Agent brief");
+	}
+
+	[Test]
+	public async Task Archive_all_keeps_an_open_editor_for_a_card_outside_done()
+	{
+		using var workspace = CreateWorkspace();
+		using ProjectBoardViewModel board = new(workspace, action => action(), () => [], new ManualTimeProvider());
+		await board.CreateAsync("Done", CancellationToken.None);
+		await board.UpdateAsync(new() { Status = new(BoardCardStatus.Done) }, CancellationToken.None);
+		await board.CreateAsync("Backlog", CancellationToken.None);
+		var editor = board.Editor.ShouldNotBeNull();
+		editor.Description = "Pending brief";
+		board.CommentText = "Unsubmitted text";
+
+		(await board.ArchiveAllDoneAsync(workspace.Snapshot!.OrderRevision, CancellationToken.None)).ShouldBeTrue();
+
+		board.Editor.ShouldBeSameAs(editor);
+		editor.Description.ShouldBe("Pending brief");
+		editor.SaveStatus.State.ShouldBe(DocumentSaveState.Dirty);
+		board.CommentText.ShouldBe("Unsubmitted text");
+		board.Cards.Single().Title.ShouldBe("Backlog");
+		workspace.Snapshot.State.Cards.Single(card => card.IsArchived).Title.ShouldBe("Done");
+	}
+
+	[Test]
 	public async Task Failed_board_does_not_skip_saving_notes()
 	{
 		AppPaths paths = new(_directory.Path);

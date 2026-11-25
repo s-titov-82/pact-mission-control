@@ -32,6 +32,8 @@ public sealed record AddComment(string CardId, string Text) : BoardCommand;
 public sealed record DeleteComment(string CardId, string CommentId) : BoardCommand;
 /// <summary>Archives Done or restores to the end of Done.</summary>
 public sealed record SetArchived(string CardId, bool Archived, string ExpectedCardRevision) : BoardCommand;
+/// <summary>Archives all active Done cards using the confirmed board order revision.</summary>
+public sealed record ArchiveAllDone(string ExpectedOrderRevision) : BoardCommand;
 /// <summary>Permanently removes one active or archived card with its comments.</summary>
 public sealed record DeleteCard(string CardId, string ExpectedDeletionRevision) : BoardCommand;
 /// <summary>Permanently removes the archive contents covered by the confirmation.</summary>
