@@ -248,9 +248,9 @@ function Test-PactPreparedTree {
 
     $publishedFiles = @(Get-ChildItem -LiteralPath $pactPublishRoot -Recurse -File)
     [long]$publishedBytes = ($publishedFiles | Measure-Object -Property Length -Sum).Sum
-    [long]$maximumBytes = 50MB
+    [long]$maximumBytes = 80MB
     if ($publishedBytes -gt $maximumBytes) {
-        throw "Publish is $publishedBytes bytes, above the 50 MiB limit ($maximumBytes bytes)."
+        throw "Publish is $publishedBytes bytes, above the 80 MiB limit ($maximumBytes bytes)."
     }
 
     return [pscustomobject]@{

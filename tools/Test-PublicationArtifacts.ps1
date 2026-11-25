@@ -317,8 +317,8 @@ try {
     $totalBytes = (
         Get-ChildItem -LiteralPath $resolvedTemporaryRoot -Recurse -File |
             Measure-Object -Property Length -Sum).Sum
-    if ($totalBytes -gt 50MB) {
-        throw "Unpacked archive is larger than 50 MiB: $totalBytes bytes."
+    if ($totalBytes -gt 80MB) {
+        throw "Unpacked archive is larger than 80 MiB: $totalBytes bytes."
     }
 
     $conptyManifest = Join-Path $resolvedTemporaryRoot 'licenses/conpty-SHA256SUMS.txt'

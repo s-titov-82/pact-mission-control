@@ -400,7 +400,7 @@ The publish script cleans only `artifacts/publish/win-x64`, its disposable
 updater publish directory, and the selected version below `artifacts/release`.
 It fails if the payload contains a missing, duplicate, misplaced, or
 wrong-version updater, PDBs, Linux/macOS, win-x86 or win-arm64 runtime folders,
-or exceeds 50 MiB. Do not add another RID until the bundled ConPTY payload
+or exceeds 80 MiB. Do not add another RID until the bundled ConPTY payload
 exists for that architecture.
 
 Inno uses `UsePreviousAppDir=no`. Its code-backed default directory reads the
