@@ -855,7 +855,7 @@ public sealed class NotesAndActionsHeadlessTests : IDisposable
 		var requested = false;
 		actions.SkillCatalogRequested += (_, _) => requested = true;
 		var button = actions.FindControl<Button>("SkillCatalogButton").ShouldNotBeNull();
-		button.Content.ShouldBe("Skill catalog");
+		button.Content.ShouldBe("⚙ Skills");
 		button.IsVisible.ShouldBeTrue();
 		button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
 		requested.ShouldBeTrue();

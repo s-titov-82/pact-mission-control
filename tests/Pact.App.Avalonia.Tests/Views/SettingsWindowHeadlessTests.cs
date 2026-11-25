@@ -64,9 +64,9 @@ public sealed class SettingsWindowHeadlessTests
 
 		var tabs = template.Build(null).ShouldBeAssignableTo<TabControl>()!;
 		var pages = tabs.Items.Cast<TabItem>().ToArray();
-		pages.Select(page => page.Header).ShouldBe(["General", "Terminal theme", "Notifications"]);
-		var general = ((ScrollViewer)pages[0].Content!).Content.ShouldBeAssignableTo<StackPanel>()!;
-		general.Children.OfType<CheckBox>()
+		pages.Select(page => page.Header).ShouldBe(["General", "Terminal theme", "Notifications", "PACT Dev Tools"]);
+		var diagnostics = ((ScrollViewer)pages[3].Content!).Content.ShouldBeAssignableTo<StackPanel>()!;
+		diagnostics.Children.OfType<CheckBox>()
 			.Select(checkBox => checkBox.Content)
 			.ShouldBe([
 				"Show selected tab details",

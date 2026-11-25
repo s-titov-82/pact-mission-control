@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-11-25
+
+### Added
+
+- The MCP catalog lets you inspect, edit, enable, disable, and share native
+  Codex and Claude server declarations, or add servers managed by Pact. Map
+  servers by launch profile, project, or parent directory and review the changes
+  before applying them.
+- The Skills catalog can browse sources, link installed packages to update
+  sources, preview updates, and manage shared installations. Map skills to
+  launch profiles with project and folder overrides.
+- Terminal profile diagnostics show the installed CLI version, runtime
+  dependencies, skill directories, and whether a test session connects to
+  Pact MCP.
+- Configure terminal appearance, Windows attention notifications, and icons
+  for agent and web tabs. The actions panel can hide along the window edge,
+  and projects can be reordered in the tree.
+- Delete individual board cards, clear the archive, or choose **Archive all**
+  in the Done column to move completed cards and their comments into the
+  archive together.
+
+### Changed
+
+- Settings group options by area and streamline project, session, and review
+  editing. Paused projects are easier to reopen from the dashboard.
+- Review turn notifications stay quiet during the exchange. The attention feed
+  shows finished reviews and links to their results.
+
+### Fixed
+
+- Codex startup handles folder trust and leaves update prompts available for
+  manual action. Terminal status detection is more reliable for Codex and after
+  Claude compaction.
+- Windows attention notifications avoid duplicates for the same session.
+- Web tabs show errors correctly and restore monitoring after a restart.
+
 ## [0.1.16] - 2026-11-19
 
 ### Added
