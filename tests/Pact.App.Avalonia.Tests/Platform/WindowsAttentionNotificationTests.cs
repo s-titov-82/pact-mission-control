@@ -33,7 +33,7 @@ public sealed class WindowsAttentionNotificationTests
 		AppearancePreferences preferences = new(AppearanceMode.System) { ShowNotifications = true };
 		author.ApplyReviews([new ReviewSummary("review", workspace.Id, author.Record.Id, "reviewer",
 			ReviewState.Running, 1, ReviewRole.Author, "log", 1)]);
-		statuses.OnUserInput(author.Record.Id, "\r", now.AddSeconds(1));
+		statuses.OnUserInput(author.Record.Id, "\r", now.AddSeconds(1), PromptSender.Review);
 		author.ApplyReviews([]);
 		feed.AddReviewResult(new(workspace.Id, ".pact/reviews/log.md", "Review", ReviewState.MaxIterationsReached));
 		statuses.OnScreenSnapshot(author.Record.Id, @"PS C:\repo> ", now.AddSeconds(2));
